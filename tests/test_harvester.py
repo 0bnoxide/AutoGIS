@@ -132,3 +132,17 @@ def test_incremental_without_tracking_raises(tmp_path):
     with pytest.raises(ValueError):
         harvester.harvest(None, _cfg(tmp_path, incremental=True),
                           layer=layer, now_ms=1, sleep=lambda s: None)
+
+
+def test_incremental_does_not_advance_state_on_failure(tmp_path):
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    props = {"hasAttachments": True,
+             "editorTrackingInfo": {"enableEditorTracking": True}}
+    layer = FakeLayer(features, listing, fail_ids=(10,), props=props)
+    from autogis.core import state
+    state.write_last_run(str(tmp_path), 500)
+    summary = harvester.harvest(None, _cfg(tmp_path, incremental=True),
+                                layer=layer, now_ms=999, sleep=lambda s: None)
+    assert summary.failed == 1
+    assert state.read_last_run(str(tmp_path)) == 500
