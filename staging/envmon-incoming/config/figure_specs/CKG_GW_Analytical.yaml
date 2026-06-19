@@ -1,0 +1,43 @@
+# Figure spec — CKG-style groundwater analytical map (callout tables)
+figure_spec_id: CKG_GW_Analytical
+site_id: H281
+map_type: GW_ANALYTICAL
+matrix: GW
+figure_number: "2"
+figure_title: "Groundwater Analytical Results"
+layout_name: "GW Analytical Layout"        # _TODO match template APRX
+template_aprx: "../../templates/aprx/H281_Glasgow_Template.aprx"
+reference_scale: 1200                       # _TODO match figure scale
+output_filename_pattern: "{site_id}_Fig{figure_number}_GW_Analytical_{event_date}"
+
+# Analyte sets (canonical names; ordering by dictionary display_order)
+analyte_sets:
+  petroleum_six_pack: [Benzene, TPH, MTBE, C5-C8 Aliphatics, TEH, "1,2-DCA"]
+  btex_full: [Benzene, Toluene, Ethylbenzene, Xylenes, Naphthalene, TPH, MTBE]
+default_analyte_set: petroleum_six_pack
+
+sample_selection_rule: latest_per_location
+duplicate_handling_rule: prefer_parent
+
+callout_template:
+  template_id: CKG_GW
+  base_font_points: 6
+  standoff_points: 18
+  point_buffer_points: 10
+  quadrant_order: [NE, NW, SE, SW, E, W, N, S]
+
+extent_boundary_layer: SiteBoundary
+extent_buffer_pct: 5
+required_layers: [MonitoringWells, Env_CalloutBoxes, Env_CalloutLeaderLines]
+visible_layers: [MonitoringWells, SiteBoundary, Env_CalloutBoxes,
+                 Env_CalloutGridLines, Env_CalloutLeaderLines,
+                 Env_CalloutCellAnchors]
+hidden_layers: [Env_GWContours_Draft, Env_GWFlowArrow_Draft, SoilBorings]
+layer_definition_queries:
+  Env_CalloutBoxes: "SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
+  Env_CalloutGridLines: "SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
+  Env_CalloutLeaderLines: "SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
+  Env_CalloutCellAnchors: "SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
+layout_text:
+  FigureTitle: "Groundwater Analytical Results"
+  FigureNumber: "Figure 2"

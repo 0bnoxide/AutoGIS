@@ -1,0 +1,3 @@
+SiteID,EventDate,MapType,FigureSpecID,LocationID,AnchorX,AnchorY,OffsetX,OffsetY,PreferredQuadrant,LockedPlacement,Notes
+H281,2026-04-15,GW_ANALYTICAL,CKG_GW_Analytical,MW-1,,,,,SW,0,Prefer SW; auto-move allowed on collision
+H281,2026-04-15,GW_ANALYTICAL,CKG_GW_Analytical,MW-5,431250.0,5360410.0,0,0,,1,Pinned next to road label per reviewer markup

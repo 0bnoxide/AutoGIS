@@ -1,0 +1,79 @@
+# ============================================================================
+# PARSER PROFILE — H281 Glasgow Data Tables          *** DRAFT — UNVERIFIED ***
+# ============================================================================
+# This profile was authored from the row/column hints in the project
+# specification ONLY. The actual workbook ("H281 Glasgow Data Tables thru
+# April 2026.xlsx") was NOT available when this profile was written.
+#
+# REQUIRED BEFORE FIRST IMPORT:
+#   1. Run Tool 1 (Inspect Environmental Workbook) on the real workbook.
+#   2. Compare every row/column anchor below against the inspection report.
+#   3. Remove this banner and the DRAFT_ prefix once verified.
+# Importing with an unverified profile risks misreading screening rows as
+# data or shifting analyte columns — QA will catch some, not all, of that.
+# ============================================================================
+
+profile_id: DRAFT_H281_Glasgow_DataTables
+profile_description: >-
+  Quarterly GW monitoring workbook for H281 Glasgow: combined water-level +
+  VPH/EPH analytical sheet, inorganics (IBI) sheet, dissolved metals sheet,
+  and a field-duplicate RPD sheet. DRAFT anchors from spec hints.
+workbook_type: quarterly_gw_monitoring
+date_system: "1900"
+formula_handling: use_cached_then_qa
+plausible_gwe_range_ft: [1900, 2400]   # _TODO verify
+
+sheets:
+  - sheet_name: "GW Table 2"
+    data_type: GW_ANALYTICAL_AND_WATER_LEVEL
+    title_rows: [1, 2, 3]
+    group_header_row: 5          # _TODO verify (spec: "~row 5")
+    analyte_header_row: 7        # _TODO verify (spec: "~row 7")
+    units_row: 8
+    screening_level_row: 9       # MDEQ RBSL row; footnotes stripped w/ QA
+    data_start_row: 10
+    data_end_detection_strategy: "consecutive_blank_ids:3"
+    id_column: A                 # location (well) ID
+    screen_interval_column: B
+    date_column: C
+    mpe_column: D                # measuring point elevation
+    dtw_column: E                # depth to water
+    gwe_column: F                # groundwater elevation (often a formula)
+    analyte_columns: {from: G, to: V}   # _TODO verify last analyte column
+    duplicate_markers: ["DUP", "-D", "FD"]
+
+  - sheet_name: "Table 3"
+    data_type: IBI               # iron/inorganics indicators (GW matrix)
+    title_rows: [1, 2]
+    analyte_header_row: 3        # _TODO verify
+    units_row: 4                 # _TODO verify
+    data_start_row: 5            # _TODO verify
+    id_column: A
+    date_column: B
+    analyte_columns: {from: C, to: G}
+
+  - sheet_name: "Metals Table"
+    data_type: METALS            # dissolved metals in groundwater
+    title_rows: [1, 2]
+    analyte_header_row: 3        # _TODO verify
+    units_row: 4                 # _TODO verify
+    screening_level_row: null    # _TODO set if the sheet carries a SL row
+    data_start_row: 5            # _TODO verify
+    id_column: A
+    date_column: B
+    analyte_columns: {from: C, to: K}
+
+  - sheet_name: "RPD"
+    data_type: RPD
+    title_rows: [1, 2]
+    data_start_row: 4            # _TODO verify block layout
+    id_column: A                 # iterated over the analyte column
+    rpd_layout:
+      analyte_column: A
+      parent_column: B
+      duplicate_column: C
+      rpd_column: D
+      rl_column: E
+      parent_location_id: "_TODO e.g. MW-3"
+      duplicate_location_id: "_TODO e.g. MW-103 (DUP)"
+      event_date_cell: "B2"      # _TODO verify

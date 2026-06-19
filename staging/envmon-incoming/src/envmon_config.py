@@ -1,0 +1,258 @@
+"""Configuration loading and validation.
+
+All site-, workbook-, analyte- and figure-specific behaviour lives in YAML or
+JSON files under config/ (spec: General rules). YAML requires PyYAML, which
+ships with the default ArcGIS Pro conda environment; JSON is always supported
+as a fallback so the pipeline never hard-depends on PyYAML.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from openpyxl.utils import column_index_from_string
+
+
+class ConfigError(Exception):
+    """Blocking configuration problem (missing file/keys, bad column refs)."""
+
+
+def load_config(path: Path) -> dict:
+    path = Path(path)
+    if not path.exists():
+        raise ConfigError(f"Configuration file not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() in (".yaml", ".yml"):
+        try:
+            import yaml
+        except ImportError as exc:  # pragma: no cover
+            raise ConfigError(
+                f"PyYAML is required to read {path.name}. Either run "
+                f"'conda install pyyaml' in the ArcGIS Pro environment or "
+                f"provide the same configuration as .json.") from exc
+        data = yaml.safe_load(text)
+    else:
+        data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path} must contain a mapping at the top level")
+    return data
+
+
+def _require(data: dict, keys: List[str], context: str) -> None:
+    missing = [k for k in keys if k not in data]
+    if missing:
+        raise ConfigError(f"{context}: missing required keys: {', '.join(missing)}")
+
+
+def col_index(ref) -> Optional[int]:
+    """Accept 'A', 'AB' or 1-based ints; return 1-based column index."""
+    if ref is None:
+        return None
+    if isinstance(ref, int):
+        return ref
+    return column_index_from_string(str(ref).strip().upper())
+
+
+# ---------------------------------------------------------------------------
+# Site configuration
+# ---------------------------------------------------------------------------
+SITE_REQUIRED = ["site_id", "site_name", "project_number", "address", "city",
+                 "state", "coordinate_system", "default_gdb",
+                 "default_aprx_template", "monitoring_wells_fc",
+                 "soil_borings_fc", "site_boundary_fc"]
+
+
+@dataclass
+class SiteConfig:
+    data: dict
+    path: Optional[Path] = None
+
+    @classmethod
+    def load(cls, path: Path) -> "SiteConfig":
+        data = load_config(path)
+        _require(data, SITE_REQUIRED, f"site config {path}")
+        return cls(data=data, path=Path(path))
+
+    def __getattr__(self, item):
+        try:
+            return self.data[item]
+        except KeyError as exc:
+            raise AttributeError(item) from exc
+
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
+
+# ---------------------------------------------------------------------------
+# Parser profile
+# ---------------------------------------------------------------------------
+@dataclass
+class SheetProfile:
+    sheet_name: str
+    data_type: str
+    raw: dict
+
+    # Row anchors (1-based, may be None where not applicable)
+    title_rows: List[int] = field(default_factory=list)
+    group_header_row: Optional[int] = None
+    analyte_header_row: Optional[int] = None
+    units_row: Optional[int] = None
+    screening_level_row: Optional[int] = None
+    data_start_row: int = 2
+    data_end_detection_strategy: str = "consecutive_blank_ids:3"
+
+    # Column anchors (1-based after resolution)
+    id_column: Optional[int] = None
+    sample_id_column: Optional[int] = None
+    depth_column: Optional[int] = None
+    screen_interval_column: Optional[int] = None
+    date_column: Optional[int] = None
+    mpe_column: Optional[int] = None
+    dtw_column: Optional[int] = None
+    gwe_column: Optional[int] = None
+    analyte_columns: List[int] = field(default_factory=list)
+    ignored_columns: List[int] = field(default_factory=list)
+    rpd_layout: dict = field(default_factory=dict)
+    source_cell_tracking_enabled: bool = True
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SheetProfile":
+        _require(d, ["sheet_name", "data_type", "data_start_row"],
+                 f"sheet profile {d.get('sheet_name', '?')}")
+        cols = d.get("analyte_columns")
+        analyte_cols: List[int] = []
+        if isinstance(cols, dict) and "from" in cols and "to" in cols:
+            analyte_cols = list(range(col_index(cols["from"]), col_index(cols["to"]) + 1))
+        elif isinstance(cols, list):
+            analyte_cols = [col_index(c) for c in cols]
+        sp = cls(
+            sheet_name=d["sheet_name"], data_type=d["data_type"], raw=d,
+            title_rows=d.get("title_rows", []) or [],
+            group_header_row=d.get("group_header_row"),
+            analyte_header_row=d.get("analyte_header_row"),
+            units_row=d.get("units_row"),
+            screening_level_row=d.get("screening_level_row"),
+            data_start_row=int(d["data_start_row"]),
+            data_end_detection_strategy=d.get("data_end_detection_strategy",
+                                              "consecutive_blank_ids:3"),
+            id_column=col_index(d.get("id_column") or d.get("location_column")),
+            sample_id_column=col_index(d.get("sample_id_column")),
+            depth_column=col_index(d.get("depth_column")),
+            screen_interval_column=col_index(d.get("screen_interval_column")),
+            date_column=col_index(d.get("date_column")),
+            mpe_column=col_index(d.get("mpe_column")),
+            dtw_column=col_index(d.get("dtw_column")),
+            gwe_column=col_index(d.get("gwe_column")),
+            analyte_columns=analyte_cols,
+            ignored_columns=[col_index(c) for c in d.get("ignored_columns", [])],
+            rpd_layout=d.get("rpd_layout", {}),
+            source_cell_tracking_enabled=d.get("source_cell_tracking_enabled", True),
+        )
+        return sp
+
+
+@dataclass
+class ParserProfile:
+    profile_id: str
+    data: dict
+    sheets: Dict[str, SheetProfile]
+    date_system: str = "1900"
+    formula_handling: str = "use_cached_then_qa"
+    path: Optional[Path] = None
+
+    @classmethod
+    def load(cls, path: Path) -> "ParserProfile":
+        data = load_config(path)
+        _require(data, ["profile_id", "sheets"], f"parser profile {path}")
+        sheets = {}
+        for sd in data["sheets"]:
+            sp = SheetProfile.from_dict(sd)
+            sheets[sp.sheet_name] = sp
+        return cls(profile_id=data["profile_id"], data=data, sheets=sheets,
+                   date_system=str(data.get("date_system", "1900")),
+                   formula_handling=data.get("formula_handling",
+                                             "use_cached_then_qa"),
+                   path=Path(path))
+
+    def sheets_of_type(self, data_type: str) -> List[SheetProfile]:
+        return [s for s in self.sheets.values() if s.data_type == data_type]
+
+
+# ---------------------------------------------------------------------------
+# Analyte dictionary / screening levels
+# ---------------------------------------------------------------------------
+def load_analyte_dictionary(path: Path) -> dict:
+    data = load_config(path)
+    analytes = data.get("analytes", data)
+    for name, entry in analytes.items():
+        if name.startswith("_"):
+            continue
+        if not isinstance(entry, dict):
+            raise ConfigError(f"analyte dictionary entry '{name}' must be a mapping")
+        entry.setdefault("canonical_name", name)
+        entry.setdefault("aliases", [])
+        entry.setdefault("abbreviation", name)
+        entry.setdefault("display_order", 9999)
+    return analytes
+
+
+def load_screening_levels(path: Path) -> dict:
+    """Returns {matrix: {canonical_analyte: {value, units, source}}}."""
+    data = load_config(path)
+    return data.get("screening_levels", data)
+
+
+def screening_for(screening_levels: dict, matrix: str,
+                  canonical: str) -> Optional[dict]:
+    return (screening_levels.get(matrix, {}) or {}).get(canonical)
+
+
+# ---------------------------------------------------------------------------
+# Figure spec
+# ---------------------------------------------------------------------------
+FIGURE_REQUIRED = ["figure_spec_id", "map_type", "matrix", "layout_name",
+                   "figure_title", "output_filename_pattern", "callout_template"]
+
+
+@dataclass
+class FigureSpec:
+    data: dict
+    path: Optional[Path] = None
+
+    @classmethod
+    def load(cls, path: Path) -> "FigureSpec":
+        data = load_config(path)
+        _require(data, FIGURE_REQUIRED, f"figure spec {path}")
+        return cls(data=data, path=Path(path))
+
+    def __getattr__(self, item):
+        try:
+            return self.data[item]
+        except KeyError as exc:
+            raise AttributeError(item) from exc
+
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
+    def analyte_list(self, analyte_dictionary: dict,
+                     analyte_set_name: Optional[str] = None,
+                     custom_list: Optional[List[str]] = None) -> List[str]:
+        """Resolve the ordered canonical analyte list for this figure."""
+        if custom_list:
+            names = custom_list
+        else:
+            sets = self.data.get("analyte_sets", {})
+            set_name = analyte_set_name or self.data.get("default_analyte_set")
+            if set_name and set_name in sets:
+                names = sets[set_name]
+            else:
+                names = self.data.get("analytes", [])
+        if not names:
+            raise ConfigError(f"figure spec {self.data.get('figure_spec_id')}: "
+                              f"no analyte set resolved")
+        ordered = sorted(
+            names,
+            key=lambda n: analyte_dictionary.get(n, {}).get("display_order", 9999))
+        return ordered
