@@ -6,8 +6,10 @@ from autogis.core.manifest import Manifest
 
 def _sample():
     m = Manifest()
-    m.add(AttachmentResult(1, 10, "a.jpg", "/out/G/a.jpg", 100, "downloaded"))
-    m.add(AttachmentResult(2, 11, "b.jpg", None, None, "failed", "timeout"))
+    m.add(AttachmentResult(1, 10, "a.jpg", "/out/G/a.jpg", 100, "downloaded",
+                           disposition="downloaded"))
+    m.add(AttachmentResult(2, 11, "b.jpg", None, None, "failed", "timeout",
+                           disposition="failed"))
     return m
 
 
@@ -19,6 +21,9 @@ def test_write_csv(tmp_path):
     assert rows[0]["status"] == "downloaded"
     assert rows[1]["status"] == "failed"
     assert rows[1]["error"] == "timeout"
+    assert rows[0]["disposition"] == "downloaded"
+    assert rows[1]["disposition"] == "failed"
+    assert rows[0]["checksum"] == ""  # reserved column present, empty
 
 
 def test_write_json(tmp_path):
