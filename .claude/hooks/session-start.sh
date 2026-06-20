@@ -36,6 +36,12 @@ if [ ! -x "$CBM_BIN" ]; then
   rm /tmp/cbm.tar.gz
 fi
 
+# Index the repo into the knowledge graph so the codebase-memory MCP tools have
+# a ready graph the moment the session starts. Lands in ~/.cache (outside the
+# repo); cheap full re-index keeps it fresh and never stale. Non-fatal.
+"$CBM_BIN" cli index_repository "{\"repo_path\":\"$PROJECT_DIR\",\"mode\":\"full\"}" 1>&2 || \
+  echo "codebase-memory-mcp index skipped (tools will index on first use)" >&2
+
 # --- keep headroom runtime artifacts OUT of the repo ---
 mkdir -p "$HOME/.headroom"
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
