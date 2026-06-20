@@ -34,3 +34,22 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     echo "export HEADROOM_LOG_FILE=\"$HOME/.headroom/proxy.log\""
   } >> "$CLAUDE_ENV_FILE"
 fi
+
+# --- pre-warm the kompress-base model so the first compression isn't a cold
+# ~264MB download. It caches under $HOME/.cache/huggingface, which is baked into
+# the web container snapshot after this hook completes. Guarded by a marker so
+# warm sessions skip it; non-fatal (falls back to fetch-on-first-use).
+if [ ! -f "$HOME/.headroom/.model-prewarmed" ]; then
+  if python - 1>&2 <<'PYEOF'
+# Use headroom's intended startup eager-preload API to fetch + load the
+# kompress-v2-base ONNX model (and ModernBERT tokenizer) deterministically.
+from headroom.transforms.kompress_compressor import KompressCompressor
+backend = KompressCompressor().preload(allow_download=True)
+print(f"kompress model pre-warmed (backend={backend})")
+PYEOF
+  then
+    touch "$HOME/.headroom/.model-prewarmed"
+  else
+    echo "headroom model pre-warm skipped (will fetch on first use)" >&2
+  fi
+fi
