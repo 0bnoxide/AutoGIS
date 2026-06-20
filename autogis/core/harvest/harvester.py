@@ -84,6 +84,7 @@ def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):
     manifest.write(config.directory)
     counts = summary_counts(manifest.results)
     summary = RunSummary.from_counts(counts)
+    summary.results = list(manifest.results)
     if config.incremental and summary.failed == 0:
         resolved_now = now_ms if now_ms is not None else int(time.time() * 1000)
         write_last_run(config.directory, resolved_now)

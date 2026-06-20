@@ -134,6 +134,45 @@ def test_incremental_without_tracking_raises(tmp_path):
                           layer=layer, now_ms=1, sleep=lambda s: None)
 
 
+def test_harvest_results_list_populated(tmp_path):
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"}),
+                FakeFeature({"OBJECTID": 2, "Status": "Open"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}],
+               2: [{"id": 20, "name": "b.jpg", "size": 5}]}
+    layer = FakeLayer(features, listing)
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    assert len(summary.results) == 2
+    statuses = {r.status for r in summary.results}
+    assert statuses == {"downloaded"}
+
+
+def test_harvest_skips_existing_results_list(tmp_path):
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    target = tmp_path / "Done" / "1_a.jpg"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"old")
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    assert len(summary.results) == 1
+    assert summary.results[0].status == "skipped"
+
+
+def test_harvest_failure_results_list(tmp_path):
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"}),
+                FakeFeature({"OBJECTID": 2, "Status": "Done"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}],
+               2: [{"id": 20, "name": "b.jpg", "size": 5}]}
+    layer = FakeLayer(features, listing, fail_ids=(10,))
+    summary = harvester.harvest(None, _cfg(tmp_path, retries=1), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    statuses = {r.status for r in summary.results}
+    assert "failed" in statuses
+    assert "downloaded" in statuses
+
+
 def test_incremental_does_not_advance_state_on_failure(tmp_path):
     features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
     listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
