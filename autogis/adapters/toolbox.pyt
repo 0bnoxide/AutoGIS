@@ -1,21 +1,26 @@
 # -*- coding: utf-8 -*-
 """toolbox.pyt — reference ArcGIS Pro Python toolbox for the AutoGIS suite.
 
-A dumb marshaller over the installed ``autogis`` package: every tool's
-``execute()`` does nothing but pull params off the GUI, hand them to
-``autogis.adapters.toolbox_core`` (pure, arcpy-free), and render QA via
-``_msg``. No ``sys.path`` hack — install the package (``pip install -e .``)
-into the cloned ``arcgispro-py3`` env so it imports normally. See
-``docs/pro-install.md``.
+A marshaller over the installed ``autogis`` package: each tool's ``execute()``
+pulls params off the GUI and hands them to the pure ``autogis.core`` functions
+(arcpy-touching where noted), rendering QA via ``_msg``. No ``sys.path`` hack —
+install the package (``pip install -e .``) into the cloned ``arcgispro-py3`` env
+so it imports normally. See ``docs/pro-install.md``.
 
 This file is intentionally never imported by the test suite: its top-level
-``import arcpy`` only resolves inside ArcGIS Pro. The testable wiring lives in
-``toolbox_core``.
+``import arcpy`` only resolves inside ArcGIS Pro.
 """
+
+import json
+from pathlib import Path
 
 import arcpy
 
 from autogis.adapters import toolbox_core
+from autogis.core.common.config import (
+    ParserProfile, SiteConfig, load_config, load_analyte_dictionary,
+    load_screening_levels, FigureSpec, ConfigError,
+)
 from autogis.core.common.qa import QACollector
 
 
@@ -49,7 +54,21 @@ class Toolbox(object):
     def __init__(self):
         self.label = "AutoGIS Suite"
         self.alias = "autogis"
-        self.tools = [HarvestAttachments]
+        self.tools = [
+            HarvestAttachments,
+            # envmon — headless (CLOUD): no arcpy required.
+            InspectWorkbook,         # tool 1
+            ReadParserProfile,       # tool 9
+            LoadFigureSpec,          # tool 10
+            # envmon — LOCAL (arcpy): runtime-guarded.
+            ImportToGdb,             # tool 2
+            BuildCurrentEvent,       # tool 3
+            BuildCallouts,           # tool 4
+            GroundwaterContours,     # tool 5
+            ExportFigures,           # tool 6
+            FullPipeline,            # tool 7
+            ValidateDatabase,        # tool 8
+        ]
 
 
 class HarvestAttachments(object):
@@ -88,4 +107,533 @@ class HarvestAttachments(object):
         )
         results = toolbox_core.run_harvest(config, pro_active_portal())
         messages.addMessage(f"{len(results)} attachment(s) processed.")
+        _msg(messages, qa)
+
+
+# ==========================================================================
+# envmon Tool classes — faithful ports of the staging
+# EnvironmentalMonitoringTools.pyt over the packaged ``autogis.core`` modules.
+# Headless tools (1/9/10) call the openpyxl-only core directly; LOCAL tools
+# (2-8) call ``require_runtime`` first so a missing arcpy is a clean error,
+# then the arcpy-touching core.
+# ==========================================================================
+
+# ---------------------------------------------------------- headless (CLOUD)
+class InspectWorkbook(object):
+    """Tool 1 — workbook structure inspection (openpyxl only)."""
+
+    def __init__(self):
+        self.label = "1. Inspect Environmental Workbook"
+        self.description = ("Profile every sheet of a workbook (merged cells, "
+                            "header rows, formula issues) and write a "
+                            "structure report. Read-only.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("workbook", "Source workbook (.xlsx)", "DEFile"),
+            _param("output_dir", "Inspection output folder", "DEFolder"),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.core.envmon.excel_workbook_inspector import (
+            inspect_workbook_structure, write_inspection_outputs,
+        )
+        qa = QACollector()
+        wb = Path(parameters[0].valueAsText)
+        out = Path(parameters[1].valueAsText)
+        report = inspect_workbook_structure(wb, qa)
+        json_path = out / f"{wb.stem}_inspection.json"
+        csv_path = out / f"{wb.stem}_inspection.csv"
+        write_inspection_outputs(report, json_path, csv_path)
+        messages.addMessage(f"Wrote {json_path}")
+        messages.addMessage(f"Wrote {csv_path}")
+        _msg(messages, qa)
+
+
+class ReadParserProfile(object):
+    """Tool 9 — inspect a workbook and write a DRAFT parser profile."""
+
+    def __init__(self):
+        self.label = "9. Create Parser Profile Draft from Workbook"
+        self.description = ("Inspect a workbook and write a DRAFT parser "
+                            "profile YAML with _TODO flags for human review. "
+                            "Never import with an unreviewed draft.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("workbook", "Source workbook (.xlsx)", "DEFile"),
+            _param("output_profile", "Output profile path (.yaml)",
+                   "DEFile", direction="Output"),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.core.envmon.excel_workbook_inspector import (
+            inspect_workbook_structure, propose_parser_profile,
+        )
+        qa = QACollector()
+        wb = Path(parameters[0].valueAsText)
+        out = Path(parameters[1].valueAsText)
+        report = inspect_workbook_structure(wb, qa)
+        draft = propose_parser_profile(report, profile_id=f"DRAFT_{wb.stem}")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            import yaml
+            out.write_text(yaml.safe_dump(draft, sort_keys=False),
+                           encoding="utf-8")
+        except ImportError:
+            out = out.with_suffix(".json")
+            out.write_text(json.dumps(draft, indent=2, default=str),
+                           encoding="utf-8")
+        messages.addWarningMessage(
+            f"DRAFT profile written to {out}. Review every _TODO before "
+            "importing — header-row guesses are heuristics, not facts.")
+        _msg(messages, qa)
+
+
+class LoadFigureSpec(object):
+    """Tool 10 — write a commented figure-spec YAML skeleton (no arcpy)."""
+
+    def __init__(self):
+        self.label = "10. Create Figure Spec Template"
+        self.description = "Write a commented figure-spec YAML skeleton."
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("output_spec", "Output figure spec (.yaml)", "DEFile",
+                   direction="Output"),
+            _param("template_kind", "Callout template", "GPString",
+                   default="CKG_GW",
+                   domain=("CKG_GW", "ZT42_GW", "ZT42_SOIL", "METALS", "IBI",
+                           "COMPACT_KV", "CUSTOM_ANALYTICAL")),
+        ]
+
+    def execute(self, parameters, messages):
+        out = Path(parameters[0].valueAsText)
+        kind = parameters[1].valueAsText
+        skeleton = f"""# Figure spec template — fill in every _TODO
+figure_spec_id: _TODO_unique_id
+site_id: _TODO
+matrix: GW            # GW | SOIL
+map_type: GW_ANALYTICAL
+figure_number: _TODO
+reference_scale: 1200
+analyte_set_name: petroleum_six_pack   # or custom_list: [...]
+sample_selection_rule: latest_per_location
+duplicate_handling_rule: prefer_parent
+callout_template:
+  template_id: {kind}
+  base_font_points: 6
+  standoff_points: 18
+  point_buffer_points: 10
+template_aprx: ../../templates/aprx/_TODO.aprx
+layout_name: _TODO
+extent_boundary_layer: SiteBoundary
+output_filename_pattern: "{{site_id}}_{{figure_number}}_{{event_date}}"
+layer_definition_queries:
+  Env_CalloutBoxes: "SiteID = '{{site_id}}' AND FigureSpecID = '{{figure_spec_id}}' AND EventDate = '{{event_date}}'"
+"""
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(skeleton, encoding="utf-8")
+        messages.addMessage(f"Template written: {out}")
+
+
+# ------------------------------------------------------------- LOCAL (arcpy)
+class ImportToGdb(object):
+    """Tool 2 — import a workbook into the file geodatabase (arcpy)."""
+
+    def __init__(self):
+        self.label = "2. Import Environmental Workbook"
+        self.description = ("Parse a workbook with a parser profile and load "
+                            "normalized records into the GDB. Source workbook "
+                            "is never modified.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("workbook", "Source workbook (.xlsx)", "DEFile"),
+            _param("gdb", "Target file geodatabase", "DEWorkspace"),
+            _param("site_config", "Site config (YAML/JSON)", "DEFile"),
+            _param("parser_profile", "Parser profile (YAML/JSON)", "DEFile"),
+            _param("analyte_dictionary", "Analyte dictionary", "DEFile"),
+            _param("screening_levels", "Screening levels config", "DEFile"),
+            _param("qa_output_dir", "QA output folder", "DEFolder"),
+            _param("mode", "Import mode", "GPString", default="validate_only",
+                   domain=("validate_only", "append", "replace_batch",
+                           "replace_site_event")),
+            _param("matrix_filter", "Matrix filter", "GPString",
+                   required=False, domain=("GW", "SOIL")),
+            _param("batch_id_to_replace", "Batch ID to replace (replace_batch)",
+                   "GPString", required=False),
+            _param("event_date", "Event date YYYY-MM-DD (replace_site_event)",
+                   "GPString", required=False),
+            _param("allow_duplicates", "Allow duplicate records",
+                   "GPBoolean", required=False, default=False),
+            _param("allow_errors", "Override ERROR-level QA block",
+                   "GPBoolean", required=False, default=False),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("import-gdb")
+        from autogis.core.envmon.import_to_gdb import run_import
+        p = {q.name: q for q in parameters}
+        site = SiteConfig.load(Path(p["site_config"].valueAsText))
+        profile = ParserProfile.load(Path(p["parser_profile"].valueAsText))
+        summary = run_import(
+            workbook=Path(p["workbook"].valueAsText),
+            gdb=Path(p["gdb"].valueAsText),
+            site_config=site,
+            profile=profile,
+            analyte_dictionary_path=Path(p["analyte_dictionary"].valueAsText),
+            screening_levels_path=Path(p["screening_levels"].valueAsText),
+            qa_output_dir=Path(p["qa_output_dir"].valueAsText),
+            mode=p["mode"].valueAsText,
+            matrix_filter=p["matrix_filter"].valueAsText or None,
+            batch_id_to_replace=p["batch_id_to_replace"].valueAsText or None,
+            event_date=p["event_date"].valueAsText or None,
+            allow_duplicate_records=bool(p["allow_duplicates"].value),
+            allow_errors_override=bool(p["allow_errors"].value),
+        )
+        messages.addMessage(json.dumps(summary, indent=2, default=str))
+
+
+class BuildCurrentEvent(object):
+    """Tool 3 — build current-event feature data (arcpy)."""
+
+    def __init__(self):
+        self.label = "3. Build Current Event Tables"
+        self.description = ("Apply a figure spec's sample-selection, depth, "
+                            "and duplicate rules; write Env_CurrentEventWide.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("site_config", "Site config", "DEFile"),
+            _param("figure_spec", "Figure spec (YAML/JSON)", "DEFile"),
+            _param("analyte_dictionary", "Analyte dictionary", "DEFile"),
+            _param("event_date", "Event date YYYY-MM-DD (rule-dependent)",
+                   "GPString", required=False),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("build-event")
+        from autogis.core.envmon.build_current_event import (
+            build_current_event_wide,
+        )
+        qa = QACollector()
+        p = {q.name: q for q in parameters}
+        site = SiteConfig.load(Path(p["site_config"].valueAsText))
+        spec = FigureSpec.load(Path(p["figure_spec"].valueAsText))
+        adict = load_analyte_dictionary(Path(p["analyte_dictionary"].valueAsText))
+        wide = build_current_event_wide(
+            Path(p["gdb"].valueAsText), site.site_id, spec, adict, qa,
+            event_date=p["event_date"].valueAsText or None,
+        )
+        messages.addMessage(f"{len(wide)} wide rows written.")
+        _msg(messages, qa)
+
+
+class BuildCallouts(object):
+    """Tool 4 — generate callout feature classes (arcpy)."""
+
+    def __init__(self):
+        self.label = "4. Build Analytical Callouts"
+        self.description = ("Generate table-style callout boxes, gridlines, "
+                            "leaders, and cell anchors with collision-aware "
+                            "placement and user-override support.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("site_config", "Site config", "DEFile"),
+            _param("figure_spec", "Figure spec", "DEFile"),
+            _param("analyte_dictionary", "Analyte dictionary", "DEFile"),
+            _param("event_date", "Event date YYYY-MM-DD", "GPString"),
+            _param("map_type", "Map type", "GPString", default="GW_ANALYTICAL"),
+            _param("replace_existing", "Replace existing callouts",
+                   "GPBoolean", required=False, default=True),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("build-callouts")
+        from autogis.core.envmon.build_current_event import (
+            build_current_event_wide,
+        )
+        from autogis.core.envmon.build_figure_dataset import (
+            generate_callout_features,
+        )
+        qa = QACollector()
+        p = {q.name: q for q in parameters}
+        gdb = Path(p["gdb"].valueAsText)
+        site = SiteConfig.load(Path(p["site_config"].valueAsText))
+        spec = FigureSpec.load(Path(p["figure_spec"].valueAsText))
+        adict = load_analyte_dictionary(Path(p["analyte_dictionary"].valueAsText))
+        ev = p["event_date"].valueAsText
+        wide = build_current_event_wide(gdb, site.site_id, spec, adict, qa,
+                                        event_date=ev)
+        n = generate_callout_features(
+            gdb, site.site_id, spec, wide, adict, qa,
+            event_date=ev, map_type=p["map_type"].valueAsText,
+            replace_existing=bool(p["replace_existing"].value),
+            map_units=site.get("map_units", "feet"),
+        )
+        messages.addMessage(f"{n} callouts generated.")
+        _msg(messages, qa)
+
+
+class GroundwaterContours(object):
+    """Tool 5 — build groundwater contours (arcpy)."""
+
+    def __init__(self):
+        self.label = "5. Build Groundwater Contours (DRAFT)"
+        self.description = ("Interpolate DRAFT potentiometric contours and a "
+                            "DRAFT flow arrow. Output requires professional "
+                            "review before use.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("site_config", "Site config", "DEFile"),
+            _param("event_date", "Event date YYYY-MM-DD", "GPString"),
+            _param("method", "Interpolation method", "GPString",
+                   default="TIN",
+                   domain=("TIN", "IDW", "NaturalNeighbor", "SkipContours")),
+            _param("interval", "Contour interval (ft)", "GPDouble",
+                   required=False, default=1.0),
+            _param("min_points", "Minimum valid points", "GPLong",
+                   required=False, default=3),
+            _param("boundary_fc", "Clip boundary feature class",
+                   "DEFeatureClass", required=False),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("gw-contours")
+        from autogis.core.envmon.groundwater_contours import (
+            build_groundwater_contours,
+        )
+        qa = QACollector()
+        p = {q.name: q for q in parameters}
+        site = SiteConfig.load(Path(p["site_config"].valueAsText))
+        summary = build_groundwater_contours(
+            Path(p["gdb"].valueAsText), site.site_id,
+            p["event_date"].valueAsText, qa,
+            method=p["method"].valueAsText,
+            contour_interval=float(p["interval"].value or 1.0),
+            min_valid_points=int(p["min_points"].value or 3),
+            boundary_fc=p["boundary_fc"].valueAsText or None,
+        )
+        messages.addMessage(json.dumps(summary, indent=2))
+        _msg(messages, qa)
+
+
+class ExportFigures(object):
+    """Tool 6 — export figure layouts (arcpy)."""
+
+    def __init__(self):
+        self.label = "6. Export Environmental Figures"
+        self.description = ("Copy the template APRX, repath to the GDB, apply "
+                            "definition queries/text/extent, run pre-export "
+                            "QA, export PDF/PNG/TIFF/JPEG.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("site_config", "Site config", "DEFile"),
+            _param("figure_spec", "Figure spec", "DEFile"),
+            _param("event_date", "Event date YYYY-MM-DD", "GPString"),
+            _param("export_dir", "Export folder", "DEFolder"),
+            _param("formats", "Formats", "GPString", default="PDF",
+                   domain=("PDF", "PNG", "TIFF", "JPEG"), multi=True),
+            _param("dpi", "DPI", "GPLong", required=False, default=300),
+            _param("dry_run", "Dry run (no files written)", "GPBoolean",
+                   required=False, default=False),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("export-figures")
+        from autogis.core.envmon.export_figures import (
+            export_layouts, register_exports,
+        )
+        from autogis.core.envmon.layout_manager import (
+            copy_template_aprx, update_aprx_data_sources,
+            apply_figure_definition_queries, set_layer_visibility,
+            update_layout_text, zoom_to_boundary,
+        )
+        qa = QACollector()
+        p = {q.name: q for q in parameters}
+        gdb = Path(p["gdb"].valueAsText)
+        site = SiteConfig.load(Path(p["site_config"].valueAsText))
+        spec = FigureSpec.load(Path(p["figure_spec"].valueAsText))
+        ev = p["event_date"].valueAsText
+        export_dir = Path(p["export_dir"].valueAsText)
+
+        template = Path(spec.get("template_aprx") or spec.get("aprx_template") or "")
+        if not template.is_absolute():
+            template = Path(p["figure_spec"].valueAsText).parent / template
+        work = copy_template_aprx(template, export_dir / "_working",
+                                  f"{site.site_id}_{spec.figure_spec_id}_{ev}")
+        update_aprx_data_sources(work, gdb, qa)
+        lq = spec.get("layer_definition_queries", {})
+        if lq:
+            apply_figure_definition_queries(
+                work, site.site_id, ev, spec.figure_spec_id,
+                spec.get("map_type", "GW_ANALYTICAL"), lq, qa)
+        set_layer_visibility(work, spec.get("visible_layers", []),
+                             spec.get("hidden_layers", []), qa)
+        text = dict(site.get("default_layout_text", {}))
+        text.update(spec.get("layout_text", {}))
+        text.setdefault("EventDate", ev)
+        update_layout_text(work, spec.get("layout_name"), text, qa)
+        b = spec.get("extent_boundary_layer")
+        if b:
+            zoom_to_boundary(work, spec.get("layout_name"), b,
+                             float(spec.get("extent_buffer_pct", 5)), qa)
+
+        written = export_layouts(
+            work, export_dir,
+            spec.get("output_filename_pattern",
+                         "{site_id}_{figure_number}_{event_date}"),
+            {"site_id": site.site_id, "event_date": ev,
+             "figure_number": spec.get("figure_number", "Fig"),
+             "figure_spec_id": spec.figure_spec_id},
+            qa,
+            layout_names=spec.get("layouts"),
+            formats=[f.strip() for f in
+                     (p["formats"].valueAsText or "PDF").split(";")],
+            dpi=int(p["dpi"].value or 300),
+            required_layers=spec.get("required_layers", []),
+            combine_pdf=spec.get("combined_pdf_name"),
+            dry_run=bool(p["dry_run"].value),
+        )
+        register_exports(gdb, written, site.site_id, ev,
+                         spec.figure_spec_id, qa)
+        for w in written:
+            messages.addMessage(f"Exported {w}")
+        _msg(messages, qa)
+
+
+class FullPipeline(object):
+    """Tool 7 — run the full import-to-figures pipeline (arcpy)."""
+
+    def __init__(self):
+        self.label = "7. Run Full Figure Pipeline"
+        self.description = ("Import -> current event -> callouts -> contours "
+                            "(optional) -> export, with QA gates between "
+                            "stages.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("workbook", "Source workbook (.xlsx)", "DEFile"),
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("site_config", "Site config", "DEFile"),
+            _param("parser_profile", "Parser profile", "DEFile"),
+            _param("analyte_dictionary", "Analyte dictionary", "DEFile"),
+            _param("screening_levels", "Screening levels", "DEFile"),
+            _param("figure_specs", "Figure specs", "DEFile", multi=True),
+            _param("event_date", "Event date YYYY-MM-DD", "GPString"),
+            _param("qa_output_dir", "QA output folder", "DEFolder"),
+            _param("export_dir", "Export folder", "DEFolder"),
+            _param("import_mode", "Import mode", "GPString", default="append",
+                   domain=("append", "replace_site_event")),
+            _param("build_contours", "Build DRAFT contours", "GPBoolean",
+                   required=False, default=False),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("full-pipeline")
+        from autogis.core.envmon.import_to_gdb import run_import
+        from autogis.core.envmon.build_current_event import (
+            build_current_event_wide,
+        )
+        from autogis.core.envmon.build_figure_dataset import (
+            generate_callout_features,
+        )
+        from autogis.core.envmon.groundwater_contours import (
+            build_groundwater_contours,
+        )
+        p = {q.name: q for q in parameters}
+        gdb = Path(p["gdb"].valueAsText)
+        site = SiteConfig.load(Path(p["site_config"].valueAsText))
+        profile = ParserProfile.load(Path(p["parser_profile"].valueAsText))
+        adict_path = Path(p["analyte_dictionary"].valueAsText)
+        adict = load_analyte_dictionary(adict_path)
+        ev = p["event_date"].valueAsText
+
+        summary = run_import(
+            workbook=Path(p["workbook"].valueAsText), gdb=gdb,
+            site_config=site, profile=profile,
+            analyte_dictionary_path=adict_path,
+            screening_levels_path=Path(p["screening_levels"].valueAsText),
+            qa_output_dir=Path(p["qa_output_dir"].valueAsText),
+            mode=p["import_mode"].valueAsText, event_date=ev,
+        )
+        messages.addMessage(f"Import: {json.dumps(summary, default=str)}")
+        if summary["qa_status"] == "FAIL":
+            messages.addErrorMessage(
+                "Pipeline halted: import QA failed. Review qa_output and "
+                "re-run, or use Tool 2 with the error override after review.")
+            return
+
+        for spec_path in (p["figure_specs"].valueAsText or "").split(";"):
+            spec = FigureSpec.load(Path(spec_path.strip()))
+            qa = QACollector()
+            wide = build_current_event_wide(gdb, site.site_id, spec, adict, qa,
+                                            event_date=ev)
+            generate_callout_features(
+                gdb, site.site_id, spec, wide, adict, qa, event_date=ev,
+                map_type=spec.get("map_type", "GW_ANALYTICAL"),
+                map_units=site.get("map_units", "feet"),
+            )
+            if bool(p["build_contours"].value) and \
+                    spec.get("map_type") == "GW_POTENTIOMETRIC":
+                build_groundwater_contours(gdb, site.site_id, ev, qa)
+            _msg(messages, qa)
+        messages.addMessage(
+            "Pipeline data stages complete. Run Tool 6 per figure spec to "
+            "export (kept separate so layouts can be reviewed first).")
+
+
+class ValidateDatabase(object):
+    """Tool 8 — validate the geodatabase schema/contents (arcpy)."""
+
+    def __init__(self):
+        self.label = "8. Validate Environmental Database"
+        self.description = "Read-only cross-table integrity checks."
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("analyte_dictionary", "Analyte dictionary", "DEFile"),
+            _param("qa_output_dir", "QA output folder", "DEFolder"),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("validate-db")
+        from autogis.core.envmon.validate_database import validate_database
+        import datetime as dt
+        qa = QACollector()
+        p = {q.name: q for q in parameters}
+        adict = load_analyte_dictionary(Path(p["analyte_dictionary"].valueAsText))
+        summary = validate_database(Path(p["gdb"].valueAsText), qa, adict)
+        out = Path(p["qa_output_dir"].valueAsText)
+        stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        qa.write_csv(out / f"validate_{stamp}.csv")
+        qa.write_markdown(out / f"validate_{stamp}.md",
+                          title="Database Validation")
+        messages.addMessage(json.dumps(summary, indent=2))
         _msg(messages, qa)
