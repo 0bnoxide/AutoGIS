@@ -1,17 +1,30 @@
+import dataclasses
 from pathlib import Path
 
 import click
+import yaml
 
-from autogis.adapters.config_loader import load_config
 from autogis.adapters.guard import require_runtime, RuntimeUnavailable
-from autogis.core.harvest.gis_session import build_gis_from_env
-from autogis.core.harvest.harvester import harvest
+from autogis.core.common.config import HarvestConfig
+from autogis.runtime.sessions import agol_from_profile
 
 
-def run(config_path, where, out, incremental, *, gis_builder, harvest_fn, load_fn):
-    overrides = {"where": where, "directory": out, "incremental": incremental}
-    config, profile = load_fn(config_path, overrides=overrides)
-    gis = gis_builder(profile)
+def run(config_path, where, out, incremental, *, harvest_fn=None):
+    if harvest_fn is None:
+        from autogis.core.harvest.harvester import harvest as harvest_fn
+
+    raw = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
+    profile = (raw.get("connection") or {}).get("profile")
+
+    config = HarvestConfig.load(Path(config_path))
+
+    overrides = {k: v for k, v in
+                 {"where": where, "directory": out, "incremental": incremental}.items()
+                 if v is not None}
+    if overrides:
+        config = dataclasses.replace(config, **overrides)
+
+    gis = agol_from_profile(profile)
     summary = harvest_fn(gis, config)
     click.echo(
         f"Downloaded: {summary.downloaded}  "
@@ -30,8 +43,7 @@ def autogis():
 @click.option("--out", default=None)
 @click.option("--incremental/--no-incremental", default=None)
 def harvest_cmd(config_path, where, out, incremental):
-    run(config_path, where, out, incremental,
-        gis_builder=build_gis_from_env, harvest_fn=harvest, load_fn=load_config)
+    run(config_path, where, out, incremental)
 
 
 @autogis.group("envmon")
