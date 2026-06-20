@@ -26,6 +26,16 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
   pip install --quiet "tokenizers==0.22.2"
 } 1>&2
 
+# --- codebase-memory-mcp binary (see docs/codebase-memory-mcp.md to uninstall) ---
+CBM_BIN="/usr/local/bin/codebase-memory-mcp"
+if [ ! -x "$CBM_BIN" ]; then
+  curl -fsSL "https://github.com/DeusData/codebase-memory-mcp/releases/latest/download/codebase-memory-mcp-linux-amd64-portable.tar.gz" \
+    -o /tmp/cbm.tar.gz 2>&1
+  tar -xzf /tmp/cbm.tar.gz -C /usr/local/bin codebase-memory-mcp 2>&1
+  chmod +x "$CBM_BIN"
+  rm /tmp/cbm.tar.gz
+fi
+
 # --- keep headroom runtime artifacts OUT of the repo ---
 mkdir -p "$HOME/.headroom"
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
