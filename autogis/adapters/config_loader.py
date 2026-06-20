@@ -1,5 +1,5 @@
 import yaml
-from autogis.core.models import HarvestConfig
+from autogis.core.harvest.models import HarvestConfig
 
 _OVERRIDE_KEYS = ("where", "directory", "incremental")
 
