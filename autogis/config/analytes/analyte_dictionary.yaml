@@ -1,0 +1,402 @@
+# ============================================================================
+# ANALYTE DICTIONARY
+# ============================================================================
+# canonical_name is the storage key. aliases are matched case/whitespace/
+# punctuation-insensitively by normalize_analyte_name(). default_screening_level
+# values are deliberately null where no defensible source was available —
+# screening levels are read from the workbook screening row first, then from
+# config/screening_levels/. DO NOT invent regulatory numbers here.
+
+analytes:
+  Benzene:
+    aliases: [benzene, "B"]
+    abbreviation: B
+    analytical_group: VPH_VOC
+    method_group: "8260/VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 10
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  Toluene:
+    aliases: [toluene, "T"]
+    abbreviation: T
+    analytical_group: VPH_VOC
+    method_group: "8260/VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 20
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  Ethylbenzene:
+    aliases: [ethylbenzene, ethyl benzene, "E"]
+    abbreviation: E
+    analytical_group: VPH_VOC
+    method_group: "8260/VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 30
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  Xylenes:
+    aliases: [xylenes, total xylenes, xylenes (total), "X", m+p-xylene & o-xylene]
+    abbreviation: X
+    analytical_group: VPH_VOC
+    method_group: "8260/VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 40
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  Naphthalene:
+    aliases: [naphthalene, "N"]
+    abbreviation: N
+    analytical_group: VPH_VOC
+    method_group: "8260/VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 50
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  TPH:
+    aliases: [tph, total petroleum hydrocarbons, total purgeable hydrocarbons,
+              tot. purgeable hydrocarbons]
+    abbreviation: TPH
+    analytical_group: PETROLEUM
+    method_group: "VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 60
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  MTBE:
+    aliases: [mtbe, methyl tert-butyl ether, methyl tertiary butyl ether]
+    abbreviation: MTBE
+    analytical_group: VPH_VOC
+    method_group: "8260"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 70
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  C5-C8 Aliphatics:
+    aliases: [c5-c8, c5-c8 aliphatics, c5 - c8 aliphatics, c5c8]
+    abbreviation: C5-C8
+    analytical_group: VPH
+    method_group: "VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 80
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  C9-C12 Aliphatics:
+    aliases: [c9-c12, c9-c12 aliphatics, c9 - c12 aliphatics]
+    abbreviation: C9-C12
+    analytical_group: VPH
+    method_group: "VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 90
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  C9-C10 Aromatics:
+    aliases: [c9-c10, c9-c10 aromatics, c9 - c10 aromatics]
+    abbreviation: C9-C10
+    analytical_group: VPH
+    method_group: "VPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 100
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  EDB:
+    aliases: [edb, 1,2-dibromoethane, ethylene dibromide]
+    abbreviation: EDB
+    analytical_group: VOC
+    method_group: "8011/8260"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 110
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  1,2-DCA:
+    aliases: ["1,2-dca", dca, "1,2-dichloroethane", "12dca"]
+    abbreviation: DCA
+    analytical_group: VOC
+    method_group: "8260"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 120
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  TEH:
+    aliases: [teh, total extractable hydrocarbons]
+    abbreviation: TEH
+    analytical_group: EPH
+    method_group: "EPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 130
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: true
+  C9-C18 Aliphatics:
+    aliases: [c9-c18, c9-c18 aliphatics]
+    abbreviation: C9-C18
+    analytical_group: EPH
+    method_group: "EPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 140
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  C19-C36 Aliphatics:
+    aliases: [c19-c36, c19-c36 aliphatics]
+    abbreviation: C19-C36
+    analytical_group: EPH
+    method_group: "EPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 150
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  C11-C22 Aromatics:
+    aliases: [c11-c22, c11-c22 aromatics]
+    abbreviation: C11-C22
+    analytical_group: EPH
+    method_group: "EPH"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "workbook RBSL row (primary)"
+    display_order: 160
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Arsenic:
+    aliases: [arsenic, as]
+    abbreviation: As
+    analytical_group: METALS
+    method_group: "6010/6020"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 200
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Barium:
+    aliases: [barium, ba]
+    abbreviation: Ba
+    analytical_group: METALS
+    method_group: "6010/6020"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 210
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Cadmium:
+    aliases: [cadmium, cd]
+    abbreviation: Cd
+    analytical_group: METALS
+    method_group: "6010/6020"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 220
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Chromium:
+    aliases: [chromium, cr, total chromium]
+    abbreviation: Cr
+    analytical_group: METALS
+    method_group: "6010/6020"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 230
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Lead:
+    aliases: [lead, pb]
+    abbreviation: Pb
+    analytical_group: METALS
+    method_group: "6010/6020"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 240
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Mercury:
+    aliases: [mercury, hg]
+    abbreviation: Hg
+    analytical_group: METALS
+    method_group: "7470/7471"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 250
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Selenium:
+    aliases: [selenium, se]
+    abbreviation: Se
+    analytical_group: METALS
+    method_group: "6010/6020"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 260
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Silver:
+    aliases: [silver, ag]
+    abbreviation: Ag
+    analytical_group: METALS
+    method_group: "6010/6020"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 270
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Zinc:
+    aliases: [zinc, zn]
+    abbreviation: Zn
+    analytical_group: METALS
+    method_group: "6010/6020"
+    default_units_by_matrix: {GW: ug/L, SOIL: mg/kg}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL/DEQ-7"
+    display_order: 280
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Sulfate:
+    aliases: [sulfate, so4, sulfate as so4]
+    abbreviation: SO4
+    analytical_group: IBI
+    method_group: "300.0"
+    default_units_by_matrix: {GW: mg/L}
+    default_screening_level: null
+    screening_level_source: "_TODO secondary standard"
+    display_order: 300
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Nitrate+Nitrite as N:
+    aliases: [nitrate+nitrite as n, nitrate + nitrite, no3+no2, no3+no2 as n,
+              nitrate/nitrite]
+    abbreviation: NO3+NO2
+    analytical_group: IBI
+    method_group: "353.2"
+    default_units_by_matrix: {GW: mg/L}
+    default_screening_level: null
+    screening_level_source: "_TODO MCL"
+    display_order: 310
+    significant_figures: 2
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Iron:
+    aliases: [iron, fe, dissolved iron]
+    abbreviation: Fe
+    analytical_group: IBI
+    method_group: "6010"
+    default_units_by_matrix: {GW: mg/L}
+    default_screening_level: null
+    screening_level_source: "_TODO secondary standard"
+    display_order: 320
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Manganese:
+    aliases: [manganese, mn, dissolved manganese]
+    abbreviation: Mn
+    analytical_group: IBI
+    method_group: "6010"
+    default_units_by_matrix: {GW: mg/L}
+    default_screening_level: null
+    screening_level_source: "_TODO secondary standard"
+    display_order: 330
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false
+  Methane:
+    aliases: [methane, ch4, dissolved methane]
+    abbreviation: CH4
+    analytical_group: IBI
+    method_group: "RSK-175"
+    default_units_by_matrix: {GW: mg/L}
+    default_screening_level: null
+    screening_level_source: "n/a (attenuation indicator)"
+    display_order: 340
+    significant_figures: 3
+    nondetect_display_rule: "less_than_rl"
+    result_format_rule: "sig_figs"
+    include_in_default_figures: false

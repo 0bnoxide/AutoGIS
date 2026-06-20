@@ -1,0 +1,55 @@
+# Profile matching the SYNTHETIC test workbook (conftest.py), not the real
+# H281 file. Anchors here are authoritative for the tests only.
+profile_id: H281_TEST_SYNTHETIC
+workbook_type: quarterly_gw_monitoring_test
+date_system: "1900"
+formula_handling: use_cached_then_qa
+plausible_gwe_range_ft: [1900, 2400]
+sheets:
+  - sheet_name: "GW Table 2"
+    data_type: GW_ANALYTICAL_AND_WATER_LEVEL
+    title_rows: [1, 2, 3]
+    group_header_row: 5
+    analyte_header_row: 7
+    units_row: 8
+    screening_level_row: 9
+    data_start_row: 10
+    id_column: A
+    screen_interval_column: B
+    date_column: C
+    mpe_column: D
+    dtw_column: E
+    gwe_column: F
+    analyte_columns: {from: G, to: L}
+  - sheet_name: "Table 3"
+    data_type: IBI
+    title_rows: [1, 2]
+    analyte_header_row: 3
+    units_row: 4
+    data_start_row: 5
+    id_column: A
+    date_column: B
+    analyte_columns: {from: C, to: G}
+  - sheet_name: "Metals Table"
+    data_type: METALS
+    title_rows: [1]
+    analyte_header_row: 3
+    units_row: 4
+    data_start_row: 5
+    id_column: A
+    date_column: B
+    analyte_columns: {from: C, to: E}
+  - sheet_name: "RPD"
+    data_type: RPD
+    title_rows: [1]
+    data_start_row: 4
+    id_column: A
+    rpd_layout:
+      analyte_column: A
+      parent_column: B
+      duplicate_column: C
+      rpd_column: D
+      rl_column: E
+      parent_location_id: "MW-3"
+      duplicate_location_id: "MW-103"
+      event_date_cell: "B2"

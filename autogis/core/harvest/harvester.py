@@ -1,7 +1,7 @@
 import os
 import time
 
-from .models import AttachmentResult, RunSummary
+from .models import AttachmentResult, RunSummary, summary_counts
 from .manifest import Manifest
 from .templates import render_path_component
 from .download import download_one
@@ -52,7 +52,6 @@ def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):
         layer = resolve_layer(gis, config)
 
     where = _effective_where(config, layer)
-    summary = RunSummary()
     manifest = Manifest()
 
     result = layer.query(where=where, out_fields="*", return_geometry=False)
@@ -67,22 +66,24 @@ def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):
             dest = os.path.join(config.directory, group, fname)
 
             if config.skip_existing and os.path.exists(dest):
-                summary.record("skipped")
                 manifest.add(AttachmentResult(
-                    objectid, att_id, name, dest, size, "skipped"))
+                    objectid, att_id, name, dest, size, "skipped",
+                    disposition="skipped"))
                 continue
             try:
                 download_one(layer, objectid, att_id, dest,
                              config.retries, config.backoff_seconds, sleep=sleep)
-                summary.record("downloaded")
                 manifest.add(AttachmentResult(
-                    objectid, att_id, name, dest, size, "downloaded"))
+                    objectid, att_id, name, dest, size, "downloaded",
+                    disposition="downloaded"))
             except Exception as exc:  # resilience: never kill the run
-                summary.record("failed")
                 manifest.add(AttachmentResult(
-                    objectid, att_id, name, None, size, "failed", str(exc)))
+                    objectid, att_id, name, None, size, "failed", str(exc),
+                    disposition="failed"))
 
     manifest.write(config.directory)
+    counts = summary_counts(manifest.results)
+    summary = RunSummary.from_counts(counts)
     if config.incremental and summary.failed == 0:
         resolved_now = now_ms if now_ms is not None else int(time.time() * 1000)
         write_last_run(config.directory, resolved_now)

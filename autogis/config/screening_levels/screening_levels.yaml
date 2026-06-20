@@ -1,0 +1,54 @@
+# ============================================================================
+# SCREENING LEVELS — H281 Glasgow
+# ============================================================================
+# Values are deliberately null. The pipeline's PRIMARY screening-level source
+# is the workbook's own RBSL row (parsed per sheet, footnotes stripped with a
+# QA record). This file is the SECONDARY source, used only when a sheet has
+# no screening row. Populate it from the governing regulatory tables
+# (e.g. MDEQ RBSLs / DEQ-7) with a citation in `source` — the importer will
+# never invent a number, and figures flag results with no screening level
+# rather than guessing.
+#
+# Structure: screening_levels.<MATRIX>.<canonical analyte> -> {value, units,
+# source}. Matrix keys must match Env_AnalyticalResults.Matrix (GW, SOIL).
+
+screening_levels:
+  GW:
+    Benzene:            {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
+    Toluene:            {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
+    Ethylbenzene:       {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
+    Xylenes:            {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
+    Naphthalene:        {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
+    TPH:                {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
+    MTBE:               {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
+    C5-C8 Aliphatics:   {value: null, units: ug/L, source: "_TODO MDEQ VPH"}
+    C9-C12 Aliphatics:  {value: null, units: ug/L, source: "_TODO MDEQ VPH"}
+    C9-C10 Aromatics:   {value: null, units: ug/L, source: "_TODO MDEQ VPH"}
+    EDB:                {value: null, units: ug/L, source: "_TODO"}
+    1,2-DCA:            {value: null, units: ug/L, source: "_TODO"}
+    TEH:                {value: null, units: ug/L, source: "_TODO MDEQ EPH"}
+    C9-C18 Aliphatics:  {value: null, units: ug/L, source: "_TODO MDEQ EPH"}
+    C19-C36 Aliphatics: {value: null, units: ug/L, source: "_TODO MDEQ EPH"}
+    C11-C22 Aromatics:  {value: null, units: ug/L, source: "_TODO MDEQ EPH"}
+    Arsenic:            {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Barium:             {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Cadmium:            {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Chromium:           {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Lead:               {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Mercury:            {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Selenium:           {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Silver:             {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Zinc:               {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
+    Sulfate:            {value: null, units: mg/L, source: "_TODO secondary"}
+    Nitrate+Nitrite as N: {value: null, units: mg/L, source: "_TODO MCL"}
+    Iron:               {value: null, units: mg/L, source: "_TODO secondary"}
+    Manganese:          {value: null, units: mg/L, source: "_TODO secondary"}
+    Methane:            {value: null, units: mg/L, source: "n/a indicator"}
+  SOIL:
+    Benzene:            {value: null, units: mg/kg, source: "_TODO MDEQ RBSL"}
+    Toluene:            {value: null, units: mg/kg, source: "_TODO MDEQ RBSL"}
+    Ethylbenzene:       {value: null, units: mg/kg, source: "_TODO MDEQ RBSL"}
+    Xylenes:            {value: null, units: mg/kg, source: "_TODO MDEQ RBSL"}
+    Naphthalene:        {value: null, units: mg/kg, source: "_TODO MDEQ RBSL"}
+    TPH:                {value: null, units: mg/kg, source: "_TODO MDEQ RBSL"}
+    TEH:                {value: null, units: mg/kg, source: "_TODO MDEQ EPH"}

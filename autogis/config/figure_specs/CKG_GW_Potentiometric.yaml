@@ -1,0 +1,40 @@
+# Figure spec — CKG-style potentiometric surface map (DRAFT contours)
+figure_spec_id: CKG_GW_Potentiometric
+site_id: H281
+map_type: GW_POTENTIOMETRIC
+matrix: GW
+figure_number: "3"
+figure_title: "Potentiometric Surface Map (DRAFT contours)"
+layout_name: "GW Potentiometric Layout"     # _TODO match template APRX
+template_aprx: "../../templates/aprx/H281_Glasgow_Template.aprx"
+reference_scale: 1200
+output_filename_pattern: "{site_id}_Fig{figure_number}_Potentiometric_{event_date}"
+
+# GWE labels next to each well rather than analytical callouts
+analyte_sets: {gwe_only: [Benzene]}   # placeholder; callouts not used here
+default_analyte_set: gwe_only
+sample_selection_rule: latest_per_location
+duplicate_handling_rule: prefer_parent
+callout_template: {template_id: COMPACT_KV, base_font_points: 6,
+                   standoff_points: 14, point_buffer_points: 8}
+generate_callouts: false               # potentiometric figure: labels only
+
+contours:
+  method: TIN
+  interval_ft: 1.0
+  min_valid_points: 3
+
+extent_boundary_layer: SiteBoundary
+extent_buffer_pct: 5
+required_layers: [MonitoringWells, Env_GWContours_Draft]
+visible_layers: [MonitoringWells, SiteBoundary, Env_GWContours_Draft,
+                 Env_GWFlowArrow_Draft, Env_GWContourPoints]
+hidden_layers: [Env_CalloutBoxes, Env_CalloutGridLines,
+                Env_CalloutLeaderLines, Env_CalloutCellAnchors, SoilBorings]
+layer_definition_queries:
+  Env_GWContours_Draft: "SiteID = '{site_id}'"
+  Env_GWFlowArrow_Draft: "SiteID = '{site_id}'"
+layout_text:
+  FigureTitle: "Potentiometric Surface Map"
+  FigureNumber: "Figure 3"
+  DraftNote: "CONTOURS ARE DRAFT — PROFESSIONAL REVIEW REQUIRED"

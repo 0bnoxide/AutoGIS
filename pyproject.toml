@@ -2,14 +2,16 @@
 name = "autogis"
 version = "0.1.0"
 description = "Automation tools for ArcGIS Pro and ArcGIS Online / Survey123"
-requires-python = ">=3.9"
-dependencies = ["arcgis", "PyYAML", "click"]
+requires-python = ">=3.10"
+dependencies = ["PyYAML", "click", "openpyxl"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+cloud = ["arcgis"]
 
 [project.scripts]
-autogis-harvest = "autogis.adapters.cli:main"
+autogis = "autogis.adapters.cli:autogis"
+autogis-harvest = "autogis.adapters.cli:autogis"
 
 [build-system]
 requires = ["setuptools>=61"]

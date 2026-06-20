@@ -1,0 +1,45 @@
+# Figure spec — ZT42-style groundwater quality map (VPH/EPH grouped callouts)
+figure_spec_id: ZT42_GW_Quality
+site_id: H281
+map_type: GW_ANALYTICAL
+matrix: GW
+figure_number: "5"
+figure_title: "Groundwater Quality"
+layout_name: "GW Quality Layout"            # _TODO match template APRX
+template_aprx: "../../templates/aprx/H281_Glasgow_Template.aprx"
+reference_scale: 1200
+output_filename_pattern: "{site_id}_Fig{figure_number}_GW_Quality_{event_date}"
+
+analyte_sets:
+  vph_eph: [Benzene, Toluene, Ethylbenzene, Xylenes, Naphthalene, TPH,
+            C5-C8 Aliphatics, C9-C12 Aliphatics, C9-C10 Aromatics,
+            TEH, C9-C18 Aliphatics, C19-C36 Aliphatics, C11-C22 Aromatics]
+default_analyte_set: vph_eph
+sample_selection_rule: latest_per_location
+duplicate_handling_rule: prefer_parent
+
+callout_template:
+  template_id: ZT42_GW
+  base_font_points: 5.5
+  standoff_points: 22
+  point_buffer_points: 10
+  groups:
+    - {header: "VPH (ug/L)",
+       analytes: [Benzene, Toluene, Ethylbenzene, Xylenes, Naphthalene, TPH,
+                  C5-C8 Aliphatics, C9-C12 Aliphatics, C9-C10 Aromatics]}
+    - {header: "EPH (ug/L)",
+       analytes: [TEH, C9-C18 Aliphatics, C19-C36 Aliphatics,
+                  C11-C22 Aromatics]}
+
+extent_boundary_layer: SiteBoundary
+extent_buffer_pct: 5
+required_layers: [MonitoringWells, Env_CalloutBoxes]
+visible_layers: [MonitoringWells, SiteBoundary, Env_CalloutBoxes,
+                 Env_CalloutGridLines, Env_CalloutLeaderLines,
+                 Env_CalloutCellAnchors]
+hidden_layers: [SoilBorings, Env_GWContours_Draft, Env_GWFlowArrow_Draft]
+layer_definition_queries:
+  Env_CalloutBoxes: "SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
+layout_text:
+  FigureTitle: "Groundwater Quality"
+  FigureNumber: "Figure 5"

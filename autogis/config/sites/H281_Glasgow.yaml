@@ -1,0 +1,38 @@
+# Site configuration — H281 Glasgow
+# All site-specific values live HERE, never hardcoded in src/.
+# _TODO items must be completed before production use.
+
+site_id: H281
+site_name: "H281 Glasgow"
+project_number: "H281"
+address: "_TODO street address"
+city: "Glasgow"
+state: "_TODO (MT assumed from MDEQ RBSL reference — VERIFY)"
+coordinate_system: "_TODO e.g. NAD 1983 StatePlane Montana FIPS 2500 (US Feet)"
+map_units: feet               # feet | meters — must match coordinate_system
+
+# Default data locations (relative paths resolve against this file)
+default_gdb: "../../templates/gdb/H281_Glasgow.gdb"
+default_aprx_template: "../../templates/aprx/H281_Glasgow_Template.aprx"
+
+# Names of the pre-existing site feature classes inside the GDB
+monitoring_wells_fc: MonitoringWells
+soil_borings_fc: SoilBorings
+site_boundary_fc: SiteBoundary
+
+# Text placed on layouts unless a figure spec overrides it.
+# Keys must match layout TEXT element names or {{placeholders}}.
+default_layout_text:
+  SiteName: "H281 Glasgow"
+  SiteAddress: "_TODO street address, Glasgow"
+  ProjectNumber: "H281"
+  PreparedBy: "_TODO"
+  AnalyticalKey: >-
+    All results in ug/L unless noted. Bold red = exceeds screening level.
+    "<x.x" = not detected at reporting limit shown. J = estimated.
+    D = diluted. NM = not measured. NS = not sampled. NA = not analyzed.
+  Notes: "_TODO standard figure notes"
+
+# Plausibility window for groundwater elevations (ft AMSL); rows outside
+# this range are excluded from contouring with a QA ERROR.
+plausible_gwe_range_ft: [1900, 2400]   # _TODO verify for the Glasgow site

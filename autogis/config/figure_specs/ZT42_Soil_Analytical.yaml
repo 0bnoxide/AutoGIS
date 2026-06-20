@@ -1,0 +1,43 @@
+# Figure spec — ZT42-style soil analytical map (grouped callout tables)
+figure_spec_id: ZT42_Soil_Analytical
+site_id: H281
+map_type: SOIL_ANALYTICAL
+matrix: SOIL
+figure_number: "4"
+figure_title: "Soil Analytical Results"
+layout_name: "Soil Analytical Layout"       # _TODO match template APRX
+template_aprx: "../../templates/aprx/H281_Glasgow_Template.aprx"
+reference_scale: 1200
+output_filename_pattern: "{site_id}_Fig{figure_number}_Soil_{event_date}"
+
+analyte_sets:
+  soil_petroleum: [Benzene, Toluene, Ethylbenzene, Xylenes, Naphthalene,
+                   TPH, TEH]
+default_analyte_set: soil_petroleum
+sample_selection_rule: latest_per_location
+duplicate_handling_rule: prefer_parent
+depth_rule: all_depths              # every interval gets its own callout
+
+callout_template:
+  template_id: ZT42_SOIL
+  base_font_points: 5.5
+  standoff_points: 20
+  point_buffer_points: 10
+  groups:
+    - {header: "VPH (mg/kg)",
+       analytes: [Benzene, Toluene, Ethylbenzene, Xylenes, Naphthalene, TPH]}
+    - {header: "EPH (mg/kg)", analytes: [TEH]}
+
+extent_boundary_layer: SiteBoundary
+extent_buffer_pct: 5
+required_layers: [SoilBorings, Env_CalloutBoxes]
+visible_layers: [SoilBorings, SiteBoundary, Env_CalloutBoxes,
+                 Env_CalloutGridLines, Env_CalloutLeaderLines,
+                 Env_CalloutCellAnchors]
+hidden_layers: [MonitoringWells, Env_GWContours_Draft, Env_GWFlowArrow_Draft]
+layer_definition_queries:
+  Env_CalloutBoxes: "SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
+  Env_CalloutCellAnchors: "SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
+layout_text:
+  FigureTitle: "Soil Analytical Results"
+  FigureNumber: "Figure 4"
