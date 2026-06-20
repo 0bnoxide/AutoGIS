@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 import pytest
 
-from result_parser import parse_excel_date, parse_result_value
+from autogis.core.envmon.result_parser import parse_excel_date, parse_result_value
 
 
 @pytest.mark.parametrize("raw,expect", [

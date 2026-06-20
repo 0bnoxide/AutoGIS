@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from callout_geometry import quadrant_offsets, QUADRANT_ORDER_DEFAULT
+from .callout_geometry import quadrant_offsets, QUADRANT_ORDER_DEFAULT
 
 Rect = Tuple[float, float, float, float]  # xmin, ymin, xmax, ymax
 

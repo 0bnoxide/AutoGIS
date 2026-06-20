@@ -16,9 +16,9 @@ import re
 from collections import defaultdict
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from logging_utils import get_logger
-from qa_checks import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
-from envmon_config import FigureSpec
+from ..common.logging import get_logger
+from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
+from ..common.config import FigureSpec
 
 LOG = get_logger(__name__)
 

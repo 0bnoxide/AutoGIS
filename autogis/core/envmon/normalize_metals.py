@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from envmon_config import ParserProfile
-from excel_profile_reader import ProfileWorkbookReader
-from gdb_schema import AnalyticalResultRecord, SampleRecord
-from qa_checks import QACollector
-from table_normalizer import normalize_matrix_table
+from ..common.config import ParserProfile
+from .excel_profile_reader import ProfileWorkbookReader
+from .gdb_schema import AnalyticalResultRecord, SampleRecord
+from ..common.qa import QACollector
+from .table_normalizer import normalize_matrix_table
 
 
 def normalize_metals_table(workbook_path, profile: ParserProfile,

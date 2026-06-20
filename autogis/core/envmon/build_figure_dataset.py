@@ -14,14 +14,14 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from logging_utils import get_logger
-from qa_checks import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
-from callout_templates import build_callout_rows
-from callout_geometry import (
+from ..common.logging import get_logger
+from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
+from .callout_templates import build_callout_rows
+from .callout_geometry import (
     build_callout_geometry, compute_box_size, leader_attachment,
     map_units_per_point, quadrant_offsets, QUADRANT_ORDER_DEFAULT,
 )
-from callout_collision import (
+from .callout_collision import (
     CalloutRequest, place_callouts, PM_AUTO_COLLISION_WARNING,
 )
 

@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from envmon_config import ParserProfile, SheetProfile
-from excel_profile_reader import ProfileWorkbookReader
-from gdb_schema import (AnalyticalResultRecord, SampleRecord,
+from ..common.config import ParserProfile, SheetProfile
+from .excel_profile_reader import ProfileWorkbookReader
+from .gdb_schema import (AnalyticalResultRecord, SampleRecord,
                         WaterLevelRecord)
-from qa_checks import QACollector, SEV_ERROR, SEV_WARNING
-from result_parser import parse_excel_date, parse_result_value
-from table_normalizer import normalize_matrix_table
+from ..common.qa import QACollector, SEV_ERROR, SEV_WARNING
+from .result_parser import parse_excel_date, parse_result_value
+from .table_normalizer import normalize_matrix_table
 
 # DTW/GWE arithmetic mismatch tolerance, ft. Larger than rounding noise,
 # smaller than any plausible transcription error.

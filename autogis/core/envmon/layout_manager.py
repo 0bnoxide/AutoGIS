@@ -12,8 +12,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
-from logging_utils import get_logger
-from qa_checks import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
+from ..common.logging import get_logger
+from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
 
 LOG = get_logger(__name__)
 

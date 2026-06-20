@@ -4,6 +4,17 @@ All site-, workbook-, analyte- and figure-specific behaviour lives in YAML or
 JSON files under config/ (spec: General rules). YAML requires PyYAML, which
 ships with the default ArcGIS Pro conda environment; JSON is always supported
 as a fallback so the pipeline never hard-depends on PyYAML.
+
+This module is the canonical home of the suite's config dataclasses. It keeps
+envmon's TWO config styles (deltas C5): field-typed ``SheetProfile`` /
+``ParserProfile`` and dict-backed ``__getattr__`` wrappers ``SiteConfig`` /
+``FigureSpec``. ``HarvestConfig`` (the harvester job config) is re-expressed
+field-typed here and re-exported from ``core/harvest/models.py`` for
+back-compat.
+
+Note: ``load_config`` here is envmon's flat YAML+JSON loader — a different
+function from ``autogis/adapters/config_loader.py:load_config`` (the harness
+tuple-returning loader). They live in different modules; no conflict.
 """
 from __future__ import annotations
 
@@ -256,3 +267,76 @@ class FigureSpec:
             names,
             key=lambda n: analyte_dictionary.get(n, {}).get("display_order", 9999))
         return ordered
+
+
+# ---------------------------------------------------------------------------
+# Harvest configuration (field-typed; canonical home — deltas H1/C5)
+# ---------------------------------------------------------------------------
+VALID_STATUSES = ("downloaded", "skipped", "failed")
+
+
+@dataclass
+class HarvestConfig:
+    """Attachment-harvest job config.
+
+    The ``url``-XOR-``item_id`` invariant is validated at construction in
+    ``.load`` (the single validation source per MERGE_PLAN §2). Direct
+    construction stays permissive so ``layer_ref()`` can raise lazily — this
+    preserves the harness's existing semantics/tests.
+    """
+    directory: str
+    group_template: str
+    filename_template: str
+    item_id: str | None = None
+    url: str | None = None
+    where: str = "1=1"
+    incremental: bool = False
+    skip_existing: bool = True
+    retries: int = 3
+    backoff_seconds: float = 2
+
+    def layer_ref(self) -> str:
+        if self.url:
+            return self.url
+        if self.item_id:
+            return self.item_id
+        raise ValueError("HarvestConfig requires either url or item_id")
+
+    @classmethod
+    def load(cls, path: Path) -> "HarvestConfig":
+        """Load a harvest job config from nested YAML/JSON.
+
+        Flattens the ``connection``/``layer``/``output``/``options`` sections
+        into the field-typed dataclass and validates the url-XOR-item_id
+        invariant on the dataclass. Returns ONLY the config — ``connection.
+        profile`` is a session concern owned by ``runtime/sessions.py`` and the
+        CLI override whitelist is an adapter concern (deltas H1).
+        """
+        data = load_config(path)
+        layer = data.get("layer") or {}
+        output = data.get("output") or {}
+        options = data.get("options") or {}
+
+        _require(output, ["directory", "group_template", "filename_template"],
+                 f"harvest config {path} output")
+
+        item_id = layer.get("item_id")
+        url = layer.get("url")
+        if bool(item_id) == bool(url):
+            raise ConfigError(
+                f"harvest config {path}: layer must set exactly one of "
+                f"'url' or 'item_id'")
+
+        where = layer.get("where")
+        return cls(
+            directory=output["directory"],
+            group_template=output["group_template"],
+            filename_template=output["filename_template"],
+            item_id=item_id,
+            url=url,
+            where=where if where is not None else "1=1",
+            incremental=options.get("incremental", False),
+            skip_existing=options.get("skip_existing", True),
+            retries=options.get("retries", 3),
+            backoff_seconds=options.get("backoff_seconds", 2),
+        )

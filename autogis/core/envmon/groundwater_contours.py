@@ -17,8 +17,8 @@ import statistics
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from logging_utils import get_logger
-from qa_checks import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
+from ..common.logging import get_logger
+from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 
 LOG = get_logger(__name__)
 

@@ -2,18 +2,18 @@
 
 import pytest
 
-from excel_workbook_inspector import (inspect_workbook_structure,
+from autogis.core.envmon.excel_workbook_inspector import (inspect_workbook_structure,
                                       propose_parser_profile)
-from build_current_event import (apply_depth_rule, apply_duplicate_rule,
+from autogis.core.envmon.build_current_event import (apply_depth_rule, apply_duplicate_rule,
                                  build_wide_rows, sanitize_field_name,
                                  select_samples)
-from callout_templates import build_callout_rows
-from callout_geometry import (build_callout_geometry, compute_box_size,
+from autogis.core.envmon.callout_templates import build_callout_rows
+from autogis.core.envmon.callout_geometry import (build_callout_geometry, compute_box_size,
                               map_units_per_point)
-from callout_collision import (CalloutRequest, detect_callout_collisions,
+from autogis.core.envmon.callout_collision import (CalloutRequest, detect_callout_collisions,
                                place_callouts, PM_AUTO_COLLISION_WARNING,
                                PM_AUTO_NO_COLLISION, PM_OVERRIDE_LOCKED)
-from envmon_config import FigureSpec
+from autogis.core.common.config import FigureSpec
 
 
 # ---------------------------------------------------------------- inspector
@@ -201,7 +201,7 @@ def test_all_candidates_collide_warns_not_drops():
 
 
 def test_collision_detection_function():
-    from callout_collision import PlacementResult
+    from autogis.core.envmon.callout_collision import PlacementResult
     placed = [
         PlacementResult(callout_id=k, location_id=k, origin=(x0, y0),
                         rect=(x0, y0, x1, y1), quadrant="NE",
@@ -222,7 +222,7 @@ def test_collision_detection_function():
 
 # ------------------------------------------------- assemble integration
 def test_assemble_callouts_with_override_and_missing_point(qa, adict):
-    from build_figure_dataset import assemble_callouts
+    from autogis.core.envmon.build_figure_dataset import assemble_callouts
     wide = [
         {"LocationID": "MW-1", "SampleID": "S1", "SampleDate": "2026-04-15",
          "DepthIntervalText": "", "results": _record("MW-1")["results"]},

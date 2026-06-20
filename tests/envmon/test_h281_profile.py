@@ -3,11 +3,11 @@ code path the import tool uses (minus arcpy)."""
 
 import pytest
 
-from excel_profile_reader import ProfileWorkbookReader
-from normalize_groundwater import normalize_gw_table_2
-from normalize_metals import normalize_metals_table
-from normalize_ibi import normalize_ibi_table
-from normalize_rpd import normalize_rpd_table
+from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
+from autogis.core.envmon.normalize_groundwater import normalize_gw_table_2
+from autogis.core.envmon.normalize_metals import normalize_metals_table
+from autogis.core.envmon.normalize_ibi import normalize_ibi_table
+from autogis.core.envmon.normalize_rpd import normalize_rpd_table
 
 BATCH = "TESTBATCH"
 

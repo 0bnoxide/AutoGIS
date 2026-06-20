@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from typing import List
 
-from envmon_config import ParserProfile, col_index
-from excel_profile_reader import ProfileWorkbookReader
-from gdb_schema import RPDRecord
-from qa_checks import QACollector, SEV_WARNING
-from result_parser import parse_excel_date, parse_result_value
+from ..common.config import ParserProfile, col_index
+from .excel_profile_reader import ProfileWorkbookReader
+from .gdb_schema import RPDRecord
+from ..common.qa import QACollector, SEV_WARNING
+from .result_parser import parse_excel_date, parse_result_value
 
 _RPD_TOLERANCE_PCT = 0.5
 

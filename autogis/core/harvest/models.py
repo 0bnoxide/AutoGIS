@@ -1,27 +1,10 @@
 from dataclasses import dataclass
 
+# HarvestConfig is canonically defined in core/common/config.py (the shared
+# substrate). Re-exported here so existing import paths keep working.
+from autogis.core.common.config import HarvestConfig  # noqa: F401
+
 VALID_STATUSES = ("downloaded", "skipped", "failed")
-
-
-@dataclass
-class HarvestConfig:
-    directory: str
-    group_template: str
-    filename_template: str
-    item_id: str | None = None
-    url: str | None = None
-    where: str = "1=1"
-    incremental: bool = False
-    skip_existing: bool = True
-    retries: int = 3
-    backoff_seconds: float = 2
-
-    def layer_ref(self) -> str:
-        if self.url:
-            return self.url
-        if self.item_id:
-            return self.item_id
-        raise ValueError("HarvestConfig requires either url or item_id")
 
 
 @dataclass

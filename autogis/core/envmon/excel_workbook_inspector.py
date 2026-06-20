@@ -16,8 +16,8 @@ from typing import List, Optional
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-from qa_checks import QACollector, SEV_WARNING
-from result_parser import FORMULA_ERRORS, STATUS_CODES
+from ..common.qa import QACollector, SEV_WARNING
+from .result_parser import FORMULA_ERRORS, STATUS_CODES
 
 _UNIT_PAT = re.compile(r"(ug/l|µg/l|mg/l|mg/kg|ug/kg|µg/kg|ppm|ppb|ft|feet|%)",
                        re.IGNORECASE)

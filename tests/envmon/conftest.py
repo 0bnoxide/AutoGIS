@@ -8,17 +8,14 @@ by the tests, so these tests validate the engine, not the production
 parser profile (which stays DRAFT until run against the real workbook).
 """
 
-import sys
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parent.parent / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+import autogis
 
-CONFIG = Path(__file__).resolve().parent.parent / "config"
+CONFIG = Path(autogis.__file__).resolve().parent / "config"
 DATA = Path(__file__).resolve().parent / "data"
 
 EVENT = datetime(2026, 4, 15)
@@ -119,25 +116,25 @@ def workbook(tmp_path_factory) -> Path:
 
 @pytest.fixture(scope="session")
 def profile():
-    from envmon_config import ParserProfile
+    from autogis.core.common.config import ParserProfile
     return ParserProfile.load(DATA / "H281_test_profile.yaml")
 
 
 @pytest.fixture(scope="session")
 def adict():
-    from envmon_config import load_analyte_dictionary
+    from autogis.core.common.config import load_analyte_dictionary
     return load_analyte_dictionary(
         CONFIG / "analytes" / "analyte_dictionary.yaml")
 
 
 @pytest.fixture(scope="session")
 def slevels():
-    from envmon_config import load_screening_levels
+    from autogis.core.common.config import load_screening_levels
     return load_screening_levels(
         CONFIG / "screening_levels" / "screening_levels.yaml")
 
 
 @pytest.fixture()
 def qa():
-    from qa_checks import QACollector
+    from autogis.core.common.qa import QACollector
     return QACollector()

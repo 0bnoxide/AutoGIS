@@ -15,8 +15,8 @@ from typing import Iterator, List, Optional
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-from envmon_config import ParserProfile, SheetProfile
-from qa_checks import QACollector, SEV_ERROR, SEV_CRITICAL
+from ..common.config import ParserProfile, SheetProfile
+from ..common.qa import QACollector, SEV_ERROR, SEV_CRITICAL
 
 
 @dataclass

@@ -18,9 +18,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from logging_utils import get_logger
-from qa_checks import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
-from gdb_schema import TABLE_SCHEMAS, FEATURE_SCHEMAS, UNIQUE_KEYS
+from ..common.logging import get_logger
+from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
+from .gdb_schema import TABLE_SCHEMAS, FEATURE_SCHEMAS, UNIQUE_KEYS
 
 LOG = get_logger(__name__)
 

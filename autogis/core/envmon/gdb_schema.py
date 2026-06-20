@@ -249,7 +249,7 @@ def create_or_update_gdb_schema(gdb_path, spatial_reference=None,
     """
     import arcpy
     from pathlib import Path as _P
-    from qa_checks import QACollector, SEV_ERROR
+    from ..common.qa import QACollector, SEV_ERROR
     qa = qa or QACollector()
     gdb_path = _P(gdb_path)
     if not gdb_path.exists():
