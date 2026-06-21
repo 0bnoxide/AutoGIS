@@ -19,7 +19,7 @@ import arcpy
 from autogis.adapters import toolbox_core
 from autogis.core.common.config import (
     ParserProfile, SiteConfig, load_config, load_analyte_dictionary,
-    load_screening_levels, FigureSpec, ConfigError,
+    FigureSpec,
 )
 from autogis.core.common.qa import QACollector
 
