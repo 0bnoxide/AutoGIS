@@ -1,5 +1,10 @@
 Query the codebase-memory indexed graph before falling back to manual search.
 
+> Local-only: the codebase-memory MCP server is no longer wired into the repo
+> (see `docs/codebase-memory-mcp.md`). These `mcp__codebase-memory-mcp__*` tools
+> exist only if you've installed the server at user scope on your machine. If
+> they're unavailable (e.g. web/cloud sessions), use Grep / Glob / Read instead.
+
 ## Steps
 
 1. **Check index freshness** — call `mcp__codebase-memory-mcp__index_status`. If the
