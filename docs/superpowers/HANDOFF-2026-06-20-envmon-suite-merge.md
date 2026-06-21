@@ -46,22 +46,17 @@ verified ground truth.
 
 ## Next actions
 
-### A. Functional gaps (address before relying on the suite)
+### A. Functional gaps
 
-1. **Surface harvester per-record results to the GUI.** `toolbox_core.run_harvest()`
-   reads results off `RunSummary`, which carries only counts — so the `.pyt`
-   `HarvestAttachments` tool reports 0 processed. Fix by having `harvest()` return
-   (or attach) the `Manifest`/results list, then update `run_harvest` to use it.
-   File: `autogis/core/harvest/harvester.py`, `autogis/adapters/toolbox_core.py`.
-2. **Finish the H1 CLI rewiring (deferred from Task 4/5).** `adapters/config_loader.py`
-   still returns the legacy `(HarvestConfig, profile)` tuple and applies the
-   override whitelist. Per deltas H1, profile should be sourced from
-   `runtime/sessions.agol_from_profile` and overrides applied in the CLI adapter
-   around `HarvestConfig.load(path)`. Migrate `cli.py harvest` + `test_config_loader.py`
-   to the single-object loader; retire the tuple shim.
-3. **Reword / decide CLI 2–8 behavior.** Currently a `ClickException`. Confirm the
-   "Pro-toolbox-only" stance is final, and make the message say so explicitly
-   (it currently reads "not yet exposed headless," which implies unfinished work).
+1. ✅ **Surface harvester per-record results to the GUI.** Done — `harvest()` sets
+   `summary.results = list(manifest.results)`; `toolbox_core.run_harvest()` returns
+   that list. Commit `3470bee`.
+2. ✅ **Finish the H1 CLI rewiring.** Done — `adapters/config_loader.py` retired;
+   `cli.py harvest` uses `HarvestConfig.load()` + `agol_from_profile()` directly.
+   Commit `d61e6a6`.
+3. ✅ **Reword CLI 2–8 behavior.** Done — each command now says
+   `"<cmd> runs inside ArcGIS Pro only. Use the <ToolName> tool in the .pyt toolbox."`
+   Committed 2026-06-21.
 
 ### B. Manual verification in ArcGIS Pro (un-CI-able — owner: you)
 
@@ -96,9 +91,9 @@ verified ground truth.
 
 ### E. Repo hygiene
 
-10. **Add CI.** The arcpy-free suite (all 113 tests) is fully CI-able — add a
-    GitHub Actions workflow (or the `session-start-hook`) running `pytest -q` so
-    regressions are caught. Tools 2–8's pure logic is already covered.
-11. **Delete the merged branch** `merge/envmon-suite` once you're satisfied.
-12. **Minor:** `load_screening_levels`/`ConfigError` are imported in `toolbox.pyt`
-    but currently unused — drop if you wire a linter.
+10. **Add CI.** The arcpy-free suite (all 126 tests as of 2026-06-21) is fully
+    CI-able — add a GitHub Actions workflow running `python -m pytest -q` so
+    regressions are caught automatically.
+11. ✅ **Delete the merged branch** `merge/envmon-suite` — already gone.
+12. ✅ **Drop unused imports in `toolbox.pyt`.** `load_screening_levels` and
+    `ConfigError` removed. Committed 2026-06-21.
