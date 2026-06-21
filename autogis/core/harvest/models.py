@@ -1,4 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, List
+
+if TYPE_CHECKING:
+    pass
 
 # HarvestConfig is canonically defined in core/common/config.py (the shared
 # substrate). Re-exported here so existing import paths keep working.
@@ -43,6 +47,7 @@ class RunSummary:
     downloaded: int = 0
     skipped: int = 0
     failed: int = 0
+    results: List["AttachmentResult"] = field(default_factory=list)
 
     def record(self, status: str) -> None:
         if status not in VALID_STATUSES:

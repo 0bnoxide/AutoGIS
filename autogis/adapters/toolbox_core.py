@@ -60,9 +60,4 @@ def run_harvest(config: HarvestConfig, session) -> list[AttachmentResult]:
     from autogis.core.harvest.harvester import harvest
 
     summary = harvest(session, config)
-    # The harvester records per-attachment results on its manifest; surface
-    # them so the GUI renderer has something to report.
-    manifest = getattr(summary, "manifest", None)
-    if manifest is not None:
-        return list(getattr(manifest, "results", []))
-    return list(getattr(summary, "results", []))
+    return list(summary.results)

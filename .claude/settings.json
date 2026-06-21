@@ -1,4 +1,5 @@
 {
+  "enabledMcpjsonServers": ["codebase-memory-mcp"],
   "hooks": {
     "SessionStart": [
       {
