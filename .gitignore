@@ -9,7 +9,3 @@ harvest/
 # headroom runtime artifacts (defense-in-depth; relocated to $HOME by the hook)
 .headroom/
 headroom_memory.db
-
-# codebase-memory-mcp project-local artifacts
-.codebase-memory/
-.codebase-memory.json

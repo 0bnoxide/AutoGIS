@@ -3,39 +3,32 @@
 Provides a persistent memory graph of this codebase for Claude Code sessions.
 Source: https://github.com/DeusData/codebase-memory-mcp
 
-## How it works in this repo (Claude Code on the web)
+## Status: removed from the repo (local-only now)
 
-Each web session is an ephemeral container — the binary doesn't persist. The
-session-start hook (`/.claude/hooks/session-start.sh`) re-downloads the binary
-on cold starts; subsequent starts skip the download if the binary is already
-present.
+This server **used to** be wired into Claude Code on the web via `/.mcp.json`
+(server declaration) + `enabledMcpjsonServers` in `/.claude/settings.json`
+(trust) + a `session-start.sh` block that downloaded the binary and indexed the
+repo into `~/.cache/codebase-memory-mcp/`.
 
-The MCP server is declared in `/.mcp.json` and trusted via
-`enabledMcpjsonServers` in `/.claude/settings.json`.
+**That web wiring was removed.** Diagnosis: in cloud sessions the binary is
+provably healthy (instant stdio handshake, 14 tools advertised, `claude mcp list`
+→ Connected), but the harness will not auto-trust a server declared in the
+repo's own `.mcp.json`/`settings.json` (a committed file granting itself the
+right to run an arbitrary binary). Claude's resolved per-project state showed
+`enabledMcpjsonServers=[]` / `hasTrustDialogAccepted=False`, so its tools never
+registered into the agent — every web session silently fell back to Grep/Read.
+There is no `ENABLE_ALL_PROJECT_MCP_SERVERS` env var to force it, and the value
+of a *persistent* graph is wasted in an ephemeral container that re-indexes on
+every cold start. So the server now lives at **user scope on your own machine**,
+where trust is implicit and the graph persists across sessions.
 
-Memory databases live in `~/.cache/codebase-memory-mcp/` (outside the repo).
-The `.codebase-memory/` directory and `.codebase-memory.json` file are
-gitignored so project-local snapshots never land in version history.
+The local install below is the supported path.
 
 ---
 
-## Remove from this repo / switch to local install
+## Install locally on your machine (macOS/Linux)
 
-### Step 1 — Revert repo changes
-
-```bash
-# Remove the MCP declaration and .gitignore entries
-git revert --no-edit <commit-sha>   # commit that added .mcp.json + hook changes
-# — or apply manually:
-rm .mcp.json
-# In .claude/settings.json: remove the "enabledMcpjsonServers" line
-# In .claude/hooks/session-start.sh: remove the codebase-memory-mcp block
-# In .gitignore: remove the two .codebase-memory* lines
-git add -p && git commit -m "chore: remove codebase-memory-mcp from repo"
-git push
-```
-
-### Step 2 — Install locally on your machine (macOS/Linux)
+### Step 1 — Install the binary
 
 ```bash
 # Download the binary for your platform from:
@@ -47,7 +40,7 @@ chmod +x /usr/local/bin/codebase-memory-mcp
 codebase-memory-mcp --version   # verify
 ```
 
-### Step 3 — Wire it into your local Claude Code
+### Step 2 — Wire it into your local Claude Code
 
 Add to `~/.claude/settings.json` (create if it doesn't exist):
 
@@ -65,7 +58,7 @@ Add to `~/.claude/settings.json` (create if it doesn't exist):
 This is user-level config — it applies to all your local projects without
 touching any repo.
 
-### Step 4 — Clean up cached data (optional)
+### Step 3 — Clean up any leftover cached data (optional)
 
 ```bash
 rm -rf ~/.cache/codebase-memory-mcp/   # wipes all project indexes
