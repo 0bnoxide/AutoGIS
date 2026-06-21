@@ -117,7 +117,10 @@ def import_gdb_cmd(site_config, workbook):
     """Tool 2: import a workbook into the file geodatabase (ArcGIS Pro)."""
     _guard("import-gdb")
     from autogis.core.envmon import import_to_gdb  # noqa: F401  (arcpy path)
-    raise click.ClickException("import-gdb is not yet exposed headless.")
+    raise click.ClickException(
+        "import-gdb runs inside ArcGIS Pro only. Use the HarvestAttachments "
+        "tool in the .pyt toolbox."
+    )
 
 
 @envmon.command("build-event")
@@ -126,7 +129,10 @@ def build_event_cmd(site_config):
     """Tool 3: build the current-event feature data (ArcGIS Pro)."""
     _guard("build-event")
     from autogis.core.envmon import build_current_event  # noqa: F401
-    raise click.ClickException("build-event is not yet exposed headless.")
+    raise click.ClickException(
+        "build-event runs inside ArcGIS Pro only. Use the BuildCurrentEvent "
+        "tool in the .pyt toolbox."
+    )
 
 
 @envmon.command("build-callouts")
@@ -136,7 +142,10 @@ def build_callouts_cmd(site_config, figure_spec):
     """Tool 4: generate callout feature classes (ArcGIS Pro)."""
     _guard("build-callouts")
     from autogis.core.envmon import build_figure_dataset  # noqa: F401
-    raise click.ClickException("build-callouts is not yet exposed headless.")
+    raise click.ClickException(
+        "build-callouts runs inside ArcGIS Pro only. Use the BuildFigureDataset "
+        "tool in the .pyt toolbox."
+    )
 
 
 @envmon.command("gw-contours")
@@ -145,7 +154,10 @@ def gw_contours_cmd(site_config):
     """Tool 5: build groundwater contours (ArcGIS Pro)."""
     _guard("gw-contours")
     from autogis.core.envmon import groundwater_contours  # noqa: F401
-    raise click.ClickException("gw-contours is not yet exposed headless.")
+    raise click.ClickException(
+        "gw-contours runs inside ArcGIS Pro only. Use the GroundwaterContours "
+        "tool in the .pyt toolbox."
+    )
 
 
 @envmon.command("export-figures")
@@ -155,7 +167,10 @@ def export_figures_cmd(site_config, figure_spec):
     """Tool 6: export figure layouts (ArcGIS Pro)."""
     _guard("export-figures")
     from autogis.core.envmon import export_figures  # noqa: F401
-    raise click.ClickException("export-figures is not yet exposed headless.")
+    raise click.ClickException(
+        "export-figures runs inside ArcGIS Pro only. Use the ExportFigures "
+        "tool in the .pyt toolbox."
+    )
 
 
 @envmon.command("full-pipeline")
@@ -165,7 +180,10 @@ def full_pipeline_cmd(site_config, workbook):
     """Tool 7: run the full import-to-figures pipeline (ArcGIS Pro)."""
     _guard("full-pipeline")
     from autogis.core.envmon import import_to_gdb  # noqa: F401
-    raise click.ClickException("full-pipeline is not yet exposed headless.")
+    raise click.ClickException(
+        "full-pipeline runs inside ArcGIS Pro only. Use the FullPipeline "
+        "tool in the .pyt toolbox."
+    )
 
 
 @envmon.command("validate-db")
@@ -174,7 +192,10 @@ def validate_db_cmd(gdb):
     """Tool 8: validate the geodatabase schema/contents (ArcGIS Pro)."""
     _guard("validate-db")
     from autogis.core.envmon import validate_database  # noqa: F401
-    raise click.ClickException("validate-db is not yet exposed headless.")
+    raise click.ClickException(
+        "validate-db runs inside ArcGIS Pro only. Use the ValidateDatabase "
+        "tool in the .pyt toolbox."
+    )
 
 
 # Legacy single-command entry point kept as an alias.
