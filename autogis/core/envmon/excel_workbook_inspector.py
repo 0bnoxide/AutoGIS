@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import openpyxl
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 
 from ..common.qa import QACollector, SEV_WARNING
 from .result_parser import FORMULA_ERRORS, STATUS_CODES
@@ -54,6 +54,36 @@ def _classify_row(values: List) -> str:
     if len(non_blank) >= 3 and n_num == 0:
         return "header"
     return "text"
+
+
+def _guess_analyte_columns(info: dict) -> Optional[dict]:
+    """Return {from, to} column range for likely analyte columns.
+
+    Heuristic: analyte columns are all columns that are not already
+    claimed as id or date columns, from the first such column to max_col.
+    Returns None when the sheet has too few columns to make a guess.
+    """
+    max_col = info.get("max_col", 0)
+    if max_col < 2:
+        return None
+    special: set = set()
+    for letter in info.get("id_columns", []):
+        try:
+            special.add(column_index_from_string(letter))
+        except Exception:
+            pass
+    for letter in info.get("date_columns", []):
+        try:
+            special.add(column_index_from_string(letter))
+        except Exception:
+            pass
+    first_analyte = next(
+        (c for c in range(1, max_col + 1) if c not in special), None
+    )
+    if first_analyte is None:
+        return None
+    return {"from": get_column_letter(first_analyte),
+            "to": get_column_letter(max_col)}
 
 
 def inspect_workbook_structure(workbook_path: Path,
@@ -179,7 +209,7 @@ def propose_parser_profile(report: dict, profile_id: str = "DRAFT") -> dict:
             "data_start_row": info["data_start_row"] or 2,
             "id_column": info["id_columns"][0] if info["id_columns"] else "A",
             "date_column": info["date_columns"][0] if info["date_columns"] else None,
-            "analyte_columns": None,  # TODO: human must set the range
+            "analyte_columns": _guess_analyte_columns(info),
             "_TODO": "REVIEW EVERY ANCHOR — heuristic draft, not validated",
         })
     return {"profile_id": profile_id,
