@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "codebase-memory-mcp": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-codebase-memory"
+      ],
+      "env": {
+        "MCP_CODEBASE_MEMORY_INDEX_PATH": ".codebase-memory"
+      }
+    }
+  }
+}
