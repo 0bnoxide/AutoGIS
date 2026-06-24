@@ -105,6 +105,57 @@ def figure_spec_cmd(spec):
     click.echo(f"Figure spec '{fs.figure_spec_id}' loaded.")
 
 
+@envmon.command("validate-config")
+@click.argument("site_config", type=click.Path(exists=True))
+@click.option("--profile", "profiles", multiple=True, type=click.Path(exists=True),
+              help="Parser profile(s) to validate (repeatable).")
+@click.option("--figure", "figures", multiple=True, type=click.Path(exists=True),
+              help="Figure spec(s) to validate (repeatable).")
+@click.option("--analytes", default=None, type=click.Path(exists=True),
+              help="Analyte dictionary (default: none; cross-file checks skipped).")
+@click.option("--screening", default=None, type=click.Path(exists=True),
+              help="Screening levels file.")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write report to PATH (.md/.json/.csv by extension).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def validate_config_cmd(site_config, profiles, figures, analytes, screening,
+                        report, fail_on):
+    """Tool: validate a per-site config bundle (headless)."""
+    from autogis.core.envmon.validate_config import validate_env_config
+
+    qa = validate_env_config(
+        Path(site_config), [Path(p) for p in profiles],
+        [Path(f) for f in figures],
+        Path(analytes) if analytes else None,
+        Path(screening) if screening else None)
+    _render_qa(qa, report, fail_on)
+
+
+def _render_qa(qa, report, fail_on):
+    """Shared rendering + exit-code helper for headless QA-producing commands."""
+    for rec in sorted(qa.records,
+                      key=lambda r: {"CRITICAL": 0, "ERROR": 1, "WARNING": 2,
+                                     "INFO": 3}.get(r.severity, 4)):
+        click.echo(f"[{rec.severity}] {rec.category}: {rec.message}"
+                   + (f" -> {rec.recommended_action}"
+                      if rec.recommended_action else ""))
+    if report:
+        from pathlib import Path as _P
+        p = _P(report)
+        if p.suffix == ".json":
+            qa.write_json_summary(p)
+        elif p.suffix == ".csv":
+            qa.write_csv(p)
+        else:
+            qa.write_markdown(p)
+        click.echo(f"Wrote report: {p}")
+    allow_warnings = fail_on != "warning"
+    status = qa.status(allow_warnings=allow_warnings, allow_errors=False)
+    click.echo(f"Status: {status}")
+    if status == "FAIL":
+        raise SystemExit(1)
+
+
 # --------------------------------------------------------------------------
 # LOCAL tools (2-8) — registered but runtime-guarded. The core call is only
 # reached when arcpy is present (in ArcGIS Pro). No rich ergonomics here; the
