@@ -7,7 +7,7 @@ dependencies = ["PyYAML", "click", "openpyxl"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
-cloud = ["arcgis"]
+cloud = ["arcgis>=2.4,<3"]   # Pro 3.4+ / arcgis-dist.json unverified (Esri/arcpy restricted)
 
 [project.scripts]
 autogis = "autogis.adapters.cli:autogis"

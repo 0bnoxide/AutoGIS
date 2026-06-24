@@ -29,6 +29,23 @@ def test_inspector_profiles_every_sheet(workbook, qa):
         "draft profiles must demand human review"
 
 
+def test_propose_parser_profile_guesses_analyte_columns(workbook, qa):
+    report = inspect_workbook_structure(workbook, qa)
+    draft = propose_parser_profile(report, "DRAFT_TEST")
+    for sheet in draft["sheets"]:
+        cols = sheet["analyte_columns"]
+        assert cols is not None, (
+            f"sheet {sheet['sheet_name']!r}: analyte_columns should be a "
+            f"heuristic guess, not None"
+        )
+        assert "from" in cols and "to" in cols, (
+            f"analyte_columns must be a {{from, to}} dict, got {cols!r}"
+        )
+        assert cols["from"] <= cols["to"], (
+            f"from column must not be after to column: {cols!r}"
+        )
+
+
 # ---------------------------------------------------------------- rules
 def _row(loc, sid, dt, an, num, det=True, exc=False, dup=False,
          parent="", depth="", dtop=None):

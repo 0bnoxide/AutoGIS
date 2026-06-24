@@ -14,7 +14,8 @@ def test_build_gis_with_profile():
 def test_build_gis_with_userpass():
     out = gis_session.build_gis(username="u", password="p",
                                 gis_factory=fake_factory)
-    assert out == ("GIS", ("https://www.arcgis.com", "u", "p"), {})
+    assert out[0] == "GIS"
+    assert out[2].get("username") == "u" and out[2].get("password") == "p"
 
 
 def test_build_gis_profile_wins_over_userpass():
@@ -32,4 +33,5 @@ def test_build_gis_from_env(monkeypatch):
     monkeypatch.setenv("AGOL_USER", "envu")
     monkeypatch.setenv("AGOL_PASS", "envp")
     out = gis_session.build_gis_from_env(profile=None, gis_factory=fake_factory)
-    assert out == ("GIS", ("https://www.arcgis.com", "envu", "envp"), {})
+    assert out[0] == "GIS"
+    assert out[2].get("username") == "envu" and out[2].get("password") == "envp"

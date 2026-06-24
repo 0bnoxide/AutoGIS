@@ -198,6 +198,43 @@ def validate_db_cmd(gdb):
     )
 
 
+@autogis.group()
+def agol():
+    """AGOL / cloud tools."""
+
+
+@agol.command("publish-layer")
+@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@click.option("--title", required=True, help="Hosted service title")
+@click.option("--source", required=True, type=click.Path(exists=True),
+              help="Zip of FGDB or JSON FeatureSet to publish")
+@click.option("--tags", default="autogis", help="Comma-separated AGOL tags")
+@click.option("--folder", default=None, help="AGOL content folder (default: root)")
+@click.option("--share-with", default="org",
+              type=click.Choice(["private", "org", "everyone"]),
+              help="Sharing level after publish")
+@click.option("--no-overwrite", is_flag=True, default=False,
+              help="Fail if a service with this title already exists")
+def publish_layer(profile, title, source, tags, folder, share_with, no_overwrite):
+    """Publish or overwrite a hosted AGOL feature service."""
+    from autogis.core.agol.publish import PublishConfig, publish_or_overwrite_layer
+    from autogis.core.common.qa import QACollector
+    gis = agol_from_profile(profile)
+    cfg = PublishConfig(
+        title=title,
+        tags=[t.strip() for t in tags.split(",")],
+        folder=folder,
+        share_with=share_with,
+        overwrite=not no_overwrite,
+    )
+    qa = QACollector()
+    result = publish_or_overwrite_layer(gis, cfg, source, qa)
+    for rec in qa.records:
+        click.echo(f"[{rec.severity}] {rec.message}")
+    if result is None:
+        raise SystemExit(1)
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 
