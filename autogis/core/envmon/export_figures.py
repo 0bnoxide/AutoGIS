@@ -23,9 +23,7 @@ LOG = get_logger(__name__)
 FORMATS = ("PDF", "PNG", "TIFF", "JPEG")
 
 
-def _arcpy():
-    import arcpy
-    return arcpy
+from ...runtime.sessions import arcpy_env as _arcpy
 
 
 def preexport_qa(aprx_path: Path, required_layers: Sequence[str],

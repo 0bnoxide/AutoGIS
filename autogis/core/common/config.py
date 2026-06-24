@@ -86,6 +86,32 @@ class SiteConfig:
         _require(data, SITE_REQUIRED, f"site config {path}")
         return cls(data=data, path=Path(path))
 
+    # Typed accessors for SITE_REQUIRED fields — IDE-navigable, load-time validated.
+    @property
+    def site_id(self) -> str: return self.data["site_id"]
+    @property
+    def site_name(self) -> str: return self.data["site_name"]
+    @property
+    def project_number(self) -> str: return self.data["project_number"]
+    @property
+    def address(self) -> str: return self.data["address"]
+    @property
+    def city(self) -> str: return self.data["city"]
+    @property
+    def state(self) -> str: return self.data["state"]
+    @property
+    def coordinate_system(self) -> str: return self.data["coordinate_system"]
+    @property
+    def default_gdb(self) -> str: return self.data["default_gdb"]
+    @property
+    def default_aprx_template(self) -> str: return self.data["default_aprx_template"]
+    @property
+    def monitoring_wells_fc(self) -> str: return self.data["monitoring_wells_fc"]
+    @property
+    def soil_borings_fc(self) -> str: return self.data["soil_borings_fc"]
+    @property
+    def site_boundary_fc(self) -> str: return self.data["site_boundary_fc"]
+
     def __getattr__(self, item):
         try:
             return self.data[item]

@@ -77,8 +77,8 @@ def inspect_cmd(workbook, scan_rows):
     )
 
     report = inspect_workbook_structure(Path(workbook), scan_rows=scan_rows)
-    click.echo(f"Inspected {report['workbook']}: "
-               f"{len(report['sheets'])} sheet(s).")
+    click.echo(f"Inspected {report.workbook}: "
+               f"{len(report.sheets)} sheet(s).")
 
 
 @envmon.command("parser-profile")

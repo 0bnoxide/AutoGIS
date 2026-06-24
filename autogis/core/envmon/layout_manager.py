@@ -20,9 +20,7 @@ LOG = get_logger(__name__)
 PLACEHOLDER_RE = re.compile(r"\{\{([A-Za-z0-9_]+)\}\}")
 
 
-def _arcpy():
-    import arcpy
-    return arcpy
+from ...runtime.sessions import arcpy_env as _arcpy
 
 
 def copy_template_aprx(template: Path, working_dir: Path, tag: str) -> Path:

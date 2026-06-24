@@ -39,9 +39,7 @@ LOG = get_logger(__name__)
 VALID_MODES = ("validate_only", "append", "replace_batch", "replace_site_event")
 
 
-def _arcpy():
-    import arcpy
-    return arcpy
+from ...runtime.sessions import arcpy_env as _arcpy
 
 
 def where_date(field: str, ymd: str) -> str:

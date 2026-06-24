@@ -41,9 +41,7 @@ _COLOR_FLAGS = {
 }
 
 
-def _arcpy():
-    import arcpy
-    return arcpy
+from ...runtime.sessions import arcpy_env as _arcpy
 
 
 def _where_date(field: str, ymd: str) -> str:
