@@ -168,8 +168,7 @@ def _render_qa(qa, report, fail_on):
                    + (f" -> {rec.recommended_action}"
                       if rec.recommended_action else ""))
     if report:
-        from pathlib import Path as _P
-        p = _P(report)
+        p = Path(report)
         if p.suffix == ".json":
             qa.write_json_summary(p)
         elif p.suffix == ".csv":

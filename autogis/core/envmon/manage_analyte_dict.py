@@ -4,7 +4,6 @@ dictionary (headless, arcpy-free). Never writes the YAML; edits stay manual.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 from ..common import config_validation as cv
 from ..common.config import load_analyte_dictionary
@@ -29,7 +28,7 @@ def check_analyte_dictionary(path: Path) -> QACollector:
     return qa
 
 
-def list_analytes(path: Path) -> List[dict]:
+def list_analytes(path: Path) -> list[dict]:
     analytes = _clean(path)
     rows = []
     for canonical, entry in analytes.items():
