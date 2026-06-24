@@ -19,10 +19,9 @@ from autogis.core.common.config import FigureSpec
 # ---------------------------------------------------------------- inspector
 def test_inspector_profiles_every_sheet(workbook, qa):
     report = inspect_workbook_structure(workbook, qa)
-    assert set(report["sheets"]) == {"GW Table 2", "Table 3", "Metals Table",
-                                     "RPD"}
-    gw = report["sheets"]["GW Table 2"]
-    assert gw["merged_ranges"], "merged group header must be reported"
+    assert set(report.sheets) == {"GW Table 2", "Table 3", "Metals Table", "RPD"}
+    gw = report.sheets["GW Table 2"]
+    assert gw.merged_ranges, "merged group header must be reported"
     draft = propose_parser_profile(report, "DRAFT_TEST")
     assert draft["profile_id"] == "DRAFT_TEST"
     assert all("_TODO" in s for s in draft["sheets"]), \

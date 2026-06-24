@@ -25,9 +25,7 @@ from .gdb_schema import TABLE_SCHEMAS, FEATURE_SCHEMAS, UNIQUE_KEYS
 LOG = get_logger(__name__)
 
 
-def _arcpy():
-    import arcpy
-    return arcpy
+from ...runtime.sessions import arcpy_env as _arcpy
 
 
 def _read(table_path: str, fields: List[str]) -> List[tuple]:

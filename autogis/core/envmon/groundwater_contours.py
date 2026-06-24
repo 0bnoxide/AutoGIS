@@ -25,9 +25,7 @@ LOG = get_logger(__name__)
 METHODS = ("TIN", "IDW", "NaturalNeighbor", "SkipContours")
 
 
-def _arcpy():
-    import arcpy
-    return arcpy
+from ...runtime.sessions import arcpy_env as _arcpy
 
 
 def _where_date(field: str, ymd: str) -> str:

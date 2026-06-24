@@ -10,6 +10,7 @@ parser profile (which stays DRAFT until run against the real workbook).
 
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -138,3 +139,50 @@ def slevels():
 def qa():
     from autogis.core.common.qa import QACollector
     return QACollector()
+
+
+class InMemoryWorkbookReader:
+    """Minimal WorkbookReaderProtocol adapter for normalizer unit tests.
+
+    Pass ``cells`` as ``{(sheet_name, row, col): value}`` to supply data
+    without openpyxl or a real file.  A second concrete reader (alongside
+    ``ProfileWorkbookReader``) makes the injection seam real.
+    """
+
+    def __init__(self, cells: dict, date_system: str = "1900",
+                 path: str = "synthetic.xlsx"):
+        self._cells = cells
+        self.date_system = date_system
+        self.path = Path(path)
+
+    def sheet_names(self) -> list:
+        return list(dict.fromkeys(k[0] for k in self._cells))
+
+    def require_sheet(self, sheet_profile) -> bool:
+        return sheet_profile.sheet_name in self.sheet_names()
+
+    def cell(self, sheet_name: str, row: int, col: int):
+        from autogis.core.envmon.excel_profile_reader import CellValue
+        from openpyxl.utils import get_column_letter
+        value = self._cells.get((sheet_name, row, col))
+        return CellValue(
+            value=value,
+            raw_text="" if value is None else str(value),
+            is_formula=False, formula_text="", cached_missing=False,
+            row=row, column=col,
+            ref=f"{get_column_letter(col)}{row}", sheet=sheet_name)
+
+    def header_text(self, sheet_profile, row, col: int) -> str:
+        if row is None:
+            return ""
+        val = self._cells.get((sheet_profile.sheet_name, row, col))
+        return "" if val is None else str(val).strip()
+
+    def iter_data_rows(self, sheet_profile) -> Iterator[int]:
+        sheet = sheet_profile.sheet_name
+        id_col = sheet_profile.id_column or 1
+        rows = sorted({k[1] for k in self._cells
+                       if k[0] == sheet and k[1] >= sheet_profile.data_start_row})
+        for r in rows:
+            if self._cells.get((sheet, r, id_col)) not in (None, ""):
+                yield r

@@ -302,9 +302,7 @@ def build_wide_rows(
 # arcpy I/O
 # --------------------------------------------------------------------------
 
-def _arcpy():
-    import arcpy
-    return arcpy
+from ...runtime.sessions import arcpy_env as _arcpy
 
 # Physical Env_AnalyticalResults fields -> internal rule-engine keys.
 LONG_FIELD_MAP = [

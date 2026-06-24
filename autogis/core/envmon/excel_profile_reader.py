@@ -10,13 +10,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Optional, Protocol, runtime_checkable
 
 import openpyxl
 from openpyxl.utils import get_column_letter
 
 from ..common.config import ParserProfile, SheetProfile
 from ..common.qa import QACollector, SEV_ERROR, SEV_CRITICAL
+
+
+@runtime_checkable
+class WorkbookReaderProtocol(Protocol):
+    """Interface every workbook reader must satisfy.
+
+    ``ProfileWorkbookReader`` is the production adapter. Test code can
+    provide ``InMemoryWorkbookReader`` (defined in ``tests/envmon/conftest.py``)
+    to run normalizer logic without openpyxl or a real file.
+    """
+    path: Path
+    date_system: str
+
+    def sheet_names(self) -> List[str]: ...
+    def require_sheet(self, sheet_profile: SheetProfile) -> bool: ...
+    def cell(self, sheet_name: str, row: int, col: int) -> "CellValue": ...
+    def header_text(self, sheet_profile: SheetProfile,
+                    row: Optional[int], col: int) -> str: ...
+    def iter_data_rows(self, sheet_profile: SheetProfile) -> Iterator[int]: ...
 
 
 @dataclass
