@@ -80,3 +80,17 @@ def test_validate_analyte_dictionary_9999_sentinel_not_flagged():
     records = cv.validate_analyte_dictionary(analytes)
     assert (SEV_WARNING, "duplicate_display_order") not in {
         (r.severity, r.category) for r in records}
+
+
+def test_validate_bundle_flags_unknown_figure_and_screening_analytes():
+    analytes = {"Benzene": {"aliases": ["benzene", "B"], "abbreviation": "B",
+                            "display_order": 10,
+                            "default_units_by_matrix": {"GW": "ug/L"}}}
+    figure_specs = [{"figure_spec_id": "F1", "analytes": ["Benzene", "Xylenes"]}]
+    screening = {"GW": {"Benzene": {"value": 5, "units": "mg/L"},  # unit mismatch
+                        "Lead": {"value": 15, "units": "ug/L"}}}   # not in dict
+    records = cv.validate_bundle(figure_specs, screening, analytes)
+    cats = {(r.severity, r.category) for r in records}
+    assert (SEV_ERROR, "figure_analyte_not_in_dictionary") in cats   # Xylenes
+    assert (SEV_ERROR, "screening_analyte_not_in_dictionary") in cats  # Lead
+    assert (SEV_WARNING, "units_mismatch") in cats                     # Benzene mg/L vs ug/L

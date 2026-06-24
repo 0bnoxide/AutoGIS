@@ -183,3 +183,50 @@ def validate_analyte_dictionary(analytes: dict) -> List[QARecord]:
             out.append(_rec(SEV_WARNING, "duplicate_display_order",
                             f"display_order {order} used by {n} analytes"))
     return out
+
+
+def _figure_analytes(spec: dict) -> List[str]:
+    names = list(spec.get("analytes", []) or [])
+    for members in (spec.get("analyte_sets", {}) or {}).values():
+        names += list(members or [])
+    return names
+
+
+def validate_bundle(figure_specs, screening_levels, analytes) -> List[QARecord]:
+    from ..envmon.result_parser import build_analyte_lookup, _norm_key  # local import to avoid circular dependency
+
+    out: List[QARecord] = []
+    clean = {k: v for k, v in (analytes or {}).items() if not str(k).startswith("_")}
+    lookup = build_analyte_lookup(clean)   # {_norm_key: canonical}
+
+    def known(name) -> bool:
+        return _norm_key(str(name)) in lookup
+
+    for spec in figure_specs or []:
+        fid = spec.get("figure_spec_id", "?")
+        for name in _figure_analytes(spec):
+            if not known(name):
+                out.append(_rec(SEV_ERROR, "figure_analyte_not_in_dictionary",
+                                f"figure {fid!r}: analyte {name!r} not in analyte "
+                                f"dictionary", analyte_name=str(name)))
+
+    for matrix, entries in (screening_levels or {}).items():
+        if not isinstance(entries, dict):
+            continue
+        for name, entry in entries.items():
+            if not known(name):
+                out.append(_rec(SEV_ERROR, "screening_analyte_not_in_dictionary",
+                                f"screening {matrix}/{name}: not in analyte "
+                                f"dictionary", analyte_name=str(name)))
+                continue
+            canonical = lookup[_norm_key(str(name))]
+            dict_units = ((clean.get(canonical, {}) or {})
+                          .get("default_units_by_matrix", {}) or {}).get(matrix)
+            scr_units = entry.get("units") if isinstance(entry, dict) else None
+            if dict_units and scr_units and str(dict_units).strip().lower() != \
+                    str(scr_units).strip().lower():
+                out.append(_rec(SEV_WARNING, "units_mismatch",
+                                f"screening {matrix}/{name}: units {scr_units!r} "
+                                f"differ from dictionary default {dict_units!r}",
+                                analyte_name=str(name)))
+    return out
