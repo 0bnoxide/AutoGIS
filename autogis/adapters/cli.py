@@ -131,6 +131,34 @@ def validate_config_cmd(site_config, profiles, figures, analytes, screening,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("manage-analyte-dict")
+@click.argument("analytes", type=click.Path(exists=True))
+@click.option("--list", "do_list", is_flag=True, default=False,
+              help="Print the resolved analyte table sorted by display_order.")
+@click.option("--check", "do_check", is_flag=True, default=False,
+              help="Run validation checks (default when --list is absent).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
+    """Tool: validate / inspect the analyte dictionary (read-only, headless)."""
+    from autogis.core.envmon.manage_analyte_dict import (
+        check_analyte_dictionary, list_analytes)
+
+    if do_list:
+        rows = list_analytes(Path(analytes))
+        header = f"{'display':>7}  {'canonical':<24} {'abbr':<8} {'group':<14} aliases"
+        click.echo(header)
+        for row in rows:
+            click.echo(f"{row['display_order']:>7}  {row['canonical']:<24} "
+                       f"{row['abbreviation']:<8} {row['analytical_group']:<14} "
+                       f"{row['alias_count']}")
+        if not do_check:
+            return
+    # Default to check when --list was not requested, or when both given.
+    qa = check_analyte_dictionary(Path(analytes))
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
