@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import List
 
 from .config import FIGURE_REQUIRED, SITE_REQUIRED, col_index
-from .qa import QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
+from .qa import QARecord, SEV_ERROR, SEV_WARNING
 
 KNOWN_MATRICES = {"GW", "SOIL"}
 KNOWN_MAP_TYPES = {"GW_ANALYTICAL", "GW_POTENTIOMETRIC", "SOIL_ANALYTICAL"}
