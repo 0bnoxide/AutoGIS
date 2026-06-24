@@ -49,3 +49,24 @@ def test_validate_screening_levels_entry_missing_units():
     data = {"GW": {"Benzene": {"value": 5.0}}}  # no units
     records = cv.validate_screening_levels(data)
     assert (SEV_ERROR, "screening_missing_field") in _cats(records)
+
+
+def test_validate_analyte_dictionary_detects_alias_collision_and_dup_order():
+    analytes = {
+        "Benzene": {"aliases": ["benzene", "B"], "abbreviation": "B",
+                    "display_order": 10},
+        "Toluene": {"aliases": ["toluene", "b"], "abbreviation": "T",
+                    "display_order": 10},  # 'b' collides w/ Benzene; order dup
+    }
+    records = cv.validate_analyte_dictionary(analytes)
+    cats = {(r.severity, r.category) for r in records}
+    assert (SEV_ERROR, "alias_collision") in cats
+    assert (SEV_WARNING, "duplicate_display_order") in cats
+
+
+def test_validate_analyte_dictionary_flags_todo_source():
+    analytes = {"Arsenic": {"aliases": ["as"], "abbreviation": "As",
+                            "display_order": 200,
+                            "screening_level_source": "_TODO MCL/DEQ-7"}}
+    records = cv.validate_analyte_dictionary(analytes)
+    assert (SEV_WARNING, "placeholder") in {(r.severity, r.category) for r in records}

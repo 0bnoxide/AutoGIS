@@ -6,6 +6,7 @@ ValidateEnvConfig and ManageAnalyteDictionary.
 """
 from __future__ import annotations
 
+from collections import Counter
 from typing import List
 
 from .config import FIGURE_REQUIRED, SITE_REQUIRED, col_index
@@ -133,4 +134,52 @@ def validate_screening_levels(data: dict) -> List[QARecord]:
                                     f"screening {matrix}/{analyte}: missing {field!r}",
                                     analyte_name=str(analyte)))
     out += scan_todos(data, "screening levels")
+    return out
+
+
+def validate_analyte_dictionary(analytes: dict) -> List[QARecord]:
+    from ..envmon.result_parser import _norm_key  # noqa: E402 (avoid top cycle risk)
+
+    out: List[QARecord] = []
+    seen_norm: dict[str, str] = {}     # _norm_key -> first canonical that claimed it
+    order_counts: Counter = Counter()
+
+    for canonical, entry in (analytes or {}).items():
+        if str(canonical).startswith("_"):
+            continue
+        if not isinstance(entry, dict):
+            out.append(_rec(SEV_ERROR, "analyte_bad_entry",
+                            f"analyte {canonical!r}: entry must be a mapping",
+                            analyte_name=str(canonical)))
+            continue
+
+        keys = {canonical} | set(entry.get("aliases", []) or [])
+        abbrev = entry.get("abbreviation")
+        if abbrev:
+            keys.add(abbrev)
+        for k in keys:
+            nk = _norm_key(str(k))
+            owner = seen_norm.get(nk)
+            if owner is not None and owner != canonical:
+                out.append(_rec(SEV_ERROR, "alias_collision",
+                                f"alias/name {k!r} maps to both {owner!r} and "
+                                f"{canonical!r}", analyte_name=str(canonical),
+                                action="make aliases unique across analytes"))
+            else:
+                seen_norm[nk] = canonical
+
+        order = entry.get("display_order")
+        if order is not None:
+            order_counts[order] += 1
+
+        src = entry.get("screening_level_source")
+        if isinstance(src, str) and "_TODO" in src:
+            out.append(_rec(SEV_WARNING, "placeholder",
+                            f"analyte {canonical!r}: screening_level_source has "
+                            f"_TODO: {src!r}", analyte_name=str(canonical)))
+
+    for order, n in order_counts.items():
+        if n > 1 and order != 9999:   # 9999 is the default-unset sentinel
+            out.append(_rec(SEV_WARNING, "duplicate_display_order",
+                            f"display_order {order} used by {n} analytes"))
     return out
