@@ -94,3 +94,12 @@ def test_validate_bundle_flags_unknown_figure_and_screening_analytes():
     assert (SEV_ERROR, "figure_analyte_not_in_dictionary") in cats   # Xylenes
     assert (SEV_ERROR, "screening_analyte_not_in_dictionary") in cats  # Lead
     assert (SEV_WARNING, "units_mismatch") in cats                     # Benzene mg/L vs ug/L
+
+
+def test_validate_parser_profile_rejects_nonpositive_int_column():
+    data = {"profile_id": "P", "sheets": [
+        {"sheet_name": "S", "data_type": "METALS", "data_start_row": 2,
+         "id_column": 0}]}
+    records = cv.validate_parser_profile(data)
+    assert (SEV_ERROR, "bad_column_ref") in {(r.severity, r.category)
+                                             for r in records}

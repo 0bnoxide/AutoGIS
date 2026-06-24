@@ -70,6 +70,12 @@ def validate_env_config(site_path: Optional[Path],
     # Cross-file checks only run when the dictionary is present to compare against.
     if analytes:
         qa.extend(cv.validate_bundle(figure_specs, screening, analytes))
+    else:
+        qa.add(QARecord(severity=SEV_INFO, category="cross_file_skipped",
+                        message="analyte dictionary not supplied; cross-file "
+                                "reference checks skipped",
+                        recommended_action="pass --analytes to enable figure/"
+                                           "screening reference validation"))
 
     counts = qa.counts_by_severity()
     qa.add(QARecord(severity=SEV_INFO, category="validation_complete",

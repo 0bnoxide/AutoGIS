@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 
 from autogis.core.envmon.validate_config import validate_env_config
-from autogis.core.common.qa import SEV_ERROR
+from autogis.core.common.qa import SEV_ERROR, SEV_INFO
 
 
 def _write(tmp_path, name, data):
@@ -38,3 +38,14 @@ def test_validate_env_config_bad_file_becomes_load_error(tmp_path):
     bad.write_text(": : not valid yaml : :", encoding="utf-8")
     qa = validate_env_config(bad, [], [], None, None)
     assert (SEV_ERROR, "load_error") in {(r.severity, r.category) for r in qa.records}
+
+
+def test_validate_env_config_notes_when_analytes_omitted(tmp_path):
+    figure = _write(tmp_path, "fig.yaml", {
+        "figure_spec_id": "F1", "map_type": "GW_ANALYTICAL", "matrix": "GW",
+        "layout_name": "L", "figure_title": "T",
+        "output_filename_pattern": "{x}.pdf", "callout_template": {},
+        "analytes": ["Benzene"]})
+    qa = validate_env_config(None, [], [figure], None, None)
+    assert (SEV_INFO, "cross_file_skipped") in {
+        (r.severity, r.category) for r in qa.records}

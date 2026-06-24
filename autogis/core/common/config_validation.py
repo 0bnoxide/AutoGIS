@@ -90,11 +90,16 @@ def validate_parser_profile(data: dict) -> List[QARecord]:
             if ref is None:
                 continue
             try:
-                col_index(ref)
+                idx = col_index(ref)
             except Exception:
                 out.append(_rec(SEV_ERROR, "bad_column_ref",
                                 f"sheet {name!r}: {key} has invalid column "
                                 f"reference {ref!r}"))
+                continue
+            if idx is not None and idx < 1:
+                out.append(_rec(SEV_ERROR, "bad_column_ref",
+                                f"sheet {name!r}: {key} column reference {ref!r} "
+                                f"must be >= 1"))
     out += scan_todos(data, "parser profile")
     return out
 
