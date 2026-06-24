@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import List, Optional
 
 import openpyxl
-from openpyxl.utils import column_index_from_string, get_column_letter
+from openpyxl.utils import get_column_letter
 
+from ..common.config import col_index
 from ..common.qa import QACollector, SEV_WARNING
 from .result_parser import FORMULA_ERRORS, STATUS_CODES
 
@@ -59,24 +60,24 @@ def _classify_row(values: List) -> str:
 def _guess_analyte_columns(info: dict) -> Optional[dict]:
     """Return {from, to} column range for likely analyte columns.
 
-    Heuristic: analyte columns are all columns that are not already
-    claimed as id or date columns, from the first such column to max_col.
+    Heuristic: analyte columns are columns not claimed as id or date columns,
+    from the first such column through max_col. When none are detected, column 1
+    (A) is reserved to match propose_parser_profile's id_column fallback.
     Returns None when the sheet has too few columns to make a guess.
     """
-    max_col = info.get("max_col", 0)
+    max_col = info.get("max_col") or 0
     if max_col < 2:
         return None
     special: set = set()
-    for letter in info.get("id_columns", []):
+    for letter in info.get("id_columns", []) + info.get("date_columns", []):
         try:
-            special.add(column_index_from_string(letter))
+            idx = col_index(letter)
+            if idx is not None:
+                special.add(idx)
         except Exception:
             pass
-    for letter in info.get("date_columns", []):
-        try:
-            special.add(column_index_from_string(letter))
-        except Exception:
-            pass
+    if not special:
+        special.add(1)
     first_analyte = next(
         (c for c in range(1, max_col + 1) if c not in special), None
     )
