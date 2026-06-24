@@ -3,64 +3,89 @@
 Provides a persistent memory graph of this codebase for Claude Code sessions.
 Source: https://github.com/DeusData/codebase-memory-mcp
 
-## Status: removed from the repo (local-only now)
-
-This server **used to** be wired into Claude Code on the web via `/.mcp.json`
-(server declaration) + `enabledMcpjsonServers` in `/.claude/settings.json`
-(trust) + a `session-start.sh` block that downloaded the binary and indexed the
-repo into `~/.cache/codebase-memory-mcp/`.
-
-**That web wiring was removed.** Diagnosis: in cloud sessions the binary is
-provably healthy (instant stdio handshake, 14 tools advertised, `claude mcp list`
-→ Connected), but the harness will not auto-trust a server declared in the
-repo's own `.mcp.json`/`settings.json` (a committed file granting itself the
-right to run an arbitrary binary). Claude's resolved per-project state showed
-`enabledMcpjsonServers=[]` / `hasTrustDialogAccepted=False`, so its tools never
-registered into the agent — every web session silently fell back to Grep/Read.
-There is no `ENABLE_ALL_PROJECT_MCP_SERVERS` env var to force it, and the value
-of a *persistent* graph is wasted in an ephemeral container that re-indexes on
-every cold start. So the server now lives at **user scope on your own machine**,
-where trust is implicit and the graph persists across sessions.
-
-The local install below is the supported path.
+This server is **local-only and wired at user scope on your own machine**, where
+trust is implicit and the graph persists across sessions. It is deliberately NOT
+wired into the repo (a committed `.mcp.json`/`settings.json` granting itself the
+right to run a binary is not auto-trusted by the harness — see the history note at
+the bottom).
 
 ---
 
-## Install locally on your machine (macOS/Linux)
+## Verified working setup (Windows) — confirmed 2026-06-24
 
-### Step 1 — Install the binary
+This is the canonical reference. If a session can't see the
+`mcp__codebase-memory-mcp__*` tools, reconcile against these four facts before
+anything else.
 
-```bash
-# Download the binary for your platform from:
-# https://github.com/DeusData/codebase-memory-mcp/releases/latest
-# Example for macOS arm64:
-curl -fsSL https://github.com/DeusData/codebase-memory-mcp/releases/latest/download/codebase-memory-mcp-darwin-arm64-portable.tar.gz \
-  | tar -xz -C /usr/local/bin codebase-memory-mcp
-chmod +x /usr/local/bin/codebase-memory-mcp
-codebase-memory-mcp --version   # verify
+| Thing | Correct value |
+|---|---|
+| Binary | `C:\Users\ichbi\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe` (v0.8.1, on PATH) |
+| Registration | top-level `mcpServers` in `C:\Users\ichbi\.claude.json` |
+| Index (persistent) | `C:\Users\ichbi\.cache\codebase-memory-mcp\C-Users-ichbi-AutoGIS.db` |
+| When tools load | **Claude Code startup only** — restart after any registration change |
+
+### Register / re-register (the supported command)
+
+```powershell
+# `claude` is the bundled CLI, e.g.:
+#   C:\Users\ichbi\AppData\Local\Packages\Claude_*\LocalCache\Roaming\Claude\claude-code\<ver>\claude.exe
+claude mcp add --scope user codebase-memory-mcp `
+  "C:\Users\ichbi\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe"
 ```
 
-### Step 2 — Wire it into your local Claude Code
+> Do **not** add `mcpServers` to `~/.claude/settings.json` — this Claude Code
+> version rejects that key there. User-scope MCP servers belong in `~/.claude.json`,
+> which `claude mcp add --scope user` writes for you.
 
-Add to `~/.claude/settings.json` (create if it doesn't exist):
+### Verify
 
-```json
-{
-  "mcpServers": {
-    "codebase-memory-mcp": {
-      "command": "/usr/local/bin/codebase-memory-mcp",
-      "args": []
-    }
-  }
-}
+```powershell
+claude mcp list      # expect: codebase-memory-mcp ... ✔ Connected
 ```
 
-This is user-level config — it applies to all your local projects without
-touching any repo.
+Then **restart Claude Code** and, in the new session, call
+`mcp__codebase-memory-mcp__index_status`. If stale, run `detect_changes` then
+`index_repository`. Markdown (`docs/`, ADRs) is not indexed — the indexer scans
+Python only.
 
-### Step 3 — Clean up any leftover cached data (optional)
+---
 
-```bash
-rm -rf ~/.cache/codebase-memory-mcp/   # wipes all project indexes
-rm -rf ~/.config/codebase-memory-mcp/  # wipes global config
-```
+## Known deviations (recognise these fast)
+
+1. **Repo `.mcp.json` → npm 404.** A project `.mcp.json` declared the server as
+   `npx @modelcontextprotocol/server-codebase-memory`. That package does not exist
+   (registry returns 404), so the server never started; and project-scope `.mcp.json`
+   servers aren't auto-trusted anyway (`hasTrustDialogAccepted: false`). Removed.
+2. **User-scope registration wiped.** If `~/.claude.json` loses its `mcpServers`
+   entry, the tools silently disappear. Re-add with the command above.
+3. **UI server ≠ tool wiring.** Running `codebase-memory-mcp --ui=true --port=9749`
+   starts a standalone browser UI; it does **not** register tools into the agent
+   (only the stdio wiring does). A leftover UI process can linger for hours holding a
+   large memory budget. Find/stop it with:
+   ```powershell
+   Get-Process | Where-Object { $_.Name -like "*codebase*" }   # inspect
+   # Stop-Process -Id <pid>   # only if it's a stray manual UI server
+   ```
+4. **Stale node count after docs-only changes is expected** — markdown isn't indexed.
+
+---
+
+## Setup & Deviation Log
+
+Append a dated entry whenever the MCP wiring or index setup changes, or a deviation
+is found and fixed. Newest first.
+
+### 2026-06-24 — restored user-scope wiring; removed broken `.mcp.json`
+- **Symptom:** `mcp__codebase-memory-mcp__*` tools absent; `index_status` errored
+  "No such tool available".
+- **Root cause:** user-scope `mcpServers` in `~/.claude.json` had been wiped; the
+  repo `.mcp.json` pointed at a non-existent npm package (404); a prior session had
+  conflated a manual `--ui=true --port=9749` UI server (PID still running ~6h, from
+  the Haiku handoff) with the agent's stdio tool wiring.
+- **Fix:** `claude mcp add --scope user codebase-memory-mcp <exe>` →
+  `claude mcp list` shows `✔ Connected`. Deleted the tracked `.mcp.json`. Corrected
+  CLAUDE.md and this doc (the old version wrongly told you to put `mcpServers` in
+  `~/.claude/settings.json`, and gave macOS-only `/usr/local/bin` instructions).
+- **Binary v0.8.1; index DB present at `~/.cache/...` (last indexed 2026-06-23, refresh after restart).**
+- **Action left to user:** restart Claude Code to load the server; commit the
+  `.mcp.json` deletion and these doc/CLAUDE.md edits.

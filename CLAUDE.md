@@ -2,16 +2,27 @@
 
 ## Codebase memory
 
-The codebase-memory MCP server is **installed at user scope and running locally**.
-The `.mcp.json` in the repo root wires it in as a trusted project server.
-Its tools are available in every local session — use them as a fast first pass
-before falling back to manual search.
+The codebase-memory MCP server is **wired at USER scope** (stdio), not via a repo
+file. The binary lives at
+`C:\Users\ichbi\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe`
+and is registered in `~/.claude.json` (`claude mcp add --scope user`). There is no
+project `.mcp.json` — a previous one pointed at a non-existent npm package and was
+removed. The persistent index lives at
+`~/.cache/codebase-memory-mcp/C-Users-ichbi-AutoGIS.db`.
 
-**At the start of every session:**
+> **If the `mcp__codebase-memory-mcp__*` tools are missing this session:** the
+> registration was likely wiped, or you just (re)registered and haven't restarted —
+> MCP servers load at **startup only**. See `docs/codebase-memory-mcp.md` for the
+> verified fix and the running deviation log. Until restarted, fall back to
+> Grep/Glob/Read.
+
+**At the start of every session (when the tools are present):**
 1. Call `mcp__codebase-memory-mcp__index_status` (project `C-Users-ichbi-AutoGIS`).
 2. If `status` is not `"ready"` or `nodes` looks stale (e.g. missing recent files),
    run `mcp__codebase-memory-mcp__detect_changes` then
-   `mcp__codebase-memory-mcp__index_repository` before querying.
+   `mcp__codebase-memory-mcp__index_repository` before querying. (Markdown/ADRs are
+   not indexed — the indexer scans Python only, so a docs-only change won't move the
+   node count.)
 
 Use the `/graph` skill to query the index. Key tools:
 
