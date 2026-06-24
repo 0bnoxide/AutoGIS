@@ -53,7 +53,7 @@ DELTA:    <what this changes about integration; "none" if confirmed>
 RISK:     <what breaks if unanswered; "none" if confirmed>
 ```
 
-- [ ] **Step 1: Dispatch both agents in a single message**
+- [x] **Step 1: Dispatch both agents in a single message**
 
 **N1 — License auditor (Explore):**
 ```
@@ -100,7 +100,7 @@ CLAIM: For each function found: does it ever create an arcpy.Point,
        stay in pure numpy / arcpy.da cursors only?
 ```
 
-- [ ] **Step 2: Verify both returned in format**
+- [x] **Step 2: Verify both returned in format**
 
   Confirm 2 reports received, each with `CLAIM/VERDICT/EVIDENCE/DELTA/RISK`
   blocks. If either returned thin or off-format output, re-dispatch ONLY that
@@ -117,7 +117,7 @@ CLAIM: For each function found: does it ever create an arcpy.Point,
 - Consumes: 2 validated agent reports from Task 1
 - Produces: committed deltas doc with license verdict + algorithm shortlist
 
-- [ ] **Step 1: Write the deltas doc**
+- [x] **Step 1: Write the deltas doc**
 
   ```markdown
   # numpy-geometry Recon Deltas
@@ -142,7 +142,7 @@ CLAIM: For each function found: does it ever create an arcpy.Point,
   <any ambiguous license interpretation requiring user decision>
   ```
 
-- [ ] **Step 2: Verify no empty sections**
+- [x] **Step 2: Verify no empty sections**
 
   Every section must be populated or explicitly say "none." Covered.
 
@@ -157,25 +157,20 @@ CLAIM: For each function found: does it ever create an arcpy.Point,
 - Consumes: deltas doc from Task 2
 - Produces: user acknowledgment recorded in doc; vendor work unblocked or parked
 
-- [ ] **Step 1: Present needs-human queue to user**
+- [x] **Step 1: Present needs-human queue to user**
 
-  If the license verdict is `needs-human` (e.g. ambiguous or no LICENSE file
-  found), present the question explicitly and wait for user guidance before
-  proceeding to any vendor implementation.
+  **Decision recorded 2026-06-24:** Neither repo has a LICENSE file — default
+  copyright applies. User will contact Dan Patterson directly
+  (`dan_patterson@carleton.ca`) to request an explicit license grant.
+  Implementation is **PARKED** pending response. Algorithm shortlist and
+  attribution block are ready in the deltas doc for when the license is confirmed.
 
-  If the verdict is `confirmed: vendor permitted`, update the doc with
-  "CLEARED — proceed to vendor implementation" and note the user's
-  acknowledgment.
+  User note: "I think Dan Patterson intends free use — I'll reach out and put it
+  on the back burner until I hear back."
 
-  If the verdict is `blocked` (license prohibits copy or no license found),
-  note "BLOCKED — do not vendor; study patterns only" and close the plan.
+- [x] **Step 2: Commit the deltas doc**
 
-- [ ] **Step 2: Commit the deltas doc**
-
-  ```bash
-  git add docs/superpowers/specs/2026-06-23-numpy-geo-deltas.md
-  git commit -m "docs: add numpy-geometry recon deltas (license + algorithm inventory)"
-  ```
+  Committed in `0890026` alongside arcgis consolidation and AGOL publish-layer.
 
 ---
 
