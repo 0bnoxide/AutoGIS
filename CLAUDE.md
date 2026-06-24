@@ -1,19 +1,30 @@
 # AutoGIS — Claude Code session guide
 
-## Codebase memory (optional, local-only)
+## Codebase memory
 
-The codebase-memory MCP server is **no longer wired into the repo** (web sessions
-ran it as an untrusted project `.mcp.json` server, so its tools never registered —
-see `docs/codebase-memory-mcp.md` for the full diagnosis and the local-install
-steps). Use **Grep / Glob / Read / the Explore subagent** as the default way to
-answer structural questions (where is X defined, what calls X, what imports Z,
-layer overviews).
+The codebase-memory MCP server is **installed at user scope and running locally**.
+The `.mcp.json` in the repo root wires it in as a trusted project server.
+Its tools are available in every local session — use them as a fast first pass
+before falling back to manual search.
 
-If you have installed the server **locally** at user scope, its
-`mcp__codebase-memory-mcp__*` tools (`search_graph`, `trace_path`,
-`get_architecture`, `search_code`, …) and the `/graph` skill are available as a
-faster first pass — but they are an aid, not a requirement, and won't exist in
-web/cloud sessions. Always fall back to manual search when they're absent.
+**At the start of every session:**
+1. Call `mcp__codebase-memory-mcp__index_status` (project `C-Users-ichbi-AutoGIS`).
+2. If `status` is not `"ready"` or `nodes` looks stale (e.g. missing recent files),
+   run `mcp__codebase-memory-mcp__detect_changes` then
+   `mcp__codebase-memory-mcp__index_repository` before querying.
+
+Use the `/graph` skill to query the index. Key tools:
+
+| Question type | Tool |
+|---|---|
+| Find a symbol / module / concept | `search_graph` |
+| Find code by keyword or pattern | `search_code` |
+| How does A call / depend on B? | `trace_path` |
+| Layer / module overview | `get_architecture` |
+| Fetch a specific snippet | `get_code_snippet` |
+
+Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
+(web/cloud sessions) or when the index hasn't caught a very recent change.
 
 ---
 
@@ -27,7 +38,7 @@ web/cloud sessions. Always fall back to manual search when they're absent.
 | `autogis/adapters/` | CLI (`cli.py`), `.pyt` toolbox, toolbox_core seam |
 | `autogis/runtime/` | ArcGIS Pro session providers + capability guard |
 | `autogis/config/` | Site configs, parser profiles, screening levels, figure specs |
-| `tests/` | 126 arcpy-free tests; run with `python -m pytest -q` |
+| `tests/` | 132 arcpy-free tests; run with `python -m pytest -q` |
 
 ## Key invariants
 
