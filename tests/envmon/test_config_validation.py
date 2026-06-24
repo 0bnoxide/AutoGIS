@@ -70,3 +70,13 @@ def test_validate_analyte_dictionary_flags_todo_source():
                             "screening_level_source": "_TODO MCL/DEQ-7"}}
     records = cv.validate_analyte_dictionary(analytes)
     assert (SEV_WARNING, "placeholder") in {(r.severity, r.category) for r in records}
+
+
+def test_validate_analyte_dictionary_9999_sentinel_not_flagged():
+    analytes = {
+        "A": {"aliases": [], "abbreviation": "A", "display_order": 9999},
+        "B": {"aliases": [], "abbreviation": "Bb", "display_order": 9999},
+    }
+    records = cv.validate_analyte_dictionary(analytes)
+    assert (SEV_WARNING, "duplicate_display_order") not in {
+        (r.severity, r.category) for r in records}

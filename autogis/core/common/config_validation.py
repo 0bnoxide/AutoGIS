@@ -138,7 +138,7 @@ def validate_screening_levels(data: dict) -> List[QARecord]:
 
 
 def validate_analyte_dictionary(analytes: dict) -> List[QARecord]:
-    from ..envmon.result_parser import _norm_key  # noqa: E402 (avoid top cycle risk)
+    from ..envmon.result_parser import _norm_key  # local import to avoid circular dependency
 
     out: List[QARecord] = []
     seen_norm: dict[str, str] = {}     # _norm_key -> first canonical that claimed it
