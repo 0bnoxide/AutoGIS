@@ -49,7 +49,7 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
 | `autogis/adapters/` | CLI (`cli.py`), `.pyt` toolbox, toolbox_core seam |
 | `autogis/runtime/` | ArcGIS Pro session providers + capability guard |
 | `autogis/config/` | Site configs, parser profiles, screening levels, figure specs |
-| `tests/` | 132 arcpy-free tests; run with `python -m pytest -q` |
+| `tests/` | 151 arcpy-free tests; run with `python -m pytest -q` |
 
 ## Key invariants
 
