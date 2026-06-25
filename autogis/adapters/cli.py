@@ -159,6 +159,22 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("validate-units")
+@click.option("--analytes", required=True, type=click.Path(exists=True),
+              help="Analyte dictionary (provides default_units_by_matrix).")
+@click.option("--screening", required=True, type=click.Path(exists=True),
+              help="Screening levels file.")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write report to PATH (.md/.json/.csv by extension).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def validate_units_cmd(analytes, screening, report, fail_on):
+    """Tool: validate analyte/screening units for convertibility (headless)."""
+    from autogis.core.envmon.validate_units import validate_units_config
+
+    qa = validate_units_config(Path(analytes), Path(screening))
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
