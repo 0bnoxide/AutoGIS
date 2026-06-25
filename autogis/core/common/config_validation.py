@@ -235,3 +235,75 @@ def validate_bundle(figure_specs, screening_levels, analytes) -> List[QARecord]:
                                 f"differ from dictionary default {dict_units!r}",
                                 analyte_name=str(name)))
     return out
+
+
+def validate_units(analytes: dict, screening: dict) -> List[QARecord]:
+    """Flag unknown, cross-dimension, and convertible-mismatch unit problems.
+
+    Pure: consumes already-loaded dicts, returns records, never raises. Analyte
+    names are matched across configs via the shared analyte lookup so aliases
+    line up. Missing-units / not-in-dictionary cases are owned by the existing
+    validators and skipped here.
+    """
+    from ..envmon.result_parser import build_analyte_lookup, _norm_key  # avoid circular import
+    from .units import normalize_unit, same_dimension, convert
+
+    out: List[QARecord] = []
+    clean = {k: v for k, v in (analytes or {}).items() if not str(k).startswith("_")}
+    lookup = build_analyte_lookup(clean)   # {_norm_key: canonical}
+
+    # 1. Unknown units in analyte-dictionary defaults.
+    for canonical, entry in clean.items():
+        if not isinstance(entry, dict):
+            continue
+        for matrix, unit in (entry.get("default_units_by_matrix", {}) or {}).items():
+            if normalize_unit(unit) is None:
+                out.append(_rec(SEV_ERROR, "unknown_unit",
+                                f"analyte {canonical!r} matrix {matrix}: "
+                                f"unrecognized unit {unit!r}",
+                                action="add the unit to the registry or fix the config",
+                                analyte_name=str(canonical)))
+
+    # 2. Screening units: unknown, then cross-check against the dict default.
+    for matrix, entries in (screening or {}).items():
+        if not isinstance(entries, dict):
+            continue
+        for name, entry in entries.items():
+            if not isinstance(entry, dict):
+                continue
+            scr_u = entry.get("units")
+            if scr_u is None:
+                continue   # missing units owned by validate_screening_levels
+            if normalize_unit(scr_u) is None:
+                out.append(_rec(SEV_ERROR, "unknown_unit",
+                                f"screening {matrix}/{name}: unrecognized unit "
+                                f"{scr_u!r}",
+                                action="add the unit to the registry or fix the config",
+                                analyte_name=str(name)))
+                continue
+            canonical = lookup.get(_norm_key(str(name)))
+            if canonical is None:
+                continue   # not-in-dictionary owned by validate_bundle
+            dict_u = ((clean.get(canonical, {}) or {})
+                      .get("default_units_by_matrix", {}) or {}).get(matrix)
+            if not dict_u or normalize_unit(dict_u) is None:
+                continue   # nothing to compare / dict side already flagged
+            if normalize_unit(dict_u) == normalize_unit(scr_u):
+                continue
+            if same_dimension(dict_u, scr_u):
+                factor = convert(1.0, scr_u, dict_u)
+                out.append(_rec(SEV_WARNING, "convertible_mismatch",
+                                f"screening {matrix}/{name}: units {scr_u!r} differ "
+                                f"from dictionary default {dict_u!r} "
+                                f"(1 {scr_u} = {factor:g} {dict_u})",
+                                action="confirm results and screening levels share a "
+                                       "unit basis",
+                                analyte_name=str(name)))
+            else:
+                out.append(_rec(SEV_ERROR, "cross_dimension",
+                                f"screening {matrix}/{name}: units {scr_u!r} and "
+                                f"dictionary default {dict_u!r} are different "
+                                f"dimensions; values are not comparable",
+                                action="fix the unit in one config",
+                                analyte_name=str(name)))
+    return out
