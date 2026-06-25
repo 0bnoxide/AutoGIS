@@ -1,11 +1,23 @@
 #!/bin/bash
-# SessionStart hook for Claude Code on the web.
-# Installs AutoGIS test deps + the headroom context-compression tool, and points
-# headroom's runtime artifacts at $HOME so they never land in the repo tree.
+# SessionStart hook for Claude Code.
+# Local sessions: refresh the codebase-memory knowledge graph (below).
+# Web (remote) sessions: install AutoGIS test deps + the headroom
+# context-compression tool, with headroom's runtime artifacts pointed at $HOME
+# so they never land in the repo tree.
 set -euo pipefail
 
-# Only run in Claude Code on the web (remote) sessions.
+# --- Local sessions: keep the codebase-memory knowledge graph fresh. --------
+# The codebase-memory MCP server is registered at user scope and is only
+# reachable from local sessions. Indexing is incremental (~50ms no-op when
+# nothing changed), so an unconditional re-index on every local start keeps the
+# graph current without relying on the agent to remember (see docs/adr/0007 and
+# docs/codebase-memory-mcp.md). The repo path is the canonical checkout (not
+# $CLAUDE_PROJECT_DIR) so worktree sessions still refresh the one registered
+# project; forward slashes are required or the JSON arg is rejected. Non-fatal.
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+  CBM="/c/Users/ichbi/AppData/Local/Programs/codebase-memory-mcp/codebase-memory-mcp.exe"
+  [ -x "$CBM" ] && "$CBM" cli index_repository \
+    '{"repo_path":"C:/Users/ichbi/AutoGIS","mode":"full"}' >/dev/null 2>&1 || true
   exit 0
 fi
 
