@@ -57,4 +57,4 @@ Original plan claimed "165 tests target" but was double-counting:
 ## Issues/PRs
 
 - Merge: [#1 envmon-suite-merge](https://github.com/0bnoxide/AutoGIS/pull/1)
-- Commit: `cc6ba1e` (repackage envmon, ported tests)
+- Commit: `340facb` (repackage envmon, ported tests)

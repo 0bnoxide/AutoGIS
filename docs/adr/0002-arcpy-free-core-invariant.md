@@ -23,7 +23,7 @@ Lazy imports or runtime checks for arcpy in adapters are acceptable; core must n
 
 ### Positive
 
-- All 126 tests run in CI without Pro installation
+- The entire test suite runs in CI without Pro installation
 - Easier local development on non-Windows machines or without Pro
 - Clear boundary: what's testable offline vs. what requires a Pro session
 
