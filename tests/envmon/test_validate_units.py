@@ -46,3 +46,35 @@ def test_missing_screening_units_skipped():
     analytes = _analytes({"GW": "ug/L"})
     screening = {"GW": {"Benzene": {"value": None}}}
     assert validate_units(analytes, screening) == []
+
+
+import yaml
+
+from autogis.core.envmon.validate_units import validate_units_config
+from autogis.core.common.qa import SEV_INFO
+
+
+def _write(tmp_path, name, data):
+    p = tmp_path / name
+    p.write_text(yaml.safe_dump(data), encoding="utf-8")
+    return p
+
+
+def test_orchestrator_flags_cross_dimension(tmp_path):
+    analytes = _write(tmp_path, "analytes.yaml", {"analytes": {
+        "Benzene": {"aliases": ["benzene"], "abbreviation": "B",
+                    "default_units_by_matrix": {"GW": "ug/L"}}}})
+    screening = _write(tmp_path, "screening.yaml", {"screening_levels": {
+        "GW": {"Benzene": {"value": None, "units": "mg/kg"}}}})
+    qa = validate_units_config(analytes, screening)
+    cats = {(r.severity, r.category) for r in qa.records}
+    assert (SEV_ERROR, "cross_dimension") in cats
+    assert (SEV_INFO, "validation_complete") in cats
+
+
+def test_orchestrator_bad_file_becomes_load_error(tmp_path):
+    bad = tmp_path / "analytes.yaml"
+    bad.write_text(": : not valid yaml : :", encoding="utf-8")
+    screening = _write(tmp_path, "screening.yaml", {"screening_levels": {}})
+    qa = validate_units_config(bad, screening)
+    assert (SEV_ERROR, "load_error") in {(r.severity, r.category) for r in qa.records}
