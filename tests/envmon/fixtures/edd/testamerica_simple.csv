@@ -1,0 +1,5 @@
+SysLocCode,CollDate,Medium,LabID,Chemical,Result,Qualifier,RL,Unit,AnalytMeth
+MW-1,06/01/2026,WS,H281-MW1-001,Benzene,0.5,U,0.5,ug/L,EPA 8260B
+MW-1,06/01/2026,WS,H281-MW1-001,Toluene,12.3,,0.5,ug/L,EPA 8260B
+MW-2,06/01/2026,WS,H281-MW2-001,Benzene,,,0.5,ug/L,EPA 8260B
+MW-3,06/01/2026,SO,H281-MW3-001,Benzene,5.0,,0.5,mg/kg,EPA 8260B
