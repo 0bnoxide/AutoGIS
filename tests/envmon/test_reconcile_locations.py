@@ -60,3 +60,21 @@ def test_extract_location_ids_reads_id_column_dedup():
     cells = {("S", 2, 1): "MW-1", ("S", 3, 1): "MW-2", ("S", 4, 1): "MW-1"}
     reader = InMemoryWorkbookReader(cells)
     assert extract_location_ids(reader, profile) == ["MW-1", "MW-2"]
+
+
+# ---------------------------------------------------------------------------
+# Task 4: read_well_ids_csv
+# ---------------------------------------------------------------------------
+from autogis.core.envmon.reconcile_locations import read_well_ids_csv
+
+
+def test_read_well_ids_csv_named_column(tmp_path):
+    p = tmp_path / "wells.csv"
+    p.write_text("SiteID,LocationID\nH281,MW-1\nH281,MW-2\n", encoding="utf-8")
+    assert read_well_ids_csv(p) == ["MW-1", "MW-2"]
+
+
+def test_read_well_ids_csv_first_column_fallback(tmp_path):
+    p = tmp_path / "wells.csv"
+    p.write_text("MW-1\nMW-2\n\n", encoding="utf-8")
+    assert read_well_ids_csv(p) == ["MW-1", "MW-2"]
