@@ -268,20 +268,20 @@ def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
 
     calls = []
 
-    def fake_create(gdb_path, **kw):
+    def fake_create(gdb_path, edd_path, site_id, lab_name, profile_id, mode="append"):
         calls.append("create")
         return "BATCH-001"
 
-    def fake_append(gdb_path, table_name, records):
+    def fake_append(gdb_path, table_name, records, qa, batch_id):
         calls.append(f"append:{table_name}")
 
-    def fake_finalize(gdb_path, **kw):
+    def fake_finalize(gdb_path, batch_id, qa, counts, status):
         calls.append("finalize")
 
     def fake_write_qa(gdb_path, qa, batch_id):
         calls.append("write_qa")
 
-    monkeypatch.setattr(mod, "create_import_batch", fake_create)
+    monkeypatch.setattr(mod, "create_edd_import_batch", fake_create)
     monkeypatch.setattr(mod, "append_records_idempotent", fake_append)
     monkeypatch.setattr(mod, "finalize_batch", fake_finalize)
     monkeypatch.setattr(mod, "write_qa_to_gdb", fake_write_qa)
@@ -305,3 +305,4 @@ def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
     assert "finalize" in calls
     assert "write_qa" in calls
     assert calls.index("finalize") > calls.index("append:Env_Samples")
+    assert calls.index("finalize") > calls.index("append:Env_AnalyticalResults")

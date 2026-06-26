@@ -207,6 +207,33 @@ def _delete_for_replace(gdb: Path, mode: str, site_id: str,
            f"Mode {mode}: prior rows removed before append.", site_id=site_id)
 
 
+def create_edd_import_batch(
+    gdb: Path,
+    edd_path: Path,
+    site_id: str,
+    lab_name: str,
+    profile_id: str,
+    mode: str = "append",
+    operator: str = "",
+) -> str:
+    """Insert an Env_ImportBatch row for an EDD import; returns ImportBatchID."""
+    arcpy = _arcpy()
+    batch_id = uuid.uuid4().hex[:16].upper()
+    fields = ["ImportBatchID", "SiteID", "SiteName", "SourceWorkbook",
+              "SourceWorkbookHash", "ImportDateTime", "ImportedBy",
+              "ParserProfile", "ImportMode", "QAStatus", "SourceSheets"]
+    try:
+        wb_hash = file_sha256(edd_path)
+    except Exception:
+        wb_hash = ""
+    row = [batch_id, site_id, "", str(edd_path)[:255], wb_hash,
+           _dt.datetime.now(), operator[:64] or "edd_importer",
+           profile_id, mode, "IN_PROGRESS", lab_name[:512]]
+    with arcpy.da.InsertCursor(str(gdb / "Env_ImportBatch"), fields) as cur:
+        cur.insertRow(row)
+    return batch_id
+
+
 def write_qa_to_gdb(gdb: Path, qa: QACollector, batch_id: str) -> int:
     arcpy = _arcpy()
     fields = [f[0] for f in TABLE_SCHEMAS["Env_ImportQA"]]
