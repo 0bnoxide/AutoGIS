@@ -78,3 +78,11 @@ def test_na_ambiguity_is_flagged():
 ])
 def test_parse_excel_date(raw, want):
     assert parse_excel_date(raw, "1900") == want
+
+
+def test_apply_qualifiers_public_alias():
+    from autogis.core.envmon.result_parser import apply_qualifiers, ParsedResult
+    p = ParsedResult(raw_text="0.5")
+    apply_qualifiers(p, "U")
+    assert p.is_nondetect is True
+    assert p.qualifier == "U"

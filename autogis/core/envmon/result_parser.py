@@ -103,6 +103,10 @@ def _apply_qualifiers(parsed: ParsedResult, qual_text: str) -> None:
             setattr(parsed, k, v)
 
 
+#: Public alias — EDD importer uses this; internal callers keep _apply_qualifiers.
+apply_qualifiers = _apply_qualifiers
+
+
 def parse_result_value(raw_value, screening_context: bool = False) -> ParsedResult:
     """Parse one analytical-result cell.
 
