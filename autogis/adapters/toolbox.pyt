@@ -68,6 +68,7 @@ class Toolbox(object):
             ExportFigures,           # tool 6
             FullPipeline,            # tool 7
             ValidateDatabase,        # tool 8
+            ReconcileSampleLocations,
         ]
 
 
@@ -636,4 +637,59 @@ class ValidateDatabase(object):
         qa.write_markdown(out / f"validate_{stamp}.md",
                           title="Database Validation")
         messages.addMessage(json.dumps(summary, indent=2))
+        _msg(messages, qa)
+
+
+class ReconcileSampleLocations(object):
+    """Pre-flight: do workbook location IDs match the well feature class?
+
+    Reads well LocationIDs from the site GDB via arcpy, extracts workbook
+    location IDs through the parser profile (openpyxl), and reports matches /
+    typos / unsampled wells. Read-only.
+    """
+    def __init__(self):
+        self.label = "Reconcile Sample Locations"
+        self.description = ("Compare workbook location IDs against the "
+                            "monitoring-well feature class (read-only).")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("site_config", "Site config (YAML/JSON)", "DEFile"),
+            _param("workbook", "Workbook (.xlsx)", "DEFile"),
+            _param("profile", "Parser profile (YAML/JSON)", "DEFile"),
+            _param("gdb", "Geodatabase", "DEWorkspace"),
+            _param("threshold", "Fuzzy match threshold", "GPDouble",
+                   required=False, default=0.8),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.runtime.sessions import arcpy_env
+        from autogis.core.envmon.reconcile_locations import (
+            extract_location_ids, reconcile, reconcile_to_qa)
+        from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
+
+        p = {q.name: q for q in parameters}
+        site = load_config(Path(p["site_config"].valueAsText))
+        well_fc = site.get("monitoring_wells_fc", "MonitoringWells")
+        gdb = Path(p["gdb"].valueAsText)
+        threshold = float(p["threshold"].value or 0.8)
+
+        profile = ParserProfile.load(Path(p["profile"].valueAsText))
+        reader = ProfileWorkbookReader(Path(p["workbook"].valueAsText), profile)
+        workbook_ids = extract_location_ids(reader, profile)
+
+        arcpy = arcpy_env()
+        well_ids = []
+        with arcpy.da.SearchCursor(str(gdb / well_fc), ["LocationID"]) as cur:
+            for (loc,) in cur:
+                if loc is not None:
+                    well_ids.append(str(loc))
+
+        result = reconcile(workbook_ids, well_ids, threshold=threshold)
+        qa = reconcile_to_qa(result)
+        messages.addMessage(
+            f"{len(result.matches)} matched, "
+            f"{len(result.unmatched_workbook)} unmatched workbook ID(s), "
+            f"{len(result.unmatched_wells)} unsampled well(s).")
         _msg(messages, qa)

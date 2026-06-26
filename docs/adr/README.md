@@ -32,6 +32,12 @@ Each ADR follows this structure:
 | [011](0011-h281-profile-draft-status.md) | H281 profile draft status and pre-production gate | Accepted | 2026-06-19 |
 | [012](0012-reserved-provenance-columns.md) | Reserved provenance columns for future use | Accepted | 2026-06-19 |
 | [013](0013-per-record-json-writer.md) | Per-record JSON writer for manifest | Accepted | 2026-06-19 |
+| [014](0014-schema-dataclass-package.md) | Domain-split dataclass schema package for envmon tables | Accepted | 2026-06-25 |
+| [015](0015-npg-vendoring-pattern.md) | Absorbed-in-place vendoring for Dan Patterson numpy_geometry | Accepted | 2026-06-25 |
+| [016](0016-lab-edd-importer-design.md) | Lab EDD Importer — per-lab YAML profile + gdb_schema output types | Accepted | 2026-06-25 |
+| [017](0017-run-history-csv-log.md) | CSV-based append-only run history log | Accepted | 2026-06-25 |
+| [018](0018-upgrade-gdb-schema-tool.md) | UpgradeEnvMonitoringGDBSchema tool design | Accepted | 2026-06-25 |
+| [019](0019-reconcile-locations-design.md) | ReconcileSampleLocations — stdlib difflib, two-path headless/GDB design | Accepted | 2026-06-26 |
 
 ## File naming
 
