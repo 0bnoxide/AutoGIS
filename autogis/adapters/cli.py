@@ -175,6 +175,46 @@ def validate_units_cmd(analytes, screening, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("reconcile-locations")
+@click.argument("site_config", type=click.Path(exists=True))
+@click.argument("workbook", type=click.Path(exists=True))
+@click.option("--profile", "profile_path", required=True,
+              type=click.Path(exists=True), help="Parser profile for the workbook.")
+@click.option("--wells-csv", default=None, type=click.Path(exists=True),
+              help="CSV of well IDs (headless). Mutually exclusive with --gdb.")
+@click.option("--gdb", is_flag=True, default=False,
+              help="Read wells from the site GDB (ArcGIS Pro only; use the .pyt).")
+@click.option("--threshold", type=float, default=0.8, show_default=True)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
+                            threshold, report, fail_on):
+    """Tool: pre-flight check that workbook location IDs match the well layer."""
+    from autogis.core.common.config import ParserProfile
+    from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
+    from autogis.core.envmon.reconcile_locations import (
+        extract_location_ids, read_well_ids_csv, reconcile, reconcile_to_qa)
+
+    if gdb:
+        _guard("reconcile-locations")
+        raise click.ClickException(
+            "reconcile-locations --gdb runs inside ArcGIS Pro only. Use the "
+            "ReconcileSampleLocations tool in the .pyt toolbox, or pass "
+            "--wells-csv for a headless check.")
+    if not wells_csv:
+        raise click.ClickException("provide --wells-csv PATH (headless) or "
+                                   "--gdb (ArcGIS Pro).")
+
+    profile = ParserProfile.load(Path(profile_path))
+    reader = ProfileWorkbookReader(Path(workbook), profile)
+    workbook_ids = extract_location_ids(reader, profile)
+    well_ids = read_well_ids_csv(Path(wells_csv))
+
+    result = reconcile(workbook_ids, well_ids, threshold=threshold)
+    qa = reconcile_to_qa(result)
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,

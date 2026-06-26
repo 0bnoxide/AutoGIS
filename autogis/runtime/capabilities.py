@@ -20,6 +20,11 @@ TOOLS: dict[str, Runtime] = {
     "export-figures": Runtime.LOCAL,   # tool 6
     "full-pipeline": Runtime.LOCAL,    # tool 7
     "validate-db": Runtime.LOCAL,      # tool 8
+    "validate-config": Runtime.CLOUD,
+    "manage-analyte-dict": Runtime.CLOUD,
+    "validate-units": Runtime.CLOUD,
+    "reconcile-locations": Runtime.HYBRID,
+    "import-edd": Runtime.CLOUD,
 }
 
 
