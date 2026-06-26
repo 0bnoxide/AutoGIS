@@ -1,0 +1,308 @@
+"""Tests for edd_importer.py — read_edd_file + normalize_edd_rows."""
+from __future__ import annotations
+
+import textwrap
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING
+from autogis.core.envmon.edd_importer import read_edd_file, normalize_edd_rows
+from autogis.core.envmon.edd_profile import LabEDDProfile
+
+# ---------------------------------------------------------------------------
+# Shared data
+# ---------------------------------------------------------------------------
+
+FIXTURE_CSV = Path(__file__).parent / "fixtures" / "edd" / "testamerica_simple.csv"
+
+ANALYTES = {
+    "Benzene": {
+        "aliases": ["benzene"],
+        "abbreviation": "BNZ",
+        "analytical_group": "VOC",
+        "method_group": "EPA8260",
+        "default_units_by_matrix": {"GW": "ug/L"},
+    },
+    "Toluene": {
+        "aliases": ["toluene"],
+        "abbreviation": "TOL",
+        "analytical_group": "VOC",
+        "method_group": "EPA8260",
+    },
+}
+
+SCREENING = {
+    "GW": {
+        "Benzene": {"value": 1.0, "units": "ug/L", "source": "USEPA MCL"},
+    }
+}
+
+_PROFILE_YAML = textwrap.dedent("""
+    profile_id: test_lab
+    lab_name: Test Lab
+    format: flat_csv
+    date_format: "%m/%d/%Y"
+    encoding: utf-8
+    columns:
+      sample_id:       SysLocCode
+      location_id:     SysLocCode
+      event_date:      CollDate
+      matrix:          Medium
+      analyte:         Chemical
+      result:          Result
+      units:           Unit
+      qualifier:       Qualifier
+      reporting_limit: RL
+      method:          AnalytMeth
+      lab_sample_id:   LabID
+    matrix_map:
+      WS: GW
+      SO: SOIL
+    nondetect_qualifiers:
+      - U
+      - UJ
+""").strip()
+
+
+def _write_profile(tmp_path: Path) -> Path:
+    p = tmp_path / "test_lab.yaml"
+    p.write_text(_PROFILE_YAML, encoding="utf-8")
+    return p
+
+
+def _profile(tmp_path: Path) -> LabEDDProfile:
+    return LabEDDProfile.load(_write_profile(tmp_path))
+
+
+def _run(rows, tmp_path, *, event_date_override=None):
+    """Helper: run normalize_edd_rows with standard fixtures."""
+    profile = _profile(tmp_path)
+    qa = QACollector()
+    # Reset lookup cache so tests don't share state
+    analyte_dict = dict(ANALYTES)
+    samples, results = normalize_edd_rows(
+        rows, profile,
+        site_id="H281", batch_id="B001",
+        analyte_dictionary=analyte_dict,
+        screening_levels=SCREENING,
+        qa=qa,
+        event_date_override=event_date_override,
+    )
+    return samples, results, qa
+
+
+def _rows_from_fixture(tmp_path: Path) -> list[dict]:
+    profile = _profile(tmp_path)
+    return read_edd_file(FIXTURE_CSV, profile)
+
+
+# ---------------------------------------------------------------------------
+# read_edd_file
+# ---------------------------------------------------------------------------
+
+def test_read_edd_file_returns_rows(tmp_path):
+    rows = _rows_from_fixture(tmp_path)
+    assert len(rows) == 4
+    assert "SysLocCode" in rows[0]
+
+
+# ---------------------------------------------------------------------------
+# normalize_edd_rows — qualifier and detection flags
+# ---------------------------------------------------------------------------
+
+def test_nondetect_qualifier_u(tmp_path):
+    rows = _rows_from_fixture(tmp_path)
+    _, results, _ = _run(rows, tmp_path)
+    # Row 0: Benzene MW-1 qualifier U
+    r = next(x for x in results
+             if x.LocationID == "MW-1" and x.AnalyteName == "Benzene")
+    assert r.IsNonDetect == 1
+    assert r.IsDetected == 0
+    assert r.Qualifier == "U"
+
+
+def test_detected_value(tmp_path):
+    rows = _rows_from_fixture(tmp_path)
+    _, results, _ = _run(rows, tmp_path)
+    # Row 1: Toluene MW-1, result 12.3
+    r = next(x for x in results
+             if x.LocationID == "MW-1" and x.AnalyteName == "Toluene")
+    assert r.IsDetected == 1
+    assert r.IsNonDetect == 0
+    assert r.ResultNumeric == pytest.approx(12.3)
+
+
+def test_blank_result_is_not_detected(tmp_path):
+    rows = _rows_from_fixture(tmp_path)
+    _, results, _ = _run(rows, tmp_path)
+    # Row 2: Benzene MW-2, blank result
+    r = next(x for x in results
+             if x.LocationID == "MW-2" and x.AnalyteName == "Benzene")
+    assert r.IsDetected == 0
+    assert r.ResultNumeric is None
+
+
+# ---------------------------------------------------------------------------
+# Sample deduplication
+# ---------------------------------------------------------------------------
+
+def test_sample_deduplication(tmp_path):
+    rows = _rows_from_fixture(tmp_path)
+    samples, results, _ = _run(rows, tmp_path)
+    # MW-1 appears in rows 0 and 1 (Benzene + Toluene) -> 1 SampleRecord
+    mw1_samples = [s for s in samples if s.LocationID == "MW-1"]
+    mw1_results = [r for r in results if r.LocationID == "MW-1"]
+    assert len(mw1_samples) == 1
+    assert len(mw1_results) == 2
+
+
+# ---------------------------------------------------------------------------
+# Matrix mapping
+# ---------------------------------------------------------------------------
+
+def test_matrix_mapping(tmp_path):
+    rows = _rows_from_fixture(tmp_path)
+    samples, results, _ = _run(rows, tmp_path)
+    # MW-3 has Medium="SO" -> Matrix=="SOIL"
+    r = next(x for x in results if x.LocationID == "MW-3")
+    assert r.Matrix == "SOIL"
+    s = next(x for x in samples if x.LocationID == "MW-3")
+    assert s.Matrix == "SOIL"
+
+
+def test_unknown_matrix_emits_warning(tmp_path):
+    profile = _profile(tmp_path)
+    qa = QACollector()
+    rows = [
+        {"SysLocCode": "MW-9", "CollDate": "06/01/2026", "Medium": "XX",
+         "LabID": "L-001", "Chemical": "Benzene", "Result": "1.0",
+         "Qualifier": "", "RL": "0.5", "Unit": "ug/L", "AnalytMeth": "EPA 8260B"},
+    ]
+    normalize_edd_rows(rows, profile, site_id="H281", batch_id="B001",
+                       analyte_dictionary=dict(ANALYTES),
+                       screening_levels=SCREENING, qa=qa)
+    warnings = [r for r in qa.records
+                if r.severity == SEV_WARNING and "matrix" in r.message.lower()]
+    assert len(warnings) >= 1
+
+
+# ---------------------------------------------------------------------------
+# QA records
+# ---------------------------------------------------------------------------
+
+def test_unknown_analyte_emits_warning(tmp_path):
+    profile = _profile(tmp_path)
+    qa = QACollector()
+    rows = [
+        {"SysLocCode": "MW-9", "CollDate": "06/01/2026", "Medium": "WS",
+         "LabID": "L-001", "Chemical": "Dibromochloromethane", "Result": "1.0",
+         "Qualifier": "", "RL": "0.5", "Unit": "ug/L", "AnalytMeth": "EPA 8260B"},
+    ]
+    normalize_edd_rows(rows, profile, site_id="H281", batch_id="B001",
+                       analyte_dictionary=dict(ANALYTES),
+                       screening_levels=SCREENING, qa=qa)
+    warnings = [r for r in qa.records
+                if r.severity == SEV_WARNING and "analyte" in r.message.lower()]
+    assert len(warnings) >= 1
+
+
+def test_missing_required_column_emits_error(tmp_path):
+    profile = _profile(tmp_path)
+    qa = QACollector()
+    # SysLocCode absent -> sample_id and location_id both None
+    rows = [
+        {"CollDate": "06/01/2026", "Medium": "WS",
+         "LabID": "L-001", "Chemical": "Benzene", "Result": "1.0",
+         "Qualifier": "", "RL": "0.5", "Unit": "ug/L", "AnalytMeth": "EPA 8260B"},
+    ]
+    samples, results = normalize_edd_rows(
+        rows, profile, site_id="H281", batch_id="B001",
+        analyte_dictionary=dict(ANALYTES),
+        screening_levels=SCREENING, qa=qa,
+    )[:2]
+    assert len(samples) == 0
+    errors = [r for r in qa.records if r.severity == SEV_ERROR]
+    assert len(errors) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Event date override
+# ---------------------------------------------------------------------------
+
+def test_event_date_override(tmp_path):
+    rows = _rows_from_fixture(tmp_path)
+    override = date(2026, 3, 15)
+    samples, results, _ = _run(rows, tmp_path, event_date_override=override)
+    assert all(s.SampleDate == override for s in samples)
+    assert all(r.SampleDate == override for r in results)
+
+
+# ---------------------------------------------------------------------------
+# Screening levels
+# ---------------------------------------------------------------------------
+
+def test_exceeds_screening_level_benzene_gw(tmp_path):
+    rows = _rows_from_fixture(tmp_path)
+    _, results, _ = _run(rows, tmp_path)
+
+    # Toluene MW-1 has no screening level -> ExceedsScreeningLevel is None
+    toluene = next(x for x in results
+                   if x.LocationID == "MW-1" and x.AnalyteName == "Toluene")
+    assert toluene.ExceedsScreeningLevel is None
+
+    # Benzene MW-3 is SOIL matrix, no SL for SOIL -> None
+    benz_soil = next(x for x in results
+                     if x.LocationID == "MW-3" and x.AnalyteName == "Benzene")
+    assert benz_soil.ExceedsScreeningLevel is None
+
+
+# ---------------------------------------------------------------------------
+# run_edd_import orchestrator
+# ---------------------------------------------------------------------------
+
+def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
+    """Verify run_edd_import calls import_to_gdb lifecycle functions in order."""
+    import autogis.core.envmon.edd_importer as mod
+
+    calls = []
+
+    def fake_create(gdb_path, edd_path, site_id, lab_name, profile_id, mode="append"):
+        calls.append("create")
+        return "BATCH-001"
+
+    def fake_append(gdb_path, table_name, records, qa, batch_id):
+        calls.append(f"append:{table_name}")
+
+    def fake_finalize(gdb_path, batch_id, qa, counts, status):
+        calls.append("finalize")
+
+    def fake_write_qa(gdb_path, qa, batch_id):
+        calls.append("write_qa")
+
+    monkeypatch.setattr(mod, "create_edd_import_batch", fake_create)
+    monkeypatch.setattr(mod, "append_records_idempotent", fake_append)
+    monkeypatch.setattr(mod, "finalize_batch", fake_finalize)
+    monkeypatch.setattr(mod, "write_qa_to_gdb", fake_write_qa)
+
+    profile = _profile(tmp_path)
+    gdb = tmp_path / "test.gdb"
+
+    batch_id = mod.run_edd_import(
+        edd_path=FIXTURE_CSV,
+        profile=profile,
+        gdb_path=gdb,
+        site_id="H281",
+        analyte_dictionary=ANALYTES,
+        screening_levels=SCREENING,
+    )
+
+    assert batch_id == "BATCH-001"
+    assert calls[0] == "create"
+    assert "append:Env_Samples" in calls
+    assert "append:Env_AnalyticalResults" in calls
+    assert "finalize" in calls
+    assert "write_qa" in calls
+    assert calls.index("finalize") > calls.index("append:Env_Samples")
+    assert calls.index("finalize") > calls.index("append:Env_AnalyticalResults")

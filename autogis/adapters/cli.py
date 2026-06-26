@@ -292,6 +292,55 @@ def validate_db_cmd(gdb):
     )
 
 
+@envmon.command("import-edd")
+@click.option("--edd", "edd_path", required=True, type=click.Path(exists=True),
+              help="Path to EDD CSV or XLSX file.")
+@click.option("--profile-path", required=True, type=click.Path(exists=True),
+              help="Path to lab profile YAML.")
+@click.option("--site", "site_id", required=True,
+              help="Site ID (e.g. H281).")
+@click.option("--gdb", "gdb_path", required=True, type=click.Path(),
+              help="Path to target file GDB.")
+@click.option("--analytes", default=None, type=click.Path(exists=True),
+              help="Analyte dictionary YAML (optional).")
+@click.option("--screening", default=None, type=click.Path(exists=True),
+              help="Screening levels YAML (optional).")
+@click.option("--event-date", default=None,
+              help="Override event date ISO8601 (YYYY-MM-DD).")
+def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
+                   analytes, screening, event_date):
+    """Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro)."""
+    _guard("LOCAL")
+    from autogis.core.envmon.edd_profile import LabEDDProfile
+    from autogis.core.envmon.edd_importer import run_edd_import
+    from autogis.core.common.config import load_config
+
+    profile = LabEDDProfile.load(Path(profile_path))
+    analyte_dictionary = load_config(Path(analytes)) if analytes else {}
+    screening_levels = load_config(Path(screening)) if screening else {}
+
+    override = None
+    if event_date:
+        from datetime import date as _date
+        try:
+            override = _date.fromisoformat(event_date)
+        except ValueError:
+            raise click.BadParameter(
+                f"Invalid date '{event_date}'; use YYYY-MM-DD",
+                param_hint="--event-date")
+
+    batch_id = run_edd_import(
+        edd_path=Path(edd_path),
+        profile=profile,
+        gdb_path=Path(gdb_path),
+        site_id=site_id,
+        analyte_dictionary=analyte_dictionary,
+        screening_levels=screening_levels,
+        event_date_override=override,
+    )
+    click.echo(f"Import complete. Batch ID: {batch_id}")
+
+
 @autogis.group()
 def agol():
     """AGOL / cloud tools."""

@@ -1,0 +1,30 @@
+# autogis/config/lab_profiles/testamerica.yaml
+# Reference profile for TestAmerica laboratories.
+profile_id: testamerica
+lab_name: "TestAmerica"
+format: flat_csv
+date_format: "%m/%d/%Y"
+encoding: "utf-8-sig"
+
+columns:
+  sample_id:       "SysLocCode"
+  location_id:     "SysLocCode"
+  event_date:      "CollDate"
+  matrix:          "Medium"
+  analyte:         "Chemical"
+  result:          "Result"
+  units:           "Unit"
+  qualifier:       "Qualifier"
+  reporting_limit: "RL"
+  method:          "AnalytMeth"
+  lab_sample_id:   "LabID"
+  depth_top_ft:    "TopDepth"
+  depth_bot_ft:    "BotDepth"
+
+matrix_map:
+  WS: GW
+  WG: GW
+  SO: SOIL
+  SB: SOIL
+
+nondetect_qualifiers: ["U", "UJ"]

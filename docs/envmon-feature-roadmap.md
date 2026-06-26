@@ -158,6 +158,69 @@ It gives you auditability. You can answer: "Which workbook produced this map?"
 
 ---
 
+### 2.6 Survey123 Field-to-Lab Reconciliation ⭐ FAST-TRACK
+
+**Tool name:** `ReconcileSurvey123AndLabResults`
+
+Compares field-submitted samples (Survey123) against lab results and GIS well records.
+
+**Flags**
+
+- Field sample missing from lab data
+- Lab sample missing from field data
+- Sample ID mismatch
+- Date mismatch
+- Matrix mismatch
+- Duplicate sample mismatch
+- Wrong analyte group
+- Missing depth interval for soil
+- Well marked dry but lab result exists
+- Lab result exists for inactive well
+
+**Why add it**
+
+Catches field/lab/GIS mismatches early, before map production. Directly supports field-to-database workflow.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✓
+
+**Shared infrastructure:** ✓ (extends ImportQA logic, writes QA records, uses analyte dictionary)
+
+---
+
+### 2.7 Survey123 Sampling Event Generator ⭐ FAST-TRACK (Conditional)
+
+**Tool name:** `CreateSurvey123SamplingEvent`
+
+Generates complete planned event before fieldwork.
+
+**Inputs**
+
+- Site ID
+- Event date or quarter
+- Monitoring well network
+- Required analyte groups
+- Required field measurements
+- Prior event status
+- Access constraints
+- Bottle/preservation config
+- Lab method config
+
+**Outputs**
+
+- Survey123 planned sample records
+- AGOL hosted feature layer records
+- Field crew assignment table
+- Expected sample list
+- Sample bottle count estimate
+- COC draft table
+- Dashboard-ready event status table
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✓
+
+**Shared infrastructure:** ✓ (reads site config, well network, analyte groups; writes to event status table)
+
+---
+
 ## 3. QA/QC Tools
 
 ### 3.1 Universal Environmental Data Validator
@@ -842,7 +905,141 @@ Compares hosted feature schemas against your local schema/config.
 
 ---
 
-## 7. Field Workflow Tools
+### 6.7 Dashboard Data Mart Builder ⭐ FAST-TRACK
+
+**Tool name:** `BuildDashboardDataMart`
+
+Do not point dashboards directly at raw analytical tables. Build flattened, dashboard-specific feature layers/tables.
+
+**Dashboard tables**
+
+```text
+Dash_SiteStatus
+Dash_EventStatus
+Dash_WellStatus
+Dash_CurrentExceedances
+Dash_GWLevelSummary
+Dash_AnalyticalSummary
+Dash_FieldQA
+Dash_LabQA
+Dash_OpenIssues
+Dash_ReportReadiness
+```
+
+**Why add it**
+
+Solves dashboard performance + schema isolation. Reuses ValidateAndConvertUnits, analyte screening, QA framework.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✓
+
+**Shared infrastructure:** ✓ (reads normalized tables, produces flat views, uses shared QA)
+
+---
+
+### 6.8 Dashboard Config Publisher ⭐ FAST-TRACK
+
+**Tool name:** `PublishDashboardFromSpec`
+
+Build or update dashboards from YAML.
+
+**Config controls**
+
+- Dashboard title
+- Web map item ID
+- Indicator cards
+- Serial charts
+- Category selectors
+- Date selectors
+- Lists
+- Embedded report links
+- Filters
+- Theme
+- Refresh interval
+
+**Why add it**
+
+Makes dashboards reproducible and version-controlled. No more manual clicking in AGOL UI.
+
+**Execution modes:** Local ✗ | CLI ✓ | AGOL ✓✓
+
+**Shared infrastructure:** ✓ (config-driven, uses site config, data mart tables)
+
+---
+
+### 6.9 AGOL Item Dependency Auditor ⭐ FAST-TRACK
+
+**Tool name:** `AuditAGOLItemDependencies`
+
+Checks relationships between hosted feature layers, views, web maps, dashboards, Survey123 forms, Experience Builder apps, and report items.
+
+**Flags**
+
+- Dashboard points to deleted view
+- Survey123 form points to old feature layer
+- Web map references renamed layer
+- Hosted view schema no longer matches source
+- Stale item not modified in configured period
+- Missing sharing group
+
+**Why add it**
+
+Prevents broken web maps/dashboards/forms. Enables AGOL maintenance at scale.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (item registry, queries AGOL API)
+
+---
+
+### 6.10 Hosted Feature Layer Promotion Pipeline ⭐ FAST-TRACK
+
+**Tool name:** `PromoteAGOLDataBetweenStages`
+
+Mimics software release environments:
+
+```text
+DEV -> QA -> PROD
+```
+
+**Workflow**
+
+1. Publish to DEV hosted feature layer.
+2. Validate schema and data.
+3. Promote to QA group.
+4. Reviewer approves.
+5. Promote to PROD dashboard/client group.
+
+**Why add it**
+
+Brings release discipline to AGOL content. Prevents accidental publication of unvalidated data.
+
+**Execution modes:** Local ✗ | CLI ✓ | AGOL ✓
+
+**Shared infrastructure:** ✓ (extends RunHistory with promotion/approval state)
+
+---
+
+### 6.11 AGOL Hosted View Builder
+
+**Tool name:** `CreateHostedViewsForStakeholders`
+
+Creates hosted feature layer views for different audiences.
+
+| View | Filters / fields |
+|---|---|
+| Internal_QA_View | All fields, QA flags |
+| Client_View | Approved fields only |
+| Field_Crew_View | Only active wells and current event |
+| Public_View | No sensitive analytical values |
+| Regulatory_View | Approved exceedance/report data |
+
+**Execution modes:** Local ✗ | CLI ✓ | AGOL ✓
+
+**Shared infrastructure:** ✓ (row/field filtering, item registry)
+
+---
+
+## 7. Field Workflow and Survey123 Tools
 
 ### 7.1 Field Maps Project Builder
 
@@ -870,6 +1067,61 @@ Creates or refreshes layers for field crews.
 - `WellCondition`
 - `PhotoRequired`
 - `Notes`
+
+---
+
+### 7.1a Smart Survey123 Form Builder ⭐ FAST-TRACK
+
+**Tool name:** `BuildSurvey123XLSFormFromConfig`
+
+Automatically creates or updates an XLSForm from site/event configuration.
+
+**Generates**
+
+- Well dropdowns filtered by site
+- Relevant choices for matrix
+- DTW fields
+- TOC reference display
+- Calculated groundwater elevation
+- Sample ID builder
+- Sample bottle checklist
+- Photo questions
+- Well condition checklist
+- Purge/water quality readings
+- QA warnings inside the form
+
+**Why add it**
+
+Removes manual form maintenance. Form stays synchronized with well network and analyte configuration.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✓
+
+**Shared infrastructure:** ✓ (reads site config, well network, analyte groups)
+
+---
+
+### 7.1b Survey123 Webhook Event Router ⭐ FAST-TRACK
+
+**Tool name:** `RouteSurvey123Submission`
+
+When a field record is submitted:
+
+1. Validate required fields.
+2. Recalculate GWE.
+3. Flag anomalous DTW.
+4. Update AGOL dashboard status.
+5. Create a QA record.
+6. Notify PM if critical condition exists.
+7. Write to local/enterprise database through the harness.
+8. Optionally generate a Survey123 report.
+
+**Why add it**
+
+Core field-to-database pipeline. Bridges field crew submission → GIS database → dashboard in one workflow.
+
+**Execution modes:** Local ✗ | CLI ✓ | AGOL ✓✓
+
+**Shared infrastructure:** ✓ (webhook architecture, shared QA, GWE calculations)
 
 ---
 
@@ -931,9 +1183,399 @@ Uses attachments and well status fields to generate photo logs.
 
 ---
 
-## 8. Civil 3D / CAD / Survey Handoff Tools
+## 8. Survey, Boring Log, RTK, Drone, and Civil 3D / CAD Handoff Tools
 
-### 8.1 Export GIS Layers to CAD Package
+### 8.0a Boring Log Documentation Database ⭐ FAST-TRACK (Foundation)
+
+**Tool name:** `CreateBoringLogDatabase`
+
+Create the normalized geodatabase or SQLite/PostgreSQL schema needed to store boring log data, field observations, lab samples, stratigraphy, and well construction details.
+
+**Core tables**
+
+- `BoringLocations` (boring ID, coordinates, elevation, driller, logging status)
+- `LithologyIntervals` (depth intervals, USCS codes, material descriptions, PID readings)
+- `Samples` (sample type, recovery, lab submission, analytical group)
+- `WellConstruction` (casing, screen, sand pack, grout, backfill)
+- `GroundwaterObservations` (depth-to-water observations during/after drilling)
+- `Photos` (boring photos, sample photos with depth tags)
+- `CommentTracker` (review comments, resolution tracking)
+
+**Why add it**
+
+Foundation for boring-to-GWE and boring-to-Civil3D workflows. Normalizes heterogeneous field log inputs.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+---
+
+### 8.0b Import Field Boring Logs ⭐ FAST-TRACK
+
+**Tool name:** `ImportFieldBoringLogs`
+
+Import boring logs from field spreadsheets, Survey123 forms, tablets, CSVs, or structured JSON into the normalized boring log database.
+
+**Supported sources**
+
+- Survey123 drilling/boring forms
+- Excel field logs
+- CSV exports from third-party logging apps
+- gINT-style exports
+- Manual entry GUI output
+
+**QA checks**
+
+- Missing boring ID (error)
+- Duplicate boring ID (warning)
+- Interval gaps (error)
+- Interval overlaps (error)
+- Total depth mismatch (warning)
+- Sample interval outside boring depth (error)
+- Well screen outside boring depth (error)
+- Missing ground elevation (warning)
+- Missing coordinates (warning)
+- Groundwater depth deeper than total depth (error)
+- Well construction component overlap (warning)
+
+**Why add it**
+
+Enables boring-to-GWE workflows. Prevents geometry/logic errors from field logs.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (extends QA framework, adds boring schema tables)
+
+---
+
+### 8.0c Generate Boring Log PDFs ⭐ FAST-TRACK
+
+**Tool name:** `GenerateBoringLogPDFs`
+
+Generate standardized boring log PDFs from normalized database records.
+
+**Outputs**
+
+- One boring log PDF per boring
+- Combined boring log appendix PDF
+- Photo log appendix
+- Sample summary table
+- Well construction diagrams
+- QA report
+
+**Log sections**
+
+- Project/site header
+- Location map inset or coordinate box
+- Drilling method
+- Driller/logger/date
+- Ground elevation and coordinates
+- Lithologic column
+- USCS/pattern column
+- Sample intervals
+- PID readings
+- Groundwater observations
+- Well construction diagram
+- Remarks
+- Review/approval block
+
+**Why add it**
+
+Deliverable for field work. Reproducible and consistent across projects.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (reads boring database, uses report framework)
+
+---
+
+### 8.1 Level Rod Loop Processing ⭐ FAST-TRACK
+
+**Tool name:** `ProcessLevelLoop`
+
+Process differential level notes and calculate adjusted elevations.
+
+**Input methods**
+
+- CSV from digital level
+- Manual field-book entry
+- Survey123 form
+- Excel level notes
+
+**Calculations**
+
+- Height of instrument
+- Elevation per point
+- Total backsight / total foresight
+- Misclosure
+- Loop length or number of setups
+- Allowable closure tolerance
+- Adjustment per setup or per distance
+- Adjusted elevations
+
+**QA flags**
+
+- Misclosure exceeds tolerance (error)
+- Missing backsight/foresight (error)
+- Negative or impossible reading (error)
+- Duplicate turning point issue (warning)
+- Benchmark mismatch (error)
+- Excessive sight length imbalance (warning)
+- Unclosed loop (warning)
+
+**Why add it**
+
+Foundation for defensible well elevations. Enables GWE map accuracy.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (defines elevation history table, extends QA framework)
+
+---
+
+### 8.2 Update Well Elevations from Level Loop ⭐ FAST-TRACK
+
+**Tool name:** `UpdateWellElevationsFromLevelLoop`
+
+Push adjusted TOC/ground elevations into the monitoring well database.
+
+**Safeguards**
+
+- Create elevation history records instead of overwriting silently
+- Require approval flag for replacing active elevations
+- Track survey method and source loop
+- Preserve prior elevations
+
+**Elevation history table**
+
+| Field | Description |
+|---|---|
+| `LocationID` | Well/point |
+| `ElevationType` | TOC, ground, casing mark, benchmark |
+| `Elevation` | Elevation |
+| `VerticalDatum` | Datum |
+| `SurveyDate` | Date |
+| `SurveyMethod` | RTK, level loop, total station |
+| `SourceRunID` | Source processing run |
+| `ApprovedForUse` | Yes/no |
+| `Superseded` | Yes/no |
+
+**Why add it**
+
+Critical for GWE map accuracy. Audit trail prevents accidental elevation overwrites.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (extends well feature class + elevation history table with approval tracking)
+
+---
+
+### 8.3 Import RTK Survey Points ⭐ FAST-TRACK
+
+**Tool name:** `ImportRTKSurveyPoints`
+
+Import RTK survey points from CSV, TXT, shapefile, GeoPackage, or collector export into a standardized survey feature class.
+
+**Input fields**
+
+- Point ID
+- Northing/easting or latitude/longitude
+- Elevation
+- Feature code
+- Description
+- HRMS/VRMS or horizontal/vertical precision
+- Fix type
+- Correction source
+- Occupation time
+- Rod height
+- Date/time
+- Operator
+
+**Output feature classes**
+
+- `SurveyPoints_Raw` (unmodified input)
+- `SurveyPoints_QA` (validated, flagged)
+
+**Why add it**
+
+Standard survey data import. Foundation for feature location accuracy.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (adds SurveyPoints schema tables)
+
+---
+
+### 8.4 Validate RTK Survey ⭐ FAST-TRACK
+
+**Tool name:** `ValidateRTKSurvey`
+
+RTK QA: duplicate IDs, missing elevation, precision tolerance, control residuals, datum mismatches.
+
+**QA checks**
+
+| Check | Severity |
+|---|---|
+| Duplicate point IDs | Error/warning |
+| Missing elevation | Warning/error |
+| HRMS/VRMS above tolerance | Warning/error |
+| Float/fixed status not acceptable | Error |
+| Point outside site boundary | Warning |
+| Coordinate system mismatch | Error |
+| Elevation datum mismatch | Error |
+| Control point residual above tolerance | Error |
+| Repeat shot difference above tolerance | Warning/error |
+| Feature code unknown | Warning |
+| Rod height missing | Warning |
+| Time gap or suspicious sequence | Info/warning |
+
+**Why add it**
+
+Prevents bad survey data from corrupting GWE maps. Validates coordinate system/datum alignment.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (extends QA framework, uses coordinate system config)
+
+---
+
+### 8.5 Survey to Well Elevation Update ⭐ FAST-TRACK (Conditional - Depends on 8.1, 8.2, 8.4)
+
+**Tool name:** `SurveyToWellElevationUpdate`
+
+Combine RTK and/or level-loop data to update monitoring well elevations.
+
+**Steps**
+
+1. Import RTK or level-loop data
+2. Validate survey quality
+3. Calculate adjusted elevations
+4. Compare against previous well elevations
+5. Flag significant changes
+6. Update elevation history table
+7. Set approved elevations after review
+8. Recalculate groundwater elevations for selected events
+
+**Why add it**
+
+Integrates field survey → well elevations → GWE recalculation. Creates foundation for defensible potentiometric maps.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (integrates ProcessLevelLoop + ValidateRTKSurvey + GWE calculations)
+
+---
+
+### 8.6 Register Drone Flight ⭐ FAST-TRACK
+
+**Tool name:** `RegisterDroneFlight`
+
+Create a formal record for each drone flight and photogrammetry deliverable.
+
+**Fields**
+
+| Field | Description |
+|---|---|
+| `FlightID` | Unique flight ID |
+| `ProjectID` | Project |
+| `SiteID` | Site |
+| `FlightDate` | Date |
+| `Pilot` | Pilot |
+| `DroneModel` | Aircraft |
+| `Sensor` | Camera/sensor |
+| `FlightAltitude` | Altitude |
+| `OverlapForward` | Forward overlap |
+| `OverlapSide` | Side overlap |
+| `GCPUsed` | Yes/no |
+| `CheckpointCount` | Count |
+| `ProcessingSoftware` | Software |
+| `OutputCRS` | Horizontal CRS |
+| `VerticalDatum` | Vertical datum |
+| `OrthomosaicPath` | Output path |
+| `DSMPath` | Output path |
+| `DEMPath` | Output path |
+| `PointCloudPath` | Output path |
+| `QAStatus` | Status |
+
+**Why add it**
+
+Prerequisite for all drone workflows. Flight inventory enables audit trail.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (adds DroneFlights table to project schema)
+
+---
+
+### 8.7 Drone GCP Checkpoint QA ⭐ FAST-TRACK
+
+**Tool name:** `DroneGCPCheckpointQA`
+
+Evaluate photogrammetry accuracy using checkpoints.
+
+**Checks**
+
+- GCPs used vs checkpoints held out
+- Horizontal residuals
+- Vertical residuals
+- RMSE horizontal / RMSE vertical
+- Max residual
+- Checkpoints outside tolerance
+- Coordinate system mismatch
+- Units mismatch
+- Vertical datum mismatch
+
+**Outputs**
+
+- Residual table
+- Residual map
+- Accuracy report
+- Pass/fail QA status
+
+**Why add it**
+
+Validates drone products before use in analysis. Prevents bad orthomosaics/DEMs from corrupting maps.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (defines checkpoint QA table, integrates with QA framework)
+
+---
+
+### 8.8 Import Drone Products ⭐ FAST-TRACK
+
+**Tool name:** `ImportDroneProducts`
+
+Orthomosaic, DSM, DEM, point cloud → mosaic dataset or raster catalog + GCP/checkpoint feature class.
+
+**Inputs**
+
+- Orthomosaic
+- DSM
+- DEM/DTM
+- Point cloud
+- GCP/checkpoint CSV
+- Processing quality report
+- Boundary polygon
+
+**Outputs**
+
+- Raster catalog or mosaic dataset
+- Site orthomosaic layer
+- DEM/DSM layers
+- GCP/checkpoint feature classes
+- QA report
+
+**Why add it**
+
+Standard drone data import. Prepares products for analysis/mapping.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✓
+
+**Shared infrastructure:** ✓ (raster registry, flight inventory integration)
+
+---
+
+### 8.9 Export GIS Layers to CAD Package
 
 **Tool name:** `BuildCADExportPackage`
 
@@ -1015,7 +1657,70 @@ Catalogs drone deliverables.
 
 ---
 
-## 9. Reporting and Deliverable Automation Tools
+## 9. Reporting, Database Snapshot, and Deliverable Automation Tools
+
+### 9.0a Event Database Snapshot Exporter ⭐ FAST-TRACK
+
+**Tool name:** `ExportEventDatabaseSnapshot`
+
+Creates a frozen database snapshot for a report event.
+
+**Output format**
+
+```text
+H281_2026Q2_ReportSnapshot.gdb
+```
+
+**Contents**
+
+- Wells
+- Samples
+- Analytical results
+- Water levels
+- Callouts
+- Contours
+- QA
+- Exported figures
+- Model summary
+- Event metadata
+
+**Why add it**
+
+Makes report outputs reproducible. Captures complete event state at report time.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✗
+
+**Shared infrastructure:** ✓ (leverages normalized tables + RunHistory table for audit trail)
+
+---
+
+### 9.0b Report Readiness Gate ⭐ FAST-TRACK
+
+**Tool name:** `EvaluateReportReadiness`
+
+Single pass/fail gate for event readiness.
+
+**Checks**
+
+| Category | Example |
+|---|---|
+| Field | All required wells sampled or explained |
+| Lab | All expected analyses received |
+| GIS | All figures exported |
+| QA | No blocking errors |
+| Model | Hydro review complete |
+| Dashboard | AGOL layers refreshed |
+| Report | Tables generated |
+
+**Why add it**
+
+Gives PMs clear go/no-go status. Audits QA records + schema completeness + report status.
+
+**Execution modes:** Local ✓ | CLI ✓ | AGOL ✓
+
+**Shared infrastructure:** ✓ (reads QA framework, run history, figure registry)
+
+---
 
 ### 9.1 Analytical Summary Table Exporter
 
