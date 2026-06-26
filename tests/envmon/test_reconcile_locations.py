@@ -43,3 +43,20 @@ def test_reconcile_to_qa_severities():
     assert (SEV_WARNING, "location_id_typo") in cats        # MW-7A -> MW-07A
     assert (SEV_ERROR, "location_id_unmatched") in cats      # ZZZ-99
     assert (SEV_INFO, "well_not_sampled") in cats            # MW-2
+
+
+# ---------------------------------------------------------------------------
+# Task 3: extract_location_ids
+# ---------------------------------------------------------------------------
+from autogis.core.common.config import ParserProfile, SheetProfile
+from autogis.core.envmon.reconcile_locations import extract_location_ids
+from tests.envmon.conftest import InMemoryWorkbookReader
+
+
+def test_extract_location_ids_reads_id_column_dedup():
+    sp = SheetProfile.from_dict({"sheet_name": "S", "data_type": "METALS",
+                                 "data_start_row": 2, "id_column": "A"})
+    profile = ParserProfile(profile_id="P", data={}, sheets={"S": sp})
+    cells = {("S", 2, 1): "MW-1", ("S", 3, 1): "MW-2", ("S", 4, 1): "MW-1"}
+    reader = InMemoryWorkbookReader(cells)
+    assert extract_location_ids(reader, profile) == ["MW-1", "MW-2"]
