@@ -52,3 +52,14 @@ def test_inspect_runs_headless(tmp_path):
     result = CliRunner().invoke(autogis, ["envmon", "inspect", str(path)])
     assert result.exit_code == 0, result.output
     assert "Data" not in result.output or "sheet" in result.output.lower()
+
+
+def test_import_edd_cmd_registered():
+    """import-edd command exists and shows help without error."""
+    runner = CliRunner()
+    result = runner.invoke(autogis, ["envmon", "import-edd", "--help"])
+    assert result.exit_code == 0
+    assert "--edd" in result.output
+    assert "--profile-path" in result.output
+    assert "--site" in result.output
+    assert "--gdb" in result.output
