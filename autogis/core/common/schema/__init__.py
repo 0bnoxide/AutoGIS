@@ -1,4 +1,5 @@
 # autogis/core/common/schema/__init__.py
+from __future__ import annotations
 from .envmon import EnvSample, EnvAnalyticalResult, EnvImportQA, EnvWaterLevelEvent
 from .boring import (
     BoringLocation, LithologyInterval, BoringSample, WellConstruction,
