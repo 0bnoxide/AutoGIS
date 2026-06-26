@@ -674,6 +674,8 @@ def line_circ_intersection(c_cent, st_pnt, en_pnt, radius=1):
         #
         p1_x = x0 + t2 * dx
         p1_y = y0 + t2 * dy
+        # NOTE: pre-existing bug from Dan Patterson's original — first intersection point
+        # uses p1_y instead of p0_y. Do not call this function for production use until fixed.
         return [st_pnt, [p0_x, p1_y], [p1_x, p1_y], en_pnt]
 
 

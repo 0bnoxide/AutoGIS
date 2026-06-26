@@ -148,7 +148,7 @@ try:
         """
         if tolerance == 0.0 or len(xy) <= 2:
             return xy
-        return _simplify(xy, tol=tolerance)
+        return _simplify(np.ascontiguousarray(xy), tol=tolerance)
 
 except (ImportError, AttributeError):
     def _dp_reduce(xy: np.ndarray, tol: float) -> list[int]:
@@ -185,21 +185,11 @@ try:
     from autogis.core.common.npg.npg_geom_ops import _densify_2D as _densify
 
     def densify_polyline(xy: np.ndarray, factor: int) -> np.ndarray:
-        """Add intermediate vertices along each segment.
+        """Add intermediate vertices. Used by contour smoothing.
 
-        Used by contour smoothing.
-
-        Parameters
-        ----------
-        xy : ndarray, shape (N, 2)
-        factor : int
-            Number of equal sub-segments per original segment.
-            factor=2 inserts one midpoint per segment.
-
-        Returns
-        -------
-        ndarray, shape (M, 2)  where M > N (for factor > 1)
-        """
+        factor controls the minimum number of sub-intervals per shortest segment;
+        longer segments receive proportionally more points. For uniform spacing
+        across a mixed-length polyline, use the pure-numpy fallback path instead."""
         if factor <= 1 or len(xy) < 2:
             return xy
         # _densify_2D takes a spacing distance, not a factor count.
