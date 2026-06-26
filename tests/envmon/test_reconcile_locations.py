@@ -26,3 +26,20 @@ def test_reconcile_exact_typo_nomatch_and_extra_well():
 def test_reconcile_threshold_boundary_excludes_weak_suggestion():
     result = reconcile(["AB"], ["XY"], threshold=0.8)
     assert result.unmatched_workbook[0].suggestion is None
+
+
+# ---------------------------------------------------------------------------
+# Task 2: reconcile_to_qa
+# ---------------------------------------------------------------------------
+from autogis.core.common.qa import SEV_ERROR, SEV_INFO, SEV_WARNING
+from autogis.core.envmon.reconcile_locations import reconcile_to_qa
+
+
+def test_reconcile_to_qa_severities():
+    result = reconcile(["MW-1", "MW-7A", "ZZZ-99"], ["MW-1", "MW-07A", "MW-2"],
+                       threshold=0.8)
+    qa = reconcile_to_qa(result)
+    cats = {(r.severity, r.category) for r in qa.records}
+    assert (SEV_WARNING, "location_id_typo") in cats        # MW-7A -> MW-07A
+    assert (SEV_ERROR, "location_id_unmatched") in cats      # ZZZ-99
+    assert (SEV_INFO, "well_not_sampled") in cats            # MW-2
