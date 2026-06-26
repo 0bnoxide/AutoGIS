@@ -256,3 +256,52 @@ def test_exceeds_screening_level_benzene_gw(tmp_path):
     benz_soil = next(x for x in results
                      if x.LocationID == "MW-3" and x.AnalyteName == "Benzene")
     assert benz_soil.ExceedsScreeningLevel is None
+
+
+# ---------------------------------------------------------------------------
+# run_edd_import orchestrator
+# ---------------------------------------------------------------------------
+
+def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
+    """Verify run_edd_import calls import_to_gdb lifecycle functions in order."""
+    import autogis.core.envmon.edd_importer as mod
+
+    calls = []
+
+    def fake_create(gdb_path, **kw):
+        calls.append("create")
+        return "BATCH-001"
+
+    def fake_append(gdb_path, table_name, records):
+        calls.append(f"append:{table_name}")
+
+    def fake_finalize(gdb_path, **kw):
+        calls.append("finalize")
+
+    def fake_write_qa(gdb_path, qa, batch_id):
+        calls.append("write_qa")
+
+    monkeypatch.setattr(mod, "create_import_batch", fake_create)
+    monkeypatch.setattr(mod, "append_records_idempotent", fake_append)
+    monkeypatch.setattr(mod, "finalize_batch", fake_finalize)
+    monkeypatch.setattr(mod, "write_qa_to_gdb", fake_write_qa)
+
+    profile = _profile(tmp_path)
+    gdb = tmp_path / "test.gdb"
+
+    batch_id = mod.run_edd_import(
+        edd_path=FIXTURE_CSV,
+        profile=profile,
+        gdb_path=gdb,
+        site_id="H281",
+        analyte_dictionary=ANALYTES,
+        screening_levels=SCREENING,
+    )
+
+    assert batch_id == "BATCH-001"
+    assert calls[0] == "create"
+    assert "append:Env_Samples" in calls
+    assert "append:Env_AnalyticalResults" in calls
+    assert "finalize" in calls
+    assert "write_qa" in calls
+    assert calls.index("finalize") > calls.index("append:Env_Samples")

@@ -265,3 +265,88 @@ def normalize_edd_rows(
         ))
 
     return samples, results
+
+
+# ---------------------------------------------------------------------------
+# Module-level stubs — monkeypatchable in tests; forward to import_to_gdb
+# at call time so this module is importable without arcpy.
+# ---------------------------------------------------------------------------
+
+def create_import_batch(gdb_path, **kw):  # pragma: no cover
+    from autogis.core.envmon.import_to_gdb import create_import_batch as _f
+    return _f(gdb_path, **kw)
+
+
+def append_records_idempotent(gdb_path, table_name, records):  # pragma: no cover
+    from autogis.core.envmon.import_to_gdb import append_records_idempotent as _f
+    return _f(gdb_path, table_name, records)
+
+
+def finalize_batch(gdb_path, **kw):  # pragma: no cover
+    from autogis.core.envmon.import_to_gdb import finalize_batch as _f
+    return _f(gdb_path, **kw)
+
+
+def write_qa_to_gdb(gdb_path, qa, batch_id):  # pragma: no cover
+    from autogis.core.envmon.import_to_gdb import write_qa_to_gdb as _f
+    return _f(gdb_path, qa, batch_id)
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator (calls import_to_gdb stubs above — arcpy required for GDB writes)
+# ---------------------------------------------------------------------------
+
+def run_edd_import(
+    edd_path: Path,
+    profile: LabEDDProfile,
+    gdb_path: Path,
+    site_id: str,
+    analyte_dictionary: dict,
+    screening_levels: dict,
+    event_date_override: Optional[date] = None,
+    batch_id: Optional[str] = None,
+) -> str:
+    """Run a full EDD import. Returns the import batch_id.
+
+    Follows the same lifecycle as import_to_gdb.run_import():
+      create_import_batch -> normalize -> append -> finalize -> write_qa
+    """
+    edd_path = Path(edd_path)
+    gdb_path = Path(gdb_path)
+
+    batch_id = create_import_batch(
+        gdb_path,
+        site_id=site_id,
+        source_workbook=edd_path.name,
+        import_mode="EDD",
+        parser_profile=profile.profile_id,
+    )
+
+    rows = read_edd_file(edd_path, profile)
+
+    qa = QACollector()
+    samples, results = normalize_edd_rows(
+        rows=rows,
+        profile=profile,
+        site_id=site_id,
+        batch_id=batch_id,
+        analyte_dictionary=analyte_dictionary,
+        screening_levels=screening_levels,
+        qa=qa,
+        event_date_override=event_date_override,
+    )
+
+    append_records_idempotent(gdb_path, "Env_Samples", samples)
+    append_records_idempotent(gdb_path, "Env_AnalyticalResults", results)
+
+    finalize_batch(
+        gdb_path,
+        batch_id=batch_id,
+        analytical_count=len(results),
+        warning_count=sum(1 for r in qa.records if r.severity == "WARNING"),
+        error_count=sum(1 for r in qa.records if r.severity == "ERROR"),
+        qa_status="ERROR" if qa.has_blocking() else "PASS",
+    )
+
+    write_qa_to_gdb(gdb_path, qa, batch_id)
+    return batch_id
