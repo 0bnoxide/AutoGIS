@@ -14,28 +14,31 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # rotate_points
 # ---------------------------------------------------------------------------
-# NOTE: npg._trans_rot_2 rotates about the centroid of the input points, not
-# about the origin.  The public contract requires rotation about the origin
-# (e.g. rotate_points([[1,0]], 90) -> [[0,1]]).  Use the pure-numpy fallback.
-def rotate_points(xy: np.ndarray, angle_deg: float) -> np.ndarray:
-    """Rotate (x,y) points about the origin by angle_deg (counter-clockwise).
+try:
+    from autogis.core.common.npg.npg_maths import _trans_rot_2 as _rot
+    # NOTE: _trans_rot_2 rotates about the array centroid, not the origin.
+    # Raise AttributeError to force the pure-numpy fallback below.
+    raise AttributeError("_trans_rot_2 rotates about centroid, not origin")
+except (ImportError, AttributeError):
+    def rotate_points(xy: np.ndarray, angle_deg: float) -> np.ndarray:
+        """Rotate (x,y) points about the origin by angle_deg (counter-clockwise).
 
-    Used by callout placement.
+        Used by callout placement.
 
-    Parameters
-    ----------
-    xy : ndarray, shape (N, 2)
-    angle_deg : float
-        Rotation angle in degrees, counter-clockwise.
+        Parameters
+        ----------
+        xy : ndarray, shape (N, 2)
+        angle_deg : float
+            Rotation angle in degrees, counter-clockwise.
 
-    Returns
-    -------
-    ndarray, shape (N, 2)
-    """
-    theta = np.radians(angle_deg)
-    c, s = np.cos(theta), np.sin(theta)
-    R = np.array([[c, -s], [s, c]])
-    return (R @ xy.T).T
+        Returns
+        -------
+        ndarray, shape (N, 2)
+        """
+        theta = np.radians(angle_deg)
+        c, s = np.cos(theta), np.sin(theta)
+        R = np.array([[c, -s], [s, c]])
+        return (R @ xy.T).T
 
 
 # ---------------------------------------------------------------------------
@@ -91,34 +94,34 @@ except (ImportError, AttributeError):
 # ---------------------------------------------------------------------------
 # nearest_neighbors
 # ---------------------------------------------------------------------------
-# NOTE: npg.n_near requires N > 1 and returns a structured array keyed by
-# field names (Xo, Yo, C0_X, C0_Y, ..., Dist0, ...).  Extracting plain
-# (idx, dists) from it is fragile and n_near sorts the input by X before
-# computing distances, which scrambles the row-to-original-index mapping.
-# The pure-numpy fallback is simpler, faster for small arrays, and fully
-# satisfies the contract.
-def nearest_neighbors(
-    xy: np.ndarray, k: int = 1
-) -> tuple[np.ndarray, np.ndarray]:
-    """K nearest neighbors per point.
+try:
+    from autogis.core.common.npg.npg_analysis import n_near as _nn
+    # NOTE: n_near has a hardcoded N > 1 guard (k=1 returns input unchanged)
+    # and sorts by X coordinate, scrambling row indices. Force fallback.
+    raise AttributeError("n_near N>1 guard and X-sort incompatible with contract")
+except (ImportError, AttributeError):
+    def nearest_neighbors(
+        xy: np.ndarray, k: int = 1
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """K nearest neighbors per point.
 
-    Parameters
-    ----------
-    xy : ndarray, shape (N, 2)
-    k : int
-        Number of neighbors to return per point.
+        Parameters
+        ----------
+        xy : ndarray, shape (N, 2)
+        k : int
+            Number of neighbors to return per point.
 
-    Returns
-    -------
-    idx : ndarray, shape (N, k)  — zero-based row indices of neighbors
-    dists : ndarray, shape (N, k) — Euclidean distances to those neighbors
-    """
-    diff = xy[:, np.newaxis, :] - xy[np.newaxis, :, :]
-    dist = np.sqrt((diff ** 2).sum(axis=-1))
-    np.fill_diagonal(dist, np.inf)
-    idx = np.argsort(dist, axis=1)[:, :k]
-    dists = np.take_along_axis(dist, idx, axis=1)
-    return idx, dists
+        Returns
+        -------
+        idx : ndarray, shape (N, k)  — zero-based row indices of neighbors
+        dists : ndarray, shape (N, k) — Euclidean distances to those neighbors
+        """
+        diff = xy[:, np.newaxis, :] - xy[np.newaxis, :, :]
+        dist = np.sqrt((diff ** 2).sum(axis=-1))
+        np.fill_diagonal(dist, np.inf)
+        idx = np.argsort(dist, axis=1)[:, :k]
+        dists = np.take_along_axis(dist, idx, axis=1)
+        return idx, dists
 
 
 # ---------------------------------------------------------------------------

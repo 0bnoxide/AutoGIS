@@ -1,6 +1,5 @@
 from __future__ import annotations
 import numpy as np
-import pytest
 from autogis.core.common.numpy_geom import (
     rotate_points, convex_hull, nearest_neighbors,
     simplify_polyline, densify_polyline,
