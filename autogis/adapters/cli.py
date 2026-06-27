@@ -376,6 +376,47 @@ def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("compare-events")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output comparison CSV path.")
+@click.option("--current-event-date", default=None,
+              help="ISO date (YYYY-MM-DD) to force as the current event.")
+@click.option("--stable-threshold", default=10.0, type=float,
+              help="abs(%% change) <= this is STABLE (default 10).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write QA report to PATH (.md/.json/.csv by extension).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def compare_events_cmd(results_csv, output, current_event_date,
+                       stable_threshold, report, fail_on):
+    """Tool 4.7: compare current vs previous monitoring event per location/analyte."""
+    import csv as _csv
+    from dataclasses import asdict, fields as _fields
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.compare_events import compare_events, ComparisonRecord
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    ced = _date.fromisoformat(current_event_date) if current_event_date else None
+    qa = QACollector()
+    rows = compare_events(results, qa, current_event_date=ced,
+                          stable_threshold=stable_threshold)
+    cols = [f.name for f in _fields(ComparisonRecord)]
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for rec in rows:
+            w.writerow(asdict(rec))
+    click.echo(f"Written: {out}  ({len(rows)} comparison rows)")
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
