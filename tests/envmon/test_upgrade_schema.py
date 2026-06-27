@@ -49,3 +49,72 @@ def test_env_schema_version_fields():
         "SchemaVersion", "UpgradedAt", "PreviousVersion",
         "TablesCreated", "FieldsAdded", "UpgradedBy", "Notes",
     }
+
+
+# ---------------------------------------------------------------------------
+# upgrade_schema pure-Python layer
+# ---------------------------------------------------------------------------
+from autogis.core.envmon.upgrade_schema import (  # noqa: E402
+    SCHEMA_VERSION,
+    TableUpgradeStatus,
+    UpgradeReport,
+    format_report,
+)
+
+
+def test_schema_version_constant():
+    assert SCHEMA_VERSION == "2.0"
+
+
+def test_table_upgrade_status_attributes():
+    s = TableUpgradeStatus("MyTable", "CREATED", 5)
+    assert s.table_name == "MyTable"
+    assert s.status == "CREATED"
+    assert s.fields_added == 5
+
+
+def test_upgrade_report_properties():
+    tables = [
+        TableUpgradeStatus("A", "CREATED", 3),
+        TableUpgradeStatus("B", "UPDATED", 1),
+        TableUpgradeStatus("C", "OK", 0),
+    ]
+    r = UpgradeReport("/path/site.gdb", "1.0", "2.0", tables, elapsed_seconds=1.5)
+    assert r.tables_created == 1
+    assert r.fields_added == 4   # 3 + 1 + 0
+
+
+def test_format_report_contains_created_tag():
+    tables = [TableUpgradeStatus("NewTable", "CREATED", 8)]
+    r = UpgradeReport("/x.gdb", "1.0", "2.0", tables)
+    out = format_report(r)
+    assert "[CREATED]" in out
+    assert "NewTable" in out
+
+
+def test_format_report_contains_updated_tag():
+    tables = [TableUpgradeStatus("ExistingTable", "UPDATED", 2)]
+    r = UpgradeReport("/x.gdb", "1.0", "2.0", tables)
+    out = format_report(r)
+    assert "[UPDATED]" in out
+    assert "ExistingTable" in out
+
+
+def test_format_report_contains_ok_tag():
+    tables = [TableUpgradeStatus("StableTable", "OK", 0)]
+    r = UpgradeReport("/x.gdb", "1.0", "2.0", tables)
+    out = format_report(r)
+    assert "[OK]" in out
+
+
+def test_format_report_summary_line():
+    tables = [
+        TableUpgradeStatus("A", "CREATED", 5),
+        TableUpgradeStatus("B", "CREATED", 3),
+        TableUpgradeStatus("C", "UPDATED", 1),
+        TableUpgradeStatus("D", "OK", 0),
+    ]
+    r = UpgradeReport("/x.gdb", "1.0", "2.0", tables, elapsed_seconds=2.7)
+    out = format_report(r)
+    assert "2" in out   # 2 created
+    assert "1" in out   # 1 updated
