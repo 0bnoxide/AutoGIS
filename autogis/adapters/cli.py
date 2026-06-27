@@ -381,6 +381,18 @@ def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
     click.echo(f"Import complete. Batch ID: {batch_id}")
 
 
+@envmon.command("upgrade-schema")
+@click.argument("gdb")
+@click.option("--spatial-reference", "spatial_reference", type=int, default=4326,
+              help="WKID for the output spatial reference (default: 4326 = GCS WGS 1984).")
+def upgrade_schema_cmd(gdb, spatial_reference):
+    """Upgrade a file GDB to the current envmon schema version (ArcGIS Pro)."""
+    _guard("upgrade-schema")
+    from autogis.core.envmon.upgrade_schema import upgrade_gdb_schema, format_report
+    report = upgrade_gdb_schema(gdb, spatial_reference)
+    click.echo(format_report(report))
+
+
 @autogis.group()
 def agol():
     """AGOL / cloud tools."""

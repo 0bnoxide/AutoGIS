@@ -118,3 +118,23 @@ def test_format_report_summary_line():
     out = format_report(r)
     assert "2" in out   # 2 created
     assert "1" in out   # 1 updated
+
+
+# ---------------------------------------------------------------------------
+# CLI smoke tests
+# ---------------------------------------------------------------------------
+from click.testing import CliRunner  # noqa: E402
+from autogis.adapters.cli import autogis  # noqa: E402
+
+
+def test_upgrade_schema_in_help():
+    result = CliRunner().invoke(autogis, ["envmon", "--help"])
+    assert result.exit_code == 0
+    assert "upgrade-schema" in result.output
+
+
+def test_upgrade_schema_guard_without_arcpy():
+    """Without arcpy, upgrade-schema must error cleanly (no unhandled exception)."""
+    result = CliRunner().invoke(autogis, ["envmon", "upgrade-schema", "fake.gdb"])
+    assert result.exit_code in (0, 1)
+    assert result.exception is None or isinstance(result.exception, SystemExit)
