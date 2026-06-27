@@ -42,7 +42,6 @@ Every tool declares a runtime class (`HYBRID`, `CLOUD`, or `LOCAL`), and the sui
 |---|---|---|---|---|
 | **Attachment Harvester** | `core.harvest` | HYBRID | `autogis harvest` | `arcgis` API; runs cloud or local |
 | **1. Inspect Workbook** | `excel_workbook_inspector` | CLOUD | `autogis envmon inspect <.xlsx>` | openpyxl only |
-| **2. Import Lab EDD** | `import_edd` | CLOUD | `autogis envmon import-edd <.csv>` | openpyxl + validator |
 | **9. Parser Profile Draft** | `excel_profile_reader` | CLOUD | `autogis envmon parser-profile <.xlsx>` | openpyxl only |
 | **10. Figure Spec Template** | `build_figure_spec` | CLOUD | `autogis envmon figure-spec <out.yaml>` | pure Python |
 
@@ -50,6 +49,7 @@ Every tool declares a runtime class (`HYBRID`, `CLOUD`, or `LOCAL`), and the sui
 
 | Tool | Module | Runtime | CLI Status | Primary Interface |
 |---|---|---|---|---|
+| **2. Import Lab EDD** | `import_edd` | LOCAL | ⛔ guarded | `.pyt` GUI |
 | **3. Import to GDB** | `import_to_gdb` | LOCAL | ⛔ guarded | `.pyt` GUI |
 | **4. Build Current Event** | `build_current_event` | LOCAL | ⛔ guarded | `.pyt` GUI |
 | **5. Build Callouts** | `build_figure_dataset` | LOCAL | ⛔ guarded | `.pyt` GUI |
@@ -57,18 +57,17 @@ Every tool declares a runtime class (`HYBRID`, `CLOUD`, or `LOCAL`), and the sui
 | **7. Export Figures** | `export_figures`, `layout_manager` | LOCAL | ⛔ guarded | `.pyt` GUI |
 | **8. Full Pipeline** | orchestrator | LOCAL | ⛔ guarded | `.pyt` GUI |
 | **11. Validate Database** | `validate_database` | LOCAL | ⛔ guarded | `.pyt` GUI |
+| **Upgrade Schema** | `schema_upgrader` | LOCAL | ⛔ guarded | `.pyt` GUI |
 
 ### Admin & Utility Tools (headless)
 
 | Tool | Module | Runtime | CLI Command | Purpose |
 |---|---|---|---|---|
 | **Validate Config** | `config_validator` | CLOUD | `autogis envmon validate-config` | Config integrity checks |
-| **Validate Database** | `validate_database` | CLOUD | `autogis envmon validate-db` | QA rules + reporting |
 | **Manage Analyte Dict** | `analyte_dictionary` | CLOUD | `autogis envmon manage-analyte-dict` | Canonical names + units |
 | **Validate Units** | `unit_validator` | CLOUD | `autogis envmon validate-units` | Unit registry + conversion |
 | **Reconcile Locations** | `location_reconciler` | CLOUD | `autogis envmon reconcile-locations` | Well/location QA |
 | **Evaluate RPD QA** | `rpd_evaluator` | CLOUD | `autogis envmon evaluate-rpd-qa` | Duplicate analysis |
-| **Upgrade Schema** | `schema_upgrader` | CLOUD | `autogis envmon upgrade-schema` | Schema migration |
 
 ## 📦 Installation
 
@@ -98,10 +97,10 @@ For contributors:
 
 ```bash
 pip install -e ".[dev]"     # Installs test dependencies
-python -m pytest -q         # Run 329+ unit tests
+python -m pytest -q         # Run 362+ unit tests
 ```
 
-Test baseline: **329 passing tests** covering arcpy-free core + CLI adapters.
+Test baseline: **362 passing tests** covering arcpy-free core + CLI adapters.
 
 ## 🖥️ CLI Surface & Commands
 
@@ -120,7 +119,6 @@ autogis harvest --config my-job.yaml --where "Status='Complete'"  # Filter by at
 ```bash
 # Data validation & inspection
 autogis envmon validate-config <env.yaml>            # Config integrity checks
-autogis envmon validate-db <geodatabase>             # Database QA + reporting
 autogis envmon validate-units <samples.csv>          # Unit conversion validation
 autogis envmon reconcile-locations <workbook.xlsx>   # Well/location matching
 autogis envmon manage-analyte-dict                   # Manage canonical analytes
@@ -128,23 +126,36 @@ autogis envmon evaluate-rpd-qa <duplicates.csv>      # Duplicate analysis
 
 # Data import & preparation
 autogis envmon inspect <workbook.xlsx>               # Workbook structure report (Tool 1)
-autogis envmon import-edd <lab-results.csv>          # Lab EDD importer (Tool 2)
 autogis envmon parser-profile <workbook.xlsx>        # Parser profile drafter (Tool 9)
 autogis envmon figure-spec <output.yaml>             # Figure spec template (Tool 10)
 
-# Schema management
-autogis envmon upgrade-schema <geodatabase>          # Migrate schema to new version
+# Analysis & reporting
+autogis envmon export-summary <event_db>             # Export summary tables
+autogis envmon export-report-format-summary-tables <event_db>  # Formatted report export
+autogis envmon evaluate-readiness <event_db>         # Event readiness check
+autogis envmon compare-events <event_db>             # Compare monitoring events
+autogis envmon process-level-loop <survey.csv>       # Process differential-level data
+autogis envmon identify-data-gaps <event_db>         # Identify missing data
+autogis envmon build-survey-form <config.yaml>       # Build Survey123 XLSForm
+
+# Publishing
+autogis agol publish-layer <config.yaml>             # Publish layers to AGOL
 ```
 
 ### Pro-Guarded Tools (arcpy-required)
 
-These commands error clearly when `arcpy` is unavailable and point users to the `.pyt` GUI:
+These commands error clearly when `arcpy` is unavailable and point users to the `.pyt` GUI inside ArcGIS Pro:
 
 ```bash
-autogis envmon import-gdb …        # Tool 3 — file-GDB import
-autogis envmon build-current-event …  # Tool 4 — rule-based event building
-# ... (tools 5–8 follow the same pattern)
+autogis envmon import-gdb <config.yaml>              # Tool 3 — file-GDB import
+autogis envmon build-current-event <config.yaml>     # Tool 4 — rule-based event building
+autogis envmon validate-db <geodatabase>             # Tool 11 — database QA (Pro-primary)
+autogis envmon import-edd <lab-results.csv>          # Tool 2 — Lab EDD import (Pro-primary)
+autogis envmon upgrade-schema <geodatabase>          # Schema migration (Pro-primary)
+# ... (additional tools 5–8 follow the same pattern)
 ```
+
+**Note:** All Pro-guarded tools require `arcpy` (ships with ArcGIS Pro only). When run outside Pro without `arcpy` installed, they provide a clear error message directing users to use the `.pyt` toolbox instead. Use the headless commands above for workflows that must run without Pro.
 
 **Legacy alias:** `autogis-harvest` is preserved as a direct alias for `autogis`.
 
@@ -301,8 +312,8 @@ autogis/
 | Module | Purpose |
 |--------|---------|
 | `core/common/config.py` | Config dataclasses (HarvestConfig, EnvConfig) — canonical source |
-| `core/common/schema/` | 14 dataclass packages: samples, results, analytes, screening, events, survey, boring, drone, dashboard |
-| `core/envmon/` | 23 modules: workbook inspector, EDD importer, validators, reconcilers, event builders, contour/callout generators |
+| `core/common/schema/` | 5 modules (boring, dashboard, drone, envmon, survey) exporting ~29 dataclass types across all domains |
+| `core/envmon/` | 36 modules: workbook inspector, EDD importer, validators, reconcilers, event builders, contour/callout generators, analysis tools |
 | `adapters/cli.py` | Click CLI: registers all commands, validates config, dispatches to core |
 | `runtime/` | arcpy/arcgis guards: `arcpy_available()`, `local_runtime_ok()`, `capability_required()` decorators |
 | `tests/` | Unit tests for core modules (no arcpy/arcgis required); run with `pytest -q` |
