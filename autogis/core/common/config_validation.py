@@ -6,11 +6,14 @@ ValidateEnvConfig and ManageAnalyteDictionary.
 """
 from __future__ import annotations
 
+import re as _re
 from collections import Counter
 from typing import List
 
 from .config import FIGURE_REQUIRED, SITE_REQUIRED, col_index
 from .qa import QARecord, SEV_ERROR, SEV_WARNING
+
+_SAFE_PATTERN = _re.compile(r'^[A-Za-z0-9_.{}/\-]+$')
 
 KNOWN_MATRICES = {"GW", "SOIL"}
 KNOWN_MAP_TYPES = {"GW_ANALYTICAL", "GW_POTENTIOMETRIC", "SOIL_ANALYTICAL"}
@@ -104,6 +107,21 @@ def validate_parser_profile(data: dict) -> List[QARecord]:
     return out
 
 
+def _validate_filename_pattern(pattern: str, context: str) -> List[QARecord]:
+    if not pattern:
+        return [_rec(SEV_ERROR, "invalid_filename_pattern",
+                     f"{context}: output_filename_pattern is empty",
+                     action="Set a non-empty filename pattern")]
+    if not _SAFE_PATTERN.match(pattern):
+        return [_rec(SEV_ERROR, "invalid_filename_pattern",
+                     f"{context}: output_filename_pattern contains unsafe characters: {pattern!r}",
+                     action="Use only alphanumeric, _, -, ., {, }, / characters")]
+    if pattern.count("{") != pattern.count("}"):
+        return [_rec(SEV_ERROR, "invalid_filename_pattern",
+                     f"{context}: output_filename_pattern has unbalanced braces: {pattern!r}")]
+    return []
+
+
 def validate_figure_spec(data: dict) -> List[QARecord]:
     out: List[QARecord] = []
     _require(data, FIGURE_REQUIRED, "figure spec", out)
@@ -116,6 +134,13 @@ def validate_figure_spec(data: dict) -> List[QARecord]:
     if mt is not None and mt not in KNOWN_MAP_TYPES:
         out.append(_rec(SEV_WARNING, "unknown_map_type",
                         f"figure spec: unrecognized map_type {mt!r}"))
+    pat = data.get("output_filename_pattern")
+    if pat is None:
+        out.append(_rec(SEV_WARNING, "missing_filename_pattern",
+                        "figure spec: output_filename_pattern not set",
+                        action="Add output_filename_pattern to figure spec"))
+    else:
+        out.extend(_validate_filename_pattern(pat, "figure spec"))
     out += scan_todos(data, "figure spec")
     return out
 

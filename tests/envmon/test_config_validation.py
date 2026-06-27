@@ -103,3 +103,48 @@ def test_validate_parser_profile_rejects_nonpositive_int_column():
     records = cv.validate_parser_profile(data)
     assert (SEV_ERROR, "bad_column_ref") in {(r.severity, r.category)
                                              for r in records}
+
+
+# --- output_filename_pattern validation ---
+
+_FIGURE_BASE = {
+    "figure_spec_id": "FS-001",
+    "map_type": "GW_ANALYTICAL",
+    "matrix": "GW",
+    "layout_name": "Standard",
+    "figure_title": "Groundwater",
+    "callout_template": "default",
+    "output_filename_pattern": "{SiteID}_{EventDate}",
+}
+
+
+def test_valid_filename_pattern_passes():
+    recs = cv.validate_figure_spec(_FIGURE_BASE)
+    cats = [r.category for r in recs]
+    assert "invalid_filename_pattern" not in cats
+
+
+def test_empty_filename_pattern_errors():
+    spec = {**_FIGURE_BASE, "output_filename_pattern": ""}
+    recs = cv.validate_figure_spec(spec)
+    assert any(r.category == "invalid_filename_pattern" for r in recs)
+
+
+def test_unsafe_chars_in_pattern_errors():
+    spec = {**_FIGURE_BASE, "output_filename_pattern": "{SiteID}; rm -rf /"}
+    recs = cv.validate_figure_spec(spec)
+    assert any(r.category == "invalid_filename_pattern" for r in recs)
+
+
+def test_unbalanced_braces_in_pattern_errors():
+    spec = {**_FIGURE_BASE, "output_filename_pattern": "{SiteID_EventDate"}
+    recs = cv.validate_figure_spec(spec)
+    assert any(r.category == "invalid_filename_pattern" for r in recs)
+
+
+def test_missing_filename_pattern_is_warned():
+    spec = {k: v for k, v in _FIGURE_BASE.items() if k != "output_filename_pattern"}
+    recs = cv.validate_figure_spec(spec)
+    warn = [r for r in recs if r.category == "missing_filename_pattern"]
+    assert len(warn) == 1
+    assert warn[0].severity == SEV_WARNING
