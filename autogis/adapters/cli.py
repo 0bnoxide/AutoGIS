@@ -479,6 +479,56 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("identify-data-gaps")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--schedule", required=True, type=click.Path(exists=True),
+              help="Expected-schedule YAML (wells + required_analytes).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output data-gap CSV path.")
+@click.option("--event-date", default=None, help="ISO date YYYY-MM-DD.")
+@click.option("--event-window-days", default=30, type=int)
+@click.option("--dry-wells", default=None, type=click.Path(exists=True),
+              help="Optional CSV: location_id,reason.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
+                           event_window_days, dry_wells, report, fail_on):
+    """Tool 4.10: report missing wells/analytes vs an expected schedule."""
+    import csv as _csv
+    from dataclasses import asdict, fields as _fields
+    from datetime import date as _date
+    import yaml as _yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.data_gaps import identify_data_gaps, DataGapRecord
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    sched = _yaml.safe_load(Path(schedule).read_text(encoding="utf-8"))
+    dry: dict = {}
+    if dry_wells:
+        with Path(dry_wells).open(newline="", encoding="utf-8") as fh:
+            for row in _csv.DictReader(fh):
+                dry[row["location_id"]] = row.get("reason", "")
+    qa = QACollector()
+    gaps = identify_data_gaps(
+        results, sched,
+        event_date=_date.fromisoformat(event_date) if event_date else None,
+        window_days=event_window_days, dry_wells=dry, qa=qa)
+    cols = [f.name for f in _fields(DataGapRecord)]
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for g in gaps:
+            w.writerow(asdict(g))
+    click.echo(f"Written: {out}  ({len(gaps)} gap rows)")
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
