@@ -279,6 +279,30 @@ def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("export-summary")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--samples-csv", default=None, type=click.Path(exists=True),
+              help="CSV export of Env_Samples (optional; used for metadata only).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+@click.option("--site-id", default="", help="Site ID label for the summary.")
+@click.option("--event-id", default="", help="Event ID label for the summary.")
+def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
+    """Tool: export Env_AnalyticalResults to a four-sheet Excel summary."""
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.export_summary import export_analytical_summary
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    samples = (read_records_csv(Path(samples_csv), SampleRecord)
+               if samples_csv else [])
+    if not site_id and results:
+        site_id = results[0].SiteID
+    out = export_analytical_summary(samples, results, Path(output), site_id, event_id)
+    click.echo(f"Written: {out}  ({len(results)} result(s))")
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
