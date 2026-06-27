@@ -28,6 +28,7 @@ TOOLS: dict[str, Runtime] = {
     "upgrade-schema": Runtime.LOCAL,   # phase 1.4
     "optimize-callouts": Runtime.LOCAL,        # tool 5.2
     "manage-callout-overrides": Runtime.LOCAL, # tool 5.3
+    "build-survey-form": Runtime.CLOUD, # tool 7.1a
 }
 
 
