@@ -26,6 +26,8 @@ TOOLS: dict[str, Runtime] = {
     "reconcile-locations": Runtime.HYBRID,
     "import-edd": Runtime.CLOUD,
     "upgrade-schema": Runtime.LOCAL,   # phase 1.4
+    "optimize-callouts": Runtime.LOCAL,        # tool 5.2
+    "manage-callout-overrides": Runtime.LOCAL, # tool 5.3
 }
 
 
