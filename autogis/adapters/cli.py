@@ -303,6 +303,49 @@ def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
     click.echo(f"Written: {out}  ({len(results)} result(s))")
 
 
+@envmon.command("export-report-format-summary-tables")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+@click.option("--site-id", default="",
+              help="Site ID filter + label (default: first record's SiteID).")
+@click.option("--no-current-event", is_flag=True, default=False,
+              help="Drop the 'Current Event' sheet.")
+@click.option("--no-gw-by-event", is_flag=True, default=False,
+              help="Drop the 'GW by Event' sheet.")
+@click.option("--no-soil-by-depth", is_flag=True, default=False,
+              help="Drop the 'Soil by Depth' sheet.")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write QA report to PATH (.md/.json/.csv by extension).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def export_report_format_summary_tables_cmd(
+        results_csv, output, site_id, no_current_event, no_gw_by_event,
+        no_soil_by_depth, report, fail_on):
+    """Tool: export Env_AnalyticalResults to formatted report-appendix tables.
+
+    Produces the three cross-tab sheets (Current Event / GW by Event /
+    Soil by Depth). Distinct from ``export-summary`` (flat QA sheets).
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.export_summary_tables import export_summary_tables
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    if not site_id and results:
+        site_id = results[0].SiteID
+    qa = QACollector()
+    out = export_summary_tables(
+        results, Path(output), site_id=site_id,
+        include_current_event=not no_current_event,
+        include_gw_by_event=not no_gw_by_event,
+        include_soil_by_depth=not no_soil_by_depth,
+        qa=qa)
+    click.echo(f"Written: {out}")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("evaluate-readiness")
 @click.option("--site-id", required=True, help="Site ID to check.")
 @click.option("--run-history", required=True, type=click.Path(),
