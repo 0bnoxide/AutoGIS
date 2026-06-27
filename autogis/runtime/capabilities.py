@@ -31,6 +31,7 @@ TOOLS: dict[str, Runtime] = {
     "build-survey-form": Runtime.CLOUD, # tool 7.1a
     "compare-events": Runtime.CLOUD,   # tool 4.7
     "process-level-loop": Runtime.CLOUD,  # tool 8.1
+    "identify-data-gaps": Runtime.CLOUD,  # tool 4.10
 }
 
 
