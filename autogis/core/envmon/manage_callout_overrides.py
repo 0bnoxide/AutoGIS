@@ -64,3 +64,68 @@ def load_overrides(
                 "locked": bool(locked),
             }
     return out
+
+
+_WRITE_FIELDS = [
+    "SiteID", "EventDate", "MapType", "FigureSpecID", "LocationID",
+    "SampleID", "AnchorX", "AnchorY", "OffsetX", "OffsetY",
+    "PreferredQuadrant", "LockedPlacement", "Notes",
+]
+
+
+def save_override(gdb_path, override: CalloutOverride) -> None:
+    """Upsert one row in Env_CalloutPlacementOverrides.
+
+    Deletes any existing row with the same (SiteID, MapType, FigureSpecID,
+    LocationID) logical key, then inserts the new row.
+    """
+    arcpy = _arcpy()
+    table = str(Path(gdb_path) / _TABLE)
+    if not arcpy.Exists(table):
+        raise RuntimeError(f"Table not found: {table}")
+    where = (
+        f"SiteID = '{override.site_id}' "
+        f"AND FigureSpecID = '{override.figure_spec_id}' "
+        f"AND MapType = '{override.map_type}' "
+        f"AND LocationID = '{override.location_id}'"
+    )
+    with arcpy.da.UpdateCursor(table, ["OID@"], where_clause=where) as cur:
+        for _ in cur:
+            cur.deleteRow()
+    row = [
+        override.site_id,
+        override.event_date,
+        override.map_type,
+        override.figure_spec_id,
+        override.location_id,
+        override.sample_id,
+        override.anchor_x,
+        override.anchor_y,
+        override.offset_x,
+        override.offset_y,
+        override.preferred_quadrant,
+        int(override.locked),
+        override.notes,
+    ]
+    with arcpy.da.InsertCursor(table, _WRITE_FIELDS) as cur:
+        cur.insertRow(row)
+
+
+def clear_unlocked_overrides(
+    gdb_path, site_id: str, figure_spec_id: str
+) -> int:
+    """Delete all unlocked overrides for the given site/spec; return count."""
+    arcpy = _arcpy()
+    table = str(Path(gdb_path) / _TABLE)
+    if not arcpy.Exists(table):
+        return 0
+    where = (
+        f"SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}' "
+        f"AND (LockedPlacement = 0 OR LockedPlacement IS NULL)"
+    )
+    n = 0
+    with arcpy.da.UpdateCursor(table, ["OID@"], where_clause=where) as cur:
+        for _ in cur:
+            cur.deleteRow()
+            n += 1
+    return n
