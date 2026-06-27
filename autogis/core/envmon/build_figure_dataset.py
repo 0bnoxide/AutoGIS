@@ -24,6 +24,7 @@ from .callout_geometry import (
 from .callout_collision import (
     CalloutRequest, place_callouts, PM_AUTO_COLLISION_WARNING,
 )
+from .manage_callout_overrides import load_overrides as _load_overrides
 
 LOG = get_logger(__name__)
 
@@ -167,33 +168,6 @@ def read_location_points(gdb, fc_names: Sequence[str],
     return pts
 
 
-def read_overrides(gdb, site_id: str, figure_spec_id: str) -> Dict[str, dict]:
-    """Env_CalloutPlacementOverrides -> override dicts keyed by LocationID.
-
-    Origin = (AnchorX + OffsetX, AnchorY + OffsetY) when AnchorX/Y set;
-    PreferredQuadrant used when only a quadrant is given.
-    """
-    arcpy = _arcpy()
-    table = str(gdb / "Env_CalloutPlacementOverrides")
-    if not arcpy.Exists(table):
-        return {}
-    out: Dict[str, dict] = {}
-    fields = ["LocationID", "AnchorX", "AnchorY", "OffsetX", "OffsetY",
-              "PreferredQuadrant", "LockedPlacement"]
-    where = f"SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
-    with arcpy.da.SearchCursor(table, fields, where_clause=where) as cur:
-        for loc, ax, ay, ox, oy, pq, locked in cur:
-            origin = None
-            if ax is not None and ay is not None:
-                origin = (float(ax) + float(ox or 0.0),
-                          float(ay) + float(oy or 0.0))
-            out[str(loc).strip().upper()] = {
-                "origin": origin,
-                "preferred_quadrant": (pq or "").strip() or None,
-                "locked": bool(locked),
-            }
-    return out
-
 
 def _delete_existing(gdb, fc: str, where: str) -> int:
     arcpy = _arcpy()
@@ -242,7 +216,7 @@ def generate_callout_features(
                site_id=site_id)
         return 0
 
-    overrides = read_overrides(gdb, site_id, spec_id)
+    overrides = _load_overrides(gdb, site_id, spec_id)
     callouts = assemble_callouts(wide_rows, locations, spec,
                                  analyte_dictionary, qa, extent, map_units,
                                  overrides)
