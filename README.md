@@ -1,376 +1,421 @@
 # AutoGIS
 
-Automation tools for ArcGIS Pro and ArcGIS Online / Survey123, delivered as a single suite: the **Attachment Harvester** plus the **Environmental Monitoring tools**, folded into **one `autogis` package** — one shared core with three adapters (a `click` CLI, an ArcGIS Pro `.pyt` GUI, and the importable core itself).
-
-## 📊 Feature Implementation Tracker
-
-Current status across the 79-tool environmental monitoring roadmap:
-
-| Status | Count | % | Examples |
-|--------|-------|---|----------|
-| ✅ **Fully Implemented** | 17 | 22% | Lab EDD Importer, Reconcile Locations, Validate Database, Optimize Callouts, Build Callouts, GW Contours, Export Summary Tables, Publish to AGOL, Build Survey Form, Validate Config, Upgrade Schema |
-| 🔨 **Foundation Laid** | 8 | 10% | GW Elevation Event, Analytical Exceedance Event, Parser Profile Drafting, Boring Log Database, RTK Survey, Level Loop Processing |
-| ⏳ **Not Started** | ~54 | 68% | Batch Import, Migration, Survey123 Reconciliation, Flow Direction, Plume Boundary, Trend Charts, Cartography suite, Dashboard datamart, Field survey tools, Drone integration, AI-assisted tools |
-
-**Roadmap phases:** Phase 1 (foundation) partially complete · Phase 2 (data intake) in progress · Phase 3 (maps/figures) planned · Phase 4 (field survey/AGOL) pending · Phase 5 (advanced analytics) deferred
-
-See [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) and [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) for full details.
+Automation tools for ArcGIS Pro and ArcGIS Online / Survey123, delivered as a single suite:
+the **Attachment Harvester** plus the **Environmental Monitoring tools**, folded into **one
+`autogis` package** — one shared core with three adapters (a `click` CLI, an ArcGIS Pro `.pyt`
+GUI, and the importable core itself).
 
 ---
 
-## 🏗️ Architecture
+## Feature Implementation Tracker
 
-### One Core, Three Adapters
+Current status across the 79-tool environmental monitoring roadmap. The Attachment Harvester
+is a separate, fully-shipped domain not counted in the 79 tools.
 
-- **Shared substrate:** `autogis.core.common` provides config validation, QA reporting, logging, and run history tracking
-- **Two domain modules:** `autogis.core.harvest` (Attachment Harvester) and `autogis.core.envmon` (Environmental Monitoring tools) sit on top
-- **Three adapters:** `autogis.adapters.cli` (Click CLI), `autogis.adapters.toolbox.pyt` (ArcGIS Pro GUI), and direct imports all construct and validate the *same* config dataclasses and call the *same* core functions — interfaces never drift
+| Status | Count | % of catalog |
+|--------|------:|-------------:|
+| Fully implemented (CLI + core module + tests) | 17 | 22% |
+| Foundation laid (schema or module exists, not fully wired) | 8 | 10% |
+| Not started | ~54 | 68% |
+| **Total named tools (§2–11)** | **~79** | |
 
-### Design Invariants
+**Phase summary:** Phase 1 (foundation) partially complete · Phase 2 (data intake) in progress ·
+Phase 3 (maps/figures) planned · Phase 4 (field survey/AGOL) pending · Phase 5 (advanced
+analytics) deferred
 
-- **Import with neither `arcgis` nor `arcpy`.** Both are lazy imports. Importing any `core` module succeeds with neither installed. `arcgis` is the optional `cloud` extra; `arcpy` is detected at runtime (ships with ArcGIS Pro, never a pip dependency)
-- **Arcpy-free core** (ADR-0002): All core business logic runs without ArcGIS dependencies. LOCAL tools (2–8) guard at the adapter layer
-- **Config as code:** All configuration via dataclasses (ADR-0009); no magic strings or config drift between interfaces
+<details>
+<summary>Fully implemented (17 tools)</summary>
 
-## 🔄 Runtime Matrix & Tool Catalog
+| Tool | Roadmap # | CLI command |
+|------|-----------|-------------|
+| ImportLabEDD | 2.3 | `envmon import-edd` |
+| ValidateEnvironmentalDatabase | 3.1 | `envmon validate-db` |
+| ReconcileSampleLocations | 3.2 | `envmon reconcile-locations` |
+| ManageAnalyteDictionary | 3.3 | `envmon manage-analyte-dict` |
+| ValidateAndConvertUnits | 3.5 | `envmon validate-units` |
+| EvaluateDuplicateRPD | 3.6 | `envmon evaluate-rpd-qa` |
+| GenerateDraftGWContours | 4.2 | `envmon gw-contours` |
+| CompareMonitoringEvents | 4.7 | `envmon compare-events` |
+| IdentifyMonitoringDataGaps | 4.10 | `envmon identify-data-gaps` |
+| BuildAnalyticalCallouts | 5.1 | `envmon build-callouts` |
+| OptimizeCalloutPlacement | 5.2 | `envmon optimize-callouts` |
+| ManageCalloutPlacementOverrides | 5.3 | `envmon manage-callout-overrides` |
+| PublishEnvironmentalLayersToAGOL | 6.1 | `envmon publish-layer` |
+| BuildSurvey123XLSFormFromConfig | 7.1a | `envmon build-survey-form` |
+| ProcessLevelLoop | 8.1 | `envmon process-level-loop` |
+| EvaluateReportReadiness | 9.0b | `envmon evaluate-readiness` |
+| ExportAnalyticalSummaryTables | 9.1 | `envmon export-report-format-summary-tables` |
+| ValidateEnvConfig | 10.2 | `envmon validate-config` |
+| UpgradeEnvMonitoringGDBSchema | 10.3 | `envmon upgrade-schema` |
+| WriteRunHistory | 10.5 | internal (used by readiness gate) |
 
-Every tool declares a runtime class (`HYBRID`, `CLOUD`, or `LOCAL`), and the suite enforces it. The CLI registers all tools, but only **headless-supported** ones are first-class CLI commands; the rest error clearly when `arcpy` is absent and are `.pyt`-primary.
+</details>
 
-### Headless-Supported Tools (CLI-first)
+<details>
+<summary>Foundation laid / partial (8 tools)</summary>
 
-| Tool | Module | Runtime | CLI Command | Requires |
-|---|---|---|---|---|
-| **Attachment Harvester** | `core.harvest` | HYBRID | `autogis harvest` | `arcgis` API; runs cloud or local |
-| **1. Inspect Workbook** | `excel_workbook_inspector` | CLOUD | `autogis envmon inspect <.xlsx>` | openpyxl only |
-| **9. Parser Profile Draft** | `excel_profile_reader` | CLOUD | `autogis envmon parser-profile <.xlsx>` | openpyxl only |
-| **10. Figure Spec Template** | `build_figure_spec` | CLOUD | `autogis envmon figure-spec <out.yaml>` | pure Python |
+| Tool | Roadmap # | What exists | What's missing |
+|------|-----------|-------------|----------------|
+| BuildGroundwaterElevationEvent | 4.1 | `normalize_groundwater.py`, `build_current_event.py` | Dedicated event-builder + flags (Dry/NM/NS/anomalous) |
+| BuildAnalyticalExceedanceEvent | 4.4 | `build_current_event.py` emits `Env_CurrentEventWide` | Event-mode selectors (latest/range/max), style fields |
+| CreateWorkbookParserProfile | 2.1 | `excel_workbook_inspector.py`, `excel_profile_reader.py` | Profile *drafting* output |
+| CreateBoringLogDatabase | 8.0a | `schema/boring.py` (7 dataclasses) + upgrade-schema tables | Standalone create/validate tool |
+| SyncFieldAttachments | 6.5 | Attachment harvester (separate domain) | Envmon-side attachment index table wiring |
+| ImportRTKSurveyPoints / ValidateRTKSurvey | 8.3/8.4 | `schema/survey.py` (SurveyPointRaw/SurveyPointQA) | Import + QA logic |
+| UpdateWellElevationsFromLevelLoop | 8.2 | ProcessLevelLoop ships the computation | History-write + well-table update |
+| Drone/Dashboard tools (8.6–8.8 / 6.7–6.11) | — | `schema/drone.py`, `schema/dashboard.py` | Every consuming tool |
 
-### ArcGIS Pro-Primary Tools (arcpy-guarded on CLI)
+</details>
 
-| Tool | Module | Runtime | CLI Status | Primary Interface |
-|---|---|---|---|---|
-| **2. Import Lab EDD** | `import_edd` | LOCAL | ⛔ guarded | `.pyt` GUI |
-| **3. Import to GDB** | `import_to_gdb` | LOCAL | ⛔ guarded | `.pyt` GUI |
-| **4. Build Current Event** | `build_current_event` | LOCAL | ⛔ guarded | `.pyt` GUI |
-| **5. Build Callouts** | `build_figure_dataset` | LOCAL | ⛔ guarded | `.pyt` GUI |
-| **6. GW Contours** | `groundwater_contours` | LOCAL | ⛔ guarded | `.pyt` GUI |
-| **7. Export Figures** | `export_figures`, `layout_manager` | LOCAL | ⛔ guarded | `.pyt` GUI |
-| **8. Full Pipeline** | orchestrator | LOCAL | ⛔ guarded | `.pyt` GUI |
-| **11. Validate Database** | `validate_database` | LOCAL | ⛔ guarded | `.pyt` GUI |
-| **Upgrade Schema** | `schema_upgrader` | LOCAL | ⛔ guarded | `.pyt` GUI |
+<details>
+<summary>Not started (~54 tools)</summary>
 
-### Admin & Utility Tools (headless)
+**Data intake (§2):** BatchImportEnvironmentalWorkbooks (2.2), MigrateLegacyMonitoringData (2.4),
+RegisterSourceDocuments (2.5), ReconcileSurvey123AndLabResults (2.6), CreateSurvey123SamplingEvent (2.7)
 
-| Tool | Module | Runtime | CLI Command | Purpose |
-|---|---|---|---|---|
-| **Validate Config** | `config_validator` | CLOUD | `autogis envmon validate-config` | Config integrity checks |
-| **Manage Analyte Dict** | `analyte_dictionary` | CLOUD | `autogis envmon manage-analyte-dict` | Canonical names + units |
-| **Validate Units** | `unit_validator` | CLOUD | `autogis envmon validate-units` | Unit registry + conversion |
-| **Reconcile Locations** | `location_reconciler` | CLOUD | `autogis envmon reconcile-locations` | Well/location QA |
-| **Evaluate RPD QA** | `rpd_evaluator` | CLOUD | `autogis envmon evaluate-rpd-qa` | Duplicate analysis |
+**Analysis (§4):** EstimateGWFlowDirection (4.3), GenerateDraftPlumeBoundary (4.5),
+GenerateWellTrendCharts (4.6), SelectSoilIntervalsForMapping (4.8), BuildMaxResultMapDataset (4.9)
 
-## 📦 Installation
+**Cartography (§5):** GenerateArcadeLabelExpressions (5.4), BuildAnalyticalKey (5.5),
+GenerateSiteMapSeries (5.6), BuildReportFigurePackage (5.7), UpdateLayoutDynamicText (5.8)
 
-### Headless / Cloud Setup
-For the Attachment Harvester + headless envmon tools (1, 2, 9, 10):
+**AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2), UpdateAGOLWebMapFromFigureSpec (6.3),
+RefreshMonitoringDashboardData (6.4), AuditAGOLSchemaAgainstLocalConfig (6.6),
+BuildDashboardDataMart (6.7), PublishDashboardFromSpec (6.8), AuditAGOLItemDependencies (6.9),
+PromoteAGOLDataBetweenStages (6.10), CreateHostedViewsForStakeholders (6.11)
+
+**Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1), RouteSurvey123Submission (7.1b),
+CreateSamplingEventPlan (7.2), ReconcileFieldAndLabData (7.3), GenerateWellInspectionPhotoReport (7.4)
+
+**Survey / boring / RTK / drone / CAD (§8):** ImportFieldBoringLogs (8.0b), GenerateBoringLogPDFs (8.0c),
+ImportRTKSurveyPoints (8.3), ValidateRTKSurvey (8.4), SurveyToWellElevationUpdate (8.5),
+RegisterDroneFlight (8.6), DroneGCPCheckpointQA (8.7), ImportDroneProducts (8.8),
+BuildCADExportPackage (8.9), ExportContoursForCivil3D, ValidateSurveyDeliverable
+
+**Reporting (§9):** ExportEventDatabaseSnapshot (9.0a), BuildMonitoringReportAppendix (9.2),
+GenerateEventChangeLog (9.3), IngestReviewerMapComments (9.4)
+
+**Admin (§10):** ListAvailableEnvTools (10.1), RunEnvJobQueue (10.4), GenerateSyntheticEnvWorkbook (10.6)
+
+**AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
+— all deferred pending LLM seam design
+
+**Conditional / geostatistical (Phase 5):** 8 tools (kriging / EBK / surface modeling) — blocked on
+architecture review; see `docs/CONDITIONAL_TOOLS_REVIEW.md`
+
+</details>
+
+Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) ·
+[`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md)
+
+---
+
+## Architecture
+
+### One core, three adapters
+
+- **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run history
+- **Two domain modules:** `autogis.core.harvest` (Attachment Harvester) and `autogis.core.envmon`
+  (36 modules) sit on top of common
+- **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
+  (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
+  core functions — the two interfaces cannot drift
+
+### Design invariants
+
+- **Arcpy-free core** (ADR-0002): importing any `core` module succeeds without `arcpy` or `arcgis`
+  installed. Both are lazy-imported inside function bodies. `arcgis` is the optional `cloud` extra;
+  `arcpy` ships with ArcGIS Pro and is never a pip dependency.
+- **Config as code** (ADR-0009): all configuration through validated dataclasses; no magic strings
+  or config drift between adapters.
+- **Idempotent imports**: re-running any import tool does not duplicate data.
+- **Source-cell traceability**: every analytical result links back to its originating Excel row/column.
+
+---
+
+## Runtime Matrix
+
+Every tool declares a runtime class; the suite enforces it at the adapter layer.
+
+### Headless (CLOUD / HYBRID) — run anywhere without ArcGIS Pro
+
+| Tool | Module | Runtime | CLI command |
+|------|--------|---------|-------------|
+| Attachment Harvester | `core.harvest` | HYBRID | `autogis harvest` |
+| Inspect Workbook | `excel_workbook_inspector` | CLOUD | `autogis envmon inspect` |
+| Parser Profile Draft | `excel_profile_reader` | CLOUD | `autogis envmon parser-profile` |
+| Figure Spec Template | `build_figure_spec` | CLOUD | `autogis envmon figure-spec` |
+| Validate Config | `config_validator` | CLOUD | `autogis envmon validate-config` |
+| Manage Analyte Dict | `analyte_dictionary` | CLOUD | `autogis envmon manage-analyte-dict` |
+| Validate Units | `unit_validator` | CLOUD | `autogis envmon validate-units` |
+| Reconcile Locations | `location_reconciler` | CLOUD | `autogis envmon reconcile-locations` |
+| Evaluate RPD QA | `rpd_evaluator` | CLOUD | `autogis envmon evaluate-rpd-qa` |
+| Compare Events | `event_comparator` | CLOUD | `autogis envmon compare-events` |
+| Identify Data Gaps | `data_gap_finder` | CLOUD | `autogis envmon identify-data-gaps` |
+| Process Level Loop | `level_loop` | CLOUD | `autogis envmon process-level-loop` |
+| Evaluate Readiness | `readiness_gate` | CLOUD | `autogis envmon evaluate-readiness` |
+| Export Summary Tables | `summary_exporter` | CLOUD | `autogis envmon export-report-format-summary-tables` |
+| Build Survey Form | `survey_form_builder` | CLOUD | `autogis envmon build-survey-form` |
+| Publish to AGOL | `agol_publisher` | CLOUD | `autogis agol publish-layer` |
+
+### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
+
+| Tool | Module | Primary interface |
+|------|--------|------------------|
+| Import Lab EDD | `import_edd` | `.pyt` GUI |
+| Import to GDB | `import_to_gdb` | `.pyt` GUI |
+| Build Current Event | `build_current_event` | `.pyt` GUI |
+| Build Callouts | `build_figure_dataset` | `.pyt` GUI |
+| GW Contours | `groundwater_contours` | `.pyt` GUI |
+| Export Figures | `export_figures`, `layout_manager` | `.pyt` GUI |
+| Full Pipeline | orchestrator | `.pyt` GUI |
+| Validate Database | `validate_database` | `.pyt` GUI |
+| Upgrade Schema | `schema_upgrader` | `.pyt` GUI |
+
+Pro-guarded commands fail with a clear error when `arcpy` is absent, pointing users to the
+`.pyt` toolbox inside ArcGIS Pro.
+
+---
+
+## Installation
+
+### Headless / cloud
+
+For the Attachment Harvester and all CLOUD-class envmon tools:
 
 ```bash
-pip install autogis[cloud]    # Includes arcgis Python API
-autogis harvest --config my-job.yaml
-autogis envmon import-edd lab-results.csv
+pip install autogis[cloud]    # pulls in the arcgis Python API
 ```
 
-### ArcGIS Pro Setup
-For the full `.pyt` GUI + LOCAL tools (3–8, 11):
+### ArcGIS Pro
 
-Since `arcpy` ships with Pro and is not pip-installable, install `autogis` editable into a cloned `arcgispro-py3` conda environment:
+`arcpy` ships with Pro and is not pip-installable. Install `autogis` editable into a cloned
+`arcgispro-py3` conda environment so the toolbox can import the package like any library:
 
 ```bash
-# Inside a cloned arcgispro-py3 environment
+# inside a cloned arcgispro-py3 environment
 pip install -e .
 ```
 
-Then point the ArcGIS Pro toolbox to the cloned environment. See [`docs/pro-install.md`](docs/pro-install.md) for the complete setup guide (cloning, toolbox registration, cache/reload details).
+See [`docs/pro-install.md`](docs/pro-install.md) for the complete setup guide — cloning the
+environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
-### Development Setup
-For contributors:
+### Development
 
 ```bash
-pip install -e ".[dev]"     # Installs test dependencies
-python -m pytest -q         # Run 362+ unit tests
+pip install -e ".[dev]"
+python -m pytest -q           # 362 passing tests
 ```
 
-Test baseline: **362 passing tests** covering arcpy-free core + CLI adapters.
+---
 
-## 🖥️ CLI Surface & Commands
+## CLI Reference
 
-The `autogis` CLI exposes the Harvester at the top level and envmon tools under an `envmon` sub-group:
+`autogis` exposes the Harvester at the top level and envmon tools under an `envmon` sub-group.
+`autogis-harvest` is preserved as a legacy alias.
 
-### Harvester Commands
+### Attachment Harvester
 
 ```bash
-autogis harvest --config my-job.yaml                 # Download attachments from feature layer
-autogis harvest --config my-job.yaml --incremental   # Incremental fetch (changed features only)
-autogis harvest --config my-job.yaml --where "Status='Complete'"  # Filter by attribute
+autogis harvest --config my-job.yaml
+autogis harvest --config my-job.yaml --incremental
+autogis harvest --config my-job.yaml --where "Status = 'Complete'" --out ./batch
 ```
 
-### Headless Envmon Tools
+### Headless envmon tools
 
 ```bash
-# Data validation & inspection
-autogis envmon validate-config <env.yaml>            # Config integrity checks
-autogis envmon validate-units <samples.csv>          # Unit conversion validation
-autogis envmon reconcile-locations <workbook.xlsx>   # Well/location matching
-autogis envmon manage-analyte-dict                   # Manage canonical analytes
-autogis envmon evaluate-rpd-qa <duplicates.csv>      # Duplicate analysis
+# Workbook inspection
+autogis envmon inspect <workbook.xlsx>
+autogis envmon parser-profile <workbook.xlsx>
+autogis envmon figure-spec <output.yaml>
 
-# Data import & preparation
-autogis envmon inspect <workbook.xlsx>               # Workbook structure report (Tool 1)
-autogis envmon parser-profile <workbook.xlsx>        # Parser profile drafter (Tool 9)
-autogis envmon figure-spec <output.yaml>             # Figure spec template (Tool 10)
+# Validation & QA
+autogis envmon validate-config <site-config.yaml>
+autogis envmon validate-units <samples.csv>
+autogis envmon reconcile-locations <workbook.xlsx>
+autogis envmon manage-analyte-dict
+autogis envmon evaluate-rpd-qa <duplicates.csv>
 
 # Analysis & reporting
-autogis envmon export-summary <event_db>             # Export summary tables
-autogis envmon export-report-format-summary-tables <event_db>  # Formatted report export
-autogis envmon evaluate-readiness <event_db>         # Event readiness check
-autogis envmon compare-events <event_db>             # Compare monitoring events
-autogis envmon process-level-loop <survey.csv>       # Process differential-level data
-autogis envmon identify-data-gaps <event_db>         # Identify missing data
-autogis envmon build-survey-form <config.yaml>       # Build Survey123 XLSForm
+autogis envmon compare-events <event_db>
+autogis envmon identify-data-gaps <event_db>
+autogis envmon process-level-loop <survey.csv>
+autogis envmon evaluate-readiness <event_db>
+autogis envmon export-report-format-summary-tables <event_db>
+
+# Field data
+autogis envmon build-survey-form <config.yaml>
 
 # Publishing
-autogis agol publish-layer <config.yaml>             # Publish layers to AGOL
+autogis agol publish-layer <config.yaml>
 ```
 
-### Pro-Guarded Tools (arcpy-required)
-
-These commands error clearly when `arcpy` is unavailable and point users to the `.pyt` GUI inside ArcGIS Pro:
+### Pro-guarded tools (require arcpy)
 
 ```bash
-autogis envmon import-gdb <config.yaml>              # Tool 3 — file-GDB import
-autogis envmon build-current-event <config.yaml>     # Tool 4 — rule-based event building
-autogis envmon validate-db <geodatabase>             # Tool 11 — database QA (Pro-primary)
-autogis envmon import-edd <lab-results.csv>          # Tool 2 — Lab EDD import (Pro-primary)
-autogis envmon upgrade-schema <geodatabase>          # Schema migration (Pro-primary)
-# ... (additional tools 5–8 follow the same pattern)
+autogis envmon import-edd <lab-results.csv>
+autogis envmon import-gdb <config.yaml>
+autogis envmon build-current-event <config.yaml>
+autogis envmon validate-db <geodatabase>
+autogis envmon upgrade-schema <geodatabase>
+# tools 5–8 follow the same pattern
 ```
 
-**Note:** All Pro-guarded tools require `arcpy` (ships with ArcGIS Pro only). When run outside Pro without `arcpy` installed, they provide a clear error message directing users to use the `.pyt` toolbox instead. Use the headless commands above for workflows that must run without Pro.
+---
 
-**Legacy alias:** `autogis-harvest` is preserved as a direct alias for `autogis`.
+## Attachment Harvester
 
-## 📸 Attachment Harvester
+Bulk-downloads photos and attachments from a feature layer for field-inspection workflows.
+Runs without ArcGIS Pro via the AGOL REST API.
 
-Bulk-download photos/attachments from a feature layer for field-inspection workflows. The Attachment Harvester is a **hybrid** tool — it runs with or without ArcGIS Pro (headless mode via the AGOL API).
-
-### Quick Start
-
-Copy `autogis/config/inspection-job.example.yaml` and edit:
+Copy `autogis/config/inspection-job.example.yaml` and edit the key fields:
 
 ```yaml
 connection:
-  profile: my-agol-profile    # or leave null for env vars AGOL_USER/AGOL_PASS
+  profile: my-agol-profile    # stored ArcGIS profile, or null to use env vars
+
 layer:
-  item_id: "1a2b3c4d5e6f"     # feature layer AGOL ID
-  # OR url: "https://services.arcgisonline.com/..."
-  where: "1=1"                # optional attribute filter
+  item_id: "1a2b3c4d5e6f"     # feature layer item ID (or use `url` instead)
+  where: "1=1"
+
 output:
   directory: "./downloads"
-  group_template: "{Status}"  # subfolder per attribute value
-  filename_template: "{InspectionID}_{OBJECTID}_{name}"  # must include ID
+  group_template: "{Status}"
+  filename_template: "{InspectionID}_{OBJECTID}_{name}"
+
 options:
-  incremental: true           # fetch only changed features
+  incremental: true
 ```
 
-### Usage
+Each run writes photos plus `manifest.csv` and `manifest.json` into the output directory and
+prints `Downloaded: X  Skipped: Y  Failed: Z`. Re-running skips files already on disk, so
+failed downloads retry cleanly.
 
-```bash
-# Basic harvest
-autogis harvest --config my-job.yaml
+Never put passwords in the config file. Use a stored ArcGIS profile or the `AGOL_USER` /
+`AGOL_PASS` environment variables.
 
-# With command-line overrides
-autogis harvest --config my-job.yaml --where "Status = 'Complete'" --out ./batch --incremental
-```
+---
 
-### Output
+## Environmental Monitoring Tools
 
-Each run writes to the output directory:
-- Photos/attachments organized by `group_template`
-- `manifest.csv` — index of all files
-- `manifest.json` — structured download log
-- Console output: `Downloaded: X  Skipped: Y  Failed: Z`
+Converts irregular Excel workbooks into a normalized file geodatabase, QA reports, analytical
+callout feature classes, groundwater labels, DRAFT potentiometric contours, and exported PDF/PNG
+figures — with full source-cell traceability and idempotent imports.
 
-Re-running skips files already on disk, so failed downloads retry cleanly.
-
-### Security
-
-Never include passwords in the config file or command line. Instead:
-- Store an ArcGIS profile: `arcgis auth login --mode OAUTH2`
-- Use environment variables: `AGOL_USER` and `AGOL_PASS`
-
-## 🌍 Environmental Monitoring Tools
-
-A full pipeline to standardize irregular Excel workbooks → normalized GDB → QA reports → cartographic figures → published web maps. All tools maintain **source-cell traceability** and **idempotent imports**.
-
-### Data Flow Diagram
+### Pipeline overview
 
 ```
-Excel/CSV Workbooks
-    ↓ [Tools 1, 9]
-    ├─ Workbook Inspection (openpyxl)
-    ├─ Parser Profile Drafting (openpyxl)
-    └─ Lab EDD Import (openpyxl)
+Excel/CSV workbooks
     ↓
-Config → Validation → Reconciliation
-    ├─ Config validation (Tool 10.2)
-    ├─ Location reconciliation (Tool 3.2)
-    ├─ Unit conversion (Tool 3.5)
-    ├─ Analyte dictionary (Tool 3.3)
-    └─ RPD/QA evaluation (Tool 3.6)
+Headless prep (any machine)
+    ├─ Workbook inspection         autogis envmon inspect
+    ├─ Parser profile drafting     autogis envmon parser-profile
+    ├─ Config validation           autogis envmon validate-config
+    ├─ Unit validation             autogis envmon validate-units
+    └─ Location reconciliation     autogis envmon reconcile-locations
     ↓
-GDB Import [Pro/.pyt]
-    ├─ Import tables (Tool 3)
-    ├─ Build current event (Tool 4)
-    └─ Validate database (Tool 3.1)
+ArcGIS Pro / .pyt toolbox
+    ├─ Import to GDB               Tool 3
+    ├─ Build current event         Tool 4
+    └─ Validate database           Tool 11
     ↓
-Analysis & Cartography [Pro/.pyt]
-    ├─ GW contours (Tool 4.2)
-    ├─ Analytical callouts (Tool 5.1)
-    ├─ Optimize placement (Tool 5.2)
-    ├─ Export figures (Tool 6)
-    └─ Publish to AGOL (Tool 6.1)
+Analysis & cartography (Pro)
+    ├─ GW contours                 Tool 4.2
+    ├─ Analytical callouts         Tool 5.1
+    ├─ Optimize placement          Tool 5.2
+    └─ Export figures              Tool 6
+    ↓
+Publish / report (headless)
+    ├─ Publish to AGOL             autogis agol publish-layer
+    ├─ Export summary tables       autogis envmon export-report-format-summary-tables
+    └─ Evaluate readiness          autogis envmon evaluate-readiness
 ```
 
-### Headless Data Prep Pipeline
+---
 
-For headless/cloud workflows, prepare data without Pro:
-
-```bash
-# Step 1: Inspect the workbook
-autogis envmon inspect raw-monitoring.xlsx > inspection-report.txt
-
-# Step 2: Draft a parser profile (if needed for new workbook format)
-autogis envmon parser-profile raw-monitoring.xlsx > parser.yaml
-
-# Step 3: Import lab results
-autogis envmon import-edd lab-edd-results.csv --output results.csv
-
-# Step 4: Validate config
-autogis envmon validate-config site-config.yaml
-
-# Step 5: Reconcile locations
-autogis envmon reconcile-locations raw-monitoring.xlsx
-
-# Step 6: Validate units
-autogis envmon validate-units results.csv --profile site-config.yaml
-```
-
-### Pro-Based Analysis Pipeline
-
-For mapping and advanced analysis, run inside ArcGIS Pro via the `.pyt` GUI:
-
-- **Import to GDB** (Tool 3) — parse workbook, populate normalized tables
-- **Build Current Event** (Tool 4) — apply rule logic (screening, exceedance detection)
-- **Generate GW Contours** (Tool 4.2) — DRAFT potentiometric surface (Spatial Analyst)
-- **Build Callouts** (Tool 5.1) — analytical features with source-cell links
-- **Optimize Callout Placement** (Tool 5.2) — resolve box/leader overlaps (numpy geometry)
-- **Export Figures** (Tool 6) — layout PDFs/PNGs with full traceability
-- **Publish to AGOL** (Tool 6.1) — feature layers + web maps
-
-### Key Capabilities
-
-✅ **Idempotent imports** — re-run without duplicating data  
-✅ **Full traceability** — every cell value links back to source (Excel row/col)  
-✅ **QA automation** — RPD, unit mismatch, location reconciliation, screening comparison  
-✅ **Arcpy-free core** — validation & import prep run anywhere  
-✅ **Schema versioning** — migrate between GDB versions without data loss  
-✅ **Headless reporting** — generate snapshots, summaries, and QA reports on CLI
-
-## 📂 Project Structure
+## Project Structure
 
 ```
 autogis/
 ├── core/
-│   ├── common/          # Shared: config, QA, logging, run history, schema
+│   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   └── envmon/          # Environmental monitoring (23 modules)
+│   └── envmon/          # Environmental monitoring — 36 modules
 ├── adapters/
-│   ├── cli.py           # Click CLI surface
+│   ├── cli.py           # Click CLI — all commands registered here
 │   ├── toolbox.pyt      # ArcGIS Pro GUI
-│   └── toolbox_core.py  # Seam between `.pyt` and core
+│   └── toolbox_core.py  # Seam between .pyt and core
 ├── config/
-│   ├── inspection-job.example.yaml      # Harvester template
-│   ├── parser_profiles/                 # Excel format definitions
-│   ├── screening_levels/                # Regulatory thresholds (per state/program)
-│   └── figure_specs/                    # Cartography templates
-├── runtime/             # ArcGIS session providers + capability guards
-└── tests/               # 329+ arcpy-free unit tests (pytest)
+│   ├── inspection-job.example.yaml
+│   ├── parser_profiles/        # Excel format definitions (YAML)
+│   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
+│   └── figure_specs/           # Cartography layout templates
+├── runtime/             # arcpy / arcgis session providers + capability guards
+└── tests/               # 362 arcpy-free unit tests
 ```
 
-### Key Files & Modules
+### Key modules
 
-| Module | Purpose |
-|--------|---------|
-| `core/common/config.py` | Config dataclasses (HarvestConfig, EnvConfig) — canonical source |
-| `core/common/schema/` | 5 modules (boring, dashboard, drone, envmon, survey) exporting ~29 dataclass types across all domains |
-| `core/envmon/` | 36 modules: workbook inspector, EDD importer, validators, reconcilers, event builders, contour/callout generators, analysis tools |
-| `adapters/cli.py` | Click CLI: registers all commands, validates config, dispatches to core |
-| `runtime/` | arcpy/arcgis guards: `arcpy_available()`, `local_runtime_ok()`, `capability_required()` decorators |
-| `tests/` | Unit tests for core modules (no arcpy/arcgis required); run with `pytest -q` |
-
----
-
-## ⚠️ Known Caveats & Production Readiness
-
-Read before relying on this suite in production:
-
-### 1. **H281 Parser Profile is DRAFT** 🟡
-`autogis/config/parser_profiles/H281_Glasgow_DataTables.yaml` was built from written spec only — the real workbook was unavailable. Ships with `DRAFT` banner and `_TODO` markers.
-
-**Before first import:** Use Tool 1 (Inspect Workbook) + human review to validate every row/column anchor against the report. Fix the `_TODO`s, clear the DRAFT banner, then import.
-
-### 2. **Screening Levels Ship Null** 🟡
-Files under `autogis/config/screening_levels/` contain placeholder null values and `_TODO` source citations.
-
-**Before production:** Populate with regulatory thresholds from your applicable standards (EPA, state, program). Screening comparison stays tri-state (NULL = not evaluable) until filled.
-
-### 3. **Average Parent & Duplicate QA Warning** 🟡
-`average_parent_and_duplicate` is statistically dubious with nondetects but is in the spec. Every averaged value flags a QA WARNING. **Keep the flag** — it signals when QC averaging is used.
-
-### 4. **arcpy Code Paths Are Un-CI-able** 🟡
-Tools 3–8 (Pro-based) are not exercised in CI (arcpy/Pro not available in headless tests). 
-
-**Before production:** Run them on a copy of real monitoring data inside Pro. Verify imports, event logic, contours, and figures before trusting outputs.
-
-### 5. **Incremental Harvest Depends on Feature Service Metadata**
-The Attachment Harvester's `--incremental` flag relies on the feature service's `GlobalID` and `EditDate` fields. If missing, falls back to full re-download.
+| Path | Purpose |
+|------|---------|
+| `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
+| `core/common/schema/` | 5 modules (boring, dashboard, drone, envmon, survey) exporting ~29 typed dataclasses |
+| `core/envmon/` | 36 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour tools |
+| `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
+| `runtime/` | `arcpy_available()`, `local_runtime_ok()`, `capability_required()` decorators |
 
 ---
 
-## 📚 Documentation
+## Caveats
 
-- **Installation:** [`docs/pro-install.md`](docs/pro-install.md) — Full Pro setup, environment cloning, toolbox registration
-- **Roadmap:** [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) — Feature completion status (22% done, 10% foundation, 68% planned)
-- **Prioritized Timeline:** [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) — Phase 1–4 sequencing (~70 weeks, 4 phases)
-- **Architecture Decisions:** [`docs/adr/`](docs/adr/) — ADRs covering core invariants, schema design, config strategy
-- **Codebase Memory:** See `.claude/settings.json` — MCP server integration for graph-based exploration
+Read before relying on this suite in production.
+
+**H281 parser profile is an unverified DRAFT.**
+`autogis/config/parser_profiles/H281_Glasgow_DataTables.yaml` was built from the written spec
+only; the real workbook was not available. It ships with a DRAFT banner and `_TODO` markers.
+Tool 1 + human review is mandatory before the first import — compare every row/column anchor
+against the Tool 1 report, fix the `_TODO`s, and clear the DRAFT banner before importing real data.
+
+**Screening levels ship null.**
+Files under `autogis/config/screening_levels/` contain placeholder null values and `_TODO`
+source citations. Populate them before production. No regulatory number is invented in code;
+screening comparison stays tri-state (NULL = not evaluable) until the levels are filled.
+
+**`average_parent_and_duplicate` is statistically dubious with nondetects.**
+It exists because the spec demands it. Every averaged value is flagged with a QA WARNING — keep
+the flag.
+
+**arcpy code paths are un-CI-able.**
+Tools 3–8 (Pro-based) are not exercised in CI. Run them on a copy of real data inside Pro before
+trusting outputs.
+
+**Incremental harvest depends on feature service metadata.**
+`--incremental` relies on `GlobalID` and `EditDate` fields. If absent, falls back to a full re-download.
 
 ---
 
-## 🤝 Contributing
+## Documentation
 
-Test coverage baseline: **329 passing tests**. All core logic is arcpy-free and CI-able.
+| Document | Contents |
+|----------|---------|
+| [`docs/pro-install.md`](docs/pro-install.md) | Full Pro setup: env clone, toolbox registration, cache/reload |
+| [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool |
+| [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing (~70 weeks) |
+| [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy |
+
+---
+
+## Contributing
+
+Test baseline: **362 passing tests**. All core logic is arcpy-free and CI-able.
 
 ```bash
-# Run tests
 python -m pytest -q
-
-# Run with coverage
 python -m pytest --cov=autogis --cov-report=term-missing
 
-# Lint & type check
 ruff check autogis/
 mypy autogis/
 ```
 
-See `docs/adr/README.md` for architectural guidelines before adding new tools.
+See [`docs/adr/README.md`](docs/adr/README.md) for architectural guidelines before adding new tools.
