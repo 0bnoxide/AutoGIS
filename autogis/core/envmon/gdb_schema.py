@@ -96,6 +96,172 @@ TABLE_SCHEMAS = {
         ("HasOnlyNonDetects", SH, None),
         ("HasMissingRequiredAnalytes", SH, None),
         ("LabelText_Fallback", T, 2000), ("ImportBatchID", T, 64)],
+
+    # ------------------------------------------------------------------
+    # Schema version tracking (v2 — added 2026-06-26)
+    # ------------------------------------------------------------------
+    "Env_SchemaVersion": [
+        ("SchemaVersion", T, 16), ("UpgradedAt", DT, None),
+        ("PreviousVersion", T, 16), ("TablesCreated", L, None),
+        ("FieldsAdded", L, None), ("UpgradedBy", T, 64),
+        ("Notes", T, 256)],
+
+    # ------------------------------------------------------------------
+    # Envmon extension
+    # ------------------------------------------------------------------
+    "Env_CurrentWaterLevelEvent": [
+        ("SiteID", T, 32), ("LocationID", T, 32), ("EventDate", DT, None),
+        ("DTW_ft", D, None), ("GWE_ft", D, None), ("Status", T, 32),
+        ("UseForModel", SH, None), ("ExclusionReason", T, 128),
+        ("MeasuredBy", T, 64), ("ImportBatchID", T, 64)],
+
+    # ------------------------------------------------------------------
+    # Boring domain
+    # ------------------------------------------------------------------
+    "BoringLocations": [
+        ("BoringID", T, 32), ("SiteID", T, 32), ("LocationType", T, 32),
+        ("Northing", D, None), ("Easting", D, None),
+        ("GroundElevation_ft", D, None), ("TOCElevation_ft", D, None),
+        ("Status", T, 32), ("CoordinateSystem", T, 64),
+        ("VerticalDatum", T, 32), ("DrillingStartDate", DT, None),
+        ("DrillingEndDate", DT, None), ("Driller", T, 64),
+        ("LoggedBy", T, 64), ("TotalDepth_ft", D, None),
+        ("CompletionType", T, 32)],
+    "LithologyIntervals": [
+        ("BoringID", T, 32), ("TopDepth_ft", D, None), ("BottomDepth_ft", D, None),
+        ("USCS", T, 16), ("PrimaryMaterial", T, 64), ("SecondaryMaterial", T, 64),
+        ("Color", T, 32), ("Moisture", T, 32), ("DensityConsistency", T, 32),
+        ("Plasticity", T, 32), ("Odor", T, 32), ("Staining", T, 32),
+        ("PID_ppm", D, None), ("Description", T, 512), ("GraphicPattern", T, 64),
+        ("Reviewed", SH, None)],
+    "BoringSamples": [
+        ("SampleID", T, 64), ("BoringID", T, 32), ("SampleType", T, 32),
+        ("TopDepth_ft", D, None), ("BottomDepth_ft", D, None),
+        ("Recovery_pct", D, None), ("BlowCounts", T, 32),
+        ("LabSubmitted", SH, None), ("Matrix", T, 16),
+        ("AnalyticalGroup", T, 32), ("PhotoID", T, 64), ("COCNumber", T, 32)],
+    "WellConstruction": [
+        ("BoringID", T, 32), ("ComponentType", T, 32),
+        ("TopDepth_ft", D, None), ("BottomDepth_ft", D, None),
+        ("Diameter_in", D, None), ("Material", T, 64),
+        ("SlotSize", T, 16), ("Notes", T, 256)],
+    "GroundwaterObservations": [
+        ("BoringID", T, 32), ("ObservationDatetime", DT, None),
+        ("DepthToWater_ft", D, None), ("ObservationType", T, 32),
+        ("ReferencePoint", T, 64), ("Notes", T, 256)],
+    "BoringPhotos": [
+        ("PhotoID", T, 64), ("BoringID", T, 32), ("SampleID", T, 64),
+        ("Depth_ft", D, None), ("PhotoPath", T, 256), ("Caption", T, 256),
+        ("TakenBy", T, 64), ("PhotoDatetime", DT, None)],
+    "BoringComments": [
+        ("CommentID", T, 64), ("BoringID", T, 32), ("Reviewer", T, 64),
+        ("CommentText", T, 512), ("Severity", T, 16), ("AssignedTo", T, 64),
+        ("Status", T, 32), ("ResolutionNote", T, 256), ("ResolvedDate", DT, None)],
+
+    # ------------------------------------------------------------------
+    # Survey domain
+    # ------------------------------------------------------------------
+    "SurveyPoints_Raw": [
+        ("PointID", T, 64), ("Northing", D, None), ("Easting", D, None),
+        ("Elevation_ft", D, None), ("FeatureCode", T, 32),
+        ("Description", T, 256), ("HRMS_ft", D, None), ("VRMS_ft", D, None),
+        ("FixType", T, 32), ("CorrectionSource", T, 64),
+        ("OccupationTime_s", D, None), ("RodHeight_ft", D, None),
+        ("CollectedAt", T, 32), ("Operator", T, 64)],
+    "SurveyPoints_QA": [
+        ("PointID", T, 64), ("QAStatus", T, 32),
+        ("QAFlags", T, 512), ("Approved", SH, None)],
+    "LevelLoopRuns": [
+        ("RunID", T, 64), ("SiteID", T, 32), ("SurveyDate", DT, None),
+        ("BenchmarkID", T, 32), ("KnownElevation_ft", D, None),
+        ("Misclosure_ft", D, None), ("ClosureTolerance_ft", D, None),
+        ("Adjusted", SH, None), ("Operator", T, 64), ("Notes", T, 256)],
+    "LevelLoopObservations": [
+        ("RunID", T, 64), ("SetupID", T, 32), ("PointID", T, 64),
+        ("Backsight_ft", D, None), ("Foresight_ft", D, None),
+        ("IntermediateSight_ft", D, None), ("HI_ft", D, None),
+        ("Elevation_ft", D, None)],
+    "ElevationHistory": [
+        ("LocationID", T, 32), ("ElevationType", T, 32),
+        ("Elevation_ft", D, None), ("VerticalDatum", T, 32),
+        ("SurveyDate", DT, None), ("SurveyMethod", T, 64),
+        ("SourceRunID", T, 64), ("ApprovedForUse", SH, None),
+        ("Superseded", SH, None)],
+
+    # ------------------------------------------------------------------
+    # Drone domain
+    # ------------------------------------------------------------------
+    "DroneFlights": [
+        ("FlightID", T, 64), ("ProjectID", T, 32), ("SiteID", T, 32),
+        ("FlightDate", DT, None), ("Pilot", T, 64), ("DroneModel", T, 64),
+        ("Sensor", T, 64), ("FlightAltitude_m", D, None),
+        ("OverlapForward_pct", D, None), ("OverlapSide_pct", D, None),
+        ("GCPUsed", SH, None), ("CheckpointCount", L, None),
+        ("ProcessingSoftware", T, 64), ("OutputCRS", T, 64),
+        ("VerticalDatum", T, 32), ("OrthomosaicPath", T, 256),
+        ("DSMPath", T, 256), ("DEMPath", T, 256),
+        ("PointCloudPath", T, 256), ("QAStatus", T, 32)],
+    "DroneControlPoints": [
+        ("PointID", T, 64), ("FlightID", T, 64),
+        ("Northing", D, None), ("Easting", D, None), ("Elevation_ft", D, None),
+        ("PointType", T, 16), ("ResidualH_m", D, None), ("ResidualV_m", D, None)],
+    "DroneCheckpoints": [
+        ("CheckpointID", T, 64), ("FlightID", T, 64),
+        ("Northing", D, None), ("Easting", D, None), ("Elevation_ft", D, None),
+        ("ResidualH_m", D, None), ("ResidualV_m", D, None),
+        ("WithinTolerance", SH, None)],
+    "DroneProductRegistry": [
+        ("ProductID", T, 64), ("FlightID", T, 64), ("ProductType", T, 32),
+        ("ProductPath", T, 256), ("CRS", T, 64), ("VerticalDatum", T, 32),
+        ("Resolution_m", D, None), ("QAStatus", T, 32)],
+
+    # ------------------------------------------------------------------
+    # Dashboard domain
+    # ------------------------------------------------------------------
+    "Dash_SiteStatus": [
+        ("SiteID", T, 32), ("SiteName", T, 128),
+        ("ActiveEvents", L, None), ("OpenQAIssues", L, None),
+        ("ReportDueDate", DT, None), ("LastUpdated", T, 32)],
+    "Dash_EventStatus": [
+        ("SiteID", T, 32), ("EventID", T, 64),
+        ("WellsPlanned", L, None), ("WellsSampled", L, None),
+        ("LabReceived", SH, None), ("FiguresReady", SH, None),
+        ("ReportReady", SH, None), ("LastUpdated", T, 32)],
+    "Dash_WellStatus": [
+        ("SiteID", T, 32), ("EventID", T, 64), ("LocationID", T, 32),
+        ("Status", T, 32), ("GWE_ft", D, None), ("GWEDelta_ft", D, None),
+        ("LastUpdated", T, 32)],
+    "Dash_CurrentExceedances": [
+        ("SiteID", T, 32), ("EventID", T, 64), ("LocationID", T, 32),
+        ("Analyte", T, 128), ("Result", D, None), ("Units", T, 16),
+        ("ScreeningLevel", D, None), ("ScreeningSource", T, 64),
+        ("LastUpdated", T, 32)],
+    "Dash_GWLevelSummary": [
+        ("SiteID", T, 32), ("EventID", T, 64), ("LocationID", T, 32),
+        ("GWE_ft", D, None), ("PriorGWE_ft", D, None), ("Delta_ft", D, None),
+        ("Trend", T, 16), ("LastUpdated", T, 32)],
+    "Dash_AnalyticalSummary": [
+        ("SiteID", T, 32), ("EventID", T, 64), ("LocationID", T, 32),
+        ("Analyte", T, 128), ("Result", D, None), ("Units", T, 16),
+        ("IsDetection", SH, None), ("IsExceedance", SH, None),
+        ("LastUpdated", T, 32)],
+    "Dash_FieldQA": [
+        ("SiteID", T, 32), ("EventID", T, 64), ("IssueType", T, 32),
+        ("LocationID", T, 32), ("Description", T, 256), ("LastUpdated", T, 32)],
+    "Dash_LabQA": [
+        ("SiteID", T, 32), ("EventID", T, 64), ("IssueType", T, 32),
+        ("LocationID", T, 32), ("Analyte", T, 128),
+        ("Description", T, 256), ("LastUpdated", T, 32)],
+    "Dash_OpenIssues": [
+        ("SiteID", T, 32), ("EventID", T, 64), ("Domain", T, 32),
+        ("Severity", T, 16), ("Description", T, 256),
+        ("AssignedTo", T, 64), ("LastUpdated", T, 32)],
+    "Dash_ReportReadiness": [
+        ("SiteID", T, 32), ("EventID", T, 64),
+        ("FieldReady", SH, None), ("LabReady", SH, None),
+        ("GISReady", SH, None), ("QAReady", SH, None),
+        ("ModelReady", SH, None), ("ReportReady", SH, None),
+        ("OverallReady", SH, None), ("LastUpdated", T, 32)],
 }
 
 FEATURE_SCHEMAS = {
