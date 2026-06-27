@@ -159,6 +159,29 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("manage-screening-levels")
+@click.argument("screening", type=click.Path(exists=True))
+@click.option("--analytes", default=None, type=click.Path(exists=True))
+@click.option("--list", "do_list", is_flag=True, default=False,
+              help="Print analyte/matrix/value table.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def manage_screening_levels_cmd(screening, analytes, do_list, report, fail_on):
+    """Validate and inspect the screening levels YAML (headless)."""
+    from autogis.core.envmon.manage_screening_levels import (
+        check_screening_levels, load_screening_entries)
+    if do_list:
+        entries = load_screening_entries(Path(screening))
+        click.echo(f"{'analyte':<28} {'matrix':<6} {'value':>10}  units")
+        for e in sorted(entries, key=lambda x: (x.matrix, x.analyte)):
+            v = str(e.value) if e.value is not None else "null"
+            click.echo(f"{e.analyte:<28} {e.matrix:<6} {v:>10}  {e.units}")
+        if not analytes:
+            return
+    qa = check_screening_levels(Path(screening), Path(analytes) if analytes else None)
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("validate-units")
 @click.option("--analytes", required=True, type=click.Path(exists=True),
               help="Analyte dictionary (provides default_units_by_matrix).")
