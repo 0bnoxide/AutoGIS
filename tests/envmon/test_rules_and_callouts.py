@@ -236,6 +236,61 @@ def test_collision_detection_function():
     assert any(r.b_kind == "POINT_BUFFER" for r in reports2)
 
 
+# ------------------------------------------- use_hull_collision flag tests
+def test_assemble_callouts_hull_flag_is_additive(qa, adict):
+    """use_hull_collision=True must not change placement for axis-aligned boxes."""
+    from autogis.core.envmon.build_figure_dataset import assemble_callouts
+    wide = [
+        {"LocationID": "MW-1", "SampleID": "S1", "SampleDate": "2026-04-15",
+         "DepthIntervalText": "", "results": _record("MW-1")["results"]},
+    ]
+    pts = {"MW-1": (100.0, 100.0)}
+    spec = FigureSpec(data={
+        "figure_spec_id": "T_HULL", "reference_scale": 1200,
+        "callout_template": {"template_id": "CKG_GW", "base_font_points": 6},
+        "analytes": ["Benzene", "TPH"],
+    })
+    out_default = assemble_callouts(wide, pts, spec, adict, qa,
+                                    extent=None, map_units="feet")
+    out_hull = assemble_callouts(wide, pts, spec, adict, qa,
+                                 extent=None, map_units="feet",
+                                 use_hull_collision=True)
+    assert len(out_default) == len(out_hull) == 1
+    assert (out_default[0]["placement"].origin
+            == out_hull[0]["placement"].origin), (
+        "hull path changed placement for axis-aligned box"
+    )
+
+
+def test_assemble_callouts_hull_calls_convex_hull(qa, adict, monkeypatch):
+    """use_hull_collision=True must invoke convex_hull from numpy_geom."""
+    from autogis.core.envmon import build_figure_dataset as bfd
+    from autogis.core.common import numpy_geom
+
+    calls = []
+    original = numpy_geom.convex_hull
+
+    def _spy(xy):
+        calls.append(xy.copy())
+        return original(xy)
+
+    monkeypatch.setattr(numpy_geom, "convex_hull", _spy)
+    wide = [
+        {"LocationID": "MW-1", "SampleID": "S1", "SampleDate": "2026-04-15",
+         "DepthIntervalText": "", "results": _record("MW-1")["results"]},
+    ]
+    pts = {"MW-1": (100.0, 100.0)}
+    spec = FigureSpec(data={
+        "figure_spec_id": "T_SPY", "reference_scale": 1200,
+        "callout_template": {"template_id": "CKG_GW", "base_font_points": 6},
+        "analytes": ["Benzene", "TPH"],
+    })
+    bfd.assemble_callouts(wide, pts, spec, adict, qa,
+                          extent=None, map_units="feet",
+                          use_hull_collision=True)
+    assert calls, "convex_hull was never called with use_hull_collision=True"
+
+
 # ------------------------------------------------- assemble integration
 def test_assemble_callouts_with_override_and_missing_point(qa, adict):
     from autogis.core.envmon.build_figure_dataset import assemble_callouts
