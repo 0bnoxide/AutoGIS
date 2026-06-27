@@ -255,6 +255,30 @@ def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("evaluate-rpd-qa")
+@click.option("--samples-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_Samples.")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--batch-id", default="MANUAL", show_default=True,
+              help="Import batch ID label for output records.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
+    """Tool: compute RPD for EDD duplicate samples and emit QA records."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import SampleRecord, AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import (
+        evaluate_duplicate_rpd, read_records_csv)
+
+    qa = QACollector()
+    samples = read_records_csv(Path(samples_csv), SampleRecord)
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    site_id = samples[0].SiteID if samples else "UNKNOWN"
+    evaluate_duplicate_rpd(samples, results, site_id, batch_id, qa)
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
