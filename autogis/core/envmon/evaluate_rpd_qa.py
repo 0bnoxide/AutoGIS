@@ -154,8 +154,13 @@ def read_records_csv(path: Path, record_class: Type[T]) -> List[T]:
 
     Uses typing.get_type_hints() to resolve annotations (handles
     ``from __future__ import annotations``).  Unknown columns are ignored.
+    ClassVar fields (e.g. table_name on schema dataclasses) are excluded
+    so they are not passed to __init__.
     """
-    hints = typing.get_type_hints(record_class)
+    import dataclasses as _dc
+    _instance_fields = {f.name for f in _dc.fields(record_class)}
+    hints = {k: v for k, v in typing.get_type_hints(record_class).items()
+             if k in _instance_fields}
     rows = []
     with Path(path).open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
