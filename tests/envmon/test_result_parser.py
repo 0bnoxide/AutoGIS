@@ -86,3 +86,46 @@ def test_apply_qualifiers_public_alias():
     apply_qualifiers(p, "U")
     assert p.is_nondetect is True
     assert p.qualifier == "U"
+
+
+from autogis.core.envmon.result_parser import evaluate_screening
+
+
+def _det(value: float):
+    p = parse_result_value(str(value))
+    assert p.is_detected
+    return p
+
+
+def test_evaluate_screening_same_unit_no_conversion():
+    assert evaluate_screening(_det(5.0), 3.0,
+                              result_unit="ug/L", screening_unit="ug/L") is True
+
+
+def test_evaluate_screening_converts_mg_to_ug():
+    # 0.005 mg/L == 5 ug/L, threshold 3 ug/L -> exceeds
+    assert evaluate_screening(_det(0.005), 3.0,
+                              result_unit="mg/L", screening_unit="ug/L") is True
+
+
+def test_evaluate_screening_converts_ug_to_mg():
+    # 5 ug/L == 0.005 mg/L, threshold 0.003 mg/L -> exceeds
+    assert evaluate_screening(_det(5.0), 0.003,
+                              result_unit="ug/L", screening_unit="mg/L") is True
+
+
+def test_evaluate_screening_different_dimension_returns_none():
+    # ug/L (aqueous) vs mg/kg (soil) -> can't compare
+    assert evaluate_screening(_det(5.0), 3.0,
+                              result_unit="ug/L", screening_unit="mg/kg") is None
+
+
+def test_evaluate_screening_unknown_unit_falls_through():
+    # unknown unit: fallthrough, compare raw value (backward compat)
+    assert evaluate_screening(_det(5.0), 3.0,
+                              result_unit="ppm", screening_unit="ug/L") is True
+
+
+def test_evaluate_screening_none_units_falls_through():
+    assert evaluate_screening(_det(5.0), 3.0) is True
+    assert evaluate_screening(_det(1.0), 3.0) is False

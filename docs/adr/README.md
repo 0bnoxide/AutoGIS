@@ -40,6 +40,10 @@ Each ADR follows this structure:
 | [019](0019-reconcile-locations-design.md) | ReconcileSampleLocations — stdlib difflib, two-path headless/GDB design | Accepted | 2026-06-26 |
 | [020](0020-callout-placement-extend-assemble-callouts.md) | Callout placement — extend assemble_callouts, add manage_callout_overrides | Accepted | 2026-06-26 |
 | [021](0021-survey123-xlsform-builder-headless-openpyxl.md) | Survey123 XLSForm builder — headless openpyxl tool | Accepted | 2026-06-26 |
+| [022](0022-screening-unit-conversion-invariant.md) | Unit-conversion gate for screening-level evaluation | Accepted | 2026-06-26 |
+| [023](0023-workgroup-2-post-import-qa-scope.md) | Workgroup 2 scope — post-import QA + first reporting deliverable | Accepted | 2026-06-26 |
+| [024](0024-reconcile-locations-fuzzy-matching.md) | ReconcileSampleLocations: stdlib difflib for fuzzy ID matching | Accepted | 2026-06-26 |
+| [025](0025-edd-duplicate-rpd-via-isduplicate-flag.md) | EDD duplicate RPD: detect via IsDuplicate=1 flag | Accepted | 2026-06-26 |
 
 ## File naming
 

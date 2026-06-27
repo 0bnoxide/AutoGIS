@@ -89,11 +89,13 @@ def normalize_matrix_table(
                    source_row=sheet.analyte_header_row,
                    recommended_action="add an alias to the analyte dictionary")
         entry = analyte_dictionary.get(canonical, {}) if canonical else {}
+        sl_unit = ""
         if sl_value is None and canonical:
             cfg = screening_for(screening_levels, matrix, canonical)
             if cfg and cfg.get("value") is not None:
                 sl_value = float(cfg["value"])
                 sl_source = cfg.get("source", "config")
+                sl_unit = cfg.get("unit", "")
         if sl_parsed and sl_parsed.parse_warning and sl_cell is not None:
             qa.add(SEV_INFO, "screening_level_note", sl_parsed.parse_warning,
                    site_id=site_id, analyte_name=raw_name,
@@ -101,7 +103,7 @@ def normalize_matrix_table(
                    source_sheet=sheet.sheet_name, source_cell=sl_cell.ref)
         col_meta[col] = dict(raw_name=raw_name, canonical=canonical,
                              entry=entry, units=units, sl_value=sl_value,
-                             sl_source=sl_source)
+                             sl_source=sl_source, sl_unit=sl_unit)
 
     dup_markers = sheet.raw.get("duplicate_markers")
     seen_keys = set()
@@ -177,7 +179,9 @@ def normalize_matrix_table(
                        source_sheet=sheet.sheet_name, source_row=row,
                        source_column=cell.ref[:len(cell.ref) - len(str(row))],
                        source_cell=cell.ref)
-            exceeds = evaluate_screening(parsed, meta["sl_value"])
+            exceeds = evaluate_screening(parsed, meta["sl_value"],
+                                         result_unit=meta["units"],
+                                         screening_unit=meta["sl_unit"])
             if parsed.is_detected and meta["sl_value"] is None and meta["canonical"]:
                 qa.add(SEV_WARNING, "screening_level_missing",
                        f"no screening level for {meta['canonical']} ({matrix}); "

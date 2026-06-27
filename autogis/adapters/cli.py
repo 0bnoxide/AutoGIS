@@ -159,6 +159,46 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("reconcile-locations")
+@click.argument("site_config", type=click.Path(exists=True))
+@click.argument("workbook", type=click.Path(exists=True))
+@click.option("--profile", "profile_path", required=True,
+              type=click.Path(exists=True), help="Parser profile for the workbook.")
+@click.option("--wells-csv", default=None, type=click.Path(exists=True),
+              help="CSV of well IDs (headless). Mutually exclusive with --gdb.")
+@click.option("--gdb", is_flag=True, default=False,
+              help="Read wells from the site GDB (ArcGIS Pro only; use the .pyt).")
+@click.option("--threshold", type=float, default=0.8, show_default=True)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
+                            threshold, report, fail_on):
+    """Tool: pre-flight check that workbook location IDs match the well layer."""
+    from autogis.core.common.config import ParserProfile
+    from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
+    from autogis.core.envmon.reconcile_locations import (
+        extract_location_ids, read_well_ids_csv, reconcile, reconcile_to_qa)
+
+    if gdb:
+        _guard("reconcile-locations")
+        raise click.ClickException(
+            "reconcile-locations --gdb runs inside ArcGIS Pro only. Use the "
+            "ReconcileSampleLocations tool in the .pyt toolbox, or pass "
+            "--wells-csv for a headless check.")
+    if not wells_csv:
+        raise click.ClickException("provide --wells-csv PATH (headless) or "
+                                   "--gdb (ArcGIS Pro).")
+
+    profile = ParserProfile.load(Path(profile_path))
+    reader = ProfileWorkbookReader(Path(workbook), profile)
+    workbook_ids = extract_location_ids(reader, profile)
+    well_ids = read_well_ids_csv(Path(wells_csv))
+
+    result = reconcile(workbook_ids, well_ids, threshold=threshold)
+    qa = reconcile_to_qa(result)
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("validate-units")
 @click.option("--analytes", required=True, type=click.Path(exists=True),
               help="Analyte dictionary (provides default_units_by_matrix).")
@@ -212,6 +252,84 @@ def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
 
     result = reconcile(workbook_ids, well_ids, threshold=threshold)
     qa = reconcile_to_qa(result)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("evaluate-rpd-qa")
+@click.option("--samples-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_Samples.")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--batch-id", default="MANUAL", show_default=True,
+              help="Import batch ID label for output records.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
+    """Tool: compute RPD for EDD duplicate samples and emit QA records."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import SampleRecord, AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import (
+        evaluate_duplicate_rpd, read_records_csv)
+
+    qa = QACollector()
+    samples = read_records_csv(Path(samples_csv), SampleRecord)
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    site_id = samples[0].SiteID if samples else "UNKNOWN"
+    evaluate_duplicate_rpd(samples, results, site_id, batch_id, qa)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("export-summary")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--samples-csv", default=None, type=click.Path(exists=True),
+              help="CSV export of Env_Samples (optional; used for metadata only).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+@click.option("--site-id", default="", help="Site ID label for the summary.")
+@click.option("--event-id", default="", help="Event ID label for the summary.")
+def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
+    """Tool: export Env_AnalyticalResults to a four-sheet Excel summary."""
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.export_summary import export_analytical_summary
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    samples = (read_records_csv(Path(samples_csv), SampleRecord)
+               if samples_csv else [])
+    if not site_id and results:
+        site_id = results[0].SiteID
+    out = export_analytical_summary(samples, results, Path(output), site_id, event_id)
+    click.echo(f"Written: {out}  ({len(results)} result(s))")
+
+
+@envmon.command("evaluate-readiness")
+@click.option("--site-id", required=True, help="Site ID to check.")
+@click.option("--run-history", required=True, type=click.Path(),
+              help="run_history.csv path (need not exist; treated as empty if absent).")
+@click.option("--event-id", default=None, help="Event ID filter (optional).")
+@click.option("--required-tool", "required_tools", multiple=True,
+              help="Tool name that must have succeeded (repeatable).")
+@click.option("--qa-report", default=None, type=click.Path(exists=False),
+              help="QA CSV from a previous import (checked for ERROR rows).")
+@click.option("--figure-spec", default=None, type=click.Path(exists=False),
+              help="Figure spec YAML to validate.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
+                           qa_report, figure_spec, report, fail_on):
+    """Tool: report-readiness gate — checks required tools ran successfully."""
+    from autogis.core.common.run_history import RunHistory
+    from autogis.core.envmon.evaluate_readiness import evaluate_readiness
+
+    history = RunHistory(Path(run_history))
+    qa = evaluate_readiness(
+        site_id=site_id,
+        event_id=event_id,
+        run_history=history,
+        required_tools=list(required_tools),
+        qa_csv=Path(qa_report) if qa_report else None,
+        figure_spec_path=Path(figure_spec) if figure_spec else None)
     _render_qa(qa, report, fail_on)
 
 
