@@ -341,6 +341,30 @@ def validate_db_cmd(gdb, analytes, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("evaluate-rpd")
+@click.argument("workbook", type=click.Path(exists=True))
+@click.argument("profile", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True)
+@click.option("--batch-id", default="", show_default=True)
+@click.option("--threshold", type=float, default=30.0, show_default=True,
+              help="RPD exceedance threshold (pct, default 30).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fail_on):
+    """Evaluate field duplicate RPD values against a threshold (headless)."""
+    from autogis.core.common.config import ParserProfile
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.normalize_rpd import normalize_rpd_table
+    from autogis.core.envmon.evaluate_rpd import evaluate_rpd_records, rpd_to_qa
+    parser = ParserProfile.load(Path(profile))
+    qa_import = QACollector()
+    records = normalize_rpd_table(Path(workbook), parser, site_id, batch_id, qa_import)
+    result = evaluate_rpd_records(records, rpd_threshold_pct=threshold)
+    qa = rpd_to_qa(result)
+    qa.records = qa_import.records + qa.records
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("import-edd")
 @click.option("--edd", "edd_path", required=True, type=click.Path(exists=True),
               help="Path to EDD CSV or XLSX file.")
