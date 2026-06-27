@@ -130,4 +130,6 @@ class RunHistory:
         matches = self.query(tool_name=tool_name, site_id=site_id)
         if not matches:
             return None
-        return max(matches, key=lambda r: r.finished_at)
+        # Tie-break by insertion order (index) so last-written wins when
+        # two records share the same second (CSV datetime is second-precision).
+        return max(enumerate(matches), key=lambda x: (x[1].finished_at, x[0]))[1]

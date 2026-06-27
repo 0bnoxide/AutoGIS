@@ -303,6 +303,36 @@ def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
     click.echo(f"Written: {out}  ({len(results)} result(s))")
 
 
+@envmon.command("evaluate-readiness")
+@click.option("--site-id", required=True, help="Site ID to check.")
+@click.option("--run-history", required=True, type=click.Path(),
+              help="run_history.csv path (need not exist; treated as empty if absent).")
+@click.option("--event-id", default=None, help="Event ID filter (optional).")
+@click.option("--required-tool", "required_tools", multiple=True,
+              help="Tool name that must have succeeded (repeatable).")
+@click.option("--qa-report", default=None, type=click.Path(exists=False),
+              help="QA CSV from a previous import (checked for ERROR rows).")
+@click.option("--figure-spec", default=None, type=click.Path(exists=False),
+              help="Figure spec YAML to validate.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
+                           qa_report, figure_spec, report, fail_on):
+    """Tool: report-readiness gate — checks required tools ran successfully."""
+    from autogis.core.common.run_history import RunHistory
+    from autogis.core.envmon.evaluate_readiness import evaluate_readiness
+
+    history = RunHistory(Path(run_history))
+    qa = evaluate_readiness(
+        site_id=site_id,
+        event_id=event_id,
+        run_history=history,
+        required_tools=list(required_tools),
+        qa_csv=Path(qa_report) if qa_report else None,
+        figure_spec_path=Path(figure_spec) if figure_spec else None)
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
