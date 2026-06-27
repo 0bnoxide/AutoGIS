@@ -322,14 +322,23 @@ def full_pipeline_cmd(site_config, workbook):
 
 @envmon.command("validate-db")
 @click.argument("gdb", type=click.Path())
-def validate_db_cmd(gdb):
-    """Tool 8: validate the geodatabase schema/contents (ArcGIS Pro)."""
+@click.option("--analytes", default=None, type=click.Path(exists=True),
+              help="Analyte dictionary YAML (enables analyte-name QA checks).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def validate_db_cmd(gdb, analytes, report, fail_on):
+    """Tool 8: validate the GDB schema and cross-table integrity (ArcGIS Pro)."""
     _guard("validate-db")
-    from autogis.core.envmon import validate_database  # noqa: F401
-    raise click.ClickException(
-        "validate-db runs inside ArcGIS Pro only. Use the ValidateDatabase "
-        "tool in the .pyt toolbox."
-    )
+    from autogis.core.common.config import load_analyte_dictionary
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.validate_database import validate_database
+
+    analyte_dict = {}
+    if analytes:
+        analyte_dict = load_analyte_dictionary(Path(analytes)) or {}
+    qa = QACollector()
+    validate_database(Path(gdb), qa, analyte_dict)
+    _render_qa(qa, report, fail_on)
 
 
 @envmon.command("import-edd")
