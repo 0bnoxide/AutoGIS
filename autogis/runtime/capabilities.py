@@ -25,6 +25,7 @@ TOOLS: dict[str, Runtime] = {
     "validate-units": Runtime.CLOUD,
     "reconcile-locations": Runtime.HYBRID,
     "import-edd": Runtime.CLOUD,
+    "upgrade-schema": Runtime.LOCAL,   # phase 1.4
 }
 
 
