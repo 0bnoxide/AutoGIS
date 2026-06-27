@@ -443,6 +443,88 @@ def build_callouts_cmd(site_config, figure_spec):
     )
 
 
+@envmon.command("optimize-callouts")
+@click.argument("site_config", type=click.Path(exists=True))
+@click.argument("figure_spec", type=click.Path(exists=True))
+def optimize_callouts_cmd(site_config, figure_spec):
+    """Tool 5.2: run callout placement optimizer (ArcGIS Pro)."""
+    _guard("optimize-callouts")
+    raise click.ClickException(
+        "optimize-callouts runs inside ArcGIS Pro only. "
+        "Use the OptimizeCalloutPlacement tool in the .pyt toolbox."
+    )
+
+
+@envmon.group("manage-callout-overrides")
+def manage_callout_overrides_group():
+    """Tool 5.3: manage callout placement overrides (ArcGIS Pro)."""
+
+
+_OV_GDB = click.argument("gdb", type=click.Path(exists=True))
+_OV_SITE = click.option("--site", required=True, help="SiteID to scope the query.")
+_OV_SPEC = click.option("--spec", required=True, help="FigureSpecID to scope the query.")
+
+
+@manage_callout_overrides_group.command("list")
+@_OV_GDB
+@_OV_SITE
+@_OV_SPEC
+def manage_overrides_list_cmd(gdb, site, spec):
+    """List all placement overrides for a site/figure spec."""
+    _guard("manage-callout-overrides")
+    raise click.ClickException(
+        "manage-callout-overrides runs inside ArcGIS Pro only. "
+        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+    )
+
+
+@manage_callout_overrides_group.command("clear")
+@_OV_GDB
+@_OV_SITE
+@_OV_SPEC
+def manage_overrides_clear_cmd(gdb, site, spec):
+    """Delete all unlocked overrides for a site/figure spec."""
+    _guard("manage-callout-overrides")
+    raise click.ClickException(
+        "manage-callout-overrides runs inside ArcGIS Pro only. "
+        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+    )
+
+
+@manage_callout_overrides_group.command("lock")
+@_OV_GDB
+@_OV_SITE
+@_OV_SPEC
+@click.option("--location", required=True, help="LocationID to lock.")
+@click.option("--anchor-x", type=float, required=True,
+              help="Box lower-left X in map units.")
+@click.option("--anchor-y", type=float, required=True,
+              help="Box lower-left Y in map units.")
+@click.option("--map-type", default="", help="MapType filter (default: all).")
+def manage_overrides_lock_cmd(gdb, site, spec, location,
+                               anchor_x, anchor_y, map_type):
+    """Lock a callout to a fixed position."""
+    _guard("manage-callout-overrides")
+    raise click.ClickException(
+        "manage-callout-overrides runs inside ArcGIS Pro only. "
+        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+    )
+
+
+@manage_callout_overrides_group.command("unlock")
+@_OV_GDB
+@_OV_SITE
+@_OV_SPEC
+@click.option("--location", required=True, help="LocationID to unlock.")
+def manage_overrides_unlock_cmd(gdb, site, spec, location):
+    """Remove the lock on a callout (override becomes a quadrant hint)."""
+    _guard("manage-callout-overrides")
+    raise click.ClickException(
+        "manage-callout-overrides runs inside ArcGIS Pro only. "
+        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+    )
+
+
 @envmon.command("gw-contours")
 @click.argument("site_config", type=click.Path(exists=True))
 def gw_contours_cmd(site_config):

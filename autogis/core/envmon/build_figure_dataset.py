@@ -24,6 +24,8 @@ from .callout_geometry import (
 from .callout_collision import (
     CalloutRequest, place_callouts, PM_AUTO_COLLISION_WARNING,
 )
+from .manage_callout_overrides import load_overrides as _load_overrides
+from ..common import numpy_geom as _numpy_geom
 
 LOG = get_logger(__name__)
 
@@ -58,6 +60,7 @@ def assemble_callouts(
     extent: Optional[Tuple[float, float, float, float]],
     map_units: str,
     overrides: Optional[Dict[str, dict]] = None,
+    use_hull_collision: bool = False,
 ) -> List[dict]:
     """Pure assembly: returns callout dicts with table, geometry, placement.
 
@@ -78,6 +81,11 @@ def assemble_callouts(
     standoff = standoff_pts * mupp
     point_buffer = buffer_pts * mupp
 
+    if use_hull_collision:
+        import numpy as _np
+    else:
+        _np = None
+
     prepared: List[dict] = []
     requests: List[CalloutRequest] = []
     for w in wide_rows:
@@ -92,6 +100,16 @@ def assemble_callouts(
         table = build_callout_rows(w, spec, analyte_dictionary, analytes)
         width, height, _, _ = compute_box_size(table, ref_scale, map_units,
                                                font_pts)
+        if use_hull_collision:
+            _corners = _np.array(
+                [(0.0, 0.0), (0.0, height), (width, height), (width, 0.0)],
+                dtype=float,
+            )
+            _hull = _numpy_geom.convex_hull(_corners)
+            eff_w = float(_hull[:, 0].max() - _hull[:, 0].min())
+            eff_h = float(_hull[:, 1].max() - _hull[:, 1].min())
+        else:
+            eff_w, eff_h = width, height
         depth = w.get("DepthIntervalText") or ""
         key = f"{loc}|{depth}|{spec.figure_spec_id}"
         ov = overrides.get(str(loc).strip().upper()) or {}
@@ -110,7 +128,7 @@ def assemble_callouts(
                        location_id=str(loc))
         requests.append(CalloutRequest(
             callout_id=key, location_id=str(loc), source_point=xy,
-            box_width=width, box_height=height,
+            box_width=eff_w, box_height=eff_h,
             override_origin=tuple(origin) if origin else None,
             locked=bool(ov.get("locked")) and origin is not None,
         ))
@@ -167,33 +185,6 @@ def read_location_points(gdb, fc_names: Sequence[str],
     return pts
 
 
-def read_overrides(gdb, site_id: str, figure_spec_id: str) -> Dict[str, dict]:
-    """Env_CalloutPlacementOverrides -> override dicts keyed by LocationID.
-
-    Origin = (AnchorX + OffsetX, AnchorY + OffsetY) when AnchorX/Y set;
-    PreferredQuadrant used when only a quadrant is given.
-    """
-    arcpy = _arcpy()
-    table = str(gdb / "Env_CalloutPlacementOverrides")
-    if not arcpy.Exists(table):
-        return {}
-    out: Dict[str, dict] = {}
-    fields = ["LocationID", "AnchorX", "AnchorY", "OffsetX", "OffsetY",
-              "PreferredQuadrant", "LockedPlacement"]
-    where = f"SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
-    with arcpy.da.SearchCursor(table, fields, where_clause=where) as cur:
-        for loc, ax, ay, ox, oy, pq, locked in cur:
-            origin = None
-            if ax is not None and ay is not None:
-                origin = (float(ax) + float(ox or 0.0),
-                          float(ay) + float(oy or 0.0))
-            out[str(loc).strip().upper()] = {
-                "origin": origin,
-                "preferred_quadrant": (pq or "").strip() or None,
-                "locked": bool(locked),
-            }
-    return out
-
 
 def _delete_existing(gdb, fc: str, where: str) -> int:
     arcpy = _arcpy()
@@ -242,7 +233,7 @@ def generate_callout_features(
                site_id=site_id)
         return 0
 
-    overrides = read_overrides(gdb, site_id, spec_id)
+    overrides = _load_overrides(gdb, site_id, spec_id)
     callouts = assemble_callouts(wide_rows, locations, spec,
                                  analyte_dictionary, qa, extent, map_units,
                                  overrides)
