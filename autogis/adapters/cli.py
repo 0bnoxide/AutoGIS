@@ -449,6 +449,21 @@ def upgrade_schema_cmd(gdb, spatial_reference):
     click.echo(format_report(report))
 
 
+@envmon.command("export-snapshot")
+@click.argument("gdb", type=click.Path())
+@click.option("--site", "site_id", required=True)
+@click.option("--event", "event_id", required=True)
+@click.option("--out", "out_dir", required=True, type=click.Path())
+@click.option("--compress", is_flag=True, default=False,
+              help="ZIP the output GDB after creation.")
+def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
+    """Freeze a GDB snapshot for a reporting event (ArcGIS Pro)."""
+    _guard("export-snapshot")
+    from autogis.core.envmon.export_snapshot import export_event_snapshot, format_manifest
+    manifest = export_event_snapshot(gdb, site_id, event_id, out_dir, compress)
+    click.echo(format_manifest(manifest))
+
+
 @autogis.group()
 def agol():
     """AGOL / cloud tools."""
