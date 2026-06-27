@@ -417,6 +417,68 @@ def compare_events_cmd(results_csv, output, current_event_date,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("process-level-loop")
+@click.option("--observations-csv", required=True, type=click.Path(exists=True),
+              help="CSV of LevelLoopObservation rows (ordered).")
+@click.option("--run-id", required=True)
+@click.option("--site-id", required=True)
+@click.option("--survey-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--benchmark-id", required=True, help="point_id of the benchmark.")
+@click.option("--known-elevation", required=True, type=float)
+@click.option("--tolerance", default=None, type=float,
+              help="Closure tolerance ft; default 0.05*sqrt(n_setups).")
+@click.option("--run-output", required=True, type=click.Path(),
+              help="Output LevelLoopRun CSV path.")
+@click.option("--observations-output", required=True, type=click.Path(),
+              help="Output adjusted-observations CSV path.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
+                           benchmark_id, known_elevation, tolerance, run_output,
+                           observations_output, report, fail_on):
+    """Tool 8.1: differential leveling — adjusted elevations + misclosure QA."""
+    import csv as _csv
+    from dataclasses import asdict, fields as _fields
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.schema.survey import (
+        LevelLoopObservation, LevelLoopRun)
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.level_loop import process_level_loop
+
+    obs = read_records_csv(Path(observations_csv), LevelLoopObservation)
+    qa = QACollector()
+    run, rows = process_level_loop(
+        obs, run_id=run_id, site_id=site_id,
+        survey_date=_date.fromisoformat(survey_date),
+        benchmark_id=benchmark_id, known_elevation=known_elevation,
+        tolerance=tolerance, qa=qa)
+
+    def _dump(path, records, record_cls):
+        cols = [f.name for f in _fields(record_cls)
+                if not (hasattr(record_cls, f.name) and
+                        isinstance(getattr(record_cls, f.name, None), type))]
+        # Use typing to exclude ClassVar fields — dataclasses.fields() already
+        # excludes them, so just use field names directly.
+        cols = [f.name for f in _fields(record_cls)]
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("w", newline="", encoding="utf-8") as fh:
+            w = _csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            for rec in records:
+                w.writerow(asdict(rec))
+        return p
+
+    _dump(run_output, [run], LevelLoopRun)
+    _dump(observations_output, rows, LevelLoopObservation)
+    click.echo(f"Misclosure: {run.misclosure_ft} ft  "
+               f"Tolerance: {run.closure_tolerance_ft} ft  "
+               f"Adjusted: {run.adjusted}")
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
