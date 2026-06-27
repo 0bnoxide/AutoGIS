@@ -636,6 +636,27 @@ def upgrade_schema_cmd(gdb, spatial_reference):
     click.echo(format_report(report))
 
 
+@envmon.command("build-survey-form")
+@click.option("--site", "site_path", required=True,
+              type=click.Path(exists=True), help="Site config YAML.")
+@click.option("--analytes", "analytes_path", required=True,
+              type=click.Path(exists=True), help="Analyte dictionary YAML.")
+@click.option("--event", "event_path", required=True,
+              type=click.Path(exists=True), help="Event config YAML.")
+@click.option("--out", "out_path", required=True,
+              type=click.Path(), help="Output .xlsx path.")
+def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
+    """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
+    import yaml
+    from autogis.core.envmon.survey123_form_builder import build_xlsform
+    site_cfg = yaml.safe_load(open(site_path, encoding="utf-8"))
+    analytes = yaml.safe_load(open(analytes_path, encoding="utf-8"))
+    event_cfg = yaml.safe_load(open(event_path, encoding="utf-8"))
+    wb = build_xlsform(site_cfg, event_cfg, analytes)
+    wb.save(out_path)
+    click.echo(f"XLSForm written to {out_path}")
+
+
 @autogis.group()
 def agol():
     """AGOL / cloud tools."""

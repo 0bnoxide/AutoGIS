@@ -1,0 +1,37 @@
+# Event configuration for Survey123 XLSForm generation (Tool 7.1a).
+# Copy this file alongside your site config YAML and fill in the values.
+# Keys:
+#   analyte_groups  — ordered dict of group name -> list of canonical analyte names
+#   crew_list       — names shown in the "Sampled By" dropdown
+#   coc_prefix      — prefix for Chain of Custody numbers (informational)
+#   matrices        — which sample matrices are collected this event
+#   location_ids    — well/boring IDs that appear in the "Well ID" dropdown
+
+analyte_groups:
+  Volatile Organic Compounds:
+    - Benzene
+    - Toluene
+    - Ethylbenzene
+    - "Total Xylenes"
+    - MTBE
+    - "Total Purgeable Hydrocarbons"
+  Inorganic Indicator Parameters:
+    - Sulfate
+    - Iron
+    - Manganese
+
+crew_list:
+  - "Field Technician A"
+  - "Field Technician B"
+
+coc_prefix: "H281-COC"
+
+matrices:
+  - GW
+
+location_ids:
+  - MW-1
+  - MW-2
+  - MW-3
+  - MW-4
+  - MW-5
