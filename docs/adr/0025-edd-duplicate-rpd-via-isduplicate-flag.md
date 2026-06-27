@@ -1,4 +1,4 @@
-# ADR-0021 — EDD duplicate RPD: detect via IsDuplicate=1 flag, not RPD worksheet
+# ADR-0025 — EDD duplicate RPD: detect via IsDuplicate=1 flag, not RPD worksheet
 
 **Status:** Accepted  
 **Date:** 2026-06-26  

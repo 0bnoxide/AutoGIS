@@ -1,4 +1,4 @@
-# ADR-018: Unit-conversion gate for screening-level evaluation
+# ADR-022: Unit-conversion gate for screening-level evaluation
 
 **Status:** Accepted
 

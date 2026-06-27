@@ -1,4 +1,4 @@
-# ADR-0020 — ReconcileSampleLocations: stdlib difflib for fuzzy ID matching
+# ADR-0024 — ReconcileSampleLocations: stdlib difflib for fuzzy ID matching
 
 **Status:** Accepted  
 **Date:** 2026-06-26  

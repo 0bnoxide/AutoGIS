@@ -1,4 +1,4 @@
-# ADR-019: Workgroup 2 scope — post-import QA + first reporting deliverable
+# ADR-023: Workgroup 2 scope — post-import QA + first reporting deliverable
 
 **Status:** Accepted
 
