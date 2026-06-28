@@ -26,3 +26,49 @@ def test_save_is_atomic_no_tmp_left(tmp_path):
 
 
 import os
+from datetime import timedelta
+
+
+def test_claim_appends_entry(tmp_path):
+    p = tmp_path / "c.json"
+    entry = registry.claim(p, "s1", "branch", "feat/x", pid=111)
+    assert entry["session_id"] == "s1"
+    assert entry["kind"] == "branch"
+    assert entry["value"] == "feat/x"
+    assert entry["pid"] == 111
+    assert "heartbeat_at" in entry and "started_at" in entry
+    assert registry.list_claims(p) == [entry]
+
+
+def test_claim_same_resource_refreshes_not_duplicates(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "branch", "feat/x")
+    registry.claim(p, "s1", "branch", "feat/x")
+    assert len(registry.list_claims(p, include_stale=True)) == 1
+
+
+def test_is_stale_past_ttl(tmp_path):
+    now = registry._now()
+    fresh = {"heartbeat_at": registry._iso(now), "ttl_sec": 100}
+    old = {"heartbeat_at": registry._iso(now - timedelta(seconds=200)),
+           "ttl_sec": 100}
+    assert registry.is_stale(fresh, now) is False
+    assert registry.is_stale(old, now) is True
+
+
+def test_list_claims_excludes_stale(tmp_path):
+    now = registry._now()
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "branch", "feat/x", ttl_sec=100, now=now)
+    later = now + timedelta(seconds=500)
+    assert registry.list_claims(p, now=later) == []
+    assert len(registry.list_claims(p, include_stale=True, now=later)) == 1
+
+
+def test_reap_stale_removes_expired(tmp_path):
+    now = registry._now()
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "branch", "feat/x", ttl_sec=100, now=now)
+    later = now + timedelta(seconds=500)
+    assert registry.reap_stale(p, now=later) == 1
+    assert registry.list_claims(p, include_stale=True) == []

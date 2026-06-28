@@ -82,3 +82,65 @@ def save_registry(path, data):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
     os.replace(tmp, path)
+
+
+def is_stale(claim, now=None):
+    now = now or _now()
+    try:
+        hb = _parse_iso(claim["heartbeat_at"])
+    except (KeyError, ValueError, TypeError):
+        return True
+    return (now - hb).total_seconds() > claim.get("ttl_sec", DEFAULT_TTL_SEC)
+
+
+def list_claims(path, include_stale=False, now=None):
+    now = now or _now()
+    claims = load_registry(path)["claims"]
+    if include_stale:
+        return claims
+    return [c for c in claims if not is_stale(c, now)]
+
+
+def claim(path, session_id, kind, value, ttl_sec=DEFAULT_TTL_SEC,
+          pid=None, host=None, now=None):
+    now = now or _now()
+    _acquire_lock(path)
+    try:
+        data = load_registry(path)
+        for c in data["claims"]:
+            if (c.get("session_id") == session_id and c.get("kind") == kind
+                    and c.get("value") == value):
+                c["heartbeat_at"] = _iso(now)
+                c["ttl_sec"] = ttl_sec
+                save_registry(path, data)
+                return c
+        entry = {
+            "session_id": session_id,
+            "kind": kind,
+            "value": value,
+            "pid": pid if pid is not None else os.getpid(),
+            "host": host or _host(),
+            "started_at": _iso(now),
+            "heartbeat_at": _iso(now),
+            "ttl_sec": ttl_sec,
+        }
+        data["claims"].append(entry)
+        save_registry(path, data)
+        return entry
+    finally:
+        _release_lock(path)
+
+
+def reap_stale(path, now=None):
+    now = now or _now()
+    _acquire_lock(path)
+    try:
+        data = load_registry(path)
+        live = [c for c in data["claims"] if not is_stale(c, now)]
+        removed = len(data["claims"]) - len(live)
+        if removed:
+            data["claims"] = live
+            save_registry(path, data)
+        return removed
+    finally:
+        _release_lock(path)
