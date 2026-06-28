@@ -2,8 +2,9 @@
 from pathlib import Path
 import pytest
 import autogis.core.envmon.reconcile_survey123_lab as reconcile_survey123_lab_module
+from autogis.core.common.qa import SEV_INFO
 from autogis.core.envmon.reconcile_survey123_lab import (
-    Survey123Sample, LabSample, reconcile_field_lab,
+    Survey123Sample, LabSample, ReconcileS123LabResult, reconcile_field_lab,
     reconcile_to_qa, load_survey123_csv,
 )
 
@@ -52,6 +53,14 @@ def test_matrix_mismatch_qa_error():
     r = reconcile_field_lab(_FIELD, _LAB_MATRIX_MISMATCH)
     qa = reconcile_to_qa(r)
     assert any(rec.category == "matrix_mismatch" for rec in qa.records)
+
+
+def test_unknown_flags_are_classified_as_unknown_flag():
+    result = ReconcileS123LabResult(flags=["unexpected_flag: sample=ABC123"])
+    qa = reconcile_to_qa(result)
+    rec = next(rec for rec in qa.records if rec.category == "unknown_flag")
+    assert rec.severity == SEV_INFO
+    assert rec.message == "unexpected_flag: sample=ABC123"
 
 
 def test_field_only_sample():
