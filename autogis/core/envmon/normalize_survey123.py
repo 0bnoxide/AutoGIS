@@ -41,6 +41,12 @@ def _parse_date(value: str, qa: QACollector, context: str) -> Optional[datetime]
     return None
 
 
+def _build_sample_id(well_id: str, dt: Optional[datetime], matrix: str) -> str:
+    if dt is not None:
+        return f"{well_id}-{dt.strftime('%Y%m%d')}-{matrix}"
+    return f"{well_id}-NODATE-{uuid.uuid4().hex[:6].upper()}-{matrix}"
+
+
 def normalize_survey123_submission(
     payload: dict,
     site_id: str,
@@ -80,10 +86,7 @@ def normalize_survey123_submission(
             qa.add(QARecord(SEV_WARNING, "invalid_dtw",
                             f"{well_id}: cannot parse DTW value {dtw_raw!r}"))
 
-    sample_id = (
-        f"{well_id}-{dt.strftime('%Y%m%d')}-{matrix}" if dt
-        else f"{well_id}-NODATE-{uuid.uuid4().hex[:6].upper()}-{matrix}"
-    )
+    sample_id = _build_sample_id(well_id, dt, matrix)
     samples: list[dict] = [{
         "ImportBatchID": batch_id,
         "SiteID": site_id,
