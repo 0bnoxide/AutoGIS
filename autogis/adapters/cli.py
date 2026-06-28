@@ -581,6 +581,33 @@ def run_history_report_cmd(results_csv, output, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("validate-schedule")
+@click.option("--schedule", "schedule_path", required=True,
+              type=click.Path(exists=True),
+              help="Monitoring schedule YAML.")
+@click.option("--analyte-dict", default=None, type=click.Path(exists=True),
+              help="CSV with AnalyteCanonicalName column; optional.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
+    """Tool 10.2: validate monitoring schedule YAML structure and analyte names."""
+    import csv as _csv
+    import yaml as _yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.validate_schedule import validate_schedule
+
+    schedule = _yaml.safe_load(Path(schedule_path).read_text(encoding="utf-8"))
+    adict = None
+    if analyte_dict:
+        with Path(analyte_dict).open(newline="", encoding="utf-8") as fh:
+            adict = {row["AnalyteCanonicalName"]
+                     for row in _csv.DictReader(fh)
+                     if row.get("AnalyteCanonicalName")}
+    qa = QACollector()
+    validate_schedule(schedule, adict, qa=qa)
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,

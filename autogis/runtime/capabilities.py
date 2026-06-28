@@ -36,6 +36,7 @@ TOOLS: dict[str, Runtime] = {
     "process-level-loop": Runtime.CLOUD,  # tool 8.1
     "identify-data-gaps": Runtime.CLOUD,  # tool 4.10
     "run-history-report": Runtime.CLOUD,  # tool 10.1
+    "validate-schedule": Runtime.CLOUD,   # tool 10.2
 }
 
 
