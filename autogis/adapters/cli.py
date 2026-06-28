@@ -550,6 +550,37 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("run-history-report")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults (all events).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output summary CSV path.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def run_history_report_cmd(results_csv, output, report, fail_on):
+    """Tool 10.1: per-location per-analyte history summary across events."""
+    import csv as _csv
+    from dataclasses import asdict, fields as _fields
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.history_report import build_history_report, HistorySummaryRow
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    qa = QACollector()
+    rows = build_history_report(results, qa=qa)
+    cols = [f.name for f in _fields(HistorySummaryRow)]
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for row in rows:
+            w.writerow(asdict(row))
+    click.echo(f"Written: {out}  ({len(rows)} history row(s))")
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
