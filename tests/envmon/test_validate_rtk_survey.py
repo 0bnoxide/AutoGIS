@@ -1,4 +1,4 @@
-from autogis.core.envmon.import_rtk_survey import RTKPoint
+﻿from autogis.core.envmon.import_rtk_survey import RTKPoint
 from autogis.core.envmon.validate_rtk_survey import validate_rtk_points
 
 _POINTS_OK = [
@@ -58,3 +58,10 @@ def test_custom_thresholds():
     qa = validate_rtk_points([point], hrms_threshold_ft=0.02, vrms_threshold_ft=0.02)
     cats = [r.category for r in qa.records]
     assert "hrms_exceeds_threshold" in cats
+
+
+def test_validate_rtk_survey_in_help():
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    result = CliRunner().invoke(autogis, ["envmon", "--help"])
+    assert "validate-rtk-survey" in result.output

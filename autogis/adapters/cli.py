@@ -1,4 +1,4 @@
-import dataclasses
+﻿import dataclasses
 from pathlib import Path
 
 import click
@@ -34,7 +34,7 @@ def run(config_path, where, out, incremental, *, harvest_fn=None):
 
 @click.group()
 def autogis():
-    """AutoGIS suite — harvest + envmon tools."""
+    """AutoGIS suite â€” harvest + envmon tools."""
 
 
 @autogis.command("harvest")
@@ -65,7 +65,7 @@ def _guard(name: str) -> None:
 
 
 # --------------------------------------------------------------------------
-# Headless tools (1/9/10) — pure core, openpyxl only, no arcpy.
+# Headless tools (1/9/10) â€” pure core, openpyxl only, no arcpy.
 # --------------------------------------------------------------------------
 @envmon.command("inspect")
 @click.argument("workbook", type=click.Path(exists=True))
@@ -263,7 +263,7 @@ def _render_qa(qa, report, fail_on):
 
 
 # --------------------------------------------------------------------------
-# LOCAL tools (2-8) — registered but runtime-guarded. The core call is only
+# LOCAL tools (2-8) â€” registered but runtime-guarded. The core call is only
 # reached when arcpy is present (in ArcGIS Pro). No rich ergonomics here; the
 # .pyt is their primary UI (Global Constraints).
 # --------------------------------------------------------------------------
@@ -385,6 +385,20 @@ def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fa
     result = evaluate_rpd_records(records, rpd_threshold_pct=threshold)
     qa = rpd_to_qa(result)
     qa.records = qa_import.records + qa.records
+    _render_qa(qa, report, fail_on)
+
+@envmon.command("validate-rtk-survey")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
+@click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="warning")
+def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, report, fail_on):
+    """Validate an RTK survey CSV for precision and fix-type QA (headless)."""
+    from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
+    from autogis.core.envmon.validate_rtk_survey import validate_rtk_points
+    points = parse_rtk_csv(Path(csv_path))
+    qa = validate_rtk_points(points, hrms_threshold, vrms_threshold)
     _render_qa(qa, report, fail_on)
 
 
@@ -526,4 +540,5 @@ main = autogis
 
 if __name__ == "__main__":
     autogis()
+
 
