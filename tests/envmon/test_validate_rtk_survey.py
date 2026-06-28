@@ -42,6 +42,25 @@ def test_duplicate_point_id_warns():
     assert any(r.category == "duplicate_point_id" for r in qa.records)
 
 
+def test_duplicate_point_id_pass_count_is_unique():
+    qa = validate_rtk_points(_POINTS_DUP)
+    summary = next(r for r in qa.records if r.category == "validation_complete")
+    assert summary.message == "RTK validation: 1/2 points QA pass."
+
+
+def test_duplicate_point_id_with_warning_does_not_count_as_pass():
+    points = [
+        RTKPoint("MW-01", 4527893.12, 293847.55, 512.34,
+                 hrms_ft=0.15, vrms_ft=0.02, fix_type="AUTONOMOUS"),
+        RTKPoint("MW-01", 4527893.10, 293847.53, 512.36,
+                 hrms_ft=0.01, vrms_ft=0.02, fix_type="RTK_FIXED"),
+    ]
+    qa = validate_rtk_points(points)
+    summary = next(r for r in qa.records if r.category == "validation_complete")
+    assert summary.message == "RTK validation: 0/2 points QA pass."
+    assert any(r.category == "fix_type_not_rtk" for r in qa.records)
+
+
 def test_no_points_no_error():
     qa = validate_rtk_points([])
     assert qa.counts_by_severity().get("ERROR", 0) == 0

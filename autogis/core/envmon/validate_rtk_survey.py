@@ -30,17 +30,26 @@ def validate_rtk_points(
                             f"PointID {pid!r} appears {n} times."))
 
     # Per-point QA
-    passed = 0
+    point_flags: list[list[str]] = []
+    ids_with_flags: set[str] = set()
     for pt in points:
         flags = assign_qa_flags(pt, hrms_threshold_ft, vrms_threshold_ft)
-        if not flags:
+        point_flags.append(flags)
+        if flags:
+            ids_with_flags.add(pt.point_id)
+
+    passed = 0
+    seen_ids: set[str] = set()
+    for pt, flags in zip(points, point_flags):
+        if not flags and pt.point_id not in ids_with_flags and pt.point_id not in seen_ids:
             passed += 1
-            continue
-        for flag in flags:
-            qa.add(QARecord(SEV_WARNING, flag,
-                            f"{pt.point_id}: {flag} "
-                            f"(HRMS={pt.hrms_ft}, VRMS={pt.vrms_ft}, "
-                            f"FixType={pt.fix_type})"))
+            seen_ids.add(pt.point_id)
+        if flags:
+            for flag in flags:
+                qa.add(QARecord(SEV_WARNING, flag,
+                                f"{pt.point_id}: {flag} "
+                                f"(HRMS={pt.hrms_ft}, VRMS={pt.vrms_ft}, "
+                                f"FixType={pt.fix_type})"))
 
     qa.add(QARecord(SEV_INFO, "validation_complete",
                     f"RTK validation: {passed}/{len(points)} points QA pass."))
