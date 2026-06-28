@@ -39,6 +39,7 @@ TOOLS: dict[str, Runtime] = {
     "validate-schedule": Runtime.CLOUD,   # tool 10.2
     "apply-screening": Runtime.CLOUD,     # tool 3.5
     "compare-schedule-vs-actual": Runtime.CLOUD,  # tool 10.x
+    "drone-checkpoint-qa": Runtime.CLOUD,  # tool 11.1
 }
 
 

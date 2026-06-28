@@ -694,6 +694,56 @@ def compare_schedule_vs_actual_cmd(
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("drone-checkpoint-qa")
+@click.option("--checkpoints", "checkpoints_csv", required=True,
+              type=click.Path(exists=True),
+              help="Checkpoint CSV (gcp_id, expected_x/y/z, measured_x/y/z).")
+@click.option("--hrms-threshold", type=float, default=0.05, show_default=True,
+              help="Horizontal RMSE threshold in metres.")
+@click.option("--vrms-threshold", type=float, default=0.10, show_default=True,
+              help="Vertical RMSE threshold in metres.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Optional CSV path for per-point results.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
+              show_default=True)
+def drone_checkpoint_qa_cmd(
+    checkpoints_csv, hrms_threshold, vrms_threshold, output, report, fail_on
+):
+    """Tool 11.1: evaluate GCP checkpoint accuracy (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.drone_checkpoint_qa import (
+        evaluate_gcp_checkpoints,
+        read_checkpoint_csv,
+        write_results_csv,
+    )
+
+    checkpoints = read_checkpoint_csv(Path(checkpoints_csv))
+    qa = QACollector()
+    summary = evaluate_gcp_checkpoints(
+        checkpoints,
+        hrms_threshold=hrms_threshold,
+        vrms_threshold=vrms_threshold,
+        qa=qa,
+    )
+
+    click.echo(f"Checkpoints: {summary.n_points}")
+    click.echo(f"HRMS: {summary.hrms:.4f} m  (threshold: {hrms_threshold} m)"
+               f"  -> {'PASS' if summary.hrms_pass else 'FAIL'}")
+    click.echo(f"VRMS: {summary.vrms:.4f} m  (threshold: {vrms_threshold} m)"
+               f"  -> {'PASS' if summary.vrms_pass else 'FAIL'}")
+    click.echo(f"Overall: {'PASS' if summary.overall_pass else 'FAIL'}")
+
+    if output:
+        write_results_csv(summary, Path(output))
+        click.echo(f"Results written: {output}")
+
+    _render_qa(qa, report, fail_on)
+
+    if not summary.overall_pass:
+        raise SystemExit(1)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
