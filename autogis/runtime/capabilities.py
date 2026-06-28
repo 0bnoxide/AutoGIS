@@ -35,6 +35,7 @@ TOOLS: dict[str, Runtime] = {
     "compare-events": Runtime.CLOUD,   # tool 4.7
     "process-level-loop": Runtime.CLOUD,  # tool 8.1
     "identify-data-gaps": Runtime.CLOUD,  # tool 4.10
+    "run-history-report": Runtime.CLOUD,  # tool 10.1
 }
 
 
