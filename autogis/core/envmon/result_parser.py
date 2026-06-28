@@ -6,10 +6,13 @@ values separate from parsed values").
 """
 from __future__ import annotations
 
+import logging as _log
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import List, Optional
+
+from ..common.units import convert, normalize_unit, same_dimension
 
 # ---------------------------------------------------------------------------
 # Status / qualifier vocabularies. Site-specific additions belong in config,
@@ -299,11 +302,32 @@ def classify_display(parsed: ParsedResult, exceeds: Optional[bool]) -> str:
 
 
 def evaluate_screening(parsed: ParsedResult,
-                       screening_level: Optional[float]) -> Optional[bool]:
-    """True/False for valid detected results vs a numeric screening level,
-    None when the comparison is not legitimate (ND, status, missing SL)."""
+                       screening_level: Optional[float],
+                       result_unit: Optional[str] = None,
+                       screening_unit: Optional[str] = None) -> Optional[bool]:
+    """True/False for valid detected results vs a numeric screening level.
+
+    Returns None when the comparison is not legitimate: ND result, missing
+    screening level, or dimensionally incompatible units.  When both units are
+    provided and known, the result value is converted to the screening unit
+    before comparison.  When either unit is unknown, falls through to a raw
+    numeric comparison (backward-compatible; caller should QA-warn).
+    """
     if not parsed.is_detected or parsed.result_numeric is None:
         return None
     if screening_level is None:
         return None
-    return parsed.result_numeric > screening_level
+    value = parsed.result_numeric
+    if result_unit and screening_unit:
+        r_known = normalize_unit(result_unit) is not None
+        s_known = normalize_unit(screening_unit) is not None
+        if r_known and s_known:
+            if not same_dimension(result_unit, screening_unit):
+                return None   # aqueous vs soil: no valid comparison
+            value = convert(value, result_unit, screening_unit)
+        else:
+            _log.warning(
+                "evaluate_screening: unregistered unit(s) %r / %r; "
+                "using raw value (add units to UNIT_REGISTRY to enable conversion)",
+                result_unit, screening_unit)
+    return value > screening_level

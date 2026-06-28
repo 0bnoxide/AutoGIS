@@ -179,6 +179,44 @@ def manage_screening_levels_cmd(screening, analytes, do_list, report, fail_on):
         if not analytes:
             return
     qa = check_screening_levels(Path(screening), Path(analytes) if analytes else None)
+
+@envmon.command("reconcile-locations")
+@click.argument("site_config", type=click.Path(exists=True))
+@click.argument("workbook", type=click.Path(exists=True))
+@click.option("--profile", "profile_path", required=True,
+              type=click.Path(exists=True), help="Parser profile for the workbook.")
+@click.option("--wells-csv", default=None, type=click.Path(exists=True),
+              help="CSV of well IDs (headless). Mutually exclusive with --gdb.")
+@click.option("--gdb", is_flag=True, default=False,
+              help="Read wells from the site GDB (ArcGIS Pro only; use the .pyt).")
+@click.option("--threshold", type=float, default=0.8, show_default=True)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
+                            threshold, report, fail_on):
+    """Tool: pre-flight check that workbook location IDs match the well layer."""
+    from autogis.core.common.config import ParserProfile
+    from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
+    from autogis.core.envmon.reconcile_locations import (
+        extract_location_ids, read_well_ids_csv, reconcile, reconcile_to_qa)
+
+    if gdb:
+        _guard("reconcile-locations")
+        raise click.ClickException(
+            "reconcile-locations --gdb runs inside ArcGIS Pro only. Use the "
+            "ReconcileSampleLocations tool in the .pyt toolbox, or pass "
+            "--wells-csv for a headless check.")
+    if not wells_csv:
+        raise click.ClickException("provide --wells-csv PATH (headless) or "
+                                   "--gdb (ArcGIS Pro).")
+
+    profile = ParserProfile.load(Path(profile_path))
+    reader = ProfileWorkbookReader(Path(workbook), profile)
+    workbook_ids = extract_location_ids(reader, profile)
+    well_ids = read_well_ids_csv(Path(wells_csv))
+
+    result = reconcile(workbook_ids, well_ids, threshold=threshold)
+    qa = reconcile_to_qa(result)
     _render_qa(qa, report, fail_on)
 
 
@@ -235,6 +273,280 @@ def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
 
     result = reconcile(workbook_ids, well_ids, threshold=threshold)
     qa = reconcile_to_qa(result)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("evaluate-rpd-qa")
+@click.option("--samples-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_Samples.")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--batch-id", default="MANUAL", show_default=True,
+              help="Import batch ID label for output records.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
+    """Tool: compute RPD for EDD duplicate samples and emit QA records."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import SampleRecord, AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import (
+        evaluate_duplicate_rpd, read_records_csv)
+
+    qa = QACollector()
+    samples = read_records_csv(Path(samples_csv), SampleRecord)
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    site_id = samples[0].SiteID if samples else "UNKNOWN"
+    evaluate_duplicate_rpd(samples, results, site_id, batch_id, qa)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("export-summary")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--samples-csv", default=None, type=click.Path(exists=True),
+              help="CSV export of Env_Samples (optional; used for metadata only).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+@click.option("--site-id", default="", help="Site ID label for the summary.")
+@click.option("--event-id", default="", help="Event ID label for the summary.")
+def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
+    """Tool: export Env_AnalyticalResults to a four-sheet Excel summary."""
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.export_summary import export_analytical_summary
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    samples = (read_records_csv(Path(samples_csv), SampleRecord)
+               if samples_csv else [])
+    if not site_id and results:
+        site_id = results[0].SiteID
+    out = export_analytical_summary(samples, results, Path(output), site_id, event_id)
+    click.echo(f"Written: {out}  ({len(results)} result(s))")
+
+
+@envmon.command("export-report-format-summary-tables")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+@click.option("--site-id", default="",
+              help="Site ID filter + label (default: first record's SiteID).")
+@click.option("--no-current-event", is_flag=True, default=False,
+              help="Drop the 'Current Event' sheet.")
+@click.option("--no-gw-by-event", is_flag=True, default=False,
+              help="Drop the 'GW by Event' sheet.")
+@click.option("--no-soil-by-depth", is_flag=True, default=False,
+              help="Drop the 'Soil by Depth' sheet.")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write QA report to PATH (.md/.json/.csv by extension).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def export_report_format_summary_tables_cmd(
+        results_csv, output, site_id, no_current_event, no_gw_by_event,
+        no_soil_by_depth, report, fail_on):
+    """Tool: export Env_AnalyticalResults to formatted report-appendix tables.
+
+    Produces the three cross-tab sheets (Current Event / GW by Event /
+    Soil by Depth). Distinct from ``export-summary`` (flat QA sheets).
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.export_summary_tables import export_summary_tables
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    if not site_id and results:
+        site_id = results[0].SiteID
+    qa = QACollector()
+    out = export_summary_tables(
+        results, Path(output), site_id=site_id,
+        include_current_event=not no_current_event,
+        include_gw_by_event=not no_gw_by_event,
+        include_soil_by_depth=not no_soil_by_depth,
+        qa=qa)
+    click.echo(f"Written: {out}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("evaluate-readiness")
+@click.option("--site-id", required=True, help="Site ID to check.")
+@click.option("--run-history", required=True, type=click.Path(),
+              help="run_history.csv path (need not exist; treated as empty if absent).")
+@click.option("--event-id", default=None, help="Event ID filter (optional).")
+@click.option("--required-tool", "required_tools", multiple=True,
+              help="Tool name that must have succeeded (repeatable).")
+@click.option("--qa-report", default=None, type=click.Path(exists=False),
+              help="QA CSV from a previous import (checked for ERROR rows).")
+@click.option("--figure-spec", default=None, type=click.Path(exists=False),
+              help="Figure spec YAML to validate.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
+                           qa_report, figure_spec, report, fail_on):
+    """Tool: report-readiness gate — checks required tools ran successfully."""
+    from autogis.core.common.run_history import RunHistory
+    from autogis.core.envmon.evaluate_readiness import evaluate_readiness
+
+    history = RunHistory(Path(run_history))
+    qa = evaluate_readiness(
+        site_id=site_id,
+        event_id=event_id,
+        run_history=history,
+        required_tools=list(required_tools),
+        qa_csv=Path(qa_report) if qa_report else None,
+        figure_spec_path=Path(figure_spec) if figure_spec else None)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("compare-events")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output comparison CSV path.")
+@click.option("--current-event-date", default=None,
+              help="ISO date (YYYY-MM-DD) to force as the current event.")
+@click.option("--stable-threshold", default=10.0, type=float,
+              help="abs(%% change) <= this is STABLE (default 10).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write QA report to PATH (.md/.json/.csv by extension).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def compare_events_cmd(results_csv, output, current_event_date,
+                       stable_threshold, report, fail_on):
+    """Tool 4.7: compare current vs previous monitoring event per location/analyte."""
+    import csv as _csv
+    from dataclasses import asdict, fields as _fields
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.compare_events import compare_events, ComparisonRecord
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    ced = _date.fromisoformat(current_event_date) if current_event_date else None
+    qa = QACollector()
+    rows = compare_events(results, qa, current_event_date=ced,
+                          stable_threshold=stable_threshold)
+    cols = [f.name for f in _fields(ComparisonRecord)]
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for rec in rows:
+            w.writerow(asdict(rec))
+    click.echo(f"Written: {out}  ({len(rows)} comparison rows)")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("process-level-loop")
+@click.option("--observations-csv", required=True, type=click.Path(exists=True),
+              help="CSV of LevelLoopObservation rows (ordered).")
+@click.option("--run-id", required=True)
+@click.option("--site-id", required=True)
+@click.option("--survey-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--benchmark-id", required=True, help="point_id of the benchmark.")
+@click.option("--known-elevation", required=True, type=float)
+@click.option("--tolerance", default=None, type=float,
+              help="Closure tolerance ft; default 0.05*sqrt(n_setups).")
+@click.option("--run-output", required=True, type=click.Path(),
+              help="Output LevelLoopRun CSV path.")
+@click.option("--observations-output", required=True, type=click.Path(),
+              help="Output adjusted-observations CSV path.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
+                           benchmark_id, known_elevation, tolerance, run_output,
+                           observations_output, report, fail_on):
+    """Tool 8.1: differential leveling — adjusted elevations + misclosure QA."""
+    import csv as _csv
+    from dataclasses import asdict, fields as _fields
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.schema.survey import (
+        LevelLoopObservation, LevelLoopRun)
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.level_loop import process_level_loop
+
+    obs = read_records_csv(Path(observations_csv), LevelLoopObservation)
+    qa = QACollector()
+    run, rows = process_level_loop(
+        obs, run_id=run_id, site_id=site_id,
+        survey_date=_date.fromisoformat(survey_date),
+        benchmark_id=benchmark_id, known_elevation=known_elevation,
+        tolerance=tolerance, qa=qa)
+
+    def _dump(path, records, record_cls):
+        cols = [f.name for f in _fields(record_cls)
+                if not (hasattr(record_cls, f.name) and
+                        isinstance(getattr(record_cls, f.name, None), type))]
+        # Use typing to exclude ClassVar fields — dataclasses.fields() already
+        # excludes them, so just use field names directly.
+        cols = [f.name for f in _fields(record_cls)]
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("w", newline="", encoding="utf-8") as fh:
+            w = _csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            for rec in records:
+                w.writerow(asdict(rec))
+        return p
+
+    _dump(run_output, [run], LevelLoopRun)
+    _dump(observations_output, rows, LevelLoopObservation)
+    click.echo(f"Misclosure: {run.misclosure_ft} ft  "
+               f"Tolerance: {run.closure_tolerance_ft} ft  "
+               f"Adjusted: {run.adjusted}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("identify-data-gaps")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--schedule", required=True, type=click.Path(exists=True),
+              help="Expected-schedule YAML (wells + required_analytes).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output data-gap CSV path.")
+@click.option("--event-date", default=None, help="ISO date YYYY-MM-DD.")
+@click.option("--event-window-days", default=30, type=int)
+@click.option("--dry-wells", default=None, type=click.Path(exists=True),
+              help="Optional CSV: location_id,reason.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
+                           event_window_days, dry_wells, report, fail_on):
+    """Tool 4.10: report missing wells/analytes vs an expected schedule."""
+    import csv as _csv
+    from dataclasses import asdict, fields as _fields
+    from datetime import date as _date
+    import yaml as _yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.data_gaps import identify_data_gaps, DataGapRecord
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    sched = _yaml.safe_load(Path(schedule).read_text(encoding="utf-8"))
+    dry: dict = {}
+    if dry_wells:
+        with Path(dry_wells).open(newline="", encoding="utf-8") as fh:
+            for row in _csv.DictReader(fh):
+                dry[row["location_id"]] = row.get("reason", "")
+    qa = QACollector()
+    gaps = identify_data_gaps(
+        results, sched,
+        event_date=_date.fromisoformat(event_date) if event_date else None,
+        window_days=event_window_days, dry_wells=dry, qa=qa)
+    cols = [f.name for f in _fields(DataGapRecord)]
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for g in gaps:
+            w.writerow(asdict(g))
+    click.echo(f"Written: {out}  ({len(gaps)} gap rows)")
     _render_qa(qa, report, fail_on)
 
 
@@ -302,6 +614,88 @@ def build_callouts_cmd(site_config, figure_spec):
     raise click.ClickException(
         "build-callouts runs inside ArcGIS Pro only. Use the BuildFigureDataset "
         "tool in the .pyt toolbox."
+    )
+
+
+@envmon.command("optimize-callouts")
+@click.argument("site_config", type=click.Path(exists=True))
+@click.argument("figure_spec", type=click.Path(exists=True))
+def optimize_callouts_cmd(site_config, figure_spec):
+    """Tool 5.2: run callout placement optimizer (ArcGIS Pro)."""
+    _guard("optimize-callouts")
+    raise click.ClickException(
+        "optimize-callouts runs inside ArcGIS Pro only. "
+        "Use the OptimizeCalloutPlacement tool in the .pyt toolbox."
+    )
+
+
+@envmon.group("manage-callout-overrides")
+def manage_callout_overrides_group():
+    """Tool 5.3: manage callout placement overrides (ArcGIS Pro)."""
+
+
+_OV_GDB = click.argument("gdb", type=click.Path(exists=True))
+_OV_SITE = click.option("--site", required=True, help="SiteID to scope the query.")
+_OV_SPEC = click.option("--spec", required=True, help="FigureSpecID to scope the query.")
+
+
+@manage_callout_overrides_group.command("list")
+@_OV_GDB
+@_OV_SITE
+@_OV_SPEC
+def manage_overrides_list_cmd(gdb, site, spec):
+    """List all placement overrides for a site/figure spec."""
+    _guard("manage-callout-overrides")
+    raise click.ClickException(
+        "manage-callout-overrides runs inside ArcGIS Pro only. "
+        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+    )
+
+
+@manage_callout_overrides_group.command("clear")
+@_OV_GDB
+@_OV_SITE
+@_OV_SPEC
+def manage_overrides_clear_cmd(gdb, site, spec):
+    """Delete all unlocked overrides for a site/figure spec."""
+    _guard("manage-callout-overrides")
+    raise click.ClickException(
+        "manage-callout-overrides runs inside ArcGIS Pro only. "
+        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+    )
+
+
+@manage_callout_overrides_group.command("lock")
+@_OV_GDB
+@_OV_SITE
+@_OV_SPEC
+@click.option("--location", required=True, help="LocationID to lock.")
+@click.option("--anchor-x", type=float, required=True,
+              help="Box lower-left X in map units.")
+@click.option("--anchor-y", type=float, required=True,
+              help="Box lower-left Y in map units.")
+@click.option("--map-type", default="", help="MapType filter (default: all).")
+def manage_overrides_lock_cmd(gdb, site, spec, location,
+                               anchor_x, anchor_y, map_type):
+    """Lock a callout to a fixed position."""
+    _guard("manage-callout-overrides")
+    raise click.ClickException(
+        "manage-callout-overrides runs inside ArcGIS Pro only. "
+        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+    )
+
+
+@manage_callout_overrides_group.command("unlock")
+@_OV_GDB
+@_OV_SITE
+@_OV_SPEC
+@click.option("--location", required=True, help="LocationID to unlock.")
+def manage_overrides_unlock_cmd(gdb, site, spec, location):
+    """Remove the lock on a callout (override becomes a quadrant hint)."""
+    _guard("manage-callout-overrides")
+    raise click.ClickException(
+        "manage-callout-overrides runs inside ArcGIS Pro only. "
+        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
     )
 
 
@@ -462,6 +856,26 @@ def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
     from autogis.core.envmon.export_snapshot import export_event_snapshot, format_manifest
     manifest = export_event_snapshot(gdb, site_id, event_id, out_dir, compress)
     click.echo(format_manifest(manifest))
+
+@envmon.command("build-survey-form")
+@click.option("--site", "site_path", required=True,
+              type=click.Path(exists=True), help="Site config YAML.")
+@click.option("--analytes", "analytes_path", required=True,
+              type=click.Path(exists=True), help="Analyte dictionary YAML.")
+@click.option("--event", "event_path", required=True,
+              type=click.Path(exists=True), help="Event config YAML.")
+@click.option("--out", "out_path", required=True,
+              type=click.Path(), help="Output .xlsx path.")
+def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
+    """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
+    import yaml
+    from autogis.core.envmon.survey123_form_builder import build_xlsform
+    site_cfg = yaml.safe_load(open(site_path, encoding="utf-8"))
+    analytes = yaml.safe_load(open(analytes_path, encoding="utf-8"))
+    event_cfg = yaml.safe_load(open(event_path, encoding="utf-8"))
+    wb = build_xlsform(site_cfg, event_cfg, analytes)
+    wb.save(out_path)
+    click.echo(f"XLSForm written to {out_path}")
 
 
 @autogis.group()
