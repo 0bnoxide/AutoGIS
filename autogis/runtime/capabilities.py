@@ -38,6 +38,7 @@ TOOLS: dict[str, Runtime] = {
     "run-history-report": Runtime.CLOUD,  # tool 10.1
     "validate-schedule": Runtime.CLOUD,   # tool 10.2
     "apply-screening": Runtime.CLOUD,     # tool 3.5
+    "compare-schedule-vs-actual": Runtime.CLOUD,  # tool 10.x
 }
 
 

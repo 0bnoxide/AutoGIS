@@ -644,6 +644,56 @@ def apply_screening_cmd(results_csv, screening_path, output, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("compare-schedule-vs-actual")
+@click.option("--schedule", "schedule_path", required=True,
+              type=click.Path(exists=True),
+              help="Schedule YAML file (site_id, wells, required_analytes).")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV of AnalyticalResultRecord rows.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output CSV path for gap/excess report.")
+@click.option("--event-date", default=None,
+              help="Event date ISO (YYYY-MM-DD); inferred from results if omitted.")
+@click.option("--window-days", type=int, default=30, show_default=True,
+              help="Include results within this many days before event-date.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
+              show_default=True)
+def compare_schedule_vs_actual_cmd(
+    schedule_path, results_csv, output, event_date, window_days, report, fail_on
+):
+    """Compare scheduled monitoring wells/analytes vs actual results (headless)."""
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.schedule_vs_actual import (
+        compare_schedule_vs_actual,
+        load_schedule_yaml,
+        write_gap_csv,
+    )
+
+    schedule = load_schedule_yaml(Path(schedule_path))
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    event_dt = _date.fromisoformat(event_date) if event_date else None
+    qa = QACollector()
+
+    rows = compare_schedule_vs_actual(
+        results, schedule,
+        event_date=event_dt,
+        window_days=window_days,
+        qa=qa,
+    )
+    write_gap_csv(rows, Path(output))
+    click.echo(f"Written: {output}  ({len(rows)} record(s))")
+
+    n_missing = sum(1 for r in rows if r.Status == "MISSING")
+    n_unexpected = sum(1 for r in rows if r.Status == "UNEXPECTED")
+    click.echo(f"  MISSING: {n_missing}  UNEXPECTED: {n_unexpected}")
+
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
