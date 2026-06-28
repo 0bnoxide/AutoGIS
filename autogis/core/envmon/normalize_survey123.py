@@ -6,6 +6,7 @@ normalize_*.py so the existing import_to_gdb write layer can consume them.
 from __future__ import annotations
 
 import csv
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -25,12 +26,17 @@ class Survey123Field:
 
 
 def _parse_date(value: str, qa: QACollector, context: str) -> Optional[datetime]:
+    value_text = str(value).strip() if value is not None else ""
+    if not value_text:
+        qa.add(QARecord(SEV_ERROR, "invalid_date",
+                        f"{context}: missing date"))
+        return None
     for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y%m%d"):
         try:
-            return datetime.strptime(str(value).strip(), fmt)
+            return datetime.strptime(value_text, fmt)
         except ValueError:
             continue
-    qa.add(QARecord(SEV_WARNING, "invalid_date",
+    qa.add(QARecord(SEV_ERROR, "invalid_date",
                     f"{context}: cannot parse date {value!r}"))
     return None
 
@@ -50,8 +56,8 @@ def normalize_survey123_submission(
         return [], []
 
     date_raw = payload.get(fm.sampling_date_field, "")
-    dt = _parse_date(date_raw, qa, f"submission/{well_id}") if date_raw else None
-    matrix = payload.get(fm.matrix_field, "GW")
+    dt = _parse_date(date_raw, qa, f"submission/{well_id}")
+    matrix = str(payload.get(fm.matrix_field, "GW") or "GW")
     sampled_by = payload.get(fm.sampled_by_field, "")
     coc = payload.get(fm.coc_number_field, "")
     dtw_raw = payload.get(fm.dtw_field)
@@ -74,7 +80,10 @@ def normalize_survey123_submission(
             qa.add(QARecord(SEV_WARNING, "invalid_dtw",
                             f"{well_id}: cannot parse DTW value {dtw_raw!r}"))
 
-    sample_id = f"{well_id}-{dt.strftime('%Y%m%d') if dt else 'NODATE'}-{matrix}"
+    sample_id = (
+        f"{well_id}-{dt.strftime('%Y%m%d')}-{matrix}" if dt
+        else f"{well_id}-NODATE-{uuid.uuid4().hex[:6].upper()}-{matrix}"
+    )
     samples: list[dict] = [{
         "ImportBatchID": batch_id,
         "SiteID": site_id,

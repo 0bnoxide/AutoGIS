@@ -1,4 +1,5 @@
 import csv
+import re
 from pathlib import Path
 from autogis.core.envmon.normalize_survey123 import (
     Survey123Field, normalize_survey123_submission,
@@ -80,6 +81,21 @@ def test_invalid_date_warns():
     bad_date = {**_PAYLOAD, "SamplingDate": "not-a-date"}
     normalize_survey123_submission(bad_date, "H281", "B1", qa)
     assert any(r.category == "invalid_date" for r in qa.records)
+
+
+def test_missing_or_invalid_date_emits_error_and_unique_nodate_sample_id():
+    qa1 = QACollector()
+    _, samp1 = normalize_survey123_submission(
+        {**_PAYLOAD, "SamplingDate": "not-a-date"}, "H281", "B1", qa1)
+    qa2 = QACollector()
+    _, samp2 = normalize_survey123_submission(
+        {**_PAYLOAD, "SamplingDate": ""}, "H281", "B2", qa2)
+
+    assert any(r.severity == "ERROR" and r.category == "invalid_date" for r in qa1.records)
+    assert any(r.severity == "ERROR" and r.category == "invalid_date" for r in qa2.records)
+    assert re.fullmatch(r"MW-01-NODATE-[0-9A-F]{6}-GW", samp1[0]["SampleID"])
+    assert re.fullmatch(r"MW-01-NODATE-[0-9A-F]{6}-GW", samp2[0]["SampleID"])
+    assert samp1[0]["SampleID"] != samp2[0]["SampleID"]
 
 
 def test_route_survey123_in_help():
