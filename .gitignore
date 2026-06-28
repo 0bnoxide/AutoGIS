@@ -15,3 +15,7 @@ headroom_memory.db
 
 # Session coordination registry (local-only, never committed)
 .claude/coordination/claims.json*
+
+# Worktrees + stray local artifacts
+.claude/worktrees/
+test_output.txt
