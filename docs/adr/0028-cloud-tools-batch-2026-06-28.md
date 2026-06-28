@@ -56,9 +56,14 @@ Ship five headless, arcpy-free tools, each registered `Runtime.CLOUD` in
 
 **CompareScheduleVsActual**
 - Schedule is a plain YAML dict (`site_id`, `wells`, `required_analytes`,
-  per-well `well_analytes` extras), parsed to a dict — not a config dataclass; no
-  canonical schedule loader exists in `core/common/config.py`, so ADR-0003 does
-  not apply. The shape matches the existing `validate_schedule.py`.
+  optional per-well `well_analytes`), parsed to a dict — not a config dataclass;
+  no canonical schedule loader exists in `core/common/config.py`, so ADR-0003
+  does not apply. The shape matches the existing `validate_schedule.py`.
+- `well_analytes[well]` is a per-well **override** of `required_analytes` (use
+  it *instead of* the site list for that well), matching the established
+  `data_gaps.py` contract — the same key means the same thing across both tools.
+  (Originally implemented as a union/"extras"; corrected on cold review to avoid
+  divergent semantics for the same YAML key.)
 - Status ∈ {`MISSING`, `SAMPLED`, `UNEXPECTED`}. UNEXPECTED covers **both**
   unexpected *wells* (LocationID absent from `wells`) **and** extra *analytes*
   sampled at a scheduled well but not on its schedule — so the advertised "gap +

@@ -35,7 +35,9 @@ SCHEDULE = {
     "site_id": "H281",
     "wells": ["MW-1", "MW-2"],
     "required_analytes": ["Benzene", "Toluene"],
-    "well_analytes": {"MW-2": ["Arsenic"]},
+    # well_analytes OVERRIDES required_analytes for that well (data_gaps contract):
+    # MW-2 is sampled for exactly these three, not required + these.
+    "well_analytes": {"MW-2": ["Benzene", "Toluene", "Arsenic"]},
 }
 
 
@@ -79,6 +81,29 @@ def test_unexpected_well():
     unexpected = [r for r in rows if r.Status == "UNEXPECTED"]
     assert len(unexpected) == 1
     assert unexpected[0].LocationID == "MW-99"
+
+
+def test_well_analytes_overrides_not_extends_required():
+    """A per-well override replaces required_analytes for that well.
+
+    MW-2's override is [Arsenic] only, so Benzene/Toluene (required for the
+    site) must NOT be flagged MISSING at MW-2 — they are not on MW-2's list.
+    """
+    schedule = {
+        "site_id": "H281",
+        "wells": ["MW-2"],
+        "required_analytes": ["Benzene", "Toluene"],
+        "well_analytes": {"MW-2": ["Arsenic"]},
+    }
+    results = [_r("MW-2", "Arsenic")]
+    qa = QACollector()
+    rows = compare_schedule_vs_actual(
+        results, schedule, event_date=date(2026, 4, 15), qa=qa)
+    statuses = {(r.AnalyteName, r.Status) for r in rows}
+    assert ("Arsenic", "SAMPLED") in statuses
+    # Required-but-not-on-override analytes are NOT missing for this well.
+    assert ("Benzene", "MISSING") not in statuses
+    assert ("Toluene", "MISSING") not in statuses
 
 
 def test_unexpected_analyte_at_scheduled_well():

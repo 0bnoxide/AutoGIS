@@ -121,9 +121,10 @@ def generate_event_report(
             "",
         ]
 
-    # --- History Summary (Top 10 by exceedance, then by location) ---
+    # --- History Summary (up to 10 rows) ---
     if history:
-        # Prioritise rows with latest exceedance
+        # If any rows carry a latest exceedance, show those; otherwise fall back
+        # to the input rows in their existing order. Either way, cap at 10.
         exceed_rows = [h for h in history if str(h.get("LatestExceedance", "")).strip() in ("1", "True", "true")]
         shown = (exceed_rows or history)[:10]
         table_rows = [

@@ -8,9 +8,12 @@ Schedule format (YAML):
     required_analytes:
       - Benzene
       - Toluene
-    well_analytes:       # optional per-well extras
-      MW-2:
-        - Arsenic
+    well_analytes:       # optional per-well OVERRIDE of required_analytes
+      MW-2:               # MW-2 is sampled for exactly these analytes,
+        - Arsenic         # NOT required_analytes + these
+
+This matches the per-well override contract used by ``data_gaps.py`` (the same
+``well_analytes`` key means the same thing across both tools).
 
 No arcpy dependency.
 """
@@ -91,9 +94,11 @@ def compare_schedule_vs_actual(
     out_rows: List[ScheduleGapRecord] = []
     well_set = set(wells)
 
-    # Check each scheduled well against required analytes
+    # Check each scheduled well against its expected analytes. A per-well
+    # well_analytes entry OVERRIDES required_analytes for that well (same
+    # contract as data_gaps.py), so the key means one thing across tools.
     for well in wells:
-        expected = required | set(well_analytes.get(well) or [])
+        expected = set(well_analytes.get(well, required))
         got = sampled.get(well, set())
         for analyte in sorted(expected):
             if analyte not in got:
