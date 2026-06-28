@@ -822,6 +822,87 @@ def generate_event_report_cmd(
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("run-history")
+@click.option(
+    "--run-history", "history_path", required=True, type=click.Path(),
+    help="Path to run_history.csv (need not exist; treated as empty if absent).",
+)
+@click.option("--site", "site_id", default=None, help="Filter by site ID.")
+@click.option("--tool", "tool_name", default=None, help="Filter by tool name.")
+@click.option(
+    "--status", default=None,
+    type=click.Choice(["success", "warning", "error", "cancelled"]),
+    help="Filter by run status.",
+)
+@click.option("--since", default=None, help="Only runs since this ISO date (YYYY-MM-DD).")
+@click.option("--limit", type=int, default=0, help="Max records to show (0 = all).")
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["table", "csv", "json"]),
+    default="table", show_default=True,
+)
+def run_history_cmd(history_path, site_id, tool_name, status, since, limit, fmt):
+    """Query the tool run history CSV (headless)."""
+    import json as _json
+    import csv as _csv
+    import io
+    from datetime import datetime as _dt
+    from dataclasses import asdict
+    from autogis.core.common.run_history import RunHistory
+
+    history = RunHistory(Path(history_path))
+    since_dt = _dt.fromisoformat(since) if since else None
+    records = history.query(
+        site_id=site_id,
+        tool_name=tool_name,
+        since=since_dt,
+        status=status,
+    )
+    if limit and limit > 0:
+        records = records[-limit:]
+
+    if not records:
+        click.echo("0 record(s) found.")
+        return
+
+    if fmt == "json":
+        payload = []
+        for r in records:
+            d = asdict(r)
+            d["started_at"] = r.started_at.isoformat()
+            d["finished_at"] = r.finished_at.isoformat()
+            payload.append(d)
+        click.echo(_json.dumps(payload, indent=2))
+    elif fmt == "csv":
+        buf = io.StringIO()
+        cols = [
+            "run_id", "tool_name", "site_id", "event_id",
+            "started_at", "finished_at", "status",
+            "qa_count_error", "qa_count_warning", "message",
+        ]
+        w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for r in records:
+            row = asdict(r)
+            row["started_at"] = r.started_at.isoformat()
+            row["finished_at"] = r.finished_at.isoformat()
+            w.writerow(row)
+        click.echo(buf.getvalue().rstrip())
+    else:  # table
+        hdr = (
+            f"{'tool_name':<28} {'site_id':<12} {'status':<10}"
+            f" {'finished_at':<20} msg"
+        )
+        click.echo(hdr)
+        click.echo("-" * len(hdr))
+        for r in records:
+            click.echo(
+                f"{r.tool_name:<28} {r.site_id:<12} {r.status:<10} "
+                f"{r.finished_at.isoformat():<20} {r.message[:40]}"
+            )
+        click.echo(f"\n{len(records)} record(s).")
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,

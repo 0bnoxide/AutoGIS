@@ -42,6 +42,7 @@ TOOLS: dict[str, Runtime] = {
     "drone-checkpoint-qa": Runtime.CLOUD,  # tool 11.1
     "export-geojson": Runtime.CLOUD,  # tool 10.3
     "generate-event-report": Runtime.CLOUD,  # tool 10.5
+    "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
 }
 
 
