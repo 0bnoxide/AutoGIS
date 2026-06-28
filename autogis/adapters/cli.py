@@ -1,4 +1,4 @@
-﻿import dataclasses
+import dataclasses
 from pathlib import Path
 
 import click
