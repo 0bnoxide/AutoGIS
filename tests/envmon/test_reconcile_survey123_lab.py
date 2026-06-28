@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 from pathlib import Path
 import pytest
 import autogis.core.envmon.reconcile_survey123_lab as reconcile_survey123_lab_module
