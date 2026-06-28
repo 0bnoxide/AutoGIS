@@ -41,6 +41,7 @@ TOOLS: dict[str, Runtime] = {
     "compare-schedule-vs-actual": Runtime.CLOUD,  # tool 10.x
     "drone-checkpoint-qa": Runtime.CLOUD,  # tool 11.1
     "export-geojson": Runtime.CLOUD,  # tool 10.3
+    "generate-event-report": Runtime.CLOUD,  # tool 10.5
 }
 
 

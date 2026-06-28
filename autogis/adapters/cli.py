@@ -777,6 +777,51 @@ def export_geojson_cmd(results_csv, coords_csv, output, indent, report, fail_on)
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("generate-event-report")
+@click.option("--site", "site_id", required=True, help="Site ID.")
+@click.option("--event", "event_id", required=True,
+              help="Event identifier (e.g. 2026Q2).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output Markdown (.md) file path.")
+@click.option("--results-csv", default=None, type=click.Path(exists=True),
+              help="Analytical results CSV.")
+@click.option("--comparison-csv", default=None, type=click.Path(exists=True),
+              help="compare-events output CSV.")
+@click.option("--history-csv", default=None, type=click.Path(exists=True),
+              help="run-history-report output CSV.")
+@click.option("--gaps-csv", default=None, type=click.Path(exists=True),
+              help="identify-data-gaps output CSV.")
+@click.option("--rpd-qa-csv", default=None, type=click.Path(exists=True),
+              help="evaluate-rpd-qa output CSV.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
+              show_default=True)
+def generate_event_report_cmd(
+    site_id, event_id, output,
+    results_csv, comparison_csv, history_csv, gaps_csv, rpd_qa_csv,
+    report, fail_on,
+):
+    """Tool 10.5: assemble Markdown monitoring event report from CSV tool outputs."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.generate_event_report import generate_event_report
+
+    qa = QACollector()
+    content = generate_event_report(
+        site_id, event_id,
+        results_csv=Path(results_csv) if results_csv else None,
+        comparison_csv=Path(comparison_csv) if comparison_csv else None,
+        history_csv=Path(history_csv) if history_csv else None,
+        gaps_csv=Path(gaps_csv) if gaps_csv else None,
+        rpd_qa_csv=Path(rpd_qa_csv) if rpd_qa_csv else None,
+        qa=qa,
+    )
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(content, encoding="utf-8")
+    click.echo(f"Written: {out}")
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
