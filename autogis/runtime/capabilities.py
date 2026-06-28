@@ -37,6 +37,7 @@ TOOLS: dict[str, Runtime] = {
     "identify-data-gaps": Runtime.CLOUD,  # tool 4.10
     "run-history-report": Runtime.CLOUD,  # tool 10.1
     "validate-schedule": Runtime.CLOUD,   # tool 10.2
+    "apply-screening": Runtime.CLOUD,     # tool 3.5
 }
 
 

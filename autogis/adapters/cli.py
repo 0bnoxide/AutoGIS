@@ -608,6 +608,42 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("apply-screening")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV export of Env_AnalyticalResults.")
+@click.option("--screening", "screening_path", required=True,
+              type=click.Path(exists=True),
+              help="Screening levels YAML (analyte -> matrix -> {unit, level, source}).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output CSV path (updated records).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def apply_screening_cmd(results_csv, screening_path, output, report, fail_on):
+    """Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless)."""
+    import csv as _csv
+    import yaml as _yaml
+    from dataclasses import asdict, fields as _fields
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.apply_screening import apply_screening_levels
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    screening = _yaml.safe_load(Path(screening_path).read_text(encoding="utf-8"))
+    qa = QACollector()
+    updated = apply_screening_levels(results, screening, qa=qa)
+    cols = [f.name for f in _fields(AnalyticalResultRecord)]
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for rec in updated:
+            w.writerow(asdict(rec))
+    click.echo(f"Written: {out}  ({len(updated)} record(s))")
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
