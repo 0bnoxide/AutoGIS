@@ -344,3 +344,38 @@ def run_edd_import(
 
     write_qa_to_gdb(gdb_path, qa, batch_id)
     return batch_id
+
+
+# ---------------------------------------------------------------------------
+# Lightweight sample extraction (no GDB writes)
+# ---------------------------------------------------------------------------
+
+def extract_sample_roster(edd_path: Path, profile) -> list:
+    """Return list[LabSample] from an EDD without importing to GDB.
+
+    Accepts either LabEDDProfile or ParserProfile (duck-typed).
+    """
+    from .reconcile_survey123_lab import LabSample
+
+    edd_path = Path(edd_path)
+    rows = read_edd_file(edd_path, profile)
+
+    seen: dict[str, LabSample] = {}
+    for row in rows:
+        sample_id = profile.resolve_column(row, "sample_id") or ""
+        if not sample_id:
+            continue
+        if sample_id not in seen:
+            location_id = profile.resolve_column(row, "location_id") or ""
+            event_date = profile.resolve_column(row, "event_date") or ""
+            matrix = profile.resolve_column(row, "matrix") or ""
+            seen[sample_id] = LabSample(
+                sample_id=sample_id,
+                location_id=location_id,
+                sample_date=str(event_date),
+                matrix=matrix,
+                analyte_count=0,
+            )
+        seen[sample_id].analyte_count += 1
+
+    return list(seen.values())

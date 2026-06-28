@@ -949,6 +949,88 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
     click.echo(f"Imported {len(points)} points: {passes} QA pass, {len(points)-passes} QA fail.")
 
 
+@envmon.command("reconcile-survey123-lab")
+@click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
+              help="Survey123 export CSV.")
+@click.option("--edd", "edd_path", required=True, type=click.Path(exists=True),
+              help="Lab EDD CSV or XLSX.")
+@click.option("--edd-profile", "profile_path", required=True, type=click.Path(exists=True),
+              help="Lab EDD profile YAML.")
+@click.option("--site", "site_id", required=True)
+@click.option("--threshold", type=float, default=0.85, show_default=True)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
+                                threshold, report, fail_on):
+    """Pre-production: reconcile Survey123 field submissions vs lab EDD (headless)."""
+    from autogis.core.envmon.reconcile_survey123_lab import (
+        load_survey123_csv, reconcile_field_lab, reconcile_to_qa)
+    from autogis.core.common.config import ParserProfile
+    from autogis.core.envmon.edd_importer import extract_sample_roster
+
+    field_samples = load_survey123_csv(Path(survey_csv))
+    profile = ParserProfile.load(Path(profile_path))
+    lab_samples = extract_sample_roster(Path(edd_path), profile)
+
+    result = reconcile_field_lab(field_samples, lab_samples, threshold=threshold)
+    qa = reconcile_to_qa(result)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("route-survey123")
+@click.argument("input_path", metavar="INPUT", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True)
+@click.option("--gdb", "gdb_path", required=True, type=click.Path())
+@click.option("--batch-id", default=None, help="Override auto-generated batch ID.")
+@click.option("--format", "input_format",
+              type=click.Choice(["csv", "json"]), default="csv", show_default=True)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
+                        report, fail_on):
+    """Route Survey123 field submissions into the GDB (ArcGIS Pro)."""
+    import json
+    import uuid
+    import datetime as dt
+    _guard("route-survey123")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.normalize_survey123 import (
+        normalize_survey123_submission, load_survey123_csv_submissions)
+    from autogis.core.envmon.import_to_gdb import (
+        append_records_idempotent, finalize_batch, write_qa_to_gdb)
+    from autogis.runtime.sessions import arcpy_env
+
+    bid = batch_id or f"S123-{uuid.uuid4().hex[:8].upper()}"
+    qa = QACollector()
+    gdb = Path(gdb_path)
+
+    if input_format == "json":
+        payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
+        wl, samp = normalize_survey123_submission(payload, site_id, bid, qa)
+    else:
+        wl, samp = load_survey123_csv_submissions(Path(input_path), site_id, bid, qa)
+
+    arcpy = arcpy_env()
+    batch_fields = ["ImportBatchID", "SiteID", "SiteName", "SourceWorkbook",
+                    "SourceWorkbookHash", "ImportDateTime", "ImportedBy",
+                    "ParserProfile", "ImportMode", "QAStatus", "SourceSheets"]
+    batch_row = [bid, site_id, "", str(input_path)[:255], "",
+                 dt.datetime.now(), "survey123_router",
+                 "Survey123", "append", "IN_PROGRESS", "Survey123 JSON/CSV"]
+    with arcpy.da.InsertCursor(str(gdb / "Env_ImportBatch"), batch_fields) as cur:
+        cur.insertRow(batch_row)
+
+    wl_inserted, wl_skipped = append_records_idempotent(gdb, "Env_WaterLevels", wl, qa, bid)
+    samp_inserted, samp_skipped = append_records_idempotent(gdb, "Env_Samples", samp, qa, bid)
+
+    counts = {"water_levels": wl_inserted, "samples": samp_inserted}
+    finalize_batch(gdb, bid, qa, counts, "COMPLETE")
+    write_qa_to_gdb(gdb, qa, bid)
+
+    click.echo(f"Batch {bid}: {wl_inserted} water levels, {samp_inserted} samples imported.")
+    _render_qa(qa, report, fail_on)
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 
