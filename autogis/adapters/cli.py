@@ -915,6 +915,40 @@ def publish_layer(profile, title, source, tags, folder, share_with, no_overwrite
         raise SystemExit(1)
 
 
+@envmon.command("validate-rtk-survey")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
+@click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="warning")
+def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, report, fail_on):
+    """Validate an RTK survey CSV for precision and fix-type QA (headless)."""
+    from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
+    from autogis.core.envmon.validate_rtk_survey import validate_rtk_points
+    points = parse_rtk_csv(Path(csv_path))
+    qa = validate_rtk_points(points, hrms_threshold, vrms_threshold)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("import-rtk-survey")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True)
+@click.option("--gdb", required=True, type=click.Path())
+@click.option("--batch-id", default=None)
+@click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
+@click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
+def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms_threshold):
+    """Import RTK survey CSV into SurveyPoints_Raw/QA (ArcGIS Pro)."""
+    import uuid
+    _guard("import-rtk-survey")
+    from autogis.core.envmon.import_rtk_survey import parse_rtk_csv, import_rtk_survey, assign_qa_flags
+    bid = batch_id or f"RTK-{uuid.uuid4().hex[:8].upper()}"
+    points = parse_rtk_csv(Path(csv_path))
+    import_rtk_survey(gdb, site_id, bid, points, hrms_threshold, vrms_threshold)
+    passes = sum(1 for p in points if not assign_qa_flags(p, hrms_threshold, vrms_threshold))
+    click.echo(f"Imported {len(points)} points: {passes} QA pass, {len(points)-passes} QA fail.")
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 
