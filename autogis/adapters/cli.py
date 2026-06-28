@@ -1,4 +1,4 @@
-import dataclasses
+﻿import dataclasses
 from pathlib import Path
 
 import click
@@ -437,6 +437,25 @@ def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
     click.echo(f"Import complete. Batch ID: {batch_id}")
 
 
+@envmon.command("import-rtk-survey")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True)
+@click.option("--gdb", required=True, type=click.Path())
+@click.option("--batch-id", default=None)
+@click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
+@click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
+def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms_threshold):
+    """Import RTK survey CSV into SurveyPoints_Raw/QA (ArcGIS Pro)."""
+    import uuid
+    _guard("import-rtk-survey")
+    from autogis.core.envmon.import_rtk_survey import parse_rtk_csv, import_rtk_survey, assign_qa_flags
+    bid = batch_id or f"RTK-{uuid.uuid4().hex[:8].upper()}"
+    points = parse_rtk_csv(Path(csv_path))
+    import_rtk_survey(gdb, site_id, bid, points, hrms_threshold, vrms_threshold)
+    passes = sum(1 for p in points if not assign_qa_flags(p, hrms_threshold, vrms_threshold))
+    click.echo(f"Imported {len(points)} points: {passes} QA pass, {len(points)-passes} QA fail.")
+
+
 @envmon.command("upgrade-schema")
 @click.argument("gdb")
 @click.option("--spatial-reference", "spatial_reference", type=int, default=4326,
@@ -507,3 +526,4 @@ main = autogis
 
 if __name__ == "__main__":
     autogis()
+

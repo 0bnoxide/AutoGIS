@@ -63,3 +63,10 @@ def test_custom_column_map(tmp_path):
     points = parse_rtk_csv(p, column_map=cm)
     assert len(points) == 1
     assert points[0].northing == 4527893.12
+
+
+def test_import_rtk_survey_in_help():
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    result = CliRunner().invoke(autogis, ["envmon", "--help"])
+    assert "import-rtk-survey" in result.output
