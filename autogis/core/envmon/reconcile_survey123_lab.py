@@ -110,7 +110,8 @@ def _check_pair(result: ReconcileS123LabResult,
             f"sample={fs.sample_id}")
     if fs.location_id.upper() != ls.location_id.upper():
         result.flags.append(
-            f"location_mismatch: field={fs.location_id} lab={ls.location_id}")
+            f"location_mismatch: field={fs.location_id} lab={ls.location_id} "
+            f"sample={fs.sample_id}")
 
 
 def reconcile_to_qa(result: ReconcileS123LabResult) -> QACollector:

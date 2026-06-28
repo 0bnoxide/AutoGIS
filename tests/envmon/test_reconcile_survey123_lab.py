@@ -61,6 +61,9 @@ def test_fuzzy_match_flags_location_mismatch():
     r = reconcile_field_lab(_FIELD, _LAB_NO_MATCH, threshold=0.85)
     assert len(r.matched) == 1
     assert any("location_mismatch" in f for f in r.flags)
+    assert any(
+        f"sample={_FIELD[0].sample_id}" in f for f in r.flags if "location_mismatch" in f
+    )
 
 
 def test_load_survey123_csv(tmp_path):
