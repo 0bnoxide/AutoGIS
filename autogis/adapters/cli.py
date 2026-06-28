@@ -64,8 +64,8 @@ def _guard(name: str) -> None:
         raise click.ClickException(str(exc))
     except KeyError as exc:
         raise click.ClickException(
-            f"Internal error: tool {exc} is not registered in the capability "
-            f"registry. Report this as a bug.")
+            f"Internal error: tool {exc.args[0]!r} is not registered in the "
+            f"capability registry. Report this as a bug.")
 
 
 # --------------------------------------------------------------------------
