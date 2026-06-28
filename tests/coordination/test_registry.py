@@ -72,3 +72,34 @@ def test_reap_stale_removes_expired(tmp_path):
     later = now + timedelta(seconds=500)
     assert registry.reap_stale(p, now=later) == 1
     assert registry.list_claims(p, include_stale=True) == []
+
+
+def test_heartbeat_refreshes_only_own_claims(tmp_path):
+    now = registry._now()
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "branch", "feat/x", now=now)
+    registry.claim(p, "s2", "branch", "feat/y", now=now)
+    later = now + timedelta(seconds=300)
+    assert registry.heartbeat(p, "s1", now=later) == 1
+    claims = {c["session_id"]: c for c in registry.list_claims(p, include_stale=True)}
+    assert claims["s1"]["heartbeat_at"] == registry._iso(later)
+    assert claims["s2"]["heartbeat_at"] == registry._iso(now)
+
+
+def test_release_all_for_session(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "branch", "feat/x")
+    registry.claim(p, "s1", "worktree", "/wt/x")
+    registry.claim(p, "s2", "branch", "feat/y")
+    assert registry.release(p, "s1") == 2
+    remaining = registry.list_claims(p, include_stale=True)
+    assert len(remaining) == 1 and remaining[0]["session_id"] == "s2"
+
+
+def test_release_specific_resource(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "branch", "feat/x")
+    registry.claim(p, "s1", "worktree", "/wt/x")
+    assert registry.release(p, "s1", kind="branch", value="feat/x") == 1
+    remaining = registry.list_claims(p, include_stale=True)
+    assert len(remaining) == 1 and remaining[0]["kind"] == "worktree"

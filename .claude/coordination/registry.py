@@ -144,3 +144,44 @@ def reap_stale(path, now=None):
         return removed
     finally:
         _release_lock(path)
+
+
+def heartbeat(path, session_id, now=None):
+    now = now or _now()
+    _acquire_lock(path)
+    try:
+        data = load_registry(path)
+        n = 0
+        for c in data["claims"]:
+            if c.get("session_id") == session_id:
+                c["heartbeat_at"] = _iso(now)
+                n += 1
+        if n:
+            save_registry(path, data)
+        return n
+    finally:
+        _release_lock(path)
+
+
+def release(path, session_id, kind=None, value=None):
+    _acquire_lock(path)
+    try:
+        data = load_registry(path)
+        before = len(data["claims"])
+
+        def drop(c):
+            if c.get("session_id") != session_id:
+                return False
+            if kind is not None and c.get("kind") != kind:
+                return False
+            if value is not None and c.get("value") != value:
+                return False
+            return True
+
+        data["claims"] = [c for c in data["claims"] if not drop(c)]
+        removed = before - len(data["claims"])
+        if removed:
+            save_registry(path, data)
+        return removed
+    finally:
+        _release_lock(path)
