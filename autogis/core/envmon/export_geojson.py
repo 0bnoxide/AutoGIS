@@ -9,7 +9,7 @@ import csv
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 from autogis.core.envmon.gdb_schema import AnalyticalResultRecord

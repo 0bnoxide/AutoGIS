@@ -9,7 +9,7 @@ import csv
 import dataclasses
 import math
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 
