@@ -9,69 +9,96 @@ GUI, and the importable core itself).
 
 ## Feature Implementation Tracker
 
-Current status across the 79-tool environmental monitoring roadmap. The Attachment Harvester
-is a separate, fully-shipped domain not counted in the 79 tools.
+Status against the 79-tool environmental monitoring roadmap, as of **2026-06-28**. The
+Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
-| Status | Count | % of catalog |
-|--------|------:|-------------:|
-| Fully implemented (CLI + core module + tests) | 17 | 22% |
-| Foundation laid (schema or module exists, not fully wired) | 8 | 10% |
-| Not started | ~54 | 68% |
-| **Total named tools (§2–11)** | **~79** | |
+| Status | Count | Notes |
+|--------|------:|-------|
+| Fully implemented (CLI command + core module + tests) | ~30 | plus 4 post-roadmap tools below |
+| Foundation laid (schema or module exists, not fully wired) | ~6 | |
+| Not started | ~43 | |
+| **Catalog total (§2–11)** | **~79** | |
 
-**Phase summary:** Phase 1 (foundation) partially complete · Phase 2 (data intake) in progress ·
-Phase 3 (maps/figures) planned · Phase 4 (field survey/AGOL) pending · Phase 5 (advanced
-analytics) deferred
+The codebase now ships **50 `core/envmon/` modules**, **~34 registered CLI commands**, and a
+**560-test** arcpy-free suite. For the authoritative per-tool breakdown see
+[`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
+here have advanced past that snapshot).
 
 <details>
-<summary>Fully implemented (17 tools)</summary>
+<summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
 
 | Tool | Roadmap # | CLI command |
 |------|-----------|-------------|
-| ImportLabEDD | 2.3 | `envmon import-edd` |
-| ValidateEnvironmentalDatabase | 3.1 | `envmon validate-db` |
-| ReconcileSampleLocations | 3.2 | `envmon reconcile-locations` |
+| InspectWorkbook | 1 | `envmon inspect` |
+| CreateWorkbookParserProfile (draft reader) | 9 | `envmon parser-profile` |
+| FigureSpecTemplate | 10 | `envmon figure-spec` |
+| ValidateEnvConfig | 10.2 | `envmon validate-config` |
 | ManageAnalyteDictionary | 3.3 | `envmon manage-analyte-dict` |
+| ManageScreeningLevels | 3.x | `envmon manage-screening-levels` |
+| ReconcileSampleLocations | 3.2 | `envmon reconcile-locations` *(HYBRID)* |
 | ValidateAndConvertUnits | 3.5 | `envmon validate-units` |
-| EvaluateDuplicateRPD | 3.6 | `envmon evaluate-rpd-qa` |
-| GenerateDraftGWContours | 4.2 | `envmon gw-contours` |
+| EvaluateDuplicateRPD | 3.6 | `envmon evaluate-rpd-qa` / `envmon evaluate-rpd` |
+| ApplyScreeningLevels | 3.x | `envmon apply-screening` |
 | CompareMonitoringEvents | 4.7 | `envmon compare-events` |
 | IdentifyMonitoringDataGaps | 4.10 | `envmon identify-data-gaps` |
-| BuildAnalyticalCallouts | 5.1 | `envmon build-callouts` |
-| OptimizeCalloutPlacement | 5.2 | `envmon optimize-callouts` |
-| ManageCalloutPlacementOverrides | 5.3 | `envmon manage-callout-overrides` |
-| PublishEnvironmentalLayersToAGOL | 6.1 | `envmon publish-layer` |
-| BuildSurvey123XLSFormFromConfig | 7.1a | `envmon build-survey-form` |
+| CompareScheduleVsActual | — | `envmon compare-schedule-vs-actual` |
 | ProcessLevelLoop | 8.1 | `envmon process-level-loop` |
+| ValidateRTKSurvey | 8.4 | `envmon validate-rtk-survey` |
+| DroneGCPCheckpointQA | 8.7 | `envmon drone-checkpoint-qa` |
+| ReconcileSurvey123AndLabResults | 2.6 | `envmon reconcile-survey123-lab` |
+| BuildSurvey123XLSFormFromConfig | 7.1a | `envmon build-survey-form` |
 | EvaluateReportReadiness | 9.0b | `envmon evaluate-readiness` |
-| ExportAnalyticalSummaryTables | 9.1 | `envmon export-report-format-summary-tables` |
-| ValidateEnvConfig | 10.2 | `envmon validate-config` |
-| UpgradeEnvMonitoringGDBSchema | 10.3 | `envmon upgrade-schema` |
-| WriteRunHistory | 10.5 | internal (used by readiness gate) |
+| ExportAnalyticalSummaryTables | 9.1 | `envmon export-report-format-summary-tables` / `envmon export-summary` |
+| GenerateMonitoringEventReport | — | `envmon generate-event-report` |
+| ExportGeoJSONResults | — | `envmon export-geojson` |
+| ValidateScheduleYAML | — | `envmon validate-schedule` |
+| RunHistoryReport / Query | 10.1 | `envmon run-history-report` / `envmon run-history` |
+| WriteRunHistory | 10.5 | internal (`core/common/run_history.py`, used by the readiness gate) |
+| PublishEnvironmentalLayersToAGOL | 6.1 | `agol publish-layer` |
 
 </details>
 
 <details>
-<summary>Foundation laid / partial (8 tools)</summary>
+<summary>Fully implemented — ArcGIS Pro (LOCAL)</summary>
+
+| Tool | Roadmap # | CLI command (arcpy-guarded; primary UI is the `.pyt`) |
+|------|-----------|--------------------------------------------------------|
+| ImportLabEDD | 2.3 | `envmon import-edd` |
+| ImportToGDB | 2/3 | `envmon import-gdb` |
+| BuildCurrentEvent | 4 | `envmon build-event` |
+| BuildAnalyticalCallouts | 5.1 | `envmon build-callouts` |
+| OptimizeCalloutPlacement | 5.2 | `envmon optimize-callouts` |
+| ManageCalloutPlacementOverrides | 5.3 | `envmon manage-callout-overrides` |
+| GenerateDraftGWContours | 4.2 | `envmon gw-contours` |
+| ExportFigures | 6 | `envmon export-figures` |
+| FullPipeline | 7 | `envmon full-pipeline` |
+| ValidateEnvironmentalDatabase | 3.1 | `envmon validate-db` |
+| UpgradeEnvMonitoringGDBSchema | 10.3 | `envmon upgrade-schema` |
+| ExportEventDatabaseSnapshot | 9.0a | `envmon export-snapshot` |
+| ImportRTKSurveyPoints | 8.3 | `envmon import-rtk-survey` |
+| RouteSurvey123Submission | 7.1b | `envmon route-survey123` |
+
+</details>
+
+<details>
+<summary>Foundation laid / partial</summary>
 
 | Tool | Roadmap # | What exists | What's missing |
 |------|-----------|-------------|----------------|
 | BuildGroundwaterElevationEvent | 4.1 | `normalize_groundwater.py`, `build_current_event.py` | Dedicated event-builder + flags (Dry/NM/NS/anomalous) |
 | BuildAnalyticalExceedanceEvent | 4.4 | `build_current_event.py` emits `Env_CurrentEventWide` | Event-mode selectors (latest/range/max), style fields |
-| CreateWorkbookParserProfile | 2.1 | `excel_workbook_inspector.py`, `excel_profile_reader.py` | Profile *drafting* output |
 | CreateBoringLogDatabase | 8.0a | `schema/boring.py` (7 dataclasses) + upgrade-schema tables | Standalone create/validate tool |
 | SyncFieldAttachments | 6.5 | Attachment harvester (separate domain) | Envmon-side attachment index table wiring |
-| ImportRTKSurveyPoints / ValidateRTKSurvey | 8.3/8.4 | `schema/survey.py` (SurveyPointRaw/SurveyPointQA) | Import + QA logic |
 | UpdateWellElevationsFromLevelLoop | 8.2 | ProcessLevelLoop ships the computation | History-write + well-table update |
-| Drone/Dashboard tools (8.6–8.8 / 6.7–6.11) | — | `schema/drone.py`, `schema/dashboard.py` | Every consuming tool |
+| Dashboard tools (6.7–6.11) | — | `schema/dashboard.py` (10 dataclasses) | Every consuming tool |
 
 </details>
 
 <details>
-<summary>Not started (~54 tools)</summary>
+<summary>Not started (selected)</summary>
 
 **Data intake (§2):** BatchImportEnvironmentalWorkbooks (2.2), MigrateLegacyMonitoringData (2.4),
-RegisterSourceDocuments (2.5), ReconcileSurvey123AndLabResults (2.6), CreateSurvey123SamplingEvent (2.7)
+RegisterSourceDocuments (2.5), CreateSurvey123SamplingEvent (2.7)
 
 **Analysis (§4):** EstimateGWFlowDirection (4.3), GenerateDraftPlumeBoundary (4.5),
 GenerateWellTrendCharts (4.6), SelectSoilIntervalsForMapping (4.8), BuildMaxResultMapDataset (4.9)
@@ -84,18 +111,17 @@ RefreshMonitoringDashboardData (6.4), AuditAGOLSchemaAgainstLocalConfig (6.6),
 BuildDashboardDataMart (6.7), PublishDashboardFromSpec (6.8), AuditAGOLItemDependencies (6.9),
 PromoteAGOLDataBetweenStages (6.10), CreateHostedViewsForStakeholders (6.11)
 
-**Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1), RouteSurvey123Submission (7.1b),
-CreateSamplingEventPlan (7.2), ReconcileFieldAndLabData (7.3), GenerateWellInspectionPhotoReport (7.4)
+**Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1), CreateSamplingEventPlan (7.2),
+ReconcileFieldAndLabData (7.3), GenerateWellInspectionPhotoReport (7.4)
 
-**Survey / boring / RTK / drone / CAD (§8):** ImportFieldBoringLogs (8.0b), GenerateBoringLogPDFs (8.0c),
-ImportRTKSurveyPoints (8.3), ValidateRTKSurvey (8.4), SurveyToWellElevationUpdate (8.5),
-RegisterDroneFlight (8.6), DroneGCPCheckpointQA (8.7), ImportDroneProducts (8.8),
+**Survey / boring / drone / CAD (§8):** ImportFieldBoringLogs (8.0b), GenerateBoringLogPDFs (8.0c),
+SurveyToWellElevationUpdate (8.5), RegisterDroneFlight (8.6), ImportDroneProducts (8.8),
 BuildCADExportPackage (8.9), ExportContoursForCivil3D, ValidateSurveyDeliverable
 
-**Reporting (§9):** ExportEventDatabaseSnapshot (9.0a), BuildMonitoringReportAppendix (9.2),
-GenerateEventChangeLog (9.3), IngestReviewerMapComments (9.4)
+**Reporting (§9):** BuildMonitoringReportAppendix (9.2), GenerateEventChangeLog (9.3),
+IngestReviewerMapComments (9.4)
 
-**Admin (§10):** ListAvailableEnvTools (10.1), RunEnvJobQueue (10.4), GenerateSyntheticEnvWorkbook (10.6)
+**Admin (§10):** RunEnvJobQueue (10.4), GenerateSyntheticEnvWorkbook (10.6)
 
 **AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
 — all deferred pending LLM seam design
@@ -114,9 +140,10 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 
 ### One core, three adapters
 
-- **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run history
-- **Two domain modules:** `autogis.core.harvest` (Attachment Harvester) and `autogis.core.envmon`
-  (36 modules) sit on top of common
+- **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
+  history, and the schema dataclass package
+- **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
+  (50 modules), and `autogis.core.agol` (publishing) sit on top of common
 - **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
   (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
   core functions — the two interfaces cannot drift
@@ -135,45 +162,68 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 
 ## Runtime Matrix
 
-Every tool declares a runtime class; the suite enforces it at the adapter layer.
+Every tool declares a runtime class; the suite enforces it at the adapter layer. Runtime classes
+and backing modules below are taken directly from `autogis/runtime/capabilities.py` and
+`autogis/adapters/cli.py`.
 
 ### Headless (CLOUD / HYBRID) — run anywhere without ArcGIS Pro
 
-| Tool | Module | Runtime | CLI command |
-|------|--------|---------|-------------|
-| Attachment Harvester | `core.harvest` | HYBRID | `autogis harvest` |
-| Inspect Workbook | `excel_workbook_inspector` | CLOUD | `autogis envmon inspect` |
-| Parser Profile Draft | `excel_profile_reader` | CLOUD | `autogis envmon parser-profile` |
-| Figure Spec Template | `build_figure_spec` | CLOUD | `autogis envmon figure-spec` |
-| Validate Config | `config_validator` | CLOUD | `autogis envmon validate-config` |
-| Manage Analyte Dict | `analyte_dictionary` | CLOUD | `autogis envmon manage-analyte-dict` |
-| Validate Units | `unit_validator` | CLOUD | `autogis envmon validate-units` |
-| Reconcile Locations | `location_reconciler` | CLOUD | `autogis envmon reconcile-locations` |
-| Evaluate RPD QA | `rpd_evaluator` | CLOUD | `autogis envmon evaluate-rpd-qa` |
-| Compare Events | `event_comparator` | CLOUD | `autogis envmon compare-events` |
-| Identify Data Gaps | `data_gap_finder` | CLOUD | `autogis envmon identify-data-gaps` |
-| Process Level Loop | `level_loop` | CLOUD | `autogis envmon process-level-loop` |
-| Evaluate Readiness | `readiness_gate` | CLOUD | `autogis envmon evaluate-readiness` |
-| Export Summary Tables | `summary_exporter` | CLOUD | `autogis envmon export-report-format-summary-tables` |
-| Build Survey Form | `survey_form_builder` | CLOUD | `autogis envmon build-survey-form` |
-| Publish to AGOL | `agol_publisher` | CLOUD | `autogis agol publish-layer` |
+| Command | Runtime | Backing module |
+|---------|---------|----------------|
+| `autogis harvest` | HYBRID | `core/harvest/` |
+| `autogis envmon inspect` | CLOUD | `core/envmon/excel_workbook_inspector.py` |
+| `autogis envmon parser-profile` | CLOUD | `core/envmon/excel_profile_reader.py` |
+| `autogis envmon figure-spec` | CLOUD | `core/common/config.py` (`FigureSpec`) |
+| `autogis envmon validate-config` | CLOUD | `core/envmon/validate_config.py` |
+| `autogis envmon manage-analyte-dict` | CLOUD | `core/envmon/manage_analyte_dict.py` |
+| `autogis envmon manage-screening-levels` | CLOUD | `core/envmon/manage_screening_levels.py` |
+| `autogis envmon reconcile-locations` | HYBRID | `core/envmon/reconcile_locations.py` |
+| `autogis envmon validate-units` | CLOUD | `core/envmon/validate_units.py` |
+| `autogis envmon evaluate-rpd-qa` | CLOUD | `core/envmon/evaluate_rpd_qa.py` |
+| `autogis envmon evaluate-rpd` | CLOUD | `core/envmon/evaluate_rpd.py` |
+| `autogis envmon apply-screening` | CLOUD | `core/envmon/apply_screening.py` |
+| `autogis envmon compare-events` | CLOUD | `core/envmon/compare_events.py` |
+| `autogis envmon identify-data-gaps` | CLOUD | `core/envmon/data_gaps.py` |
+| `autogis envmon compare-schedule-vs-actual` | CLOUD | `core/envmon/schedule_vs_actual.py` |
+| `autogis envmon validate-schedule` | CLOUD | `core/envmon/validate_schedule.py` |
+| `autogis envmon process-level-loop` | CLOUD | `core/envmon/level_loop.py` |
+| `autogis envmon validate-rtk-survey` | CLOUD | `core/envmon/validate_rtk_survey.py` |
+| `autogis envmon drone-checkpoint-qa` | CLOUD | `core/envmon/drone_checkpoint_qa.py` |
+| `autogis envmon reconcile-survey123-lab` | CLOUD | `core/envmon/reconcile_survey123_lab.py` |
+| `autogis envmon build-survey-form` | CLOUD | `core/envmon/survey123_form_builder.py` |
+| `autogis envmon evaluate-readiness` | CLOUD | `core/envmon/evaluate_readiness.py` |
+| `autogis envmon export-summary` | CLOUD | `core/envmon/export_summary.py` |
+| `autogis envmon export-report-format-summary-tables` | CLOUD | `core/envmon/export_summary_tables.py` |
+| `autogis envmon generate-event-report` | CLOUD | `core/envmon/generate_event_report.py` |
+| `autogis envmon export-geojson` | CLOUD | `core/envmon/export_geojson.py` |
+| `autogis envmon run-history-report` | CLOUD | `core/envmon/history_report.py` |
+| `autogis envmon run-history` | CLOUD | `core/common/run_history.py` |
+| `autogis agol publish-layer` | — (AGOL auth) | `core/agol/publish.py` |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
-| Tool | Module | Primary interface |
-|------|--------|------------------|
-| Import Lab EDD | `import_edd` | `.pyt` GUI |
-| Import to GDB | `import_to_gdb` | `.pyt` GUI |
-| Build Current Event | `build_current_event` | `.pyt` GUI |
-| Build Callouts | `build_figure_dataset` | `.pyt` GUI |
-| GW Contours | `groundwater_contours` | `.pyt` GUI |
-| Export Figures | `export_figures`, `layout_manager` | `.pyt` GUI |
-| Full Pipeline | orchestrator | `.pyt` GUI |
-| Validate Database | `validate_database` | `.pyt` GUI |
-| Upgrade Schema | `schema_upgrader` | `.pyt` GUI |
+| Command | Backing module |
+|---------|----------------|
+| `autogis envmon import-gdb` | `core/envmon/import_to_gdb.py` |
+| `autogis envmon build-event` | `core/envmon/build_current_event.py` |
+| `autogis envmon build-callouts` | `core/envmon/build_figure_dataset.py` |
+| `autogis envmon optimize-callouts` | `core/envmon/callout_collision.py`, `callout_geometry.py` |
+| `autogis envmon manage-callout-overrides` | `core/envmon/manage_callout_overrides.py` |
+| `autogis envmon gw-contours` | `core/envmon/groundwater_contours.py` |
+| `autogis envmon export-figures` | `core/envmon/export_figures.py` |
+| `autogis envmon full-pipeline` | `core/envmon/import_to_gdb.py` (orchestrator) |
+| `autogis envmon validate-db` | `core/envmon/validate_database.py` |
+| `autogis envmon upgrade-schema` | `core/envmon/upgrade_schema.py` |
+| `autogis envmon export-snapshot` | `core/envmon/export_snapshot.py` |
+| `autogis envmon import-edd` | `core/envmon/edd_importer.py` |
+| `autogis envmon import-rtk-survey` | `core/envmon/import_rtk_survey.py` |
+| `autogis envmon route-survey123` | `core/envmon/normalize_survey123.py` |
 
-Pro-guarded commands fail with a clear error when `arcpy` is absent, pointing users to the
-`.pyt` toolbox inside ArcGIS Pro.
+LOCAL commands guard on `arcpy` and redirect to the `.pyt` toolbox inside ArcGIS Pro when it is
+absent. **Known issue:** three commands — `import-edd`, `import-rtk-survey`, and `route-survey123`
+— currently raise a raw `KeyError` instead of the clean guard message when run headless (their
+`_guard()` names are not registered in the `TOOLS` capability map). Run them inside ArcGIS Pro;
+a fix to the guard wiring is tracked separately.
 
 ---
 
@@ -204,15 +254,15 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 362 passing tests
+python -m pytest -q           # 560 passing tests
 ```
 
 ---
 
 ## CLI Reference
 
-`autogis` exposes the Harvester at the top level and envmon tools under an `envmon` sub-group.
-`autogis-harvest` is preserved as a legacy alias.
+`autogis` exposes the Harvester at the top level and envmon tools under an `envmon` sub-group;
+publishing lives under an `agol` sub-group. `autogis-harvest` is preserved as a legacy alias.
 
 ### Attachment Harvester
 
@@ -225,42 +275,56 @@ autogis harvest --config my-job.yaml --where "Status = 'Complete'" --out ./batch
 ### Headless envmon tools
 
 ```bash
-# Workbook inspection
+# Workbook inspection & config
 autogis envmon inspect <workbook.xlsx>
 autogis envmon parser-profile <workbook.xlsx>
 autogis envmon figure-spec <output.yaml>
+autogis envmon validate-config <site-config.yaml>
 
 # Validation & QA
-autogis envmon validate-config <site-config.yaml>
-autogis envmon validate-units <samples.csv>
-autogis envmon reconcile-locations <workbook.xlsx>
+autogis envmon validate-units --analytes <analyte-dict.yaml> --screening <levels.yaml>
+autogis envmon reconcile-locations <site-config.yaml> <workbook.xlsx> --profile <profile.yaml>
 autogis envmon manage-analyte-dict
-autogis envmon evaluate-rpd-qa <duplicates.csv>
+autogis envmon manage-screening-levels
+autogis envmon evaluate-rpd-qa --samples-csv <samples.csv> --results-csv <results.csv>
+autogis envmon apply-screening --results-csv <results.csv> --screening <levels.yaml> --output <out.csv>
 
 # Analysis & reporting
-autogis envmon compare-events <event_db>
-autogis envmon identify-data-gaps <event_db>
-autogis envmon process-level-loop <survey.csv>
-autogis envmon evaluate-readiness <event_db>
-autogis envmon export-report-format-summary-tables <event_db>
+autogis envmon compare-events --results-csv <results.csv> --output <out.csv>
+autogis envmon identify-data-gaps --schedule <schedule.yaml> --results-csv <results.csv>
+autogis envmon compare-schedule-vs-actual --schedule <schedule.yaml> --results-csv <results.csv> --output <out.csv>
+autogis envmon process-level-loop --observations-csv <survey.csv> --run-id <id> --site-id <id> --survey-date <YYYY-MM-DD> --benchmark-id <pt> --known-elevation <z>
+autogis envmon evaluate-readiness --site-id <id> --run-history <run_history.csv>
+autogis envmon generate-event-report --site <id> --event <id> --output <report.md>
+autogis envmon export-geojson --results-csv <results.csv> --coords-csv <coords.csv> --output <out.geojson>
+autogis envmon export-report-format-summary-tables --results-csv <results.csv> --output <out.xlsx>
+autogis envmon run-history --run-history <run_history.csv> --format table
 
-# Field data
-autogis envmon build-survey-form <config.yaml>
+# Field & survey
+autogis envmon build-survey-form --site <site.yaml> --analytes <analytes.yaml> --event <event.yaml> --out <form.xlsx>
+autogis envmon validate-rtk-survey <points.csv>
+autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
+autogis envmon reconcile-survey123-lab --survey <s123.csv> --edd <lab.csv> --edd-profile <profile.yaml> --site <id>
 
 # Publishing
-autogis agol publish-layer <config.yaml>
+autogis agol publish-layer --source <data> --title "<service title>"
 ```
 
 ### Pro-guarded tools (require arcpy)
 
+Run inside ArcGIS Pro / the `.pyt` toolbox. When run headless these guard on `arcpy`:
+
 ```bash
-autogis envmon import-edd <lab-results.csv>
-autogis envmon import-gdb <config.yaml>
-autogis envmon build-current-event <config.yaml>
+autogis envmon import-gdb <site-config.yaml> <workbook.xlsx>
+autogis envmon build-event <site-config.yaml>
 autogis envmon validate-db <geodatabase>
 autogis envmon upgrade-schema <geodatabase>
-# tools 5–8 follow the same pattern
+autogis envmon export-snapshot <geodatabase>
+# build-callouts, optimize-callouts, gw-contours, export-figures, full-pipeline follow the same pattern
 ```
+
+> `import-edd`, `import-rtk-survey`, and `route-survey123` are also Pro-only, but their headless
+> guard currently errors with a traceback instead of a clean message (see the Runtime Matrix note).
 
 ---
 
@@ -316,19 +380,21 @@ Headless prep (any machine)
     └─ Location reconciliation     autogis envmon reconcile-locations
     ↓
 ArcGIS Pro / .pyt toolbox
-    ├─ Import to GDB               Tool 3
-    ├─ Build current event         Tool 4
-    └─ Validate database           Tool 11
+    ├─ Import to GDB               autogis envmon import-gdb
+    ├─ Build current event         autogis envmon build-event
+    └─ Validate database           autogis envmon validate-db
     ↓
 Analysis & cartography (Pro)
-    ├─ GW contours                 Tool 4.2
-    ├─ Analytical callouts         Tool 5.1
-    ├─ Optimize placement          Tool 5.2
-    └─ Export figures              Tool 6
+    ├─ GW contours                 autogis envmon gw-contours
+    ├─ Analytical callouts         autogis envmon build-callouts
+    ├─ Optimize placement          autogis envmon optimize-callouts
+    └─ Export figures              autogis envmon export-figures
     ↓
-Publish / report (headless)
+QA, publish & report (headless)
+    ├─ Compare vs prior event      autogis envmon compare-events
+    ├─ Schedule vs actual          autogis envmon compare-schedule-vs-actual
+    ├─ Event report (Markdown)     autogis envmon generate-event-report
     ├─ Publish to AGOL             autogis agol publish-layer
-    ├─ Export summary tables       autogis envmon export-report-format-summary-tables
     └─ Evaluate readiness          autogis envmon evaluate-readiness
 ```
 
@@ -341,7 +407,8 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   └── envmon/          # Environmental monitoring — 36 modules
+│   ├── envmon/          # Environmental monitoring — 50 modules
+│   └── agol/            # AGOL publishing
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
 │   ├── toolbox.pyt      # ArcGIS Pro GUI
@@ -352,7 +419,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 362 arcpy-free unit tests
+└── tests/               # 560 arcpy-free unit tests
 ```
 
 ### Key modules
@@ -360,10 +427,11 @@ autogis/
 | Path | Purpose |
 |------|---------|
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
-| `core/common/schema/` | 5 modules (boring, dashboard, drone, envmon, survey) exporting ~29 typed dataclasses |
-| `core/envmon/` | 36 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour tools |
+| `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
+| `core/common/schema/` | 5 modules (boring, dashboard, drone, envmon, survey) exporting ~30 typed dataclasses |
+| `core/envmon/` | 50 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
-| `runtime/` | `arcpy_available()`, `local_runtime_ok()`, `capability_required()` decorators |
+| `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
 ---
 
@@ -387,8 +455,13 @@ It exists because the spec demands it. Every averaged value is flagged with a QA
 the flag.
 
 **arcpy code paths are un-CI-able.**
-Tools 3–8 (Pro-based) are not exercised in CI. Run them on a copy of real data inside Pro before
-trusting outputs.
+The LOCAL (Pro-based) tools are not exercised in CI. Run them on a copy of real data inside Pro
+before trusting outputs.
+
+**Three Pro-guarded commands mis-guard when run headless.**
+`import-edd`, `import-rtk-survey`, and `route-survey123` raise a `KeyError` traceback instead of
+the clean "run inside ArcGIS Pro" message (their `_guard()` names are missing from the `TOOLS`
+map). They still work correctly inside Pro; the headless guard wiring is the bug.
 
 **Incremental harvest depends on feature service metadata.**
 `--incremental` relies on `GlobalID` and `EditDate` fields. If absent, falls back to a full re-download.
@@ -401,14 +474,14 @@ trusting outputs.
 |----------|---------|
 | [`docs/pro-install.md`](docs/pro-install.md) | Full Pro setup: env clone, toolbox registration, cache/reload |
 | [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool |
-| [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing (~70 weeks) |
-| [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy |
+| [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
+| [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy (latest: ADR-0028) |
 
 ---
 
 ## Contributing
 
-Test baseline: **362 passing tests**. All core logic is arcpy-free and CI-able.
+Test baseline: **560 passing tests**. All core logic is arcpy-free and CI-able.
 
 ```bash
 python -m pytest -q
