@@ -19,3 +19,7 @@ headroom_memory.db
 # Worktrees + stray local artifacts
 .claude/worktrees/
 test_output.txt
+
+# Project MCP server config — local-only per CLAUDE.md ("There is no project
+# .mcp.json"). Kept out of the repo so it never auto-loads for other sessions.
+.mcp.json
