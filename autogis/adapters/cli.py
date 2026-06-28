@@ -744,6 +744,39 @@ def drone_checkpoint_qa_cmd(
         raise SystemExit(1)
 
 
+@envmon.command("export-geojson")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV of AnalyticalResultRecord rows (from import-edd --output-csv).")
+@click.option("--coords-csv", required=True, type=click.Path(exists=True),
+              help="CSV with columns: location_id, x, y")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output GeoJSON file path (e.g. results.geojson).")
+@click.option("--indent", type=int, default=2, show_default=True,
+              help="JSON indent level (0 = compact).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Optional QA report output path.")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
+              show_default=True)
+def export_geojson_cmd(results_csv, coords_csv, output, indent, report, fail_on):
+    """Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless)."""
+    import json as _json
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.export_geojson import build_geojson, load_well_coords
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    coords = load_well_coords(Path(coords_csv))
+    qa = QACollector()
+    fc = build_geojson(results, coords, qa=qa)
+
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_json.dumps(fc, indent=indent or None), encoding="utf-8")
+    click.echo(f"Written: {out}  ({len(fc['features'])} feature(s))")
+    _render_qa(qa, report, fail_on)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
