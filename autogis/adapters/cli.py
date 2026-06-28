@@ -644,6 +644,262 @@ def apply_screening_cmd(results_csv, screening_path, output, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("compare-schedule-vs-actual")
+@click.option("--schedule", "schedule_path", required=True,
+              type=click.Path(exists=True),
+              help="Schedule YAML file (site_id, wells, required_analytes).")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV of AnalyticalResultRecord rows.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output CSV path for gap/excess report.")
+@click.option("--event-date", default=None,
+              help="Event date ISO (YYYY-MM-DD); inferred from results if omitted.")
+@click.option("--window-days", type=int, default=30, show_default=True,
+              help="Include results within this many days before event-date.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
+              show_default=True)
+def compare_schedule_vs_actual_cmd(
+    schedule_path, results_csv, output, event_date, window_days, report, fail_on
+):
+    """Compare scheduled monitoring wells/analytes vs actual results (headless)."""
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.schedule_vs_actual import (
+        compare_schedule_vs_actual,
+        load_schedule_yaml,
+        write_gap_csv,
+    )
+
+    schedule = load_schedule_yaml(Path(schedule_path))
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    event_dt = _date.fromisoformat(event_date) if event_date else None
+    qa = QACollector()
+
+    rows = compare_schedule_vs_actual(
+        results, schedule,
+        event_date=event_dt,
+        window_days=window_days,
+        qa=qa,
+    )
+    write_gap_csv(rows, Path(output))
+    click.echo(f"Written: {output}  ({len(rows)} record(s))")
+
+    n_missing = sum(1 for r in rows if r.Status == "MISSING")
+    n_unexpected = sum(1 for r in rows if r.Status == "UNEXPECTED")
+    click.echo(f"  MISSING: {n_missing}  UNEXPECTED: {n_unexpected}")
+
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("drone-checkpoint-qa")
+@click.option("--checkpoints", "checkpoints_csv", required=True,
+              type=click.Path(exists=True),
+              help="Checkpoint CSV (gcp_id, expected_x/y/z, measured_x/y/z).")
+@click.option("--hrms-threshold", type=float, default=0.05, show_default=True,
+              help="Horizontal RMSE threshold in metres.")
+@click.option("--vrms-threshold", type=float, default=0.10, show_default=True,
+              help="Vertical RMSE threshold in metres.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Optional CSV path for per-point results.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
+              show_default=True)
+def drone_checkpoint_qa_cmd(
+    checkpoints_csv, hrms_threshold, vrms_threshold, output, report, fail_on
+):
+    """Tool 11.1: evaluate GCP checkpoint accuracy (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.drone_checkpoint_qa import (
+        evaluate_gcp_checkpoints,
+        read_checkpoint_csv,
+        write_results_csv,
+    )
+
+    checkpoints = read_checkpoint_csv(Path(checkpoints_csv))
+    qa = QACollector()
+    summary = evaluate_gcp_checkpoints(
+        checkpoints,
+        hrms_threshold=hrms_threshold,
+        vrms_threshold=vrms_threshold,
+        qa=qa,
+    )
+
+    click.echo(f"Checkpoints: {summary.n_points}")
+    click.echo(f"HRMS: {summary.hrms:.4f} m  (threshold: {hrms_threshold} m)"
+               f"  -> {'PASS' if summary.hrms_pass else 'FAIL'}")
+    click.echo(f"VRMS: {summary.vrms:.4f} m  (threshold: {vrms_threshold} m)"
+               f"  -> {'PASS' if summary.vrms_pass else 'FAIL'}")
+    click.echo(f"Overall: {'PASS' if summary.overall_pass else 'FAIL'}")
+
+    if output:
+        write_results_csv(summary, Path(output))
+        click.echo(f"Results written: {output}")
+
+    # _render_qa exits non-zero when a SEV_ERROR is present; evaluate_gcp_checkpoints
+    # emits SEV_ERROR for every overall failure, so a FAIL already exits there.
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("export-geojson")
+@click.option("--results-csv", required=True, type=click.Path(exists=True),
+              help="CSV of AnalyticalResultRecord rows (e.g. apply-screening output).")
+@click.option("--coords-csv", required=True, type=click.Path(exists=True),
+              help="CSV with columns: location_id, x, y")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output GeoJSON file path (e.g. results.geojson).")
+@click.option("--indent", type=int, default=2, show_default=True,
+              help="JSON indent level (0 = compact).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Optional QA report output path.")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
+              show_default=True)
+def export_geojson_cmd(results_csv, coords_csv, output, indent, report, fail_on):
+    """Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless)."""
+    import json as _json
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.export_geojson import build_geojson, load_well_coords
+    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+
+    results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
+    coords = load_well_coords(Path(coords_csv))
+    qa = QACollector()
+    fc = build_geojson(results, coords, qa=qa)
+
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_json.dumps(fc, indent=indent or None), encoding="utf-8")
+    click.echo(f"Written: {out}  ({len(fc['features'])} feature(s))")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("generate-event-report")
+@click.option("--site", "site_id", required=True, help="Site ID.")
+@click.option("--event", "event_id", required=True,
+              help="Event identifier (e.g. 2026Q2).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output Markdown (.md) file path.")
+@click.option("--results-csv", default=None, type=click.Path(),
+              help="Analytical results CSV (absent file -> empty section).")
+@click.option("--comparison-csv", default=None, type=click.Path(),
+              help="compare-events output CSV (absent file -> empty section).")
+@click.option("--history-csv", default=None, type=click.Path(),
+              help="run-history-report output CSV (absent file -> empty section).")
+@click.option("--gaps-csv", default=None, type=click.Path(),
+              help="identify-data-gaps output CSV (absent file -> empty section).")
+@click.option("--rpd-qa-csv", default=None, type=click.Path(),
+              help="evaluate-rpd-qa output CSV (absent file -> empty section).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
+              show_default=True)
+def generate_event_report_cmd(
+    site_id, event_id, output,
+    results_csv, comparison_csv, history_csv, gaps_csv, rpd_qa_csv,
+    report, fail_on,
+):
+    """Tool 10.5: assemble Markdown monitoring event report from CSV tool outputs."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.generate_event_report import generate_event_report
+
+    qa = QACollector()
+    content = generate_event_report(
+        site_id, event_id,
+        results_csv=Path(results_csv) if results_csv else None,
+        comparison_csv=Path(comparison_csv) if comparison_csv else None,
+        history_csv=Path(history_csv) if history_csv else None,
+        gaps_csv=Path(gaps_csv) if gaps_csv else None,
+        rpd_qa_csv=Path(rpd_qa_csv) if rpd_qa_csv else None,
+        qa=qa,
+    )
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(content, encoding="utf-8")
+    click.echo(f"Written: {out}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("run-history")
+@click.option(
+    "--run-history", "history_path", required=True, type=click.Path(),
+    help="Path to run_history.csv (need not exist; treated as empty if absent).",
+)
+@click.option("--site", "site_id", default=None, help="Filter by site ID.")
+@click.option("--tool", "tool_name", default=None, help="Filter by tool name.")
+@click.option(
+    "--status", default=None,
+    type=click.Choice(["success", "warning", "error", "cancelled"]),
+    help="Filter by run status.",
+)
+@click.option("--since", default=None, help="Only runs since this ISO date (YYYY-MM-DD).")
+@click.option("--limit", type=int, default=0, help="Max records to show (0 = all).")
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["table", "csv", "json"]),
+    default="table", show_default=True,
+)
+def run_history_cmd(history_path, site_id, tool_name, status, since, limit, fmt):
+    """Query the tool run history CSV (headless)."""
+    import json as _json
+    import csv as _csv
+    import io
+    from datetime import datetime as _dt
+    from dataclasses import asdict
+    from autogis.core.common.run_history import RunHistory
+
+    history = RunHistory(Path(history_path))
+    since_dt = _dt.fromisoformat(since) if since else None
+    records = history.query(
+        site_id=site_id,
+        tool_name=tool_name,
+        since=since_dt,
+        status=status,
+    )
+    if limit and limit > 0:
+        records = records[-limit:]
+
+    # Each format handles the empty case itself so json/csv stay machine-parseable
+    # ([] / header-only); the human-readable count is emitted only for `table`.
+    if fmt == "json":
+        payload = []
+        for r in records:
+            d = asdict(r)
+            d["started_at"] = r.started_at.isoformat()
+            d["finished_at"] = r.finished_at.isoformat()
+            payload.append(d)
+        click.echo(_json.dumps(payload, indent=2))
+    elif fmt == "csv":
+        buf = io.StringIO()
+        cols = [
+            "run_id", "tool_name", "site_id", "event_id",
+            "started_at", "finished_at", "status",
+            "qa_count_error", "qa_count_warning", "message",
+        ]
+        w = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for r in records:
+            row = asdict(r)
+            row["started_at"] = r.started_at.isoformat()
+            row["finished_at"] = r.finished_at.isoformat()
+            w.writerow(row)
+        click.echo(buf.getvalue().rstrip())
+    else:  # table
+        hdr = (
+            f"{'tool_name':<28} {'site_id':<12} {'status':<10}"
+            f" {'finished_at':<20} msg"
+        )
+        click.echo(hdr)
+        click.echo("-" * len(hdr))
+        for r in records:
+            click.echo(
+                f"{r.tool_name:<28} {r.site_id:<12} {r.status:<10} "
+                f"{r.finished_at.isoformat():<20} {r.message[:40]}"
+            )
+        click.echo(f"\n{len(records)} record(s).")
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     for rec in sorted(qa.records,
