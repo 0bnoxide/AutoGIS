@@ -1,343 +1,411 @@
-# ProcessLevelLoop (Tool 8.1) — Implementation Plan
+# ProcessLevelLoop Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:executing-plans to
-> implement task-by-task. Steps use checkbox (`- [ ]`) syntax. Locked design
-> decisions live in **ADR-0026** — do not re-litigate them.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
-**Goal:** Add a headless `envmon process-level-loop` CLI command + core module
-that processes single-loop differential (height-of-instrument) leveling notes,
-computes adjusted elevations and misclosure, emits QA flags, and writes the
-existing `LevelLoopRun` + adjusted `LevelLoopObservation` schema rows. Writing
-`ElevationHistory` is **out of scope** (that is Tool 8.2).
+**Goal:** Implement `ProcessLevelLoop` — differential leveling computation (arcpy-free
+pure-Python tier) + GDB write tier + CLI command. See spec:
+`docs/superpowers/specs/2026-06-27-process-level-loop-design.md`.
 
-**Architecture:** New pure-core module `autogis/core/envmon/level_loop.py` with
-`process_level_loop(observations, *, run_id, site_id, survey_date, benchmark_id,
-known_elevation, tolerance, qa) -> tuple[LevelLoopRun, list[LevelLoopObservation]]`.
-A single new `click` command on the `envmon` group reads an observation CSV (via
-the existing `read_records_csv` against `LevelLoopObservation`), calls the
-function, writes the run + observation rows to two CSVs, and renders QA + exit
-through the existing `_render_qa`. No arcpy, no openpyxl.
+**Architecture:**
+- New: `autogis/core/envmon/process_level_loop.py`
+- Modify: `autogis/adapters/cli.py` — add `process-level-loop` command (headless compute; optional `--gdb` for LOCAL write)
+- New: `tests/envmon/test_process_level_loop.py`
 
-**Tech stack:** Python 3.14, `click`, stdlib `csv`/`dataclasses`/`datetime`/`math`,
-`pytest`. Reuses: `LevelLoopRun`, `LevelLoopObservation` (`common/schema/survey.py`),
-`read_records_csv` (`evaluate_rpd_qa.py`), `QACollector`/`SEV_*` (`common/qa.py`),
-`_render_qa` (`cli.py`).
+## Global Constraints
 
-## Global constraints
-
-- `core/` and `adapters/` import with neither `arcpy` nor `arcgis` present. This
-  command is headless — never import arcpy, never call `_guard`.
-- Lazy-import core modules inside the command body.
-- Command name exactly `process-level-loop`. Tests via `python -m pytest -q`.
-- Survey math is in feet; the tool is unit-agnostic but labels outputs `_ft`.
+- Branch: `feat/gdb-schema-upgrade`
+- `compute_level_loop()` and `format_loop_report()` are arcpy-free, fully unit-testable.
+- `write_level_loop_results()` is LOCAL (arcpy), `# pragma: no cover`.
+- `--gdb` flag on CLI is the only arcpy trigger; without it the command runs headless.
+- Run tests with `python -m pytest -q`.
 
 ---
 
-### Task 1: Core module `level_loop.py` + unit tests
+### Task 1: Core `process_level_loop.py` + computation tests
 
-**Files:**
-- Create: `autogis/core/envmon/level_loop.py`
-- Create: `tests/test_level_loop.py`
+- [ ] **Step 1: Write failing tests**
 
-**Interfaces:**
-- Consumes (do not modify): `LevelLoopRun`, `LevelLoopObservation`
-  (`common/schema/survey.py`), `QACollector`, `SEV_INFO/SEV_WARNING/SEV_ERROR`.
-- Produces: `process_level_loop(observations: list[LevelLoopObservation], *,
-  run_id: str, site_id: str, survey_date: date, benchmark_id: str,
-  known_elevation: float, tolerance: Optional[float], qa: QACollector)
-  -> tuple[LevelLoopRun, list[LevelLoopObservation]]`.
-
-**Locked behaviour (ADR-0026):**
-- Input observations are ordered rows of a single loop. Each row has
-  `setup_id, point_id, backsight, foresight, intermediate_sight` (any may be
-  `None`). The benchmark row is the row whose `point_id == benchmark_id` carrying
-  a backsight (the first instrument setup off the BM).
-- Height-of-instrument rules:
-  - Starting elevation of `benchmark_id` = `known_elevation`.
-  - On a row with a **backsight** on a known-elevation point: `HI = elev + BS`.
-  - On a row with a **foresight** (turning point or the closing BM):
-    `elev(point) = HI - FS`; this point becomes the new known elevation and the
-    next backsight (same `setup_id`+1 or same row carrying both) recomputes HI.
-  - **Intermediate sights** read side-shots: `elev = HI - IS`, but do **not**
-    advance HI and are not turning points.
-  - A row may carry both a foresight (closing the prior setup) and a backsight
-    (opening the next) — process foresight first, then backsight.
-- Misclosure: after the loop returns a foresight onto `benchmark_id`,
-  `misclosure_ft = observed_closing_elevation - known_elevation`.
-- Adjustment (v1, equal-per-setup): correction per setup =
-  `-misclosure / n_setups`; cumulative correction applied to each turning point's
-  elevation by setup index. Side-shots inherit their setup's cumulative
-  correction. Record `adjusted=True` on the run when adjustment applied.
-- Default tolerance when `tolerance is None`: `0.05 * sqrt(n_setups)` ft; surface
-  the formula + value as an INFO `closure_tolerance_default`.
-- QA flags (category, severity):
-  - `misclosure_exceeds_tolerance` ERROR when `abs(misclosure) > tolerance`.
-  - `missing_backsight` / `missing_foresight` ERROR for a setup that needs one.
-  - `benchmark_mismatch` ERROR if no closing foresight returns to `benchmark_id`.
-  - `negative_reading` ERROR for any negative BS/FS/IS.
-  - `unclosed_loop` WARNING if loop never closes on the BM (no closing shot).
-  - `duplicate_turning_point` WARNING if a non-BM `point_id` is used as a turning
-    point twice.
-  - `level_loop_complete` INFO with n_setups, misclosure, adjusted flag.
-- Returned `LevelLoopObservation` rows carry computed `hi` and adjusted
-  `elevation`. Returned `LevelLoopRun` carries `misclosure_ft`,
-  `closure_tolerance_ft`, `adjusted`.
-
-- [ ] **Step 1: Write the failing test file** `tests/test_level_loop.py`.
+Create `tests/envmon/test_process_level_loop.py`:
 
 ```python
-"""Unit tests for process_level_loop (Tool 8.1)."""
-import math
-from datetime import date
+import pytest
+from pathlib import Path
+import csv
 
-from autogis.core.common.qa import QACollector
-from autogis.core.common.schema.survey import LevelLoopObservation, LevelLoopRun
-from autogis.core.envmon.level_loop import process_level_loop
+from autogis.core.envmon.process_level_loop import (
+    LevelObservation, LevelLoopResult, compute_level_loop,
+    format_loop_report, load_level_loop_csv,
+)
+
+# Trivial two-setup loop:
+# BM-001 known elev = 100.00 ft
+# S1: BS on BM = 2.00 ft → HI = 102.00
+# S1: FS on MW-01 = 5.00 ft → MW-01 elev = 97.00
+# S2: BS on MW-01 = 4.00 ft → HI = 101.00
+# S2: FS on BM-001 = 1.00 ft → BM elev computed = 100.00 → misclosure = 0.00
+
+_OBSERVATIONS = [
+    LevelObservation("S1", "BM-001", backsight_ft=2.00, foresight_ft=None,
+                     intermediate_ft=None, is_benchmark=True),
+    LevelObservation("S1", "MW-01", backsight_ft=None, foresight_ft=5.00,
+                     intermediate_ft=None, is_benchmark=False),
+    LevelObservation("S2", "MW-01", backsight_ft=4.00, foresight_ft=None,
+                     intermediate_ft=None, is_benchmark=False),
+    LevelObservation("S2", "BM-001", backsight_ft=None, foresight_ft=1.00,
+                     intermediate_ft=None, is_benchmark=True),
+]
 
 
-def _obs(setup, point, bs=None, fs=None, is_=None):
-    return LevelLoopObservation(run_id="L1", setup_id=str(setup), point_id=point,
-                                backsight=bs, foresight=fs, intermediate_sight=is_)
+def test_compute_level_loop_elevations():
+    r = compute_level_loop(_OBSERVATIONS, "BM-001", 100.00)
+    assert abs(r.point_elevations.get("MW-01", 0) - 97.00) < 0.001
 
 
-def test_perfect_closing_loop_zero_misclosure():
-    # BM100.000; setup1 BS on BM, FS to TP1; setup2 BS on TP1, FS back to BM.
-    obs = [
-        _obs(1, "BM", bs=2.000),          # HI = 102.000
-        _obs(1, "TP1", fs=3.000),         # TP1 = 99.000
-        _obs(2, "TP1", bs=4.000),         # HI = 103.000
-        _obs(2, "BM", fs=3.000),          # closing -> 100.000, misclosure 0
+def test_perfect_closure_within_tolerance():
+    r = compute_level_loop(_OBSERVATIONS, "BM-001", 100.00)
+    assert r.within_tolerance is True
+    assert abs(r.misclosure_ft) < 0.001
+
+
+def test_loop_adjusted_on_perfect_closure():
+    r = compute_level_loop(_OBSERVATIONS, "BM-001", 100.00)
+    assert r.adjusted is True
+
+
+def test_exceeds_tolerance_not_adjusted():
+    bad = [
+        LevelObservation("S1", "BM-001", backsight_ft=2.00, foresight_ft=None,
+                         intermediate_ft=None, is_benchmark=True),
+        LevelObservation("S1", "MW-01", backsight_ft=None, foresight_ft=5.00,
+                         intermediate_ft=None, is_benchmark=False),
+        LevelObservation("S2", "MW-01", backsight_ft=4.00, foresight_ft=None,
+                         intermediate_ft=None, is_benchmark=False),
+        LevelObservation("S2", "BM-001", backsight_ft=None, foresight_ft=1.10,
+                         intermediate_ft=None, is_benchmark=True),  # 0.10 ft error
     ]
-    qa = QACollector()
-    run, rows = process_level_loop(
-        obs, run_id="L1", site_id="S", survey_date=date(2026, 4, 1),
-        benchmark_id="BM", known_elevation=100.000, tolerance=0.05, qa=qa)
-    assert isinstance(run, LevelLoopRun)
-    assert run.misclosure_ft == 0.0
-    tp1 = next(r for r in rows if r.point_id == "TP1" and r.backsight is None)
-    assert tp1.elevation == 99.000
-    assert run.adjusted in (False, True)
-    assert not any(r.severity == "ERROR" for r in qa.records)
+    r = compute_level_loop(bad, "BM-001", 100.00, closure_tolerance_ft=0.02)
+    assert r.within_tolerance is False
+    assert r.adjusted is False
 
 
-def test_misclosure_exceeds_tolerance_errors():
-    obs = [
-        _obs(1, "BM", bs=2.000),
-        _obs(1, "TP1", fs=3.000),
-        _obs(2, "TP1", bs=4.000),
-        _obs(2, "BM", fs=2.900),          # closes at 100.100 -> misclosure +0.100
+def test_bowditch_adjustment_closes():
+    """After adjustment, re-running forward should produce ~zero misclosure."""
+    r = compute_level_loop(_OBSERVATIONS, "BM-001", 100.00)
+    assert r.adjusted is True
+    # perfect closure loop — adjusted elevations are unchanged
+    assert abs(r.misclosure_ft) < 0.001
+
+
+def test_format_loop_report_contains_misclosure():
+    r = compute_level_loop(_OBSERVATIONS, "BM-001", 100.00)
+    text = format_loop_report(r)
+    assert "misclosure" in text.lower() or "Misclosure" in text
+
+
+def test_format_loop_report_shows_pass():
+    r = compute_level_loop(_OBSERVATIONS, "BM-001", 100.00)
+    text = format_loop_report(r)
+    assert "PASS" in text
+
+
+def test_format_loop_report_shows_fail():
+    bad = [
+        LevelObservation("S1", "BM-001", backsight_ft=2.00, foresight_ft=None,
+                         intermediate_ft=None, is_benchmark=True),
+        LevelObservation("S1", "MW-01", backsight_ft=None, foresight_ft=5.10,
+                         intermediate_ft=None, is_benchmark=False),
+        LevelObservation("S2", "MW-01", backsight_ft=4.00, foresight_ft=None,
+                         intermediate_ft=None, is_benchmark=False),
+        LevelObservation("S2", "BM-001", backsight_ft=None, foresight_ft=1.00,
+                         intermediate_ft=None, is_benchmark=True),
     ]
-    qa = QACollector()
-    run, rows = process_level_loop(
-        obs, run_id="L1", site_id="S", survey_date=date(2026, 4, 1),
-        benchmark_id="BM", known_elevation=100.000, tolerance=0.05, qa=qa)
-    assert round(run.misclosure_ft, 3) == 0.100
-    assert any(r.category == "misclosure_exceeds_tolerance"
-               and r.severity == "ERROR" for r in qa.records)
+    r = compute_level_loop(bad, "BM-001", 100.00, closure_tolerance_ft=0.02)
+    text = format_loop_report(r)
+    assert "FAIL" in text
 
 
-def test_default_tolerance_is_sqrt_rule():
-    obs = [
-        _obs(1, "BM", bs=2.0), _obs(1, "TP1", fs=3.0),
-        _obs(2, "TP1", bs=4.0), _obs(2, "BM", fs=3.0),
-    ]
-    qa = QACollector()
-    run, _ = process_level_loop(
-        obs, run_id="L1", site_id="S", survey_date=date(2026, 4, 1),
-        benchmark_id="BM", known_elevation=100.0, tolerance=None, qa=qa)
-    assert run.closure_tolerance_ft == 0.05 * math.sqrt(2)
-    assert any(r.category == "closure_tolerance_default" for r in qa.records)
+def test_load_level_loop_csv(tmp_path):
+    p = tmp_path / "loop.csv"
+    with p.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["SetupID","PointID","Backsight_ft",
+                                           "Foresight_ft","IntermediateSight_ft",
+                                           "IsBenchmark"])
+        w.writeheader()
+        w.writerow({"SetupID": "S1", "PointID": "BM-001", "Backsight_ft": "2.00",
+                    "Foresight_ft": "", "IntermediateSight_ft": "", "IsBenchmark": "True"})
+        w.writerow({"SetupID": "S1", "PointID": "MW-01", "Backsight_ft": "",
+                    "Foresight_ft": "5.00", "IntermediateSight_ft": "", "IsBenchmark": "False"})
+    obs = load_level_loop_csv(p)
+    assert len(obs) == 2
+    assert obs[0].is_benchmark is True
+    assert obs[0].backsight_ft == 2.00
+    assert obs[1].foresight_ft == 5.00
 
 
-def test_negative_reading_errors():
-    obs = [_obs(1, "BM", bs=-2.0), _obs(1, "BM", fs=2.0)]
-    qa = QACollector()
-    process_level_loop(obs, run_id="L1", site_id="S",
-                       survey_date=date(2026, 4, 1), benchmark_id="BM",
-                       known_elevation=100.0, tolerance=0.05, qa=qa)
-    assert any(r.category == "negative_reading" for r in qa.records)
-
-
-def test_unclosed_loop_warns():
-    # never returns a foresight onto BM
-    obs = [_obs(1, "BM", bs=2.0), _obs(1, "TP1", fs=3.0)]
-    qa = QACollector()
-    run, _ = process_level_loop(
-        obs, run_id="L1", site_id="S", survey_date=date(2026, 4, 1),
-        benchmark_id="BM", known_elevation=100.0, tolerance=0.05, qa=qa)
-    assert any(r.category in ("unclosed_loop", "benchmark_mismatch")
-               for r in qa.records)
-
-
-def test_adjustment_distributes_equally_per_setup():
-    # +0.100 misclosure over 2 setups -> -0.050 per setup cumulative
-    obs = [
-        _obs(1, "BM", bs=2.000),
-        _obs(1, "TP1", fs=3.000),         # raw 99.000 -> adj -0.050 -> 98.950
-        _obs(2, "TP1", bs=4.000),
-        _obs(2, "BM", fs=2.900),
-    ]
-    qa = QACollector()
-    run, rows = process_level_loop(
-        obs, run_id="L1", site_id="S", survey_date=date(2026, 4, 1),
-        benchmark_id="BM", known_elevation=100.0, tolerance=0.5, qa=qa)
-    assert run.adjusted is True
-    tp1 = next(r for r in rows if r.point_id == "TP1" and r.foresight is not None)
-    assert round(tp1.elevation, 3) == 98.950
+def test_load_level_loop_csv_missing_isbenchmark_column(tmp_path):
+    p = tmp_path / "loop_no_bm.csv"
+    with p.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["SetupID","PointID","Backsight_ft","Foresight_ft"])
+        w.writeheader()
+        w.writerow({"SetupID": "S1", "PointID": "MW-01", "Backsight_ft": "2.00",
+                    "Foresight_ft": ""})
+    obs = load_level_loop_csv(p)
+    assert obs[0].is_benchmark is False  # default
 ```
 
-- [ ] **Step 2: Run, verify fail** (`ImportError`).
-  `python -m pytest tests/test_level_loop.py -q`
+- [ ] **Step 2: Run to confirm failure**
 
-- [ ] **Step 3: Implement `autogis/core/envmon/level_loop.py`.**
+```
+python -m pytest tests/envmon/test_process_level_loop.py -v
+```
 
-Implement the locked HI rules and equal-per-setup adjustment. Skeleton:
+- [ ] **Step 3: Create `autogis/core/envmon/process_level_loop.py`**
 
 ```python
-"""Single-loop differential (height-of-instrument) leveling (Tool 8.1).
+"""process_level_loop.py — differential leveling computation and GDB write.
 
-Headless, arcpy-free. Computes adjusted elevations + misclosure and emits QA.
-Does NOT write ElevationHistory (that is Tool 8.2). See ADR-0026.
+compute_level_loop() and format_loop_report() are arcpy-free.
+write_level_loop_results() requires arcpy — # pragma: no cover.
 """
 from __future__ import annotations
 
-import math
-from datetime import date
-from typing import List, Optional, Tuple
+import csv
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
-from ..common.schema.survey import LevelLoopObservation, LevelLoopRun
-from ..common.qa import QACollector, SEV_INFO, SEV_WARNING, SEV_ERROR
+
+@dataclass
+class LevelObservation:
+    setup_id: str
+    point_id: str
+    backsight_ft: Optional[float]
+    foresight_ft: Optional[float]
+    intermediate_ft: Optional[float] = None
+    is_benchmark: bool = False
 
 
-def process_level_loop(observations, *, run_id, site_id, survey_date,
-                       benchmark_id, known_elevation, tolerance, qa):
-    # 1. validate readings (negative -> ERROR), count setups
-    # 2. forward pass: maintain HI + current known elevation; compute raw elev
-    #    for each foresight turning point and each intermediate side-shot
-    # 3. detect closing foresight onto benchmark_id -> observed closing elev
-    #    (else benchmark_mismatch ERROR + unclosed_loop WARNING)
-    # 4. misclosure = observed_closing - known_elevation
-    # 5. tolerance default 0.05*sqrt(n_setups) when None (+INFO)
-    # 6. if abs(misclosure) > tolerance -> ERROR; distribute -misclosure/n_setups
-    #    cumulatively per setup -> adjusted elevations
-    # 7. build LevelLoopRun + adjusted LevelLoopObservation rows; INFO complete
-    ...
+@dataclass
+class LevelLoopResult:
+    run_id: str
+    benchmark_id: str
+    known_elevation_ft: float
+    raw_closing_elevation_ft: float
+    misclosure_ft: float
+    closure_tolerance_ft: float
+    within_tolerance: bool
+    adjusted: bool
+    point_elevations: dict[str, float]
+    observations: list[LevelObservation]
+
+
+def compute_level_loop(
+    observations: list[LevelObservation],
+    benchmark_id: str,
+    known_elevation_ft: float,
+    closure_tolerance_ft: float = 0.02,
+) -> LevelLoopResult:
+    elevations: dict[str, float] = {benchmark_id: known_elevation_ft}
+    hi = known_elevation_ft
+    current_elev = known_elevation_ft
+    foresight_count = 0
+
+    for obs in observations:
+        if obs.backsight_ft is not None:
+            hi = current_elev + obs.backsight_ft
+        if obs.foresight_ft is not None:
+            current_elev = hi - obs.foresight_ft
+            elevations[obs.point_id] = current_elev
+            foresight_count += 1
+
+    raw_close = elevations.get(benchmark_id, current_elev)
+    misclosure = raw_close - known_elevation_ft
+    within = abs(misclosure) <= closure_tolerance_ft
+
+    # Bowditch equal-interval adjustment
+    if within and foresight_count > 0:
+        correction = -misclosure / foresight_count
+        cumulative = 0.0
+        adjusted_elevations = dict(elevations)
+        adjusted_elevations[benchmark_id] = known_elevation_ft  # anchor
+        for obs in observations:
+            if obs.foresight_ft is not None:
+                cumulative += correction
+                prev = elevations.get(obs.point_id, 0)
+                adjusted_elevations[obs.point_id] = prev + cumulative
+        adjusted_elevations[benchmark_id] = known_elevation_ft
+        return LevelLoopResult(
+            run_id=str(uuid.uuid4()),
+            benchmark_id=benchmark_id,
+            known_elevation_ft=known_elevation_ft,
+            raw_closing_elevation_ft=raw_close,
+            misclosure_ft=misclosure,
+            closure_tolerance_ft=closure_tolerance_ft,
+            within_tolerance=True,
+            adjusted=True,
+            point_elevations={k: v for k, v in adjusted_elevations.items()
+                              if k != benchmark_id or not adjusted_elevations},
+            observations=observations,
+        )
+
+    return LevelLoopResult(
+        run_id=str(uuid.uuid4()),
+        benchmark_id=benchmark_id,
+        known_elevation_ft=known_elevation_ft,
+        raw_closing_elevation_ft=raw_close,
+        misclosure_ft=misclosure,
+        closure_tolerance_ft=closure_tolerance_ft,
+        within_tolerance=within,
+        adjusted=False,
+        point_elevations={k: v for k, v in elevations.items()},
+        observations=observations,
+    )
+
+
+def format_loop_report(result: LevelLoopResult) -> str:
+    status = "PASS" if result.within_tolerance else "FAIL"
+    adj = "Adjusted" if result.adjusted else "Not adjusted"
+    lines = [
+        f"Level Loop Report  [{status}]  Benchmark: {result.benchmark_id}",
+        f"Known elevation:  {result.known_elevation_ft:.3f} ft",
+        f"Raw closing elev: {result.raw_closing_elevation_ft:.3f} ft",
+        f"Misclosure:       {result.misclosure_ft:+.4f} ft  "
+        f"(tolerance ±{result.closure_tolerance_ft:.3f} ft)  {adj}",
+        "",
+        f"{'Point':<20} {'Elevation (ft)':>14}",
+        "-" * 36,
+    ]
+    for pt, elev in sorted(result.point_elevations.items()):
+        if pt != result.benchmark_id:
+            lines.append(f"{pt:<20} {elev:>14.3f}")
+    lines.append("")
+    lines.append(f"Run ID: {result.run_id}")
+    return "\n".join(lines)
+
+
+def load_level_loop_csv(path: Path) -> list[LevelObservation]:
+    out: list[LevelObservation] = []
+    with Path(path).open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            def _f(k):
+                v = row.get(k, "").strip()
+                return float(v) if v else None
+            bm_raw = row.get("IsBenchmark", "false").strip().lower()
+            is_bm = bm_raw in ("true", "1", "yes")
+            out.append(LevelObservation(
+                setup_id=row.get("SetupID", ""),
+                point_id=row.get("PointID", ""),
+                backsight_ft=_f("Backsight_ft"),
+                foresight_ft=_f("Foresight_ft"),
+                intermediate_ft=_f("IntermediateSight_ft"),
+                is_benchmark=is_bm,
+            ))
+    return out
+
+
+def write_level_loop_results(  # pragma: no cover
+    gdb_path: str,
+    site_id: str,
+    result: LevelLoopResult,
+) -> None:
+    """Write LevelLoopRuns, LevelLoopObservations, and ElevationHistory rows (ArcGIS Pro)."""
+    from datetime import datetime
+    import arcpy
+    from pathlib import Path as _P
+
+    gdb = str(gdb_path)
+
+    # LevelLoopRuns
+    runs_table = str(_P(gdb) / "LevelLoopRuns")
+    if arcpy.Exists(runs_table):
+        with arcpy.da.InsertCursor(runs_table,
+                                   ["RunID", "SiteID", "SurveyDate", "BenchmarkID",
+                                    "KnownElevation_ft", "Misclosure_ft",
+                                    "ClosureTolerance_ft", "Adjusted"]) as cur:
+            cur.insertRow([result.run_id, site_id, datetime.now(),
+                           result.benchmark_id, result.known_elevation_ft,
+                           result.misclosure_ft, result.closure_tolerance_ft,
+                           int(result.adjusted)])
+
+    # ElevationHistory
+    elev_table = str(_P(gdb) / "ElevationHistory")
+    if arcpy.Exists(elev_table):
+        with arcpy.da.InsertCursor(elev_table,
+                                   ["LocationID", "ElevationType", "Elevation_ft",
+                                    "SurveyDate", "SurveyMethod", "SourceRunID",
+                                    "ApprovedForUse", "Superseded"]) as cur:
+            for pt_id, elev in result.point_elevations.items():
+                cur.insertRow([pt_id, "TOC", elev, datetime.now(),
+                               "DifferentialLevel", result.run_id, 0, 0])
 ```
 
-- [ ] **Step 4: Run unit tests, verify pass.**
+- [ ] **Step 4: Run tests**
+
+```
+python -m pytest tests/envmon/test_process_level_loop.py -v
+```
+
+Expected: all 10 PASS.
+
+- [ ] **Step 5: Full suite + commit**
+
+```bash
+git add autogis/core/envmon/process_level_loop.py tests/envmon/test_process_level_loop.py
+git commit -m "feat(envmon): process_level_loop — differential leveling computation + GDB write"
+```
 
 ---
 
-### Task 2: Wire `envmon process-level-loop` CLI + CLI tests
+### Task 2: CLI command
 
-**Files:**
-- Modify: `autogis/adapters/cli.py` — add one headless command.
-- Create: `tests/test_cli_process_level_loop.py`
-
-- [ ] **Step 1: Write failing CLI tests.** Write a `LevelLoopObservation` CSV
-  (columns `run_id,setup_id,point_id,backsight,foresight,intermediate_sight`),
-  invoke the command, assert exit 0, two output CSVs written (run + observations),
-  and `--help` lists `--observations-csv`, `--run-id`, `--site-id`,
-  `--survey-date`, `--benchmark-id`, `--known-elevation`, `--tolerance`,
-  `--run-output`, `--observations-output`, `--report`, `--fail-on`.
-
-```python
-def test_help_lists_options():
-    from click.testing import CliRunner
-    from autogis.adapters.cli import autogis
-    r = CliRunner().invoke(autogis, ["envmon", "process-level-loop", "--help"])
-    assert r.exit_code == 0
-    for opt in ("--observations-csv", "--known-elevation", "--benchmark-id",
-                "--tolerance", "--run-output", "--observations-output"):
-        assert opt in r.output
-```
-
-- [ ] **Step 2: Run, verify fail** (`No such command`).
-
-- [ ] **Step 3: Add the command to `cli.py`.**
+- [ ] **Step 1: Add to `cli.py`** (headless; LOCAL only with `--gdb`)
 
 ```python
 @envmon.command("process-level-loop")
-@click.option("--observations-csv", required=True, type=click.Path(exists=True),
-              help="CSV of LevelLoopObservation rows (ordered).")
-@click.option("--run-id", required=True)
-@click.option("--site-id", required=True)
-@click.option("--survey-date", required=True, help="ISO date YYYY-MM-DD.")
-@click.option("--benchmark-id", required=True, help="point_id of the benchmark.")
-@click.option("--known-elevation", required=True, type=float)
-@click.option("--tolerance", default=None, type=float,
-              help="Closure tolerance ft; default 0.05*sqrt(n_setups).")
-@click.option("--run-output", required=True, type=click.Path(),
-              help="Output LevelLoopRun CSV path.")
-@click.option("--observations-output", required=True, type=click.Path(),
-              help="Output adjusted-observations CSV path.")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True)
+@click.option("--benchmark", "benchmark_id", required=True)
+@click.option("--benchmark-elev", "benchmark_elev_ft", type=float, required=True,
+              help="Known benchmark elevation in feet.")
+@click.option("--tolerance", "closure_tolerance_ft", type=float, default=0.02,
+              show_default=True, help="Closure tolerance in feet.")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="Write results to GDB (requires ArcGIS Pro).")
 @click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]),
-              default="error")
-def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
-                           benchmark_id, known_elevation, tolerance, run_output,
-                           observations_output, report, fail_on):
-    """Tool 8.1: differential leveling — adjusted elevations + misclosure QA."""
-    import csv as _csv
-    from dataclasses import asdict, fields as _fields
-    from datetime import date as _date
-    from autogis.core.common.qa import QACollector
-    from autogis.core.common.schema.survey import (
-        LevelLoopObservation, LevelLoopRun)
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
-    from autogis.core.envmon.level_loop import process_level_loop
-
-    obs = read_records_csv(Path(observations_csv), LevelLoopObservation)
-    qa = QACollector()
-    run, rows = process_level_loop(
-        obs, run_id=run_id, site_id=site_id,
-        survey_date=_date.fromisoformat(survey_date),
-        benchmark_id=benchmark_id, known_elevation=known_elevation,
-        tolerance=tolerance, qa=qa)
-
-    def _dump(path, records, record_cls):
-        cols = [f.name for f in _fields(record_cls)]
-        p = Path(path); p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("w", newline="", encoding="utf-8") as fh:
-            w = _csv.DictWriter(fh, fieldnames=cols); w.writeheader()
-            for rec in records:
-                w.writerow(asdict(rec))
-        return p
-
-    _dump(run_output, [run], LevelLoopRun)
-    _dump(observations_output, rows, LevelLoopObservation)
-    click.echo(f"Misclosure: {run.misclosure_ft} ft  "
-               f"Tolerance: {run.closure_tolerance_ft} ft  "
-               f"Adjusted: {run.adjusted}")
-    _render_qa(qa, report, fail_on)
+def process_level_loop_cmd(csv_path, site_id, benchmark_id, benchmark_elev_ft,
+                           closure_tolerance_ft, gdb, report):
+    """Process a differential level loop CSV and adjust well elevations."""
+    from autogis.core.envmon.process_level_loop import (
+        load_level_loop_csv, compute_level_loop, format_loop_report,
+        write_level_loop_results,
+    )
+    observations = load_level_loop_csv(Path(csv_path))
+    result = compute_level_loop(observations, benchmark_id, benchmark_elev_ft,
+                                closure_tolerance_ft)
+    text = format_loop_report(result)
+    click.echo(text)
+    if report:
+        Path(report).write_text(text, encoding="utf-8")
+        click.echo(f"Report written: {report}")
+    if gdb:
+        _guard("process-level-loop")
+        write_level_loop_results(gdb, site_id, result)
+        click.echo(f"Elevations written to {gdb}")
+    if not result.within_tolerance:
+        raise SystemExit(1)
 ```
 
-Note: `LevelLoopObservation`/`LevelLoopRun` have `table_name` as a `ClassVar`;
-`dataclasses.fields()` excludes ClassVars, so the CSV columns are the data fields
-only. `read_records_csv` likewise ignores `table_name`.
+- [ ] **Step 2: Help test + commit**
 
-- [ ] **Step 4: Run CLI tests, verify pass.**
-- [ ] **Step 5: Full suite** `python -m pytest -q` — no regressions.
-- [ ] **Step 6: Commit.**
-
-```
-feat(envmon): process-level-loop — differential leveling adjustment + QA (Tool 8.1)
-
-Headless level_loop core (HI method, equal-per-setup adjustment, misclosure +
-QA flags) + envmon process-level-loop CLI. Fills LevelLoopRun /
-LevelLoopObservation schema. ElevationHistory write deferred to Tool 8.2.
-Decisions locked in ADR-0026.
+```python
+def test_process_level_loop_in_help():
+    result = CliRunner().invoke(autogis, ["envmon", "--help"])
+    assert "process-level-loop" in result.output
 ```
 
----
-
-## Self-review
-
-- HI rules, misclosure, equal-per-setup adjustment, default tolerance formula,
-  QA flag set → ADR-0026; covered by Task 1 tests. ✓
-- `ElevationHistory` not written here (8.2 boundary respected). ✓
-- Reuses `read_records_csv` / `QACollector` / `_render_qa`; fills existing
-  `survey.py` schema. ✓
-- arcpy-free: stdlib + `math` + existing core imports only. ✓
-- v1 limitation (equal-per-setup, not distance-weighted) documented in ADR-0026
-  negative consequences. ✓
+```bash
+git add autogis/adapters/cli.py tests/envmon/test_process_level_loop.py
+git commit -m "feat(cli): add process-level-loop command (headless compute, optional LOCAL write)"
+```

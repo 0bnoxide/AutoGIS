@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Prerequisite:** Phase A (`docs/superpowers/plans/2026-06-24-phase-a-config-integrity.md`) must be merged first — Task 5 reuses the `_render_qa(qa, report, fail_on)` helper added to `cli.py` in Phase A.
+**Prerequisite:** Phase A is already merged — `_render_qa(qa, report, fail_on)` and `_guard()` are present in `cli.py` (confirmed 2026-06-26). No further prerequisite work needed.
 
 **Goal:** Add `ReconcileSampleLocations` — a standalone, read-only pre-flight tool that reports whether a workbook's location IDs match the monitoring-well feature class, with fuzzy suggestions for typos, before import.
 
@@ -19,7 +19,7 @@
 - Severities: unmatched workbook ID **with** a suggestion ≥ threshold → WARNING (`location_id_typo`); unmatched workbook ID **without** suggestion → ERROR (`location_id_unmatched`); well ID present in layer but absent from workbook → INFO (`well_not_sampled`).
 - Read-only: the tool suggests, never modifies the workbook or the feature class.
 - `.pyt` files are never imported by the test suite (top-level `import arcpy`). The `.pyt` task is verified structurally, not by unit test.
-- Tests headless under `tests/envmon/`; run `python -m pytest -q`.
+- Tests headless under `tests/envmon/`; run `python -m pytest -q`. Suite currently has 218 tests; Phase B adds ~9, target ~227.
 - Exit codes mirror Phase A: `0` PASS / `1` FAIL via `QACollector.status`, `--fail-on error|warning` (default `error`).
 
 ---
@@ -399,7 +399,7 @@ git commit -m "feat(envmon): read well IDs from CSV (named column or first colum
 ### Task 5: `reconcile-locations` CLI command
 
 **Files:**
-- Modify: `autogis/adapters/cli.py` (headless section, after the Phase A `manage-analyte-dict` command)
+- Modify: `autogis/adapters/cli.py` (headless section, after the `validate-units` command at line ~176)
 - Test: `tests/envmon/test_cli_reconcile_locations.py`
 
 **Interfaces:**
@@ -619,7 +619,7 @@ git add autogis/adapters/toolbox.pyt
 git commit -m "feat(pyt): ReconcileSampleLocations toolbox tool (GDB well-ID read)"
 ```
 
-Expected: full suite green (Phase B adds ~9 tests; `.pyt` not collected).
+Expected: full suite green (Phase B adds ~9 tests; total ~227; `.pyt` not collected).
 
 ---
 

@@ -159,6 +159,27 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("manage-screening-levels")
+@click.argument("screening", type=click.Path(exists=True))
+@click.option("--analytes", default=None, type=click.Path(exists=True))
+@click.option("--list", "do_list", is_flag=True, default=False,
+              help="Print analyte/matrix/value table.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def manage_screening_levels_cmd(screening, analytes, do_list, report, fail_on):
+    """Validate and inspect the screening levels YAML (headless)."""
+    from autogis.core.envmon.manage_screening_levels import (
+        check_screening_levels, load_screening_entries)
+    if do_list:
+        entries = load_screening_entries(Path(screening))
+        click.echo(f"{'analyte':<28} {'matrix':<6} {'value':>10}  units")
+        for e in sorted(entries, key=lambda x: (x.matrix, x.analyte)):
+            v = str(e.value) if e.value is not None else "null"
+            click.echo(f"{e.analyte:<28} {e.matrix:<6} {v:>10}  {e.units}")
+        if not analytes:
+            return
+    qa = check_screening_levels(Path(screening), Path(analytes) if analytes else None)
+
 @envmon.command("reconcile-locations")
 @click.argument("site_config", type=click.Path(exists=True))
 @click.argument("workbook", type=click.Path(exists=True))
@@ -718,14 +739,47 @@ def full_pipeline_cmd(site_config, workbook):
 
 @envmon.command("validate-db")
 @click.argument("gdb", type=click.Path())
-def validate_db_cmd(gdb):
-    """Tool 8: validate the geodatabase schema/contents (ArcGIS Pro)."""
+@click.option("--analytes", default=None, type=click.Path(exists=True),
+              help="Analyte dictionary YAML (enables analyte-name QA checks).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def validate_db_cmd(gdb, analytes, report, fail_on):
+    """Tool 8: validate the GDB schema and cross-table integrity (ArcGIS Pro)."""
     _guard("validate-db")
-    from autogis.core.envmon import validate_database  # noqa: F401
-    raise click.ClickException(
-        "validate-db runs inside ArcGIS Pro only. Use the ValidateDatabase "
-        "tool in the .pyt toolbox."
-    )
+    from autogis.core.common.config import load_analyte_dictionary
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.validate_database import validate_database
+
+    analyte_dict = {}
+    if analytes:
+        analyte_dict = load_analyte_dictionary(Path(analytes)) or {}
+    qa = QACollector()
+    validate_database(Path(gdb), qa, analyte_dict)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("evaluate-rpd")
+@click.argument("workbook", type=click.Path(exists=True))
+@click.argument("profile", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True)
+@click.option("--batch-id", default="", show_default=True)
+@click.option("--threshold", type=float, default=30.0, show_default=True,
+              help="RPD exceedance threshold (pct, default 30).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fail_on):
+    """Evaluate field duplicate RPD values against a threshold (headless)."""
+    from autogis.core.common.config import ParserProfile
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.normalize_rpd import normalize_rpd_table
+    from autogis.core.envmon.evaluate_rpd import evaluate_rpd_records, rpd_to_qa
+    parser = ParserProfile.load(Path(profile))
+    qa_import = QACollector()
+    records = normalize_rpd_table(Path(workbook), parser, site_id, batch_id, qa_import)
+    result = evaluate_rpd_records(records, rpd_threshold_pct=threshold)
+    qa = rpd_to_qa(result)
+    qa.records = qa_import.records + qa.records
+    _render_qa(qa, report, fail_on)
 
 
 @envmon.command("import-edd")
@@ -788,6 +842,20 @@ def upgrade_schema_cmd(gdb, spatial_reference):
     report = upgrade_gdb_schema(gdb, spatial_reference)
     click.echo(format_report(report))
 
+
+@envmon.command("export-snapshot")
+@click.argument("gdb", type=click.Path())
+@click.option("--site", "site_id", required=True)
+@click.option("--event", "event_id", required=True)
+@click.option("--out", "out_dir", required=True, type=click.Path())
+@click.option("--compress", is_flag=True, default=False,
+              help="ZIP the output GDB after creation.")
+def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
+    """Freeze a GDB snapshot for a reporting event (ArcGIS Pro)."""
+    _guard("export-snapshot")
+    from autogis.core.envmon.export_snapshot import export_event_snapshot, format_manifest
+    manifest = export_event_snapshot(gdb, site_id, event_id, out_dir, compress)
+    click.echo(format_manifest(manifest))
 
 @envmon.command("build-survey-form")
 @click.option("--site", "site_path", required=True,

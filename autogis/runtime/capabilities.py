@@ -26,6 +26,9 @@ TOOLS: dict[str, Runtime] = {
     "reconcile-locations": Runtime.HYBRID,
     "import-edd": Runtime.CLOUD,
     "upgrade-schema": Runtime.LOCAL,   # phase 1.4
+    "export-snapshot": Runtime.LOCAL,
+    "evaluate-rpd": Runtime.CLOUD,
+    "manage-screening-levels": Runtime.CLOUD,
     "optimize-callouts": Runtime.LOCAL,        # tool 5.2
     "manage-callout-overrides": Runtime.LOCAL, # tool 5.3
     "build-survey-form": Runtime.CLOUD, # tool 7.1a

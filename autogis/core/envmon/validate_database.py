@@ -95,6 +95,7 @@ def validate_database(gdb: Path, qa: QACollector,
                       "IsNonDetect", "IsDetected", "ResultNumeric",
                       "ExceedsScreeningLevel", "ScreeningLevel"])
         canon = {d.get("canonical_name", k) for k, d in analyte_dictionary.items()}
+        check_analytes = bool(analyte_dictionary)
         for (site, m, sid, an, nd, det, nv, exc, sl) in rows:
             skey = (str(site).upper(), str(m).upper(), str(sid).strip().upper())
             if skey not in samples:
@@ -102,7 +103,7 @@ def validate_database(gdb: Path, qa: QACollector,
                                 message=f"Result {sid}/{an} has no Env_Samples "
                                         "row.",
                                 sample_id=str(sid), analyte_name=str(an)))
-            if an and an not in canon:
+            if check_analytes and an and an not in canon:
                 qa.add(QARecord(severity=SEV_WARNING,
                                 category="analyte_not_in_dictionary",
                                 message=f"Analyte {an!r} not in dictionary.",
