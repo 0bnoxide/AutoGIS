@@ -29,6 +29,20 @@ def test_fuzzy_match_flags_sample_id_mismatch():
     assert any("sample_id_mismatch" in f for f in r.flags)
 
 
+def test_fuzzy_match_calls_similarity_once_for_selected_match(monkeypatch):
+    calls = []
+
+    def fake_sim(a, b):
+        calls.append((a, b))
+        return 0.9
+
+    monkeypatch.setattr(reconcile_survey123_lab_module, "_sim", fake_sim)
+    r = reconcile_field_lab(_FIELD, _LAB_FUZZY, threshold=0.8)
+
+    assert len(r.matched) == 1
+    assert calls == [("H281-MW01-20260615-GW", "H281-MW01-20260615GW")]
+
+
 def test_date_mismatch_flagged():
     r = reconcile_field_lab(_FIELD, _LAB_DATE_MISMATCH)
     assert any("date_mismatch" in f for f in r.flags)

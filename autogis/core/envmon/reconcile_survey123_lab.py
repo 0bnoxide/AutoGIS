@@ -83,9 +83,14 @@ def reconcile_field_lab(
             _check_pair(result, fs, exact)
             continue
         # fuzzy match - consider all unmatched lab samples
-        best = max(unmatched_lab, key=lambda ls: _sim(fs.sample_id, ls.sample_id),
-                   default=None)
-        if best and _sim(fs.sample_id, best.sample_id) >= threshold:
+        best_score = 0.0
+        best = None
+        if unmatched_lab:
+            best_score, best = max(
+                ((_sim(fs.sample_id, ls.sample_id), ls) for ls in unmatched_lab),
+                key=lambda x: x[0],
+            )
+        if best and best_score >= threshold:
             unmatched_lab.remove(best)
             result.flags.append(
                 f"sample_id_mismatch: field={fs.sample_id!r} lab={best.sample_id!r}")
