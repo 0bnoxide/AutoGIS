@@ -8,7 +8,7 @@ set -euo pipefail
 # Indexing is incremental (~50ms no-op when nothing changed). The repo path is
 # the canonical checkout (not $CLAUDE_PROJECT_DIR) so worktree sessions still
 # refresh the one registered project; forward slashes required by the JSON arg.
-CBM="/c/Users/ichbi/AppData/Local/Programs/codebase-memory-mcp/codebase-memory-mcp.exe"
+CBM="/c/Users/ichbi/AppData/Roaming/npm/node_modules/codebase-memory-mcp/bin/codebase-memory-mcp.exe"
 [ -x "$CBM" ] && "$CBM" cli index_repository \
   '{"repo_path":"C:/Users/ichbi/AutoGIS","mode":"full"}' >/dev/null 2>&1 || true
 
