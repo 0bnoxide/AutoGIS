@@ -1,4 +1,4 @@
-"""reconcile_survey123_lab.py — three-way field/lab/GIS sample reconciliation."""
+"""reconcile_survey123_lab.py — two-way Survey123 field vs lab EDD sample reconciliation."""
 from __future__ import annotations
 
 import csv
