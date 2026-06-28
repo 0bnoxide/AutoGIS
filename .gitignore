@@ -12,3 +12,6 @@ headroom_memory.db
 
 # transient agent memory state — never commit
 .claude/agent-memory-local/
+
+# Session coordination registry (local-only, never committed)
+.claude/coordination/claims.json*
