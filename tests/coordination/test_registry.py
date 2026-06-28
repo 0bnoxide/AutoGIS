@@ -121,3 +121,60 @@ def test_file_conflicts_glob_match(tmp_path):
     assert registry.file_conflicts(p, "s2", "autogis/core/envmon/normalize.py")
     assert registry.file_conflicts(p, "s2", "tests/test_x.py") == []
     assert registry.file_conflicts(p, "s1", "autogis/adapters/cli.py") == []  # own
+
+
+# --- canonical registry-root resolution (worktree-safe) ---------------------
+import os
+import shutil
+import subprocess
+
+import pytest
+
+
+def _git(*args, cwd):
+    return subprocess.run(["git", *args], cwd=str(cwd),
+                          capture_output=True, text=True)
+
+
+def _norm(p):
+    return os.path.normcase(os.path.realpath(str(p)))
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_claims_path_resolves_to_main_root_from_worktree(tmp_path, monkeypatch):
+    """The shared registry must live at the MAIN working tree's root, even when
+    resolved from inside a linked worktree AND even when CLAUDE_PROJECT_DIR
+    points at the worktree (the exact failure that defeated cross-session
+    locking). git-common-dir must win over the env var."""
+    main = tmp_path / "main"
+    main.mkdir()
+    _git("init", cwd=main)
+    _git("config", "user.email", "t@t.test", cwd=main)
+    _git("config", "user.name", "t", cwd=main)
+    (main / "f.txt").write_text("x", encoding="utf-8")
+    _git("add", "-A", cwd=main)
+    _git("commit", "-m", "init", cwd=main)
+    wt = tmp_path / "wt"
+    _git("worktree", "add", "-b", "feat/x", str(wt), cwd=main)
+
+    # Simulate a worktree session: the env var points at the WRONG (worktree) root.
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(wt))
+
+    got = registry.claims_path(str(wt))
+    root = os.path.dirname(os.path.dirname(os.path.dirname(got)))
+    assert _norm(root) == _norm(main)          # git root beat CLAUDE_PROJECT_DIR
+    assert _norm(wt) not in _norm(got)         # never the worktree's own copy
+    assert got.endswith(os.path.join(".claude", "coordination", "claims.json"))
+
+
+def test_claims_path_falls_back_to_cwd_outside_git(tmp_path):
+    """Outside any git repo and with no CLAUDE_PROJECT_DIR, resolution must not
+    raise — it falls back to the given cwd (fail-soft, never bricks the hook)."""
+    import os as _os
+    prev = _os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    try:
+        got = registry.claims_path(str(tmp_path))
+        assert got.endswith(os.path.join(".claude", "coordination", "claims.json"))
+    finally:
+        if prev is not None:
+            _os.environ["CLAUDE_PROJECT_DIR"] = prev

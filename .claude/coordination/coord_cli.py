@@ -46,9 +46,11 @@ def run(argv, reg_path):
 
 
 def _reg_path():
-    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    sys.path.insert(0, os.path.join(root, ".claude", "coordination"))
-    return os.path.join(root, ".claude", "coordination", "claims.json")
+    # See hook_check._reg_path: import registry relative to __file__, but locate
+    # the shared claims.json at the canonical main-tree root (worktree-safe).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import registry
+    return registry.claims_path()
 
 
 def main():

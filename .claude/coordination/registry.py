@@ -9,11 +9,44 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import subprocess
 import time
 from datetime import datetime, timezone
 
 DEFAULT_TTL_SEC = 1800
 _LOCK_STALE_SEC = 30
+
+
+def repo_root(cwd=None):
+    """Resolve the canonical repository root (the MAIN working tree), even when
+    called from inside a linked git worktree.
+
+    The coordination registry must be a SINGLE shared file at the main root so
+    parallel sessions in different worktrees can see each other's claims. A
+    worktree's ``$CLAUDE_PROJECT_DIR`` (and its ``.git`` *file*) point at the
+    worktree, not the main root — so git-common-dir resolution is PRIMARY here
+    and the env var / cwd is only a fail-soft fallback when git is unavailable.
+    """
+    cwd = cwd or os.getcwd()
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=3)
+        common = r.stdout.strip()
+        if r.returncode == 0 and common:
+            # git's relative output (e.g. ".git") is relative to -C cwd, not to
+            # this process's cwd, so join against cwd before resolving.
+            if not os.path.isabs(common):
+                common = os.path.join(str(cwd), common)
+            return os.path.dirname(os.path.abspath(common))
+    except Exception:
+        pass
+    return os.environ.get("CLAUDE_PROJECT_DIR") or str(cwd)
+
+
+def claims_path(cwd=None):
+    """Absolute path to the shared claim registry JSON at the canonical root."""
+    return os.path.join(repo_root(cwd), ".claude", "coordination", "claims.json")
 
 
 def _now():
