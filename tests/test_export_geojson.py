@@ -99,6 +99,20 @@ def test_is_not_analyzed_excluded():
     assert len(fc["features"]) == 0
 
 
+def test_analyte_key_collision_warns():
+    """Two analytes sanitizing to the same property key emit a QA warning."""
+    results = [
+        _r("MW-1", "Xylenes, total", 5.0, date(2026, 4, 1)),
+        _r("MW-1", "Xylenes total", 6.0, date(2026, 4, 1)),
+    ]
+    qa = QACollector()
+    fc = build_geojson(results, COORDS, qa=qa)
+    assert any(r.category == "analyte_key_collision" for r in qa.records)
+    # Only one collapsed key survives in properties.
+    props = fc["features"][0]["properties"]
+    assert "Xylenes_total_value" in props
+
+
 def test_qa_info_emitted():
     results = [_r("MW-1", "Benzene", 5.0, date(2026, 4, 1))]
     qa = QACollector()

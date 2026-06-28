@@ -73,8 +73,17 @@ def build_geojson(
             "location_id": loc_id,
             "site_id": recs[0].SiteID,
         }
+        seen_keys: Dict[str, str] = {}
         for analyte, r in sorted(by_analyte.items()):
             safe_key = analyte.replace(" ", "_").replace(",", "").replace("/", "_")
+            if safe_key in seen_keys:
+                qa.add(
+                    SEV_WARNING, "analyte_key_collision",
+                    f"Location {loc_id!r}: analytes {seen_keys[safe_key]!r} and "
+                    f"{analyte!r} map to the same property key {safe_key!r}; "
+                    f"the latter overwrites the former.",
+                )
+            seen_keys[safe_key] = analyte
             props[f"{safe_key}_value"] = r.DisplayText or ""
             props[f"{safe_key}_exceeds"] = (
                 bool(r.ExceedsScreeningLevel)

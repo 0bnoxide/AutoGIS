@@ -81,6 +81,21 @@ def test_unexpected_well():
     assert unexpected[0].LocationID == "MW-99"
 
 
+def test_unexpected_analyte_at_scheduled_well():
+    # MW-1 sampled for a non-scheduled analyte (Arsenic not required for MW-1)
+    results = [
+        _r("MW-1", "Benzene"), _r("MW-1", "Toluene"), _r("MW-1", "Arsenic"),
+        _r("MW-2", "Benzene"), _r("MW-2", "Toluene"), _r("MW-2", "Arsenic"),
+    ]
+    qa = QACollector()
+    rows = compare_schedule_vs_actual(
+        results, SCHEDULE, event_date=date(2026, 4, 15), qa=qa)
+    extra = [r for r in rows
+             if r.Status == "UNEXPECTED" and r.LocationID == "MW-1"]
+    assert len(extra) == 1
+    assert extra[0].AnalyteName == "Arsenic"
+
+
 def test_event_date_inferred_from_results():
     results = [_r("MW-1", "Benzene", dt=date(2026, 4, 15))]
     qa = QACollector()

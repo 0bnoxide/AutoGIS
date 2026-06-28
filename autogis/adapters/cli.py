@@ -746,7 +746,7 @@ def drone_checkpoint_qa_cmd(
 
 @envmon.command("export-geojson")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
-              help="CSV of AnalyticalResultRecord rows (from import-edd --output-csv).")
+              help="CSV of AnalyticalResultRecord rows (e.g. apply-screening output).")
 @click.option("--coords-csv", required=True, type=click.Path(exists=True),
               help="CSV with columns: location_id, x, y")
 @click.option("--output", required=True, type=click.Path(),

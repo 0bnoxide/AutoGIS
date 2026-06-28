@@ -109,6 +109,14 @@ def compare_schedule_vs_actual(
                     Status="SAMPLED", Detail="",
                     EventDate=event_date,
                 ))
+        # Extra analytes sampled at a scheduled well but not on its schedule.
+        for analyte in sorted(got - expected):
+            out_rows.append(ScheduleGapRecord(
+                SiteID=site_id, LocationID=well, AnalyteName=analyte,
+                Status="UNEXPECTED",
+                Detail="Analyte not required by schedule for this well",
+                EventDate=event_date,
+            ))
 
     # Detect unexpected wells (in results but not in the schedule)
     for loc, analytes in sorted(sampled.items()):
