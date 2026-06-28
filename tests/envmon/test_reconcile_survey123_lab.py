@@ -1,6 +1,7 @@
 ﻿import csv
 from pathlib import Path
 import pytest
+import autogis.core.envmon.reconcile_survey123_lab as reconcile_survey123_lab_module
 from autogis.core.envmon.reconcile_survey123_lab import (
     Survey123Sample, LabSample, reconcile_field_lab,
     reconcile_to_qa, load_survey123_csv,
@@ -72,6 +73,13 @@ def test_load_survey123_csv(tmp_path):
     samples = load_survey123_csv(p)
     assert len(samples) == 1
     assert samples[0].location_id == "MW-01"
+
+
+def test_module_docstring_describes_field_vs_lab_reconciliation():
+    assert reconcile_survey123_lab_module.__doc__ is not None
+    doc = reconcile_survey123_lab_module.__doc__.lower()
+    assert "field" in doc and "lab" in doc
+    assert "gis" not in doc
 
 
 def test_reconcile_survey123_lab_in_help():
