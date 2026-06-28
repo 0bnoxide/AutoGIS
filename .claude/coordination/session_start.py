@@ -38,9 +38,11 @@ def claim_session(payload, reg_path, branch_func=None):
 
 
 def _reg_path(payload):
-    root = os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or "."
-    sys.path.insert(0, os.path.join(root, ".claude", "coordination"))
-    return os.path.join(root, ".claude", "coordination", "claims.json")
+    # See hook_check._reg_path: import registry relative to __file__, but locate
+    # the shared claims.json at the canonical main-tree root (worktree-safe).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import registry
+    return registry.claims_path(payload.get("cwd"))
 
 
 def main():

@@ -130,20 +130,13 @@ def decide(payload, reg_path, branch_func=None):
 
 
 def _reg_path(payload):
-    root = os.environ.get("CLAUDE_PROJECT_DIR")
-    if not root:
-        d = os.path.abspath(payload.get("cwd") or ".")
-        while True:
-            if os.path.exists(os.path.join(d, ".git")):
-                root = d
-                break
-            nd = os.path.dirname(d)
-            if nd == d:
-                root = payload.get("cwd") or "."
-                break
-            d = nd
-    sys.path.insert(0, os.path.join(root, ".claude", "coordination"))
-    return os.path.join(root, ".claude", "coordination", "claims.json")
+    # registry.py is always a sibling of this hook; import it relative to
+    # __file__ (robust regardless of cwd / worktree). The shared registry FILE,
+    # however, lives at the canonical MAIN-tree root so all worktree sessions
+    # share one claims.json — registry.claims_path resolves that via git.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import registry
+    return registry.claims_path(payload.get("cwd"))
 
 
 def main():

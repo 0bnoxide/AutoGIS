@@ -60,3 +60,31 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
   `core/harvest/models.py` for back-compat.
 - Screening levels and the H281 parser profile are pre-production stubs — do not
   remove DRAFT banners or `_TODO` markers until verified against real data.
+
+## Worktrees & session coordination
+
+- **Worktrees live under `.claude/worktrees/`** (gitignored), not the
+  `superpowers:using-git-worktrees` default `.worktrees/`. Prefer the native
+  `EnterWorktree` tool (Step 1a); if you ever fall back to `git worktree add`,
+  target `.claude/worktrees/<branch>`.
+- **One shared claim registry.** The session-coordination registry
+  (`.claude/coordination/claims.json`, gitignored) always lives at the **main**
+  working tree's root. `registry.claims_path()` resolves it via
+  `git rev-parse --git-common-dir`, so a worktree session and the main checkout
+  share one registry — never a per-worktree copy.
+- **`EnterWorktree` mid-session doesn't fire `SessionStart`.** The auto-claim
+  only runs at session start, so after switching into a worktree mid-session the
+  session still holds its *old* branch/worktree claims (the PreToolUse heartbeat
+  keeps refreshing them) and has *not* claimed the new branch. Left as-is this
+  both (a) falsely locks the old branch against other sessions and (b) can make
+  the hook deny you committing to the branch you just moved to (if another
+  session claimed it). After `EnterWorktree`, **release the old claims, then
+  claim the new** — using the canonical coordination dir at the main root:
+
+  ```bash
+  COORD="$(git rev-parse --git-common-dir)/.."   # main tree root
+  python "$COORD/.claude/coordination/coord_cli.py" release --session "$SESSION_ID" --kind branch   --value <old-branch>
+  python "$COORD/.claude/coordination/coord_cli.py" release --session "$SESSION_ID" --kind worktree --value <old-worktree-abspath>
+  python "$COORD/.claude/coordination/coord_cli.py" claim   --session "$SESSION_ID" --kind branch   --value <new-branch>
+  python "$COORD/.claude/coordination/coord_cli.py" claim   --session "$SESSION_ID" --kind worktree --value <new-worktree-abspath>
+  ```
