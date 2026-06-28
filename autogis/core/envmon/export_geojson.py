@@ -1,11 +1,11 @@
 """Export analytical results to GeoJSON FeatureCollection (Tool 10.3).
 
-No arcpy dependency. Pure stdlib: json, csv, collections.
+No arcpy dependency. Pure stdlib: csv, collections. (The FeatureCollection is a
+plain dict; JSON serialization happens at the CLI/caller boundary.)
 """
 from __future__ import annotations
 
 import csv
-import json
 from collections import defaultdict
 from datetime import date
 from pathlib import Path

@@ -99,6 +99,32 @@ def test_run_history_empty_file(tmp_path):
     assert "0 record" in result.output
 
 
+def test_run_history_empty_json_is_parseable(tmp_path):
+    """Empty result set in json format must emit [] (machine-parseable)."""
+    rh_path = tmp_path / "run_history.csv"
+    runner = CliRunner()
+    result = runner.invoke(autogis, [
+        "envmon", "run-history",
+        "--run-history", str(rh_path),
+        "--format", "json",
+    ])
+    assert result.exit_code == 0
+    assert json.loads(result.output) == []
+
+
+def test_run_history_empty_csv_has_header(tmp_path):
+    """Empty result set in csv format must still emit the header row."""
+    rh_path = tmp_path / "run_history.csv"
+    runner = CliRunner()
+    result = runner.invoke(autogis, [
+        "envmon", "run-history",
+        "--run-history", str(rh_path),
+        "--format", "csv",
+    ])
+    assert result.exit_code == 0
+    assert "tool_name" in result.output.splitlines()[0]
+
+
 def test_run_history_csv_format(tmp_path):
     rh_path = tmp_path / "run_history.csv"
     _write_run(rh_path)

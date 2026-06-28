@@ -738,10 +738,9 @@ def drone_checkpoint_qa_cmd(
         write_results_csv(summary, Path(output))
         click.echo(f"Results written: {output}")
 
+    # _render_qa exits non-zero when a SEV_ERROR is present; evaluate_gcp_checkpoints
+    # emits SEV_ERROR for every overall failure, so a FAIL already exits there.
     _render_qa(qa, report, fail_on)
-
-    if not summary.overall_pass:
-        raise SystemExit(1)
 
 
 @envmon.command("export-geojson")
@@ -783,16 +782,16 @@ def export_geojson_cmd(results_csv, coords_csv, output, indent, report, fail_on)
               help="Event identifier (e.g. 2026Q2).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output Markdown (.md) file path.")
-@click.option("--results-csv", default=None, type=click.Path(exists=True),
-              help="Analytical results CSV.")
-@click.option("--comparison-csv", default=None, type=click.Path(exists=True),
-              help="compare-events output CSV.")
-@click.option("--history-csv", default=None, type=click.Path(exists=True),
-              help="run-history-report output CSV.")
-@click.option("--gaps-csv", default=None, type=click.Path(exists=True),
-              help="identify-data-gaps output CSV.")
-@click.option("--rpd-qa-csv", default=None, type=click.Path(exists=True),
-              help="evaluate-rpd-qa output CSV.")
+@click.option("--results-csv", default=None, type=click.Path(),
+              help="Analytical results CSV (absent file -> empty section).")
+@click.option("--comparison-csv", default=None, type=click.Path(),
+              help="compare-events output CSV (absent file -> empty section).")
+@click.option("--history-csv", default=None, type=click.Path(),
+              help="run-history-report output CSV (absent file -> empty section).")
+@click.option("--gaps-csv", default=None, type=click.Path(),
+              help="identify-data-gaps output CSV (absent file -> empty section).")
+@click.option("--rpd-qa-csv", default=None, type=click.Path(),
+              help="evaluate-rpd-qa output CSV (absent file -> empty section).")
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
               show_default=True)
@@ -861,10 +860,8 @@ def run_history_cmd(history_path, site_id, tool_name, status, since, limit, fmt)
     if limit and limit > 0:
         records = records[-limit:]
 
-    if not records:
-        click.echo("0 record(s) found.")
-        return
-
+    # Each format handles the empty case itself so json/csv stay machine-parseable
+    # ([] / header-only); the human-readable count is emitted only for `table`.
     if fmt == "json":
         payload = []
         for r in records:
