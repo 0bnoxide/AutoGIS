@@ -103,3 +103,21 @@ def test_release_specific_resource(tmp_path):
     assert registry.release(p, "s1", kind="branch", value="feat/x") == 1
     remaining = registry.list_claims(p, include_stale=True)
     assert len(remaining) == 1 and remaining[0]["kind"] == "worktree"
+
+
+def test_branch_conflicts_other_session(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "branch", "feat/x")
+    assert registry.branch_conflicts(p, "s2", "feat/x")[0]["session_id"] == "s1"
+    assert registry.branch_conflicts(p, "s1", "feat/x") == []   # own claim
+    assert registry.branch_conflicts(p, "s2", "feat/other") == []
+
+
+def test_file_conflicts_glob_match(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "file_glob", "autogis/adapters/cli.py")
+    registry.claim(p, "s1", "file_glob", "autogis/core/envmon/*.py")
+    assert registry.file_conflicts(p, "s2", "autogis/adapters/cli.py")
+    assert registry.file_conflicts(p, "s2", "autogis/core/envmon/normalize.py")
+    assert registry.file_conflicts(p, "s2", "tests/test_x.py") == []
+    assert registry.file_conflicts(p, "s1", "autogis/adapters/cli.py") == []  # own

@@ -6,6 +6,7 @@ Session tooling under .claude/ — must not import autogis/arcpy/arcgis.
 """
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import time
@@ -185,3 +186,24 @@ def release(path, session_id, kind=None, value=None):
         return removed
     finally:
         _release_lock(path)
+
+
+def branch_conflicts(path, session_id, branch, now=None):
+    out = []
+    for c in list_claims(path, now=now):
+        if c.get("session_id") == session_id:
+            continue
+        if c.get("kind") == "branch" and c.get("value") == branch:
+            out.append(c)
+    return out
+
+
+def file_conflicts(path, session_id, file_path, now=None):
+    out = []
+    for c in list_claims(path, now=now):
+        if c.get("session_id") == session_id:
+            continue
+        if c.get("kind") == "file_glob" and fnmatch.fnmatch(
+                file_path, c.get("value", "")):
+            out.append(c)
+    return out
