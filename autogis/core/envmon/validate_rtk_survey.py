@@ -9,8 +9,6 @@ from collections import Counter
 from .import_rtk_survey import RTKPoint, assign_qa_flags
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_WARNING, SEV_INFO
 
-_RTK_FIX_TYPES = frozenset({"RTK_FIXED", "RTK_FLOAT", "NETWORK_RTK"})
-
 
 def validate_rtk_points(
     points: list[RTKPoint],
