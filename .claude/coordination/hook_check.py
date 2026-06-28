@@ -7,10 +7,43 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
-_GIT_WRITE = re.compile(r"\bgit\b.*\b(commit|push)\b")
+# git global options that consume a following token as their argument, so the
+# real subcommand is the token *after* the argument (e.g. `git -C /repo commit`).
+_GLOBAL_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree",
+                         "--namespace", "--exec-path", "--super-prefix"}
+_GIT_WRITE_SUBCMDS = {"commit", "push"}
+
+
+def _git_subcommands(cmd):
+    """Yield the git subcommand for each `git ...` invocation in a shell command.
+
+    Splits on shell separators and tokenizes, so the operative subcommand is
+    identified by position (first non-option token after `git`), not by mere
+    presence of the word. `git log --grep=commit` yields 'log', not 'commit'.
+    """
+    for seg in re.split(r"&&|\|\||;|\||\n", cmd):
+        try:
+            toks = shlex.split(seg)
+        except ValueError:
+            toks = seg.split()
+        if "git" not in toks:
+            continue
+        i = toks.index("git") + 1
+        while i < len(toks):
+            t = toks[i]
+            if t.startswith("-"):
+                i += 2 if t in _GLOBAL_OPTS_WITH_ARG else 1
+                continue
+            yield t
+            break
+
+
+def _is_git_write(cmd):
+    return any(s in _GIT_WRITE_SUBCMDS for s in _git_subcommands(cmd))
 
 
 def _deny(reason):
@@ -53,7 +86,18 @@ def decide(payload, reg_path, branch_func=None):
     if tool in ("Edit", "Write", "MultiEdit"):
         fp = ti.get("file_path", "")
         if fp:
-            rel = fp.replace("\\", "/")
+            # Edit/Write send absolute paths in production, but file_glob claims
+            # are repo-relative — make the path relative to the repo root
+            # (reg_path is <root>/.claude/coordination/claims.json) before match.
+            root = os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.abspath(reg_path))))
+            rel = fp
+            if os.path.isabs(fp):
+                try:
+                    rel = os.path.relpath(fp, root)
+                except ValueError:
+                    rel = fp
+            rel = rel.replace("\\", "/")
             conflicts = registry.file_conflicts(reg_path, sid, rel)
             if conflicts:
                 c = conflicts[0]
@@ -65,7 +109,7 @@ def decide(payload, reg_path, branch_func=None):
 
     if tool == "Bash":
         cmd = ti.get("command", "")
-        if _GIT_WRITE.search(cmd):
+        if _is_git_write(cmd):
             bf = branch_func or _git_branch
             branch = bf(cwd)
             if branch == "main":
