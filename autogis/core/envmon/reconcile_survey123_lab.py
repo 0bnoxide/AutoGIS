@@ -122,8 +122,10 @@ def reconcile_to_qa(result: ReconcileS123LabResult) -> QACollector:
             sev, cat = SEV_WARNING, "sample_id_mismatch"
         elif "date_mismatch" in flag:
             sev, cat = SEV_WARNING, "date_mismatch"
-        else:
+        elif "location_mismatch" in flag:
             sev, cat = SEV_WARNING, "location_mismatch"
+        else:
+            sev, cat = SEV_INFO, "unknown_flag"
         qa.add(QARecord(severity=sev, category=cat, message=flag))
     for fs in result.field_only:
         qa.add(QARecord(SEV_WARNING, "field_only_sample",
