@@ -9,6 +9,23 @@ from autogis.core.common.config import HarvestConfig
 from autogis.runtime.sessions import agol_from_profile
 
 
+def qa_report_options(func):
+    """Attach the shared ``--report`` / ``--fail-on`` options to a headless
+    QA-producing command.
+
+    This is the one home for the headless reporting contract: a command that
+    collects a ``QACollector`` and ends with ``_render_qa(qa, report, fail_on)``
+    declares the two options once via this decorator instead of repeating them.
+    Option order (``--report`` then ``--fail-on``) matches the historical
+    hand-written declarations.
+    """
+    func = click.option(
+        "--fail-on", type=click.Choice(["error", "warning"]), default="error",
+    )(func)
+    func = click.option("--report", default=None, type=click.Path())(func)
+    return func
+
+
 def run(config_path, where, out, incremental, *, harvest_fn=None):
     if harvest_fn is None:
         from autogis.core.harvest.harvester import harvest as harvest_fn
@@ -137,8 +154,7 @@ def validate_config_cmd(site_config, profiles, figures, analytes, screening,
               help="Print the resolved analyte table sorted by display_order.")
 @click.option("--check", "do_check", is_flag=True, default=False,
               help="Run validation checks (default when --list is absent).")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
     """Tool: validate / inspect the analyte dictionary (read-only, headless)."""
     from autogis.core.envmon.manage_analyte_dict import (
@@ -164,8 +180,7 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
 @click.option("--analytes", default=None, type=click.Path(exists=True))
 @click.option("--list", "do_list", is_flag=True, default=False,
               help="Print analyte/matrix/value table.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def manage_screening_levels_cmd(screening, analytes, do_list, report, fail_on):
     """Validate and inspect the screening levels YAML (headless)."""
     from autogis.core.envmon.manage_screening_levels import (
@@ -208,8 +223,7 @@ def validate_units_cmd(analytes, screening, report, fail_on):
 @click.option("--gdb", is_flag=True, default=False,
               help="Read wells from the site GDB (ArcGIS Pro only; use the .pyt).")
 @click.option("--threshold", type=float, default=0.8, show_default=True)
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
                             threshold, report, fail_on):
     """Tool: pre-flight check that workbook location IDs match the well layer."""
@@ -245,8 +259,7 @@ def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
               help="CSV export of Env_AnalyticalResults.")
 @click.option("--batch-id", default="MANUAL", show_default=True,
               help="Import batch ID label for output records.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
     """Tool: compute RPD for EDD duplicate samples and emit QA records."""
     from autogis.core.common.qa import QACollector
@@ -340,8 +353,7 @@ def export_report_format_summary_tables_cmd(
               help="QA CSV from a previous import (checked for ERROR rows).")
 @click.option("--figure-spec", default=None, type=click.Path(exists=False),
               help="Figure spec YAML to validate.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
                            qa_report, figure_spec, report, fail_on):
     """Tool: report-readiness gate — checks required tools ran successfully."""
@@ -483,8 +495,7 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
               help="CSV export of Env_AnalyticalResults (all events).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output summary CSV path.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def run_history_report_cmd(results_csv, output, report, fail_on):
     """Tool 10.1: per-location per-analyte history summary across events."""
     from autogis.core.common.qa import QACollector
@@ -506,8 +517,7 @@ def run_history_report_cmd(results_csv, output, report, fail_on):
               help="Monitoring schedule YAML.")
 @click.option("--analyte-dict", default=None, type=click.Path(exists=True),
               help="CSV with AnalyteCanonicalName column; optional.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
     """Tool 10.2: validate monitoring schedule YAML structure and analyte names."""
     import csv as _csv
@@ -535,8 +545,7 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
               help="Screening levels YAML (analyte -> matrix -> {unit, level, source}).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output CSV path (updated records).")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def apply_screening_cmd(results_csv, screening_path, output, report, fail_on):
     """Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless)."""
     import yaml as _yaml
@@ -1002,8 +1011,7 @@ def full_pipeline_cmd(site_config, workbook):
 @click.argument("gdb", type=click.Path())
 @click.option("--analytes", default=None, type=click.Path(exists=True),
               help="Analyte dictionary YAML (enables analyte-name QA checks).")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def validate_db_cmd(gdb, analytes, report, fail_on):
     """Tool 8: validate the GDB schema and cross-table integrity (ArcGIS Pro)."""
     _guard("validate-db")
@@ -1026,8 +1034,7 @@ def validate_db_cmd(gdb, analytes, report, fail_on):
 @click.option("--batch-id", default="", show_default=True)
 @click.option("--threshold", type=float, default=30.0, show_default=True,
               help="RPD exceedance threshold (pct, default 30).")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fail_on):
     """Evaluate field duplicate RPD values against a threshold (headless)."""
     from autogis.core.common.config import ParserProfile
@@ -1219,8 +1226,7 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
               help="Lab EDD profile YAML.")
 @click.option("--site", "site_id", required=True)
 @click.option("--threshold", type=float, default=0.85, show_default=True)
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
                                 threshold, report, fail_on):
     """Pre-production: reconcile Survey123 field submissions vs lab EDD (headless)."""
@@ -1245,8 +1251,7 @@ def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
 @click.option("--batch-id", default=None, help="Override auto-generated batch ID.")
 @click.option("--format", "input_format",
               type=click.Choice(["csv", "json"]), default="csv", show_default=True)
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
                         report, fail_on):
     """Route Survey123 field submissions into the GDB (ArcGIS Pro)."""
