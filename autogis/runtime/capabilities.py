@@ -24,7 +24,7 @@ TOOLS: dict[str, Runtime] = {
     "manage-analyte-dict": Runtime.CLOUD,
     "validate-units": Runtime.CLOUD,
     "reconcile-locations": Runtime.HYBRID,
-    "import-edd": Runtime.CLOUD,
+    "import-edd": Runtime.LOCAL,      # writes to GDB — needs arcpy
     "upgrade-schema": Runtime.LOCAL,   # phase 1.4
     "export-snapshot": Runtime.LOCAL,
     "evaluate-rpd": Runtime.CLOUD,
@@ -43,8 +43,15 @@ TOOLS: dict[str, Runtime] = {
     "export-geojson": Runtime.CLOUD,  # tool 10.3
     "generate-event-report": Runtime.CLOUD,  # tool 10.5
     "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
+    "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
+    "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
 }
 
 
 def requires_arcpy(name: str) -> bool:
-    return TOOLS[name] is Runtime.LOCAL
+    runtime = TOOLS.get(name)
+    if runtime is None:
+        raise KeyError(
+            f"Unknown tool '{name}': not registered in capabilities.TOOLS. "
+            f"Register it before calling requires_arcpy().")
+    return runtime is Runtime.LOCAL

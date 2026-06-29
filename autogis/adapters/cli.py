@@ -62,6 +62,10 @@ def _guard(name: str) -> None:
         require_runtime(name)
     except RuntimeUnavailable as exc:
         raise click.ClickException(str(exc))
+    except KeyError as exc:
+        raise click.ClickException(
+            f"Internal error: tool {exc.args[0]!r} is not registered in the "
+            f"capability registry. Report this as a bug.")
 
 
 # --------------------------------------------------------------------------
@@ -1150,7 +1154,7 @@ def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fa
 def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
                    analytes, screening, event_date):
     """Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro)."""
-    _guard("LOCAL")
+    _guard("import-edd")
     from autogis.core.envmon.edd_profile import LabEDDProfile
     from autogis.core.envmon.edd_importer import run_edd_import
     from autogis.core.common.config import load_config
