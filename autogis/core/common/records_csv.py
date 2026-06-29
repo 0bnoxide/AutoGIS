@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import dataclasses as _dc
+import types
 import typing
 from datetime import date as _date
 from pathlib import Path
@@ -20,8 +21,12 @@ T = TypeVar("T")
 
 
 def _get_inner(hint):
-    """For Optional[X] return X, otherwise return hint unchanged."""
-    if typing.get_origin(hint) is typing.Union:
+    """For Optional[X] return X, otherwise return hint unchanged.
+
+    Recognizes both ``typing.Optional``/``Union`` and PEP 604 ``X | None``.
+    """
+    origin = typing.get_origin(hint)
+    if origin is typing.Union or origin is getattr(types, "UnionType", ()):
         args = [a for a in typing.get_args(hint) if a is not type(None)]
         return args[0] if args else str
     return hint

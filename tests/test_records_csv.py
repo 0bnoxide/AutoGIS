@@ -51,6 +51,22 @@ def test_header_matches_dataclass_field_order(tmp_path):
     assert header == "name,count,amount,when"
 
 
+@dataclasses.dataclass
+class _PEP604Rec:
+    name: str
+    amount: float | None
+    when: date | None
+
+
+def test_pep604_optional_fields_round_trip(tmp_path):
+    """`X | None` field annotations coerce like Optional[X]."""
+    rows = [_PEP604Rec("a", 1.5, date(2026, 4, 1)), _PEP604Rec("b", None, None)]
+    out = tmp_path / "r.csv"
+    write_records_csv(rows, out)
+    back = read_records_csv(out, _PEP604Rec)
+    assert back == rows
+
+
 def test_record_class_inferred_from_first_record(tmp_path):
     out = tmp_path / "r.csv"
     write_records_csv([_Rec("a", 1, 2.0, date(2026, 1, 1))], out)  # no record_class
