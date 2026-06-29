@@ -113,7 +113,7 @@ def merge_event_results(
 
     qa.add(QARecord(SEV_INFO, "merge_complete",
                     f"{len(source_files)} sources, {len(deduped)} rows, "
-                    f"{dropped} duplicates dropped → {out_path}"))
+                    f"{dropped} duplicates dropped -> {out_path}"))
 
     return MergeResult(
         merged_path=out_path,

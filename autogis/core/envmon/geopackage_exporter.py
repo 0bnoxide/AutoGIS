@@ -197,7 +197,7 @@ def export_env_data_geopackage(
     conn.close()
 
     qa.add(QARecord(SEV_INFO, "geopackage_exported",
-                    f"{well_count} wells, {result_count} results → {gpkg_path}"))
+                    f"{well_count} wells, {result_count} results -> {gpkg_path}"))
 
     return GeoPackageResult(
         gpkg_path=gpkg_path, layers=layers,

@@ -152,7 +152,7 @@ def write_regulatory_workbook(
     wb.save(str(out_path))
     qa.add(QARecord(SEV_INFO, "reg_tables_built",
                     f"{len(specs)} groups, {len(all_wells)} wells, "
-                    f"{total_exceedances} exceedances → {out_path}"))
+                    f"{total_exceedances} exceedances -> {out_path}"))
 
     return RegulatoryTableResult(
         workbook_path=out_path,

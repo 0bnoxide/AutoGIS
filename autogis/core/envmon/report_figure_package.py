@@ -121,7 +121,7 @@ def assemble_figure_package(
     )
 
     qa.add(QARecord(SEV_INFO, "package_assembled",
-                    f"{copied} files copied, {missing} missing → {out_dir}"))
+                    f"{copied} files copied, {missing} missing -> {out_dir}"))
 
     return FigurePackageResult(
         out_dir=out_dir, manifest_path=manifest_path,
