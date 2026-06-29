@@ -17,7 +17,10 @@ from ..common.config import (load_analyte_dictionary, load_config,
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO
 
 
-def _safe(qa: QACollector, label: str, fn):
+def safe_load(qa: QACollector, label: str, fn):
+    """Run ``fn`` (a config loader); on failure record a load_error and return
+    None instead of raising. Shared defensive-load helper for the headless
+    config-validation adapters (validate_config, validate_units)."""
     try:
         return fn()
     except Exception as exc:  # ConfigError, yaml errors, etc.
@@ -37,32 +40,32 @@ def validate_env_config(site_path: Optional[Path],
     screening: dict = {}
 
     if site_path:
-        data = _safe(qa, f"site config {Path(site_path).name}",
+        data = safe_load(qa, f"site config {Path(site_path).name}",
                      lambda: load_config(Path(site_path)))
         if data is not None:
             qa.extend(cv.validate_site(data))
 
     for pp in profile_paths or []:
-        data = _safe(qa, f"parser profile {Path(pp).name}",
+        data = safe_load(qa, f"parser profile {Path(pp).name}",
                      lambda pp=pp: load_config(Path(pp)))
         if data is not None:
             qa.extend(cv.validate_parser_profile(data))
 
     for fp in figure_paths or []:
-        data = _safe(qa, f"figure spec {Path(fp).name}",
+        data = safe_load(qa, f"figure spec {Path(fp).name}",
                      lambda fp=fp: load_config(Path(fp)))
         if data is not None:
             figure_specs.append(data)
             qa.extend(cv.validate_figure_spec(data))
 
     if analytes_path:
-        analytes = _safe(qa, f"analyte dictionary {Path(analytes_path).name}",
+        analytes = safe_load(qa, f"analyte dictionary {Path(analytes_path).name}",
                          lambda: load_analyte_dictionary(Path(analytes_path))) or {}
         if analytes:
             qa.extend(cv.validate_analyte_dictionary(analytes))
 
     if screening_path:
-        screening = _safe(qa, f"screening levels {Path(screening_path).name}",
+        screening = safe_load(qa, f"screening levels {Path(screening_path).name}",
                           lambda: load_screening_levels(Path(screening_path))) or {}
         if screening:
             qa.extend(cv.validate_screening_levels(screening))

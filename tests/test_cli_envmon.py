@@ -3,12 +3,26 @@
 (a) A LOCAL tool (``import-gdb``) must fail cleanly under a no-arcpy condition
     with a message that mentions arcpy — a click error, not a traceback.
 (b) A headless tool (``inspect``) must exit 0 against a real workbook.
+(c) Regression: import-edd, import-rtk-survey, route-survey123 must produce a
+    clean ClickException (not a raw KeyError traceback) when arcpy is absent.
 """
 import builtins
 
 from click.testing import CliRunner
 
 from autogis.adapters.cli import autogis
+
+
+def _no_arcpy_monkeypatch(monkeypatch):
+    """Helper: make 'import arcpy' raise ModuleNotFoundError."""
+    real = builtins.__import__
+
+    def fake(name, *a, **k):
+        if name == "arcpy":
+            raise ModuleNotFoundError("No module named 'arcpy'")
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake)
 
 
 def test_local_tool_clean_error_without_arcpy(monkeypatch, tmp_path):
@@ -63,3 +77,61 @@ def test_import_edd_cmd_registered():
     assert "--profile-path" in result.output
     assert "--site" in result.output
     assert "--gdb" in result.output
+
+
+def test_import_edd_clean_error_without_arcpy(monkeypatch, tmp_path):
+    """Regression #62: import-edd must raise a ClickException, not KeyError."""
+    _no_arcpy_monkeypatch(monkeypatch)
+    edd = tmp_path / "edd.csv"
+    edd.write_text("col\n", encoding="utf-8")
+    profile = tmp_path / "profile.yaml"
+    profile.write_text("name: test\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        autogis,
+        ["envmon", "import-edd",
+         "--edd", str(edd),
+         "--profile-path", str(profile),
+         "--site", "H281",
+         "--gdb", str(tmp_path / "out.gdb")],
+    )
+    assert result.exit_code != 0
+    assert "arcpy" in result.output.lower()
+    # Must be a clean click error -- no raw KeyError traceback
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_import_rtk_survey_clean_error_without_arcpy(monkeypatch, tmp_path):
+    """Regression #62: import-rtk-survey must raise a ClickException, not KeyError."""
+    _no_arcpy_monkeypatch(monkeypatch)
+    csv = tmp_path / "survey.csv"
+    csv.write_text("col\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        autogis,
+        ["envmon", "import-rtk-survey",
+         str(csv),
+         "--site", "H281",
+         "--gdb", str(tmp_path / "out.gdb")],
+    )
+    assert result.exit_code != 0
+    assert "arcpy" in result.output.lower()
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_route_survey123_clean_error_without_arcpy(monkeypatch, tmp_path):
+    """Regression #62: route-survey123 must raise a ClickException, not KeyError."""
+    _no_arcpy_monkeypatch(monkeypatch)
+    inp = tmp_path / "input.csv"
+    inp.write_text("col\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        autogis,
+        ["envmon", "route-survey123",
+         str(inp),
+         "--site", "H281",
+         "--gdb", str(tmp_path / "out.gdb")],
+    )
+    assert result.exit_code != 0
+    assert "arcpy" in result.output.lower()
+    assert result.exception is None or isinstance(result.exception, SystemExit)

@@ -3,7 +3,7 @@
 Loads the analyte dictionary and screening-level configs, runs the pure
 ``validate_units`` validator into a single QACollector, and adds a closing INFO
 summary. File loads are defensive (a failure becomes an ERROR record rather than
-an exception), reusing ``validate_config._safe``.
+an exception), reusing ``validate_config.safe_load``.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from typing import Optional
 from ..common import config_validation as cv
 from ..common.config import load_analyte_dictionary, load_screening_levels
 from ..common.qa import QACollector, QARecord, SEV_INFO
-from .validate_config import _safe
+from .validate_config import safe_load
 
 
 def validate_units_config(analytes_path: Optional[Path],
@@ -23,10 +23,10 @@ def validate_units_config(analytes_path: Optional[Path],
     screening: dict = {}
 
     if analytes_path:
-        analytes = _safe(qa, f"analyte dictionary {Path(analytes_path).name}",
+        analytes = safe_load(qa, f"analyte dictionary {Path(analytes_path).name}",
                          lambda: load_analyte_dictionary(Path(analytes_path))) or {}
     if screening_path:
-        screening = _safe(qa, f"screening levels {Path(screening_path).name}",
+        screening = safe_load(qa, f"screening levels {Path(screening_path).name}",
                           lambda: load_screening_levels(Path(screening_path))) or {}
 
     if analytes or screening:

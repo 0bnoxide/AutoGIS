@@ -153,16 +153,7 @@ def compare_schedule_vs_actual(
 
 
 def write_gap_csv(rows: List[ScheduleGapRecord], output_path: Path) -> None:
-    """Write ScheduleGapRecord list to CSV."""
-    import csv
+    """Write ScheduleGapRecord list to CSV (delegates to the shared writer)."""
+    from ..common.records_csv import write_records_csv
 
-    fields = [f.name for f in dataclasses.fields(ScheduleGapRecord)]
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fields)
-        writer.writeheader()
-        for row in rows:
-            d = dataclasses.asdict(row)
-            if d["EventDate"] and hasattr(d["EventDate"], "isoformat"):
-                d["EventDate"] = d["EventDate"].isoformat()
-            writer.writerow(d)
+    write_records_csv(rows, output_path, record_class=ScheduleGapRecord)
