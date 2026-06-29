@@ -105,3 +105,18 @@ def test_valid_entry_no_analyte_not_covered(tmp_path):
 def test_manage_screening_levels_in_help():
     result = CliRunner().invoke(autogis, ["envmon", "--help"])
     assert "manage-screening-levels" in result.output
+
+
+def test_cli_renders_qa_and_exits_nonzero_on_error(tmp_path):
+    """The command must render QA and honor --fail-on (was silently dropping qa)."""
+    f = tmp_path / "sl.yaml"
+    f.write_text(_BAD_YAML, encoding="utf-8")
+    result = CliRunner().invoke(autogis, ["envmon", "manage-screening-levels", str(f)])
+    assert result.exit_code != 0
+
+
+def test_cli_valid_screening_exits_zero(tmp_path):
+    f = tmp_path / "sl.yaml"
+    f.write_text(_VALID_YAML, encoding="utf-8")
+    result = CliRunner().invoke(autogis, ["envmon", "manage-screening-levels", str(f)])
+    assert result.exit_code == 0, result.output

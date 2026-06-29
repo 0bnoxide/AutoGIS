@@ -6,17 +6,15 @@ and produces RPDRecord objects alongside QA records for any issues.
 """
 from __future__ import annotations
 
-import csv
-import typing
-from datetime import date as _date
 from pathlib import Path
-from typing import List, Optional, Type, TypeVar
+from typing import List, Optional
 
 from .gdb_schema import AnalyticalResultRecord, RPDRecord, SampleRecord
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
+# read_records_csv now lives in core.common.records_csv; re-exported for back-compat.
+from ..common.records_csv import read_records_csv  # noqa: F401
 
 _FORMULA_ERRORS = {"#VALUE!", "#DIV/0!", "#N/A", "#REF!", "#NAME?", "#NUM!", "#NULL!"}
-T = TypeVar("T")
 
 
 def _rpd(parent: float, dup: float) -> Optional[float]:
@@ -115,61 +113,3 @@ def evaluate_duplicate_rpd(
     return records
 
 
-def _get_inner(hint):
-    """For Optional[X] return X, otherwise return hint unchanged."""
-    if typing.get_origin(hint) is typing.Union:
-        args = [a for a in typing.get_args(hint) if a is not type(None)]
-        return args[0] if args else str
-    return hint
-
-
-def _coerce(value: str, hint):
-    """Coerce a CSV string to the field's resolved type hint."""
-    is_optional = typing.get_origin(hint) is typing.Union
-    inner = _get_inner(hint)
-    if value in ("", "None"):
-        if inner is int:
-            return 0
-        return None
-    if inner is int:
-        try:
-            return int(float(value))   # handles "0.0" written by asdict
-        except (ValueError, TypeError):
-            return 0
-    if inner is float:
-        try:
-            return float(value)
-        except (ValueError, TypeError):
-            return None
-    if inner is _date:
-        try:
-            return _date.fromisoformat(value)
-        except (ValueError, TypeError):
-            return None
-    return value
-
-
-def read_records_csv(path: Path, record_class: Type[T]) -> List[T]:
-    """Load a CSV into a list of dataclass instances.
-
-    Uses typing.get_type_hints() to resolve annotations (handles
-    ``from __future__ import annotations``).  Unknown columns are ignored.
-    ClassVar fields (e.g. table_name on schema dataclasses) are excluded
-    so they are not passed to __init__.
-    """
-    import dataclasses as _dc
-    _instance_fields = {f.name for f in _dc.fields(record_class)}
-    hints = {k: v for k, v in typing.get_type_hints(record_class).items()
-             if k in _instance_fields}
-    rows = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            kwargs = {}
-            for fname, hint in hints.items():
-                raw = row.get(fname, "")
-                try:
-                    kwargs[fname] = _coerce(raw, hint)
-                except (ValueError, TypeError):
-                    kwargs[fname] = None
-            rows.append(record_class(**kwargs))
-    return rows
