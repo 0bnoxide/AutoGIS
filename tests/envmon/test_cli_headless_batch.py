@@ -396,3 +396,35 @@ def test_build_report_package(tmp_path):
     assert (out_dir / "figures" / "Fig-1A.pdf").exists(), (
         "Copied figure PDF not found in deliverable/figures/"
     )
+
+
+# ===========================================================================
+# 11. build-report-appendix (Tool 9.2)
+# ===========================================================================
+
+def test_build_report_appendix(tmp_path):
+    """Long-format results + group map -> multi-sheet xlsx; exit 0."""
+    results = tmp_path / "results.csv"
+    _write_csv(results, [
+        {"LocationID": "MW-01", "AnalyteName": "Benzene", "ResultValue": "12.0",
+         "ResultQualifier": "", "ReportedUnits": "ug/L", "SampleDate": "2026-01-15"},
+        {"LocationID": "MW-02", "AnalyteName": "Lead", "ResultValue": "ND",
+         "ResultQualifier": "ND", "ReportedUnits": "ug/L", "SampleDate": "2026-01-15"},
+    ])
+    sl = tmp_path / "sl.yaml"
+    sl.write_text(yaml.dump({"Benzene": 5.0, "Lead": 15.0}), encoding="utf-8")
+    gm = tmp_path / "groups.yaml"
+    gm.write_text(yaml.dump({"Benzene": "VOC", "Lead": "Metals"}), encoding="utf-8")
+    out = tmp_path / "appendix.xlsx"
+
+    result = _run(
+        "envmon", "build-report-appendix",
+        "--results", str(results),
+        "--screening-levels", str(sl),
+        "--group-map", str(gm),
+        "--out", str(out),
+    )
+    assert result.exit_code == 0, (
+        f"build-report-appendix exited {result.exit_code}:\n{result.output}"
+    )
+    assert out.exists(), "Expected appendix workbook was not created"

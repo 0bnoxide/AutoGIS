@@ -1764,6 +1764,39 @@ def export_lab_request_cmd(plan_path, groups_path, out, project_code,
     _render_qa(result.qa, report, "warning")
 
 
+@envmon.command("build-report-appendix")
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--screening-levels", "sl_path", default=None, type=click.Path(exists=True))
+@click.option("--group-map", "group_map_path", default=None, type=click.Path(exists=True))
+@click.option("--site", "site_id", default="")
+@click.option("--event-dates", default=None,
+              help="Comma-separated event dates to include (default: all).")
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
+                              event_dates, out, report):
+    """Build multi-sheet Excel analytical-data appendix (headless)."""
+    import csv as _csv, yaml as _yaml
+    from autogis.core.envmon.report_appendix_builder import (
+        build_appendix_sheet_specs, write_appendix_workbook)
+    from autogis.core.common.qa import QACollector
+
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    group_map = (_yaml.safe_load(Path(group_map_path).read_text())
+                 if group_map_path else None)
+    dates = [d.strip() for d in event_dates.split(",")] if event_dates else None
+    qa = QACollector()
+    specs = build_appendix_sheet_specs(rows, screening_levels=sl,
+                                       group_map=group_map)
+    result = write_appendix_workbook(rows, specs, Path(out), site_id=site_id,
+                                     event_dates=dates, qa=qa)
+    click.echo(f"Sheets: {result.sheet_count}  Wells: {result.well_count}  "
+               f"Events: {result.event_count}  Output: {out}")
+    _render_qa(qa, report, "warning")
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 
