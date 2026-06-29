@@ -41,6 +41,9 @@ TOOLS: dict[str, Runtime] = {
     "compare-schedule-vs-actual": Runtime.CLOUD,  # tool 10.x
     "drone-checkpoint-qa": Runtime.CLOUD,  # tool 11.1
     "export-geojson": Runtime.CLOUD,  # tool 10.3
+    "generate-arcade-labels": Runtime.CLOUD,  # tool 5.4
+    "generate-event-changelog": Runtime.CLOUD,  # tool 9.3
+    "export-lab-request": Runtime.CLOUD,  # tool 2.11 headless
     "generate-event-report": Runtime.CLOUD,  # tool 10.5
     "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
