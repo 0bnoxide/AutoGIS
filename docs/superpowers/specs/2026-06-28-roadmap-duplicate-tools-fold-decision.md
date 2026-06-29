@@ -55,3 +55,23 @@ This makes "every named §2–11 tool has a plan or spec" well-defined:
 ———
   0  remaining
 ```
+
+## Scope boundary — what "all planned features" includes
+
+The §2–11 catalog is **not** the only doc that names tools. The boundary used here:
+
+- **IN — geostatistical / conditional tools (8) from `ROADMAP_UPDATE_2026-06-25.md`.**
+  These are acknowledged-planned but "need architecture review before integration."
+  Covered by `2026-06-28-geostatistical-conditional-tools-design.md` (a DEFERRED stub
+  naming the shared blockers), the same way §11 AI tools are covered by a deferred
+  stub. (One of the eight, `GenerateRegulatoryTables`, already has a full plan.)
+- **OUT — `docs/candidates/` roadmaps.** The boring-survey-drone and
+  survey123-agol-dashboard roadmaps are explicitly **pending hybrid-harness fit
+  evaluation** (see memory `candidate-roadmaps-pending-evaluation` and
+  `docs/candidates/EVALUATION_RESULTS.md`) — i.e. *candidate*, not yet *planned*. A few
+  names there are not in §2–11 (e.g. `BackupAGOLProjectItems`,
+  `BuildClientDeliverablePackage`, `GenerateWellInspectionReports`); these are
+  deliberately excluded until the candidate roadmaps are accepted. When/if they are
+  promoted into the canonical roadmap, they enter scope and need specs.
+- **`IMPLEMENTATION_ROADMAP_PRIORITIZED.md`** names only tools already in §2–11 — no
+  new tools, nothing additional to cover.
