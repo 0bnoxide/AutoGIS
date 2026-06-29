@@ -700,6 +700,118 @@ def export_geojson_cmd(results_csv, coords_csv, output, indent, report, fail_on)
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("generate-arcade-labels")
+@click.option(
+    "--analytes", "analytes_str", required=True,
+    help="Comma-separated analyte names (e.g. 'Benzene,PCE,Toluene').",
+)
+@click.option(
+    "--field-prefix", default="",
+    help="Optional field name prefix (e.g. 'Env_').",
+)
+@click.option(
+    "--out", required=True, type=click.Path(),
+    help="Output JSON file path.",
+)
+@click.option(
+    "--report", default=None, type=click.Path(),
+    help="Optional QA report output path.",
+)
+def generate_arcade_labels_cmd(analytes_str, field_prefix, out, report):
+    """Tool 5.4: generate Arcade label expressions for ArcGIS Pro layers (headless)."""
+    from autogis.core.common.qa import QACollector, SEV_INFO
+    from autogis.core.envmon.arcade_label_generator import (
+        generate_arcade_labels, write_label_expressions,
+    )
+
+    analytes = [a.strip() for a in analytes_str.split(",") if a.strip()]
+    if not analytes:
+        raise click.UsageError("--analytes must contain at least one analyte name.")
+
+    specs = generate_arcade_labels(analytes, field_prefix=field_prefix)
+    write_label_expressions(specs, Path(out))
+
+    qa = QACollector()
+    qa.add(
+        SEV_INFO, "arcade_labels_written",
+        f"{len(specs)} expression(s) for {len(analytes)} analyte(s) → {out}",
+    )
+    click.echo(
+        f"Written {len(specs)} Arcade expression(s) for {len(analytes)} "
+        f"analyte(s) to: {out}"
+    )
+    _render_qa(qa, report, "error")
+
+
+@envmon.command("generate-event-changelog")
+@click.option("--prior-csv", required=True, type=click.Path(exists=True),
+              help="CSV of prior event analytical results (LocationID, AnalyteName, "
+                   "ResultNumeric, ExceedsScreeningLevel columns required).")
+@click.option("--current-csv", required=True, type=click.Path(exists=True),
+              help="CSV of current event analytical results.")
+@click.option("--prior-event-id", default="prior", show_default=True,
+              help="Label for the prior event (e.g. 'E-2025-Q3').")
+@click.option("--current-event-id", default="current", show_default=True,
+              help="Label for the current event (e.g. 'E-2026-Q1').")
+@click.option("--out", required=True, type=click.Path(),
+              help="Output changelog CSV path.")
+@click.option("--out-xlsx", default=None, type=click.Path(),
+              help="Optional output Excel workbook (one sheet per change type).")
+@click.option("--delta-pct-threshold", default=10.0, type=float, show_default=True,
+              help="Minimum absolute %% change required to classify as VALUE_CHANGE.")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write QA report to PATH (.md/.json/.csv by extension).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error", show_default=True)
+def generate_event_changelog_cmd(
+    prior_csv, current_csv, prior_event_id, current_event_id,
+    out, out_xlsx, delta_pct_threshold, report, fail_on,
+):
+    """Tool 9.3: Generate structured changelog from two monitoring event CSVs.
+
+    Diffs prior and current result CSVs, classifies every (LocationID, AnalyteName)
+    pair as NEW_LOCATION, DROPPED_LOCATION, NEW_ANALYTE, DROPPED_ANALYTE,
+    NEW_EXCEEDANCE, CLEARED_EXCEEDANCE, VALUE_CHANGE, or NO_CHANGE.
+    Headless, no arcpy.
+    """
+    import csv as _csv
+    from autogis.core.envmon.event_changelog import (
+        generate_event_changelog,
+        write_changelog_csv,
+        write_changelog_workbook,
+    )
+
+    def _read_csv(path: str) -> list:
+        with open(path, newline="", encoding="utf-8") as fh:
+            return list(_csv.DictReader(fh))
+
+    prior_rows = _read_csv(prior_csv)
+    current_rows = _read_csv(current_csv)
+
+    result = generate_event_changelog(
+        prior_rows,
+        current_rows,
+        prior_event_id=prior_event_id,
+        current_event_id=current_event_id,
+        delta_pct_threshold=delta_pct_threshold,
+    )
+
+    write_changelog_csv(result, Path(out))
+    click.echo(f"Written: {out}  ({len(result.changes)} record(s))")
+    click.echo(
+        f"  NEW_LOCATION: {result.new_location_count}  "
+        f"DROPPED_LOCATION: {result.dropped_location_count}  "
+        f"NEW_EXCEEDANCE: {result.new_exceedance_count}  "
+        f"CLEARED_EXCEEDANCE: {result.cleared_exceedance_count}"
+    )
+
+    if out_xlsx:
+        write_changelog_workbook(result, Path(out_xlsx))
+        click.echo(f"Workbook: {out_xlsx}")
+
+    _render_qa(result.qa, report, fail_on)
+
+
 @envmon.command("generate-event-report")
 @click.option("--site", "site_id", required=True, help="Site ID.")
 @click.option("--event", "event_id", required=True,
@@ -1617,6 +1729,36 @@ def build_report_package_cmd(spec_path, out_dir, site_id, event_label, report):
     click.echo(f"Copied: {result.copied_count}  Missing: {result.missing_count}  "
                f"Out: {out_dir}")
     _render_qa(qa, report, "warning")
+
+
+@envmon.command("export-lab-request")
+@click.option("--plan", "plan_path", required=True, type=click.Path(exists=True))
+@click.option("--analyte-groups", "groups_path", required=True, type=click.Path(exists=True))
+@click.option("--out", required=True, type=click.Path())
+@click.option("--project-code", default="")
+@click.option("--turnaround", type=int, default=5, show_default=True)
+@click.option("--site", "site_id", default="")
+@click.option("--csv-also", "csv_path", default=None, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def export_lab_request_cmd(plan_path, groups_path, out, project_code,
+                            turnaround, site_id, csv_path, report):
+    """Generate lab analytical request workbook from sampling event plan (headless)."""
+    import csv as _csv
+    import yaml as _yaml
+    from autogis.core.envmon.lab_request_exporter import (
+        build_lab_request_rows, write_lab_request_workbook, write_lab_request_csv)
+
+    with open(plan_path, newline="", encoding="utf-8") as fh:
+        plan = list(_csv.DictReader(fh))
+    groups = _yaml.safe_load(Path(groups_path).read_text(encoding="utf-8"))
+    rows = build_lab_request_rows(plan, groups, project_code=project_code,
+                                   turnaround_days=turnaround)
+    result = write_lab_request_workbook(rows, Path(out), site_id=site_id)
+    if csv_path:
+        write_lab_request_csv(rows, Path(csv_path))
+    click.echo(f"Samples: {result.sample_count}  Groups: {result.analyte_group_count}  "
+               f"Output: {out}")
+    _render_qa(result.qa, report, "warning")
 
 
 # Legacy single-command entry point kept as an alias.
