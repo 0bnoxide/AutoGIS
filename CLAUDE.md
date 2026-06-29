@@ -1,5 +1,17 @@
 # AutoGIS — Claude Code session guide
 
+## Default working mode — ponytail
+
+**Every session must invoke the `ponytail` skill (full) before writing any code,
+and keep it active for the session.** The skill is vendored in-repo at
+`.claude/skills/ponytail/SKILL.md`, so it is available to cloud/remote agents and
+any cloned checkout, not just user-scope installs. ponytail enforces the laziest
+solution that actually works: question whether the change needs to exist (YAGNI),
+reuse before writing, stdlib/native before dependencies, shortest correct diff
+*after* understanding the problem. This applies to subagents too — state it in any
+subagent prompt you write. It governs *what* you build, not how you talk, and never
+shortcuts understanding the problem or skips validation/security/error handling.
+
 ## Codebase memory
 
 The codebase-memory MCP server is **wired at USER scope** (stdio), not via a repo
