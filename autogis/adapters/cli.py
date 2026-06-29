@@ -1360,7 +1360,7 @@ def build_max_result_dataset_cmd(results_path, sl_path, analytes, wells,
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
     qa = QACollector()
     records = build_max_result_dataset(
         rows, screening_levels=sl,
@@ -1377,12 +1377,8 @@ def build_max_result_dataset_cmd(results_path, sl_path, analytes, wells,
 @envmon.command("generate-qc-summary")
 @click.option("--results", "results_path", required=True, type=click.Path(exists=True))
 @click.option("--out", required=True, type=click.Path())
-@click.option("--rpd-threshold", type=float, default=30.0, show_default=True)
-@click.option("--recovery-min", type=float, default=70.0, show_default=True)
-@click.option("--recovery-max", type=float, default=130.0, show_default=True)
 @click.option("--report", default=None, type=click.Path())
-def generate_qc_summary_cmd(results_path, out, rpd_threshold,
-                             recovery_min, recovery_max, report):
+def generate_qc_summary_cmd(results_path, out, report):
     """Generate QC data summary workbook (blanks, spikes, duplicates) (headless)."""
     import csv as _csv
     from autogis.core.envmon.qc_sample_summary import (
@@ -1398,8 +1394,7 @@ def generate_qc_summary_cmd(results_path, out, rpd_threshold,
                      if r.qc_type in blank_types and r.result_value is not None)
     result = QCSummaryResult(records=records, blank_detections=blank_dets,
                               spike_failures=0, duplicate_failures=0, qa=qa)
-    write_qc_summary_workbook(result, Path(out), rpd_threshold=rpd_threshold,
-                               recovery_min=recovery_min, recovery_max=recovery_max)
+    write_qc_summary_workbook(result, Path(out))
     click.echo(f"QC records: {len(records)}  Blank detections: {blank_dets}  Output: {out}")
     _render_qa(qa, report, "warning")
 
@@ -1419,7 +1414,7 @@ def build_compliance_table_cmd(results_path, sl_path, analytes, date_from, out, 
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
     analyte_list = [a.strip() for a in analytes.split(",")] if analytes else None
     result = build_compliance_summary(rows, screening_levels=sl,
                                        analytes=analyte_list, date_from=date_from)
@@ -1446,8 +1441,8 @@ def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
-    gm = _yaml.safe_load(Path(gm_path).read_text()) if gm_path else None
+    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    gm = _yaml.safe_load(Path(gm_path).read_text(encoding="utf-8")) if gm_path else None
     specs = build_regulatory_table_specs(rows, group_map=gm, screening_levels=sl)
     result = write_regulatory_workbook(rows, specs, Path(out), site_id=site_id,
                                         event_label=event_label, screening_levels=sl)
@@ -1589,7 +1584,7 @@ def generate_site_narrative_cmd(site_id, event_label, max_results_path,
     import yaml as _yaml
     from autogis.core.envmon.site_narrative_generator import generate_site_narrative
 
-    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
     result = generate_site_narrative(
         site_id, event_label,
         max_result_path=Path(max_results_path) if max_results_path else None,

@@ -85,17 +85,23 @@ def merge_event_results(
             sha256=sha, row_count=len(rows),
         ))
 
-    # Dedup
-    seen_keys: set[tuple] = set()
-    deduped: list[dict] = []
-    dropped = 0
-    for r in all_rows:
-        key = tuple(r.get(k, "") for k in dedup_key)
-        if key in seen_keys:
-            dropped += 1
-        else:
-            seen_keys.add(key)
-            deduped.append(r)
+    # Dedup. An empty/None dedup_key means "don't deduplicate" (the CLI
+    # --no-dedup flag passes ()). Without this guard every row collapses to the
+    # same empty key () and all but the first row would be silently dropped.
+    if dedup_key:
+        seen_keys: set[tuple] = set()
+        deduped: list[dict] = []
+        dropped = 0
+        for r in all_rows:
+            key = tuple(r.get(k, "") for k in dedup_key)
+            if key in seen_keys:
+                dropped += 1
+            else:
+                seen_keys.add(key)
+                deduped.append(r)
+    else:
+        deduped = list(all_rows)
+        dropped = 0
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

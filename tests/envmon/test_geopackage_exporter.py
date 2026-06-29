@@ -60,6 +60,22 @@ def test_write_wells_layer(tmp_path):
     assert count == 2  # only valid coords inserted
 
 
+def test_write_wells_layer_coords_only(tmp_path):
+    # Wells with only Latitude/Longitude (no extra columns) must not produce a
+    # trailing-comma CREATE/INSERT and crash. Regression for the empty
+    # extra_cols case.
+    gpkg = tmp_path / "minimal.gpkg"
+    create_geopackage(gpkg)
+    conn = sqlite3.connect(str(gpkg))
+    count = write_wells_layer(
+        conn, [{"Latitude": "34.1", "Longitude": "-118.4"}])
+    conn.commit()
+    rows = conn.execute("SELECT COUNT(*) FROM wells").fetchone()[0]
+    conn.close()
+    assert count == 1
+    assert rows == 1
+
+
 def test_write_tabular_layer(tmp_path):
     gpkg = tmp_path / "test.gpkg"
     create_geopackage(gpkg)

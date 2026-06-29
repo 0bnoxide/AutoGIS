@@ -56,7 +56,8 @@ def _sha256_file(path: Path) -> str:
 
 def load_deliverable_spec(spec_path: Path) -> list:
     import yaml
-    data = yaml.safe_load(Path(spec_path).read_text(encoding="utf-8"))
+    # safe_load returns None for an empty / comment-only file — fall back to {}.
+    data = yaml.safe_load(Path(spec_path).read_text(encoding="utf-8")) or {}
     return data.get("files", [])
 
 

@@ -95,3 +95,16 @@ def test_single_file_valid(tmp_path):
     out = tmp_path / "merged.csv"
     result = merge_event_results([f1], out)
     assert result.total_rows == 1
+
+
+def test_empty_dedup_key_keeps_all_rows(tmp_path):
+    # An empty dedup_key (the --no-dedup flag) must DISABLE dedup, not collapse
+    # every row to the same empty key and drop all but the first.
+    f1 = tmp_path / "Env_Results_20260115.csv"
+    f2 = tmp_path / "Env_Results_20260615.csv"
+    _write_csv(f1, [_ROW_A])
+    _write_csv(f2, [_ROW_DUP])  # identical key to _ROW_A
+    out = tmp_path / "merged.csv"
+    result = merge_event_results([f1, f2], out, dedup_key=())
+    assert result.total_rows == 2
+    assert result.duplicate_rows_dropped == 0

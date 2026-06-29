@@ -1,4 +1,10 @@
-"""geopackage_exporter.py — minimal OGC GeoPackage writer (stdlib sqlite3 only)."""
+"""geopackage_exporter.py — minimal GeoPackage-style SQLite writer (stdlib sqlite3 only).
+
+Note: point geometries are stored as raw ISO WKB, not the full GeoPackageBinary
+(GPB) blob (no magic header/envelope). Some strict GIS clients may not read the
+``wells.geom`` column as a spatial column. Wrapping WKB in a GPB header is a
+deferred follow-up.
+"""
 from __future__ import annotations
 
 import csv
@@ -100,14 +106,13 @@ def write_wells_layer(
     sample = well_rows[0]
     extra_cols = [k for k in sample.keys()
                   if k not in (lat_field, lon_field)]
-    col_defs = ", ".join(f'"{c}" TEXT' for c in extra_cols)
-    conn.execute(f"""
-        CREATE TABLE IF NOT EXISTS wells (
-            fid INTEGER PRIMARY KEY AUTOINCREMENT,
-            geom BLOB,
-            {col_defs}
-        )
-    """)
+    # Build the column list without a trailing comma when there are no extra
+    # columns (a wells CSV with only Latitude/Longitude) — otherwise the SQL
+    # is invalid and the export crashes on minimal input.
+    cols_sql = "fid INTEGER PRIMARY KEY AUTOINCREMENT, geom BLOB"
+    if extra_cols:
+        cols_sql += ", " + ", ".join(f'"{c}" TEXT' for c in extra_cols)
+    conn.execute(f"CREATE TABLE IF NOT EXISTS wells ({cols_sql})")
     conn.execute(
         "INSERT OR IGNORE INTO gpkg_geometry_columns VALUES (?,?,?,?,?,?)",
         ("wells", "geom", "POINT", 4326, 0, 0),
@@ -124,10 +129,12 @@ def write_wells_layer(
             continue
         wkb = encode_wkb_point(lon, lat)
         vals = [wkb] + [r.get(c, "") for c in extra_cols]
-        placeholders = ", ".join(["?"] * (len(extra_cols) + 1))
+        col_names = "geom"
+        if extra_cols:
+            col_names += ", " + ", ".join(f'"{c}"' for c in extra_cols)
+        placeholders = ", ".join(["?"] * len(vals))
         conn.execute(
-            f"INSERT INTO wells (geom, {', '.join(f'{chr(34)}{c}{chr(34)}' for c in extra_cols)}) "
-            f"VALUES ({placeholders})", vals,
+            f"INSERT INTO wells ({col_names}) VALUES ({placeholders})", vals,
         )
         count += 1
     return count

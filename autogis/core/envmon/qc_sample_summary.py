@@ -111,11 +111,10 @@ def classify_qc_rows(
 def write_qc_summary_workbook(
     result: QCSummaryResult,
     out_path: Path,
-    *,
-    rpd_threshold: float = 30.0,
-    recovery_min: float = 70.0,
-    recovery_max: float = 130.0,
 ) -> Path:
+    # ponytail: RPD/recovery pass-fail scoring is deferred — it needs duplicate
+    # pairing and spike-amount data the current model does not carry. The
+    # building block compute_rpd() is kept and tested for when that lands.
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
