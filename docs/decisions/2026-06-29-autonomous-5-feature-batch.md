@@ -209,3 +209,27 @@ duplicate of the already-merged PR #84. Invariants verified: new core modules
 import with no arcpy/arcgis present and have no core→adapter deps; DRAFT stubs
 untouched. The `superpowers` TDD loop (red → green → full suite → commit) was
 followed for each feature.
+
+---
+
+## Post-review corrections (advisor pass)
+
+### D6.1 — Registry name drift fixed (the D2.3 risk materialized in-batch)
+**Found:** The feature-2 registry seed listed `build-analytical-exceedance-event`,
+but feature 3 registered the command as `build-exceedance-event`. So `list-tools`
+advertised a non-existent command and omitted the real one. No test caught it
+because nothing cross-checked registry names against live commands — exactly the
+drift accepted in D2.3.
+**Fix:** Corrected the seed `command` to `build-exceedance-event` (kept
+`name=BuildAnalyticalExceedanceEvent`); also added a `list-tools` self-entry.
+**Permanent guard:** Added `test_registry_commands_exist_in_live_cli` — a
+ONE-DIRECTIONAL check (every registered command must exist in the live `envmon`
+click group). Deliberately not the reverse, so top-level/agol/sub-group commands
+stay out of scope (per D2.3). Suite 753 → 754.
+
+### D6.2 — Dashboard orchestrator caveat
+`build_dashboard_data_mart()` (arcpy path) is validated only by matching the
+`build_dash_*` output dict keys against the `Dash_*` schemas in `gdb_schema.py`
+(verified: SiteStatus/EventStatus/WellStatus/CurrentExceedances keys + LastUpdated
+TEXT width all line up). The arcpy `TruncateTable`/`InsertCursor` runtime behavior
+is unexercised headless and **needs one ArcGIS Pro smoke run** before production use.

@@ -74,3 +74,14 @@ def test_filter_by_status():
     stable = filter_tools(tools, status="stable")
     assert stable
     assert all(t.status == "stable" for t in stable)
+
+
+def test_registry_commands_exist_in_live_cli():
+    """Drift guard (one-directional): every registered command must be a real
+    `envmon` click subcommand. (We deliberately do NOT assert the reverse —
+    top-level/agol/sub-group commands are intentionally out of the registry.)"""
+    from autogis.adapters.cli import envmon
+    live = set(envmon.commands.keys())
+    registered = {t.command for t in get_all_tools()}
+    missing = sorted(registered - live)
+    assert not missing, f"registry advertises non-existent commands: {missing}"
