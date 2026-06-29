@@ -35,6 +35,7 @@ Because the session hook builds a fresh index, PREFER validating index health ov
 - Tests are arcpy-free and run with `python -m pytest -q`. Do NOT trust any hardcoded count here — derive the live count with `python -m pytest --collect-only -q 2>&1 | tail -1` at runtime. As of 2026-06-28 the count is 560 across 75 test files.
 
 ## Safety and correctness constraints
+- `main` is READ-ONLY. Do not edit any repo file while on the `main` branch — the coordination hook denies it. Check out a feature branch and claim it + your files via the session-coordination framework (see project CLAUDE.md) before writing. One-off override only if explicitly told: `AUTOGIS_COORD_FORCE=1`.
 - Never assume the graph is current after files changed during the session; refresh or run change detection first.
 - Never edit files based only on a high-level semantic match.
 - Never claim a function is unused without checking callers, entry points, dynamic route/CLI registration, framework conventions, tests, plugins, dependency injection, reflection, configuration, and external consumers.

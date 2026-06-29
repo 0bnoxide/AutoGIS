@@ -99,6 +99,46 @@ def test_git_push_denied(tmp_path):
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+# --- 'main' is read-only: writes to in-repo files are denied ---
+
+def _repo_payload(tmp_path, tool, fp, sid="me"):
+    coord = tmp_path / ".claude" / "coordination"
+    coord.mkdir(parents=True, exist_ok=True)
+    p = coord / "claims.json"
+    return _payload(tool, {"file_path": fp}, sid=sid), p
+
+
+def test_edit_in_repo_on_main_is_denied(tmp_path):
+    payload, p = _repo_payload(tmp_path, "Edit",
+                               str(tmp_path / "autogis" / "core" / "x.py"))
+    out = hook_check.decide(payload, p, branch_func=lambda cwd: "main")
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "read-only" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_edit_outside_repo_on_main_is_allowed(tmp_path):
+    # memory dir / scratchpad live outside the repo → never blocked on main.
+    outside = str(tmp_path.parent / "memory" / "note.md")
+    payload, p = _repo_payload(tmp_path, "Write", outside)
+    out = hook_check.decide(payload, p, branch_func=lambda cwd: "main")
+    assert out is None
+
+
+def test_edit_in_repo_on_feature_branch_is_allowed(tmp_path):
+    payload, p = _repo_payload(tmp_path, "Edit",
+                               str(tmp_path / "autogis" / "core" / "x.py"))
+    out = hook_check.decide(payload, p, branch_func=lambda cwd: "feat/x")
+    assert out is None
+
+
+def test_main_write_block_respects_force(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTOGIS_COORD_FORCE", "1")
+    payload, p = _repo_payload(tmp_path, "Edit",
+                               str(tmp_path / "autogis" / "core" / "x.py"))
+    out = hook_check.decide(payload, p, branch_func=lambda cwd: "main")
+    assert out is None
+
+
 # --- absolute file path is made repo-relative before glob match ---
 
 def test_absolute_edit_path_matches_relative_glob(tmp_path):

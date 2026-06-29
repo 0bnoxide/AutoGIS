@@ -98,6 +98,20 @@ def decide(payload, reg_path, branch_func=None):
                 except ValueError:
                     rel = fp
             rel = rel.replace("\\", "/")
+            # 'main' is read-only: block writes to files INSIDE the repo. Paths
+            # outside the repo (memory dir, scratchpad — rel escapes with ../ or
+            # stays absolute on a cross-drive relpath) are always allowed.
+            in_repo = not rel.startswith("../") and not os.path.isabs(rel)
+            if in_repo:
+                bf = branch_func or _git_branch
+                if bf(cwd) == "main":
+                    return _deny(
+                        "[coord] 'main' is read-only — writing %s is blocked. "
+                        "Only reading is allowed on main. Check out a feature "
+                        "branch and claim your files via the session-coordination "
+                        "framework before writing (see CLAUDE.md > Worktrees & "
+                        "session coordination). Override: AUTOGIS_COORD_FORCE=1."
+                        % fp)
             conflicts = registry.file_conflicts(reg_path, sid, rel)
             if conflicts:
                 c = conflicts[0]
