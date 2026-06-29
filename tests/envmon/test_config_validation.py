@@ -72,6 +72,29 @@ def test_validate_analyte_dictionary_flags_todo_source():
     assert (SEV_WARNING, "placeholder") in {(r.severity, r.category) for r in records}
 
 
+def test_validate_analyte_dictionary_flags_todo_in_any_field():
+    """A _TODO anywhere in an analyte entry is surfaced, not only in
+    screening_level_source — the dictionary is scanned with the shared
+    scan_todos so coverage is consistent with the other config validators."""
+    analytes = {"Lead": {"aliases": ["pb"], "abbreviation": "Pb",
+                         "display_order": 300,
+                         "default_units_by_matrix": {"GW": "_TODO ug/L"}}}
+    records = cv.validate_analyte_dictionary(analytes)
+    placeholders = [r for r in records if r.category == "placeholder"]
+    assert placeholders, "expected a placeholder warning for _TODO in default_units_by_matrix"
+    # structured per-analyte context is preserved on the shared-scanner record
+    assert placeholders[0].analyte_name == "Lead"
+
+
+def test_validate_analyte_dictionary_skips_underscore_meta_entries():
+    """Underscore-prefixed meta/template entries are not scanned for _TODO."""
+    analytes = {"_template": {"screening_level_source": "_TODO fill me"},
+                "Benzene": {"aliases": ["b"], "abbreviation": "Bz",
+                            "display_order": 10}}
+    records = cv.validate_analyte_dictionary(analytes)
+    assert not [r for r in records if r.category == "placeholder"]
+
+
 def test_validate_analyte_dictionary_9999_sentinel_not_flagged():
     analytes = {
         "A": {"aliases": [], "abbreviation": "A", "display_order": 9999},

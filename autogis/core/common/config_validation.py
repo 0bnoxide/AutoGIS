@@ -32,8 +32,14 @@ def _rec(sev, cat, msg, action="", **ctx):
                     recommended_action=action, **ctx)
 
 
-def scan_todos(data, context: str) -> List[QARecord]:
-    """Walk nested dict/list values; flag any string containing '_TODO'."""
+def scan_todos(data, context: str, **ctx) -> List[QARecord]:
+    """Walk nested dict/list values; flag any string containing '_TODO'.
+
+    ``_TODO`` is the project's single fill-in-before-production marker; the
+    deliberate ``DRAFT``/``DRAFT_`` stub-banner convention is intentionally not
+    matched here. Any extra ``ctx`` (e.g. ``analyte_name=...``) is attached to
+    every emitted record so callers keep their structured QA context.
+    """
     out: List[QARecord] = []
 
     def walk(node, path):
@@ -46,7 +52,7 @@ def scan_todos(data, context: str) -> List[QARecord]:
         elif isinstance(node, str) and "_TODO" in node:
             out.append(_rec(SEV_WARNING, "placeholder",
                             f"{context}: unresolved _TODO at {path}: {node!r}",
-                            action="fill in before production use"))
+                            action="fill in before production use", **ctx))
 
     walk(data, "")
     return out
@@ -202,11 +208,11 @@ def validate_analyte_dictionary(analytes: dict) -> List[QARecord]:
         if order is not None:
             order_counts[order] += 1
 
-        src = entry.get("screening_level_source")
-        if isinstance(src, str) and "_TODO" in src:
-            out.append(_rec(SEV_WARNING, "placeholder",
-                            f"analyte {canonical!r}: screening_level_source has "
-                            f"_TODO: {src!r}", analyte_name=str(canonical)))
+        # Scan the whole entry for _TODO markers via the shared scanner so the
+        # analyte dictionary has the same placeholder coverage as the other
+        # config assets (previously only screening_level_source was checked).
+        out += scan_todos(entry, f"analyte {canonical!r}",
+                          analyte_name=str(canonical))
 
     for order, n in order_counts.items():
         if n > 1 and order != 9999:   # 9999 is the default-unset sentinel
