@@ -16,8 +16,8 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 |--------|------:|-------|
 | Fully implemented (CLI command + core module + tests) | ~40 | ~34 numbered roadmap tools + 6 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | ~4 | |
-| **Planned** (spec / plan written, not yet coded) | ~17 | roadmap tools; plus 11 post-roadmap extras — see *Planned* list below |
-| Not started (no spec or plan) | ~18 | excludes §11 AI tools + geostatistical Phase 5 |
+| **Planned** (spec / plan written, not yet coded) | ~27 | roadmap tools; plus 11 post-roadmap extras — see *Planned* list below |
+| Not started (no spec or plan) | ~12 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
 The codebase now ships **50 `core/envmon/` modules**, **~43 registered CLI commands**, and a
@@ -106,6 +106,9 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
+| BatchImportEnvironmentalWorkbooks | 2.2 | plan |
+| MigrateLegacyMonitoringData | 2.4 | plan |
+| RegisterSourceDocuments | 2.5 | plan |
 | CreateSurvey123SamplingEvent | 2.7 | spec + plan |
 
 **Analysis (§4)**
@@ -114,14 +117,20 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 |------|-----------|---------|
 | BuildAnalyticalExceedanceEvent | 4.4 | spec + plan *(partial code foundation)* |
 | EstimateGWFlowDirection | 4.3 | spec + plan |
+| GenerateDraftPlumeBoundary | 4.5 | plan |
+| GenerateWellTrendCharts | 4.6 | plan |
+| SelectSoilIntervalsForMapping | 4.8 | plan |
 | BuildMaxResultMapDataset | 4.9 | spec + plan |
 
 **Cartography (§5)**
 
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
+| GenerateArcadeLabelExpressions | 5.4 | plan |
 | BuildAnalyticalKey | 5.5 | plan |
+| GenerateSiteMapSeries | 5.6 | plan |
 | BuildReportFigurePackage | 5.7 | spec + plan |
+| UpdateLayoutDynamicText | 5.8 | plan |
 
 **AGOL / cloud (§6)**
 
@@ -151,6 +160,7 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
 | BuildMonitoringReportAppendix | 9.2 | spec + plan |
+| GenerateEventChangeLog | 9.3 | plan |
 | IngestReviewerMapComments | 9.4 | spec + plan |
 
 **Admin (§10)**
@@ -180,15 +190,6 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 <details>
 <summary>Not started — no spec or implementation plan</summary>
 
-**Data intake (§2):** BatchImportEnvironmentalWorkbooks (2.2), MigrateLegacyMonitoringData (2.4),
-RegisterSourceDocuments (2.5)
-
-**Analysis (§4):** GenerateDraftPlumeBoundary (4.5), GenerateWellTrendCharts (4.6),
-SelectSoilIntervalsForMapping (4.8)
-
-**Cartography (§5):** GenerateArcadeLabelExpressions (5.4), GenerateSiteMapSeries (5.6),
-UpdateLayoutDynamicText (5.8)
-
 **AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2), UpdateAGOLWebMapFromFigureSpec (6.3),
 RefreshMonitoringDashboardData (6.4), AuditAGOLSchemaAgainstLocalConfig (6.6),
 PublishDashboardFromSpec (6.8), PromoteAGOLDataBetweenStages (6.10),
@@ -199,8 +200,6 @@ ReconcileFieldAndLabData (7.3)
 
 **Survey / boring / drone / CAD (§8):** GenerateBoringLogPDFs (8.0c),
 BuildCADExportPackage (8.9), ExportContoursForCivil3D, ValidateSurveyDeliverable
-
-**Reporting (§9):** GenerateEventChangeLog (9.3)
 
 **Admin (§10):** GenerateSyntheticEnvWorkbook (10.6)
 
@@ -549,8 +548,8 @@ before trusting outputs.
 | [`docs/pro-install.md`](docs/pro-install.md) | Full Pro setup: env clone, toolbox registration, cache/reload |
 | [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool (snapshot; headline counts above are current) |
 | [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
-| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 45 features (architecture, algorithm, data-model decisions) |
-| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 76 features (step-by-step execution guides) |
+| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 43 features (architecture, algorithm, data-model decisions) |
+| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 86 features (step-by-step execution guides) |
 | [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy (latest: ADR-0028) |
 
 ---
