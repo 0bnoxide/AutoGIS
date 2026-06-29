@@ -807,7 +807,10 @@ def generate_event_changelog_cmd(
 
     if out_xlsx:
         write_changelog_workbook(result, Path(out_xlsx))
-        click.echo(f"Workbook: {out_xlsx}")
+        # Only report the workbook when it was actually written; on a missing
+        # openpyxl the writer records a QA error and returns without a file.
+        if Path(out_xlsx).exists():
+            click.echo(f"Workbook: {out_xlsx}")
 
     _render_qa(result.qa, report, fail_on)
 

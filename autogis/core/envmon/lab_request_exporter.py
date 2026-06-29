@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ..common.qa import QACollector
+from ..common.qa import QACollector, SEV_ERROR
 
 _DEFAULT_COLUMNS = [
     "SampleID", "LocationID", "Matrix", "AnalyteGroup",
@@ -86,8 +86,15 @@ def write_lab_request_workbook(
     event_date: str = "",
     column_map: Optional[dict] = None,
 ) -> LabRequestResult:
-    import openpyxl
-    from openpyxl.styles import Font
+    qa = QACollector()
+    try:
+        import openpyxl
+        from openpyxl.styles import Font
+    except ImportError as exc:
+        qa.add(SEV_ERROR, "openpyxl_missing",
+               f"openpyxl not installed: {exc}")
+        return LabRequestResult(workbook_path=Path(out_path), sample_count=0,
+                                analyte_group_count=0, qa=qa)
 
     cm = column_map or {}
     headers = [cm.get(c, c) for c in _DEFAULT_COLUMNS]
@@ -136,7 +143,7 @@ def write_lab_request_workbook(
     group_count = len({r.analyte_group for r in rows})
     return LabRequestResult(
         workbook_path=out_path, sample_count=len(rows),
-        analyte_group_count=group_count, qa=QACollector(),
+        analyte_group_count=group_count, qa=qa,
     )
 
 
