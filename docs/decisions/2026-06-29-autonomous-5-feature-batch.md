@@ -83,3 +83,38 @@ conditional-format rules. Strict `>` so a value exactly at the SL is not flagged
 an exceedance (conservative; the regulatory convention here treats SL as the
 "not-to-exceed" ceiling — equal is compliant). Logged because `>=` is a
 defensible alternative the reviewer may prefer.
+
+## Feature 2 — list-available-env-tools (Tool 10.1)
+
+**Status:** DONE — `ToolCapability` + `TOOL_REGISTRY` in `capabilities.py`,
+`tool_registry.py` (get_all_tools/filter_tools/format_tool_table), `list-tools`
+CLI + 11 tests (9 unit + 2 CLI smoke). Full suite 719 passed.
+
+### D2.1 — Spec's `ToolCapability` did not exist; added parallel registry
+**Chosen:** The spec assumed `capabilities.py` already had a `ToolCapability`
+dataclass to extend. It does not — it has only `TOOLS: dict[str, Runtime]` and
+`requires_arcpy()`. I added a NEW `ToolCapability` dataclass + `TOOL_REGISTRY`
+list **alongside** `TOOLS`, leaving `TOOLS`/`requires_arcpy`/`Runtime`
+untouched.
+**Why:** `TOOLS`/`requires_arcpy` drive the runtime guard and have many call
+sites; mutating their shape risks breaking the guard. An additive registry
+satisfies the spec's intent (single metadata source in `capabilities.py`,
+no separate YAML manifest, not click-introspection-only) with zero blast radius.
+**Rejected:** Rewriting `TOOLS` into rich objects (high risk); deriving the list
+purely from click `--help` (spec explicitly rejected — no metadata).
+
+### D2.2 — `runtime` field is a display string, not the `Runtime` enum
+**Chosen:** Registry `runtime` is one of `CLOUD|LOCAL|DRAFT` (strings).
+`DRAFT` marks pre-production stubs (`manage-screening-levels`, per CLAUDE.md).
+**Why:** The discovery view needs a "not production-ready" signal the `Runtime`
+enum (CLOUD/LOCAL/HYBRID) can't express. Kept separate from the guard enum.
+
+### D2.3 — Registry is hand-curated, covers all ~55 envmon commands
+**Chosen:** Explicit seed list mapping each command → name/roadmap/runtime/
+status/domain/description. Includes the two not-yet-built tools from this batch
+(`build-analytical-exceedance-event`, `build-dashboard-data-mart`,
+`export-lab-request`) so the registry is forward-consistent with the rest of
+the run.
+**Why:** A curated registry is the spec's chosen source of truth. Drift risk is
+accepted as a known tradeoff (a future drift-guard test against the live click
+group could be added). plan_path left blank for now (optional in the API).

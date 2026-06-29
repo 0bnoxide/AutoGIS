@@ -1797,6 +1797,28 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
     _render_qa(qa, report, "warning")
 
 
+@envmon.command("list-tools")
+@click.option("--runtime", "runtime_filter", default=None,
+              type=click.Choice(["CLOUD", "LOCAL", "DRAFT"], case_sensitive=False))
+@click.option("--domain", default=None)
+@click.option("--status", default=None,
+              type=click.Choice(["stable", "draft", "planned"], case_sensitive=False))
+@click.option("--search", default=None)
+@click.option("--verbose", is_flag=True, default=False)
+def list_tools_cmd(runtime_filter, domain, status, search, verbose):
+    """List available envmon tools with capability metadata (headless)."""
+    from autogis.core.envmon.tool_registry import (
+        get_all_tools, filter_tools, format_tool_table)
+
+    entries = filter_tools(get_all_tools(), runtime=runtime_filter,
+                           domain=domain, status=status, search=search)
+    if not entries:
+        click.echo("No tools match the given filters.")
+        return
+    click.echo(format_tool_table(entries, verbose=verbose))
+    click.echo(f"\n{len(entries)} tool(s).")
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 

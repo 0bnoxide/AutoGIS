@@ -428,3 +428,28 @@ def test_build_report_appendix(tmp_path):
         f"build-report-appendix exited {result.exit_code}:\n{result.output}"
     )
     assert out.exists(), "Expected appendix workbook was not created"
+
+
+# ===========================================================================
+# 12. list-tools (Tool 10.1)
+# ===========================================================================
+
+def test_list_tools_default(tmp_path):
+    """list-tools renders a table; exit 0."""
+    result = _run("envmon", "list-tools")
+    assert result.exit_code == 0, (
+        f"list-tools exited {result.exit_code}:\n{result.output}"
+    )
+    assert "command" in result.output and "runtime" in result.output
+
+
+def test_list_tools_search():
+    result = _run("envmon", "list-tools", "--search", "edd")
+    assert result.exit_code == 0, result.output
+    assert "import-edd" in result.output  # the EDD importer matches "edd"
+
+
+def test_list_tools_filter_local_only():
+    result = _run("envmon", "list-tools", "--runtime", "LOCAL")
+    assert result.exit_code == 0, result.output
+    assert "CLOUD" not in result.output  # only LOCAL rows rendered
