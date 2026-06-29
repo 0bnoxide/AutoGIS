@@ -274,7 +274,7 @@ def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
 def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
     """Tool: export Env_AnalyticalResults to a four-sheet Excel summary."""
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.common.records_csv import read_records_csv
     from autogis.core.envmon.export_summary import export_analytical_summary
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -312,7 +312,7 @@ def export_report_format_summary_tables_cmd(
     """
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.common.records_csv import read_records_csv
     from autogis.core.envmon.export_summary_tables import export_summary_tables
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -375,12 +375,10 @@ def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
 def compare_events_cmd(results_csv, output, current_event_date,
                        stable_threshold, report, fail_on):
     """Tool 4.7: compare current vs previous monitoring event per location/analyte."""
-    import csv as _csv
-    from dataclasses import asdict, fields as _fields
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.compare_events import compare_events, ComparisonRecord
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -388,14 +386,7 @@ def compare_events_cmd(results_csv, output, current_event_date,
     qa = QACollector()
     rows = compare_events(results, qa, current_event_date=ced,
                           stable_threshold=stable_threshold)
-    cols = [f.name for f in _fields(ComparisonRecord)]
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = _csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for rec in rows:
-            w.writerow(asdict(rec))
+    out = write_records_csv(rows, Path(output), record_class=ComparisonRecord)
     click.echo(f"Written: {out}  ({len(rows)} comparison rows)")
     _render_qa(qa, report, fail_on)
 
@@ -421,13 +412,11 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
                            benchmark_id, known_elevation, tolerance, run_output,
                            observations_output, report, fail_on):
     """Tool 8.1: differential leveling — adjusted elevations + misclosure QA."""
-    import csv as _csv
-    from dataclasses import asdict, fields as _fields
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.common.schema.survey import (
         LevelLoopObservation, LevelLoopRun)
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.level_loop import process_level_loop
 
     obs = read_records_csv(Path(observations_csv), LevelLoopObservation)
@@ -438,24 +427,9 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
         benchmark_id=benchmark_id, known_elevation=known_elevation,
         tolerance=tolerance, qa=qa)
 
-    def _dump(path, records, record_cls):
-        cols = [f.name for f in _fields(record_cls)
-                if not (hasattr(record_cls, f.name) and
-                        isinstance(getattr(record_cls, f.name, None), type))]
-        # Use typing to exclude ClassVar fields — dataclasses.fields() already
-        # excludes them, so just use field names directly.
-        cols = [f.name for f in _fields(record_cls)]
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("w", newline="", encoding="utf-8") as fh:
-            w = _csv.DictWriter(fh, fieldnames=cols)
-            w.writeheader()
-            for rec in records:
-                w.writerow(asdict(rec))
-        return p
-
-    _dump(run_output, [run], LevelLoopRun)
-    _dump(observations_output, rows, LevelLoopObservation)
+    write_records_csv([run], Path(run_output), record_class=LevelLoopRun)
+    write_records_csv(rows, Path(observations_output),
+                      record_class=LevelLoopObservation)
     click.echo(f"Misclosure: {run.misclosure_ft} ft  "
                f"Tolerance: {run.closure_tolerance_ft} ft  "
                f"Adjusted: {run.adjusted}")
@@ -480,12 +454,11 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
                            event_window_days, dry_wells, report, fail_on):
     """Tool 4.10: report missing wells/analytes vs an expected schedule."""
     import csv as _csv
-    from dataclasses import asdict, fields as _fields
     from datetime import date as _date
     import yaml as _yaml
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.data_gaps import identify_data_gaps, DataGapRecord
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -500,14 +473,7 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
         results, sched,
         event_date=_date.fromisoformat(event_date) if event_date else None,
         window_days=event_window_days, dry_wells=dry, qa=qa)
-    cols = [f.name for f in _fields(DataGapRecord)]
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = _csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for g in gaps:
-            w.writerow(asdict(g))
+    out = write_records_csv(gaps, Path(output), record_class=DataGapRecord)
     click.echo(f"Written: {out}  ({len(gaps)} gap rows)")
     _render_qa(qa, report, fail_on)
 
@@ -521,24 +487,15 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
 def run_history_report_cmd(results_csv, output, report, fail_on):
     """Tool 10.1: per-location per-analyte history summary across events."""
-    import csv as _csv
-    from dataclasses import asdict, fields as _fields
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.history_report import build_history_report, HistorySummaryRow
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
     qa = QACollector()
     rows = build_history_report(results, qa=qa)
-    cols = [f.name for f in _fields(HistorySummaryRow)]
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = _csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for row in rows:
-            w.writerow(asdict(row))
+    out = write_records_csv(rows, Path(output), record_class=HistorySummaryRow)
     click.echo(f"Written: {out}  ({len(rows)} history row(s))")
     _render_qa(qa, report, fail_on)
 
@@ -582,26 +539,18 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
 def apply_screening_cmd(results_csv, screening_path, output, report, fail_on):
     """Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless)."""
-    import csv as _csv
     import yaml as _yaml
-    from dataclasses import asdict, fields as _fields
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.apply_screening import apply_screening_levels
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
     screening = _yaml.safe_load(Path(screening_path).read_text(encoding="utf-8"))
     qa = QACollector()
     updated = apply_screening_levels(results, screening, qa=qa)
-    cols = [f.name for f in _fields(AnalyticalResultRecord)]
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = _csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for rec in updated:
-            w.writerow(asdict(rec))
+    out = write_records_csv(updated, Path(output),
+                            record_class=AnalyticalResultRecord)
     click.echo(f"Written: {out}  ({len(updated)} record(s))")
     _render_qa(qa, report, fail_on)
 
@@ -627,7 +576,7 @@ def compare_schedule_vs_actual_cmd(
     """Compare scheduled monitoring wells/analytes vs actual results (headless)."""
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.common.records_csv import read_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
     from autogis.core.envmon.schedule_vs_actual import (
         compare_schedule_vs_actual,
@@ -723,7 +672,7 @@ def export_geojson_cmd(results_csv, coords_csv, output, indent, report, fail_on)
     import json as _json
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.export_geojson import build_geojson, load_well_coords
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.common.records_csv import read_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
