@@ -548,7 +548,7 @@ before trusting outputs.
 | [`docs/pro-install.md`](docs/pro-install.md) | Full Pro setup: env clone, toolbox registration, cache/reload |
 | [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool (snapshot; headline counts above are current) |
 | [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
-| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 45 features (architecture, algorithm, data-model decisions) |
+| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 43 features (architecture, algorithm, data-model decisions) |
 | [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 86 features (step-by-step execution guides) |
 | [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy (latest: ADR-0028) |
 
