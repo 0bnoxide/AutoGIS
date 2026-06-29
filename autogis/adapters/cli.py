@@ -1301,6 +1301,329 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
     _render_qa(qa, report, fail_on)
 
 
+# ---------------------------------------------------------------------------
+# Headless envmon batch (2026-06-28): max-result, merge, QC, compliance,
+# regulatory tables, field completeness, GW flow direction, GeoPackage export,
+# site narrative, report package. All arcpy-free.
+# ---------------------------------------------------------------------------
+
+
+@envmon.command("merge-event-results")
+@click.option("--results", "result_paths", multiple=True, type=click.Path(exists=True),
+              help="Result CSV file(s). Repeatable.")
+@click.option("--results-dir", default=None, type=click.Path(exists=True),
+              help="Directory to scan for result CSVs.")
+@click.option("--event-labels", default=None,
+              help="Comma-separated event labels (parallel to --results).")
+@click.option("--out", required=True, type=click.Path())
+@click.option("--manifest", "manifest_path", default=None, type=click.Path())
+@click.option("--no-dedup", is_flag=True, default=False)
+@click.option("--report", default=None, type=click.Path())
+def merge_event_results_cmd(result_paths, results_dir, event_labels,
+                             out, manifest_path, no_dedup, report):
+    """Merge multiple event result CSVs into one long-format file (headless)."""
+    from autogis.core.envmon.event_results_merger import merge_event_results
+
+    paths = [Path(p) for p in result_paths]
+    if results_dir:
+        paths += sorted(Path(results_dir).glob("*.csv"))
+    labels = [l.strip() for l in event_labels.split(",")] if event_labels else None
+    from autogis.core.envmon.event_results_merger import _DEFAULT_DEDUP_KEY
+    result = merge_event_results(
+        paths, Path(out),
+        event_labels=labels,
+        dedup_key=() if no_dedup else _DEFAULT_DEDUP_KEY,
+        manifest_path=Path(manifest_path) if manifest_path else None,
+    )
+    click.echo(f"Sources: {len(result.source_files)}  Rows: {result.total_rows}  "
+               f"Duplicates dropped: {result.duplicate_rows_dropped}  Output: {out}")
+    _render_qa(result.qa, report, "warning")
+
+
+@envmon.command("build-max-result-dataset")
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--screening-levels", "sl_path", default=None, type=click.Path(exists=True))
+@click.option("--analytes", default=None)
+@click.option("--wells", default=None)
+@click.option("--date-from", default=None)
+@click.option("--date-to", default=None)
+@click.option("--include-nd", is_flag=True, default=False)
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def build_max_result_dataset_cmd(results_path, sl_path, analytes, wells,
+                                  date_from, date_to, include_nd, out, report):
+    """Build max-detected dataset across all events (headless)."""
+    import csv as _csv, yaml as _yaml
+    from autogis.core.envmon.max_result_dataset import (
+        build_max_result_dataset, write_max_result_csv)
+    from autogis.core.common.qa import QACollector
+
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    qa = QACollector()
+    records = build_max_result_dataset(
+        rows, screening_levels=sl,
+        analytes=[a.strip() for a in analytes.split(",")] if analytes else None,
+        wells=[w.strip() for w in wells.split(",")] if wells else None,
+        date_from=date_from, date_to=date_to, include_nd=include_nd, qa=qa,
+    )
+    write_max_result_csv(records, Path(out))
+    exceed = sum(1 for r in records if r.has_exceedance)
+    click.echo(f"Records: {len(records)}  Exceedances: {exceed}  Output: {out}")
+    _render_qa(qa, report, "warning")
+
+
+@envmon.command("generate-qc-summary")
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--out", required=True, type=click.Path())
+@click.option("--rpd-threshold", type=float, default=30.0, show_default=True)
+@click.option("--recovery-min", type=float, default=70.0, show_default=True)
+@click.option("--recovery-max", type=float, default=130.0, show_default=True)
+@click.option("--report", default=None, type=click.Path())
+def generate_qc_summary_cmd(results_path, out, rpd_threshold,
+                             recovery_min, recovery_max, report):
+    """Generate QC data summary workbook (blanks, spikes, duplicates) (headless)."""
+    import csv as _csv
+    from autogis.core.envmon.qc_sample_summary import (
+        classify_qc_rows, write_qc_summary_workbook, QCSummaryResult)
+    from autogis.core.common.qa import QACollector
+
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    records = classify_qc_rows(rows)
+    qa = QACollector()
+    blank_types = frozenset({"method_blank", "field_blank", "trip_blank"})
+    blank_dets = sum(1 for r in records
+                     if r.qc_type in blank_types and r.result_value is not None)
+    result = QCSummaryResult(records=records, blank_detections=blank_dets,
+                              spike_failures=0, duplicate_failures=0, qa=qa)
+    write_qc_summary_workbook(result, Path(out), rpd_threshold=rpd_threshold,
+                               recovery_min=recovery_min, recovery_max=recovery_max)
+    click.echo(f"QC records: {len(records)}  Blank detections: {blank_dets}  Output: {out}")
+    _render_qa(qa, report, "warning")
+
+
+@envmon.command("build-compliance-table")
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--screening-levels", "sl_path", default=None, type=click.Path(exists=True))
+@click.option("--analytes", default=None)
+@click.option("--date-from", default=None)
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def build_compliance_table_cmd(results_path, sl_path, analytes, date_from, out, report):
+    """Build cross-event compliance summary matrix + detail workbook (headless)."""
+    import csv as _csv, yaml as _yaml
+    from autogis.core.envmon.compliance_summary import (
+        build_compliance_summary, write_compliance_workbook)
+
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    analyte_list = [a.strip() for a in analytes.split(",")] if analytes else None
+    result = build_compliance_summary(rows, screening_levels=sl,
+                                       analytes=analyte_list, date_from=date_from)
+    write_compliance_workbook(result, Path(out))
+    click.echo(f"Wells: {result.well_count}  Analytes: {result.analyte_count}  "
+               f"With exceedances: {result.locations_with_exceedances}  Output: {out}")
+    _render_qa(result.qa, report, "warning")
+
+
+@envmon.command("generate-reg-tables")
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--screening-levels", "sl_path", default=None, type=click.Path(exists=True))
+@click.option("--group-map", "gm_path", default=None, type=click.Path(exists=True))
+@click.option("--site", "site_id", default="")
+@click.option("--event-label", default="")
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
+                             event_label, out, report):
+    """Build regulatory submission pivot table workbook (headless, openpyxl)."""
+    import csv as _csv, yaml as _yaml
+    from autogis.core.envmon.regulatory_table_builder import (
+        build_regulatory_table_specs, write_regulatory_workbook)
+
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    gm = _yaml.safe_load(Path(gm_path).read_text()) if gm_path else None
+    specs = build_regulatory_table_specs(rows, group_map=gm, screening_levels=sl)
+    result = write_regulatory_workbook(rows, specs, Path(out), site_id=site_id,
+                                        event_label=event_label, screening_levels=sl)
+    click.echo(f"Groups: {result.group_count}  Wells: {result.well_count}  "
+               f"Exceedances: {result.exceedance_count}  Output: {out}")
+    _render_qa(result.qa, report, "warning")
+
+
+@envmon.command("validate-field-completeness")
+@click.option("--plan", "plan_path", required=True, type=click.Path(exists=True))
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error", show_default=True)
+def validate_field_completeness_cmd(plan_path, results_path, out, report, fail_on):
+    """Compare sampling plan vs. lab results for completeness (headless)."""
+    import csv as _csv
+    from autogis.core.envmon.field_completeness_validator import (
+        validate_field_completeness, write_completeness_report)
+
+    with open(plan_path, newline="", encoding="utf-8") as fh:
+        plan = list(_csv.DictReader(fh))
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        results = list(_csv.DictReader(fh))
+    result = validate_field_completeness(plan, results)
+    write_completeness_report(result, Path(out))
+    click.echo(f"Planned: {result.planned_count}  Received: {result.received_count}  "
+               f"Matched: {result.matched_count}  Issues: {len(result.issues)}  Out: {out}")
+    _render_qa(result.qa, report, fail_on)
+
+
+@envmon.command("estimate-gw-flow-direction")
+@click.option("--wells-csv", required=True, type=click.Path(exists=True),
+              help="CSV with columns: well_id, easting, northing, gwe_ft.")
+@click.option("--site-id", required=True, help="Site identifier.")
+@click.option("--event-date", required=True,
+              help="Event date YYYY-MM-DD (metadata only; not used in math).")
+@click.option("--run-id", default=None,
+              help="Run identifier; auto-generated UUID4 if omitted.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Write GWFlowResult to this CSV path (one-row output).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write QA report (.csv / .json / .md).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error", show_default=True)
+def estimate_gw_flow_direction_cmd(wells_csv, site_id, event_date, run_id,
+                                    output, report, fail_on):
+    """Tool 4.3: estimate GW flow direction and gradient (DRAFT) from well GWEs.
+
+    Fits a least-squares plane h = a·E + b·N + c to 3+ well water levels and
+    derives hydraulic gradient magnitude and flow azimuth (degrees from N, CW).
+    Outputs are always DRAFT_REVIEW_REQUIRED.
+    """
+    import csv as _csv
+    from dataclasses import asdict
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.estimate_gw_flow_direction import (
+        parse_wells_csv, estimate_gw_flow_direction,
+    )
+
+    wells = parse_wells_csv(Path(wells_csv))
+    qa = QACollector()
+    result = estimate_gw_flow_direction(
+        wells,
+        run_id=run_id,
+        site_id=site_id,
+        event_date=event_date,
+        qa=qa,
+    )
+
+    click.echo(
+        f"Flow azimuth: {result.flow_azimuth_deg:.1f} deg  "
+        f"Gradient: {result.gradient_magnitude:.6f} ft/ft  "
+        f"Method: {result.method}  "
+        f"Status: {result.qa_status}  [DRAFT_REVIEW_REQUIRED]"
+    )
+
+    if output:
+        p = Path(output)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        d = asdict(result)
+        d["well_ids"] = ",".join(result.well_ids)
+        with p.open("w", newline="", encoding="utf-8") as fh:
+            w = _csv.DictWriter(fh, fieldnames=list(d.keys()))
+            w.writeheader()
+            w.writerow(d)
+        click.echo(f"Result written: {output}")
+
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("export-geopackage")
+@click.option("--wells", "wells_path", required=True, type=click.Path(exists=True))
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--water-levels", "wl_path", default=None, type=click.Path(exists=True))
+@click.option("--out", required=True, type=click.Path())
+@click.option("--overwrite", is_flag=True, default=False)
+@click.option("--report", default=None, type=click.Path())
+def export_geopackage_cmd(wells_path, results_path, wl_path, out,
+                           overwrite, report):
+    """Export envmon data to OGC GeoPackage (stdlib sqlite3, headless)."""
+    import csv as _csv
+    from autogis.core.envmon.geopackage_exporter import export_env_data_geopackage
+
+    with open(wells_path, newline="", encoding="utf-8") as fh:
+        wells = list(_csv.DictReader(fh))
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        results = list(_csv.DictReader(fh))
+    wl_rows = None
+    if wl_path:
+        with open(wl_path, newline="", encoding="utf-8") as fh:
+            wl_rows = list(_csv.DictReader(fh))
+    result = export_env_data_geopackage(wells, results, Path(out),
+                                         water_level_rows=wl_rows,
+                                         overwrite=overwrite)
+    click.echo(f"Wells: {result.well_count}  Results: {result.result_count}  "
+               f"Layers: {result.layers}  Output: {out}")
+    _render_qa(result.qa, report, "warning")
+
+
+@envmon.command("generate-site-narrative")
+@click.option("--site", "site_id", required=True)
+@click.option("--event-label", required=True)
+@click.option("--max-results", "max_results_path", default=None,
+              type=click.Path(exists=True))
+@click.option("--change-log", "change_log_path", default=None,
+              type=click.Path(exists=True))
+@click.option("--plan", "plan_path", default=None, type=click.Path(exists=True))
+@click.option("--results", "results_path", default=None, type=click.Path(exists=True))
+@click.option("--screening-levels", "sl_path", default=None, type=click.Path(exists=True))
+@click.option("--top-n", type=int, default=5, show_default=True)
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def generate_site_narrative_cmd(site_id, event_label, max_results_path,
+                                 change_log_path, plan_path, results_path,
+                                 sl_path, top_n, out, report):
+    """Generate template-driven site monitoring narrative (headless)."""
+    import yaml as _yaml
+    from autogis.core.envmon.site_narrative_generator import generate_site_narrative
+
+    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    result = generate_site_narrative(
+        site_id, event_label,
+        max_result_path=Path(max_results_path) if max_results_path else None,
+        change_log_path=Path(change_log_path) if change_log_path else None,
+        plan_path=Path(plan_path) if plan_path else None,
+        result_path=Path(results_path) if results_path else None,
+        screening_levels=sl, top_n=top_n,
+    )
+    Path(out).write_text(result.full_text, encoding="utf-8")
+    click.echo(f"Sections: {len(result.sections)}  Output: {out}")
+    _render_qa(result.qa, report, "warning")
+
+
+@envmon.command("build-report-package")
+@click.option("--spec", "spec_path", required=True, type=click.Path(exists=True))
+@click.option("--out-dir", required=True, type=click.Path())
+@click.option("--site", "site_id", default="")
+@click.option("--event-label", default="")
+@click.option("--report", default=None, type=click.Path())
+def build_report_package_cmd(spec_path, out_dir, site_id, event_label, report):
+    """Assemble deliverable folder from YAML spec (headless)."""
+    from autogis.core.envmon.report_figure_package import (
+        load_deliverable_spec, assemble_figure_package)
+    from autogis.core.common.qa import QACollector
+
+    entries = load_deliverable_spec(Path(spec_path))
+    qa = QACollector()
+    result = assemble_figure_package(entries, Path(out_dir),
+                                      site_id=site_id, event_label=event_label, qa=qa)
+    click.echo(f"Copied: {result.copied_count}  Missing: {result.missing_count}  "
+               f"Out: {out_dir}")
+    _render_qa(qa, report, "warning")
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 
