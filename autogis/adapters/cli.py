@@ -9,6 +9,23 @@ from autogis.core.common.config import HarvestConfig
 from autogis.runtime.sessions import agol_from_profile
 
 
+def qa_report_options(func):
+    """Attach the shared ``--report`` / ``--fail-on`` options to a headless
+    QA-producing command.
+
+    This is the one home for the headless reporting contract: a command that
+    collects a ``QACollector`` and ends with ``_render_qa(qa, report, fail_on)``
+    declares the two options once via this decorator instead of repeating them.
+    Option order (``--report`` then ``--fail-on``) matches the historical
+    hand-written declarations.
+    """
+    func = click.option(
+        "--fail-on", type=click.Choice(["error", "warning"]), default="error",
+    )(func)
+    func = click.option("--report", default=None, type=click.Path())(func)
+    return func
+
+
 def run(config_path, where, out, incremental, *, harvest_fn=None):
     if harvest_fn is None:
         from autogis.core.harvest.harvester import harvest as harvest_fn
@@ -141,8 +158,7 @@ def validate_config_cmd(site_config, profiles, figures, analytes, screening,
               help="Print the resolved analyte table sorted by display_order.")
 @click.option("--check", "do_check", is_flag=True, default=False,
               help="Run validation checks (default when --list is absent).")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
     """Tool: validate / inspect the analyte dictionary (read-only, headless)."""
     from autogis.core.envmon.manage_analyte_dict import (
@@ -168,8 +184,7 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
 @click.option("--analytes", default=None, type=click.Path(exists=True))
 @click.option("--list", "do_list", is_flag=True, default=False,
               help="Print analyte/matrix/value table.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def manage_screening_levels_cmd(screening, analytes, do_list, report, fail_on):
     """Validate and inspect the screening levels YAML (headless)."""
     from autogis.core.envmon.manage_screening_levels import (
@@ -183,44 +198,6 @@ def manage_screening_levels_cmd(screening, analytes, do_list, report, fail_on):
         if not analytes:
             return
     qa = check_screening_levels(Path(screening), Path(analytes) if analytes else None)
-
-@envmon.command("reconcile-locations")
-@click.argument("site_config", type=click.Path(exists=True))
-@click.argument("workbook", type=click.Path(exists=True))
-@click.option("--profile", "profile_path", required=True,
-              type=click.Path(exists=True), help="Parser profile for the workbook.")
-@click.option("--wells-csv", default=None, type=click.Path(exists=True),
-              help="CSV of well IDs (headless). Mutually exclusive with --gdb.")
-@click.option("--gdb", is_flag=True, default=False,
-              help="Read wells from the site GDB (ArcGIS Pro only; use the .pyt).")
-@click.option("--threshold", type=float, default=0.8, show_default=True)
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
-def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
-                            threshold, report, fail_on):
-    """Tool: pre-flight check that workbook location IDs match the well layer."""
-    from autogis.core.common.config import ParserProfile
-    from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
-    from autogis.core.envmon.reconcile_locations import (
-        extract_location_ids, read_well_ids_csv, reconcile, reconcile_to_qa)
-
-    if gdb:
-        _guard("reconcile-locations")
-        raise click.ClickException(
-            "reconcile-locations --gdb runs inside ArcGIS Pro only. Use the "
-            "ReconcileSampleLocations tool in the .pyt toolbox, or pass "
-            "--wells-csv for a headless check.")
-    if not wells_csv:
-        raise click.ClickException("provide --wells-csv PATH (headless) or "
-                                   "--gdb (ArcGIS Pro).")
-
-    profile = ParserProfile.load(Path(profile_path))
-    reader = ProfileWorkbookReader(Path(workbook), profile)
-    workbook_ids = extract_location_ids(reader, profile)
-    well_ids = read_well_ids_csv(Path(wells_csv))
-
-    result = reconcile(workbook_ids, well_ids, threshold=threshold)
-    qa = reconcile_to_qa(result)
     _render_qa(qa, report, fail_on)
 
 
@@ -250,8 +227,7 @@ def validate_units_cmd(analytes, screening, report, fail_on):
 @click.option("--gdb", is_flag=True, default=False,
               help="Read wells from the site GDB (ArcGIS Pro only; use the .pyt).")
 @click.option("--threshold", type=float, default=0.8, show_default=True)
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
                             threshold, report, fail_on):
     """Tool: pre-flight check that workbook location IDs match the well layer."""
@@ -287,8 +263,7 @@ def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
               help="CSV export of Env_AnalyticalResults.")
 @click.option("--batch-id", default="MANUAL", show_default=True,
               help="Import batch ID label for output records.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
     """Tool: compute RPD for EDD duplicate samples and emit QA records."""
     from autogis.core.common.qa import QACollector
@@ -316,7 +291,7 @@ def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
 def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
     """Tool: export Env_AnalyticalResults to a four-sheet Excel summary."""
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.common.records_csv import read_records_csv
     from autogis.core.envmon.export_summary import export_analytical_summary
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -354,7 +329,7 @@ def export_report_format_summary_tables_cmd(
     """
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.common.records_csv import read_records_csv
     from autogis.core.envmon.export_summary_tables import export_summary_tables
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -382,8 +357,7 @@ def export_report_format_summary_tables_cmd(
               help="QA CSV from a previous import (checked for ERROR rows).")
 @click.option("--figure-spec", default=None, type=click.Path(exists=False),
               help="Figure spec YAML to validate.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
                            qa_report, figure_spec, report, fail_on):
     """Tool: report-readiness gate — checks required tools ran successfully."""
@@ -417,12 +391,10 @@ def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
 def compare_events_cmd(results_csv, output, current_event_date,
                        stable_threshold, report, fail_on):
     """Tool 4.7: compare current vs previous monitoring event per location/analyte."""
-    import csv as _csv
-    from dataclasses import asdict, fields as _fields
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.compare_events import compare_events, ComparisonRecord
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -430,14 +402,7 @@ def compare_events_cmd(results_csv, output, current_event_date,
     qa = QACollector()
     rows = compare_events(results, qa, current_event_date=ced,
                           stable_threshold=stable_threshold)
-    cols = [f.name for f in _fields(ComparisonRecord)]
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = _csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for rec in rows:
-            w.writerow(asdict(rec))
+    out = write_records_csv(rows, Path(output), record_class=ComparisonRecord)
     click.echo(f"Written: {out}  ({len(rows)} comparison rows)")
     _render_qa(qa, report, fail_on)
 
@@ -463,13 +428,11 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
                            benchmark_id, known_elevation, tolerance, run_output,
                            observations_output, report, fail_on):
     """Tool 8.1: differential leveling — adjusted elevations + misclosure QA."""
-    import csv as _csv
-    from dataclasses import asdict, fields as _fields
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.common.schema.survey import (
         LevelLoopObservation, LevelLoopRun)
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.level_loop import process_level_loop
 
     obs = read_records_csv(Path(observations_csv), LevelLoopObservation)
@@ -480,24 +443,9 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
         benchmark_id=benchmark_id, known_elevation=known_elevation,
         tolerance=tolerance, qa=qa)
 
-    def _dump(path, records, record_cls):
-        cols = [f.name for f in _fields(record_cls)
-                if not (hasattr(record_cls, f.name) and
-                        isinstance(getattr(record_cls, f.name, None), type))]
-        # Use typing to exclude ClassVar fields — dataclasses.fields() already
-        # excludes them, so just use field names directly.
-        cols = [f.name for f in _fields(record_cls)]
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("w", newline="", encoding="utf-8") as fh:
-            w = _csv.DictWriter(fh, fieldnames=cols)
-            w.writeheader()
-            for rec in records:
-                w.writerow(asdict(rec))
-        return p
-
-    _dump(run_output, [run], LevelLoopRun)
-    _dump(observations_output, rows, LevelLoopObservation)
+    write_records_csv([run], Path(run_output), record_class=LevelLoopRun)
+    write_records_csv(rows, Path(observations_output),
+                      record_class=LevelLoopObservation)
     click.echo(f"Misclosure: {run.misclosure_ft} ft  "
                f"Tolerance: {run.closure_tolerance_ft} ft  "
                f"Adjusted: {run.adjusted}")
@@ -522,12 +470,11 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
                            event_window_days, dry_wells, report, fail_on):
     """Tool 4.10: report missing wells/analytes vs an expected schedule."""
     import csv as _csv
-    from dataclasses import asdict, fields as _fields
     from datetime import date as _date
     import yaml as _yaml
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.data_gaps import identify_data_gaps, DataGapRecord
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -542,14 +489,7 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
         results, sched,
         event_date=_date.fromisoformat(event_date) if event_date else None,
         window_days=event_window_days, dry_wells=dry, qa=qa)
-    cols = [f.name for f in _fields(DataGapRecord)]
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = _csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for g in gaps:
-            w.writerow(asdict(g))
+    out = write_records_csv(gaps, Path(output), record_class=DataGapRecord)
     click.echo(f"Written: {out}  ({len(gaps)} gap rows)")
     _render_qa(qa, report, fail_on)
 
@@ -559,28 +499,18 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
               help="CSV export of Env_AnalyticalResults (all events).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output summary CSV path.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def run_history_report_cmd(results_csv, output, report, fail_on):
     """Tool 10.1: per-location per-analyte history summary across events."""
-    import csv as _csv
-    from dataclasses import asdict, fields as _fields
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.history_report import build_history_report, HistorySummaryRow
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
     qa = QACollector()
     rows = build_history_report(results, qa=qa)
-    cols = [f.name for f in _fields(HistorySummaryRow)]
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = _csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for row in rows:
-            w.writerow(asdict(row))
+    out = write_records_csv(rows, Path(output), record_class=HistorySummaryRow)
     click.echo(f"Written: {out}  ({len(rows)} history row(s))")
     _render_qa(qa, report, fail_on)
 
@@ -591,8 +521,7 @@ def run_history_report_cmd(results_csv, output, report, fail_on):
               help="Monitoring schedule YAML.")
 @click.option("--analyte-dict", default=None, type=click.Path(exists=True),
               help="CSV with AnalyteCanonicalName column; optional.")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
     """Tool 10.2: validate monitoring schedule YAML structure and analyte names."""
     import csv as _csv
@@ -620,30 +549,21 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
               help="Screening levels YAML (analyte -> matrix -> {unit, level, source}).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output CSV path (updated records).")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def apply_screening_cmd(results_csv, screening_path, output, report, fail_on):
     """Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless)."""
-    import csv as _csv
     import yaml as _yaml
-    from dataclasses import asdict, fields as _fields
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
     from autogis.core.envmon.apply_screening import apply_screening_levels
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
     screening = _yaml.safe_load(Path(screening_path).read_text(encoding="utf-8"))
     qa = QACollector()
     updated = apply_screening_levels(results, screening, qa=qa)
-    cols = [f.name for f in _fields(AnalyticalResultRecord)]
-    out = Path(output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", newline="", encoding="utf-8") as fh:
-        w = _csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for rec in updated:
-            w.writerow(asdict(rec))
+    out = write_records_csv(updated, Path(output),
+                            record_class=AnalyticalResultRecord)
     click.echo(f"Written: {out}  ({len(updated)} record(s))")
     _render_qa(qa, report, fail_on)
 
@@ -669,7 +589,7 @@ def compare_schedule_vs_actual_cmd(
     """Compare scheduled monitoring wells/analytes vs actual results (headless)."""
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.common.records_csv import read_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
     from autogis.core.envmon.schedule_vs_actual import (
         compare_schedule_vs_actual,
@@ -765,7 +685,7 @@ def export_geojson_cmd(results_csv, coords_csv, output, indent, report, fail_on)
     import json as _json
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.export_geojson import build_geojson, load_well_coords
-    from autogis.core.envmon.evaluate_rpd_qa import read_records_csv
+    from autogis.core.common.records_csv import read_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -1095,8 +1015,7 @@ def full_pipeline_cmd(site_config, workbook):
 @click.argument("gdb", type=click.Path())
 @click.option("--analytes", default=None, type=click.Path(exists=True),
               help="Analyte dictionary YAML (enables analyte-name QA checks).")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def validate_db_cmd(gdb, analytes, report, fail_on):
     """Tool 8: validate the GDB schema and cross-table integrity (ArcGIS Pro)."""
     _guard("validate-db")
@@ -1119,8 +1038,7 @@ def validate_db_cmd(gdb, analytes, report, fail_on):
 @click.option("--batch-id", default="", show_default=True)
 @click.option("--threshold", type=float, default=30.0, show_default=True,
               help="RPD exceedance threshold (pct, default 30).")
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fail_on):
     """Evaluate field duplicate RPD values against a threshold (headless)."""
     from autogis.core.common.config import ParserProfile
@@ -1312,8 +1230,7 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
               help="Lab EDD profile YAML.")
 @click.option("--site", "site_id", required=True)
 @click.option("--threshold", type=float, default=0.85, show_default=True)
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
                                 threshold, report, fail_on):
     """Pre-production: reconcile Survey123 field submissions vs lab EDD (headless)."""
@@ -1338,8 +1255,7 @@ def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
 @click.option("--batch-id", default=None, help="Override auto-generated batch ID.")
 @click.option("--format", "input_format",
               type=click.Choice(["csv", "json"]), default="csv", show_default=True)
-@click.option("--report", default=None, type=click.Path())
-@click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error")
+@qa_report_options
 def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
                         report, fail_on):
     """Route Survey123 field submissions into the GDB (ArcGIS Pro)."""

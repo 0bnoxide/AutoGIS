@@ -298,6 +298,55 @@ def build_wide_rows(
     return wide
 
 
+def parse_event_date(ev_str: Optional[str],
+                     qa: QACollector) -> Optional[_dt.datetime]:
+    """Parse a YYYY-MM-DD event date, or None. A malformed value records a
+    ``bad_event_date`` WARNING and returns None (stored as NULL). Pure."""
+    if not ev_str:
+        return None
+    try:
+        return _dt.datetime.strptime(ev_str, "%Y-%m-%d")
+    except ValueError:
+        qa.add(QARecord(severity=SEV_WARNING, category="bad_event_date",
+                        message=f"Event date {ev_str!r} is not "
+                                "YYYY-MM-DD; stored as NULL."))
+        return None
+
+
+def build_insert_rows(
+    wide: Sequence[dict],
+    analytes: Sequence[str],
+    *,
+    site_id: str,
+    figure_spec_id: str,
+    event_dt: Optional[_dt.datetime],
+    matrix: str,
+) -> List[list]:
+    """Build the Env_CurrentEventWide InsertCursor rows from wide rows.
+
+    Returns one list per wide row, aligned to the cursor's field order:
+    13 base fields then one column per analyte (DisplayText or "--", capped at
+    64 chars; LabelText_Fallback capped at 2000). Pure — no arcpy.
+    """
+    rows: List[list] = []
+    for w in wide:
+        row = [
+            site_id, figure_spec_id, event_dt, matrix,
+            w["LocationID"], w["SampleID"], w["SampleDate"],
+            w["DepthIntervalText"],
+            int(w["HasExceedance"]), int(w["HasDetection"]),
+            int(w["HasOnlyNonDetects"]),
+            int(w["HasMissingRequiredAnalytes"]),
+            w["LabelText_Fallback"][:2000],
+        ]
+        for a in analytes:
+            r = w["results"].get(a)
+            txt = (r or {}).get("DisplayText") or "--"
+            row.append(txt[:64])
+        rows.append(row)
+    return rows
+
+
 # --------------------------------------------------------------------------
 # arcpy I/O
 # --------------------------------------------------------------------------
@@ -389,15 +438,7 @@ def build_current_event_wide(
                                       field_alias=a)
             existing.add(fname.upper())
 
-    ev_str = event_date or spec.get("event_date") or ""
-    ev_dt = None
-    if ev_str:
-        try:
-            ev_dt = _dt.datetime.strptime(ev_str, "%Y-%m-%d")
-        except ValueError:
-            qa.add(QARecord(severity=SEV_WARNING, category="bad_event_date",
-                            message=f"Event date {ev_str!r} is not "
-                                    "YYYY-MM-DD; stored as NULL."))
+    ev_dt = parse_event_date(event_date or spec.get("event_date"), qa)
     where = (f"SiteID = '{site_id}' AND FigureSpecID = '{spec.figure_spec_id}'")
     with arcpy.da.UpdateCursor(table, ["OID@"], where_clause=where) as cur:
         for _ in cur:
@@ -408,21 +449,11 @@ def build_current_event_wide(
                    "HasExceedance", "HasDetection", "HasOnlyNonDetects",
                    "HasMissingRequiredAnalytes", "LabelText_Fallback"]
     all_fields = base_fields + [afields[a] for a in analytes]
+    insert_rows = build_insert_rows(
+        wide, analytes, site_id=site_id, figure_spec_id=spec.figure_spec_id,
+        event_dt=ev_dt, matrix=matrix)
     with arcpy.da.InsertCursor(table, all_fields) as cur:
-        for w in wide:
-            row = [
-                site_id, spec.figure_spec_id, ev_dt, matrix,
-                w["LocationID"], w["SampleID"], w["SampleDate"],
-                w["DepthIntervalText"],
-                int(w["HasExceedance"]), int(w["HasDetection"]),
-                int(w["HasOnlyNonDetects"]),
-                int(w["HasMissingRequiredAnalytes"]),
-                w["LabelText_Fallback"][:2000],
-            ]
-            for a in analytes:
-                r = w["results"].get(a)
-                txt = (r or {}).get("DisplayText") or "--"
-                row.append(txt[:64])
+        for row in insert_rows:
             cur.insertRow(row)
 
     LOG.info("Env_CurrentEventWide: wrote %s rows for %s / %s",

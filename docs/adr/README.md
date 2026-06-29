@@ -46,6 +46,8 @@ Each ADR follows this structure:
 | [025](0025-edd-duplicate-rpd-via-isduplicate-flag.md) | EDD duplicate RPD: detect via IsDuplicate=1 flag | Accepted | 2026-06-26 |
 | [026](0026-night-implementer-batch-2026-06-27.md) | Night-implementer batch — CompareMonitoringEvents, ProcessLevelLoop, IdentifyMonitoringDataGaps | Accepted | 2026-06-27 |
 | [027](0027-import-rtk-survey-points.md) | ImportRTKSurveyPoints — configurable-column CSV parser + two-table GDB write | Accepted | 2026-06-28 |
+| [028](0028-cloud-tools-batch-2026-06-28.md) | Cloud-tools batch — 5 headless QA/export/reporting tools | Accepted | 2026-06-28 |
+| [029](0029-validation-adapters-are-intentionally-thin.md) | validate_*/manage_* are intentionally thin adapters (don't fuse) | Accepted | 2026-06-29 |
 
 ## File naming
 

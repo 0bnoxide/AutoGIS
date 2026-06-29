@@ -93,7 +93,8 @@ def test_apply_screening_no_match_passthrough(tmp_path):
     ])
     assert result.exit_code == 0, result.output
     rows = list(csv.DictReader(output_csv.open()))
-    # No matching screening entry — record passed through unchanged.
-    # read_records_csv coerces empty-string int fields to 0, so the
-    # round-tripped value is "0", not "".
-    assert rows[0]["ExceedsScreeningLevel"] == "0"
+    # No matching screening entry — record passed through unchanged. The input's
+    # blank ExceedsScreeningLevel is a tri-state Optional[int] meaning "no
+    # screening level / unknown", so it round-trips as None -> "" (not 0, which
+    # would wrongly assert "does not exceed" for an unscreened analyte).
+    assert rows[0]["ExceedsScreeningLevel"] == ""
