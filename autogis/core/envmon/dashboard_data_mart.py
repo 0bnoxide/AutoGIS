@@ -1,0 +1,293 @@
+"""dashboard_data_mart.py — Tool 6.7 BuildDashboardDataMart.
+
+Populate the pre-flattened ``Dash_*`` tables (one row per site/event/well) that
+back AGOL dashboards, so the dashboard never has to join 5+ tables client-side.
+
+The transformation layer (``build_dash_*`` functions) is pure Python and
+arcpy-free — it maps source-table rows (as dicts) to ``Dash_*``-schema rows.
+The orchestrator ``build_dashboard_data_mart`` reads/truncates/repopulates the
+GDB and imports arcpy lazily (``# pragma: no cover``).
+
+Output dict keys follow the ``Dash_*`` schemas in ``gdb_schema.py``.
+"""
+from __future__ import annotations
+
+import datetime as _dt
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+from ..common.logging import get_logger
+
+LOG = get_logger(__name__)
+
+_RISING_THRESHOLD = 0.1   # ft
+
+
+def _now() -> str:
+    return _dt.datetime.now().isoformat(timespec="seconds")
+
+
+@dataclass
+class MartSummary:
+    site_id: str
+    event_id: str
+    built_at: str
+    tables_updated: List[str] = field(default_factory=list)
+    row_counts: Dict[str, int] = field(default_factory=dict)
+
+
+def _num(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Pure-Python transformation functions (arcpy-free, unit-tested)
+# ---------------------------------------------------------------------------
+def build_dash_site_status(wide_rows: List[dict], qa_errors: List[dict],
+                           site_id: str, event_id: str,
+                           site_name: str = "") -> List[dict]:
+    """Dash_SiteStatus ← Env_CurrentEventWide + Env_ImportQA (one row)."""
+    return [{
+        "SiteID": site_id, "SiteName": site_name,
+        "ActiveEvents": len(wide_rows),
+        "OpenQAIssues": len(qa_errors),
+        "ReportDueDate": None, "LastUpdated": _now(),
+    }]
+
+
+def build_dash_event_status(samples: List[dict], results: List[dict],
+                            site_id: str, event_id: str,
+                            wells_planned: Optional[int] = None) -> List[dict]:
+    """Dash_EventStatus ← Env_Samples + Env_AnalyticalResults (one row).
+
+    LabReceived is True only when every sampled well has at least one result.
+    """
+    sampled = {s.get("LocationID", "") for s in samples if s.get("LocationID")}
+    with_results = {r.get("LocationID", "") for r in results if r.get("LocationID")}
+    lab_received = bool(sampled) and sampled.issubset(with_results)
+    return [{
+        "SiteID": site_id, "EventID": event_id,
+        "WellsPlanned": wells_planned if wells_planned is not None else len(sampled),
+        "WellsSampled": len(sampled),
+        "LabReceived": int(lab_received),
+        "FiguresReady": 0, "ReportReady": 0, "LastUpdated": _now(),
+    }]
+
+
+def build_dash_well_status(water_level_events: List[dict],
+                           prior_water_level_events: List[dict],
+                           site_id: str, event_id: str) -> List[dict]:
+    """Dash_WellStatus ← Env_CurrentWaterLevelEvent (+ prior for delta)."""
+    prior = {p.get("LocationID", ""): _num(p.get("GWE_ft"))
+             for p in prior_water_level_events}
+    out = []
+    for e in water_level_events:
+        loc = e.get("LocationID", "")
+        gwe = _num(e.get("GWE_ft"))
+        pgwe = prior.get(loc)
+        delta = (gwe - pgwe) if (gwe is not None and pgwe is not None) else None
+        out.append({
+            "SiteID": site_id, "EventID": event_id, "LocationID": loc,
+            "Status": e.get("Status", ""), "GWE_ft": gwe,
+            "GWEDelta_ft": delta, "LastUpdated": _now(),
+        })
+    return out
+
+
+def _trend(delta: Optional[float]) -> str:
+    if delta is None:
+        return "Unknown"
+    if delta > _RISING_THRESHOLD:
+        return "Rising"
+    if delta < -_RISING_THRESHOLD:
+        return "Falling"
+    return "Stable"
+
+
+def build_dash_gw_level_summary(water_level_events: List[dict],
+                                prior_water_level_events: List[dict],
+                                site_id: str, event_id: str) -> List[dict]:
+    """Dash_GWLevelSummary ← two-event water-level join with trend."""
+    prior = {p.get("LocationID", ""): _num(p.get("GWE_ft"))
+             for p in prior_water_level_events}
+    out = []
+    for e in water_level_events:
+        loc = e.get("LocationID", "")
+        gwe = _num(e.get("GWE_ft"))
+        pgwe = prior.get(loc)
+        delta = (gwe - pgwe) if (gwe is not None and pgwe is not None) else None
+        out.append({
+            "SiteID": site_id, "EventID": event_id, "LocationID": loc,
+            "GWE_ft": gwe, "PriorGWE_ft": pgwe, "Delta_ft": delta,
+            "Trend": _trend(delta), "LastUpdated": _now(),
+        })
+    return out
+
+
+def _analyte(r: dict) -> str:
+    return r.get("AnalyteName") or r.get("AnalyteCanonicalName") or ""
+
+
+def build_dash_current_exceedances(results: List[dict], site_id: str,
+                                   event_id: str) -> List[dict]:
+    """Dash_CurrentExceedances ← Env_AnalyticalResults WHERE ExceedsScreeningLevel=1."""
+    out = []
+    for r in results:
+        if int(r.get("ExceedsScreeningLevel", 0) or 0) != 1:
+            continue
+        out.append({
+            "SiteID": site_id, "EventID": event_id,
+            "LocationID": r.get("LocationID", ""), "Analyte": _analyte(r),
+            "Result": _num(r.get("ResultNumeric")), "Units": r.get("Units", ""),
+            "ScreeningLevel": _num(r.get("ScreeningLevel")),
+            "ScreeningSource": r.get("ScreeningLevelSource", ""),
+            "LastUpdated": _now(),
+        })
+    return out
+
+
+def build_dash_analytical_summary(results: List[dict], site_id: str,
+                                  event_id: str) -> List[dict]:
+    """Dash_AnalyticalSummary ← Env_AnalyticalResults (one row per result)."""
+    out = []
+    for r in results:
+        out.append({
+            "SiteID": site_id, "EventID": event_id,
+            "LocationID": r.get("LocationID", ""), "Analyte": _analyte(r),
+            "Result": _num(r.get("ResultNumeric")), "Units": r.get("Units", ""),
+            "IsDetection": int(r.get("IsDetected", 0) or 0),
+            "IsExceedance": int(r.get("ExceedsScreeningLevel", 0) or 0),
+            "LastUpdated": _now(),
+        })
+    return out
+
+
+def _has_analyte(r: dict) -> bool:
+    return bool((r.get("AnalyteName") or "").strip())
+
+
+def build_dash_field_qa(qa_rows: List[dict], site_id: str,
+                        event_id: str) -> List[dict]:
+    """Dash_FieldQA ← Env_ImportQA WHERE AnalyteName IS NULL/blank."""
+    out = []
+    for r in qa_rows:
+        if _has_analyte(r):
+            continue
+        out.append({
+            "SiteID": site_id, "EventID": event_id,
+            "IssueType": r.get("Category", ""),
+            "LocationID": r.get("LocationID", ""),
+            "Description": r.get("Message", ""), "LastUpdated": _now(),
+        })
+    return out
+
+
+def build_dash_lab_qa(qa_rows: List[dict], site_id: str,
+                      event_id: str) -> List[dict]:
+    """Dash_LabQA ← Env_ImportQA WHERE AnalyteName IS NOT NULL."""
+    out = []
+    for r in qa_rows:
+        if not _has_analyte(r):
+            continue
+        out.append({
+            "SiteID": site_id, "EventID": event_id,
+            "IssueType": r.get("Category", ""),
+            "LocationID": r.get("LocationID", ""),
+            "Analyte": r.get("AnalyteName", ""),
+            "Description": r.get("Message", ""), "LastUpdated": _now(),
+        })
+    return out
+
+
+def build_dash_open_issues(qa_rows: List[dict], site_id: str,
+                           event_id: str) -> List[dict]:
+    """Dash_OpenIssues ← Env_ImportQA grouped by (Domain=Category, Severity,
+    Description=Message)."""
+    grouped: "OrderedDict[tuple, dict]" = OrderedDict()
+    for r in qa_rows:
+        key = (r.get("Category", ""), r.get("Severity", ""), r.get("Message", ""))
+        if key not in grouped:
+            grouped[key] = {
+                "SiteID": site_id, "EventID": event_id,
+                "Domain": r.get("Category", ""), "Severity": r.get("Severity", ""),
+                "Description": r.get("Message", ""),
+                "AssignedTo": r.get("AssignedTo", ""), "LastUpdated": _now(),
+            }
+    return list(grouped.values())
+
+
+def build_dash_report_readiness(samples: List[dict], results: List[dict],
+                                site_id: str, event_id: str) -> List[dict]:
+    """Dash_ReportReadiness ← Env_Samples + Env_AnalyticalResults cross-check."""
+    sampled = {s.get("LocationID", "") for s in samples if s.get("LocationID")}
+    with_results = {r.get("LocationID", "") for r in results if r.get("LocationID")}
+    lab_ready = bool(sampled) and sampled.issubset(with_results)
+    field_ready = bool(sampled)
+    overall = field_ready and lab_ready
+    return [{
+        "SiteID": site_id, "EventID": event_id,
+        "FieldReady": int(field_ready), "LabReady": int(lab_ready),
+        "GISReady": 0, "QAReady": 0, "ModelReady": 0,
+        "ReportReady": int(overall), "OverallReady": int(overall),
+        "LastUpdated": _now(),
+    }]
+
+
+# ---------------------------------------------------------------------------
+# LOCAL orchestrator (arcpy, lazy import)
+# ---------------------------------------------------------------------------
+def build_dashboard_data_mart(  # pragma: no cover - requires arcpy
+    gdb_path: str,
+    site_id: str,
+    event_id: str,
+    prior_event_id: Optional[str] = None,
+) -> MartSummary:
+    """Read source tables, transform in Python, truncate + repopulate Dash_*."""
+    import arcpy
+    from ...runtime.sessions import arcpy_env  # noqa: F401
+
+    def _read(table: str) -> List[dict]:
+        fields = [f.name for f in arcpy.ListFields(f"{gdb_path}/{table}")]
+        with arcpy.da.SearchCursor(f"{gdb_path}/{table}", fields) as cur:
+            return [dict(zip(fields, row)) for row in cur]
+
+    wide = _read("Env_CurrentEventWide")
+    qa_rows = _read("Env_ImportQA")
+    qa_errors = [r for r in qa_rows if r.get("Severity") in ("ERROR", "CRITICAL")]
+    samples = _read("Env_Samples")
+    results = _read("Env_AnalyticalResults")
+    wl = _read("Env_CurrentWaterLevelEvent")
+    prior_wl = _read("Env_WaterLevels") if prior_event_id else []
+    exceedances = [r for r in results
+                   if int(r.get("ExceedsScreeningLevel", 0) or 0) == 1]
+
+    builders = {
+        "Dash_SiteStatus": build_dash_site_status(wide, qa_errors, site_id, event_id),
+        "Dash_EventStatus": build_dash_event_status(samples, results, site_id, event_id),
+        "Dash_WellStatus": build_dash_well_status(wl, prior_wl, site_id, event_id),
+        "Dash_GWLevelSummary": build_dash_gw_level_summary(wl, prior_wl, site_id, event_id),
+        "Dash_CurrentExceedances": build_dash_current_exceedances(exceedances, site_id, event_id),
+        "Dash_AnalyticalSummary": build_dash_analytical_summary(results, site_id, event_id),
+        "Dash_FieldQA": build_dash_field_qa(qa_rows, site_id, event_id),
+        "Dash_LabQA": build_dash_lab_qa(qa_rows, site_id, event_id),
+        "Dash_OpenIssues": build_dash_open_issues(qa_rows, site_id, event_id),
+        "Dash_ReportReadiness": build_dash_report_readiness(samples, results, site_id, event_id),
+    }
+
+    summary = MartSummary(site_id=site_id, event_id=event_id, built_at=_now())
+    for table, rows in builders.items():
+        target = f"{gdb_path}/{table}"
+        arcpy.management.TruncateTable(target)
+        if rows:
+            cols = list(rows[0].keys())
+            with arcpy.da.InsertCursor(target, cols) as ic:
+                for row in rows:
+                    ic.insertRow([row[c] for c in cols])
+        summary.tables_updated.append(table)
+        summary.row_counts[table] = len(rows)
+        LOG.info("dashboard mart: %s <- %s rows", table, len(rows))
+    return summary

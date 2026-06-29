@@ -48,6 +48,7 @@ TOOLS: dict[str, Runtime] = {
     "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
     "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
+    "build-dashboard-data-mart": Runtime.LOCAL,  # truncates/repopulates GDB
 }
 
 
@@ -153,7 +154,7 @@ _REGISTRY_SEED = [
     ("build-analytical-exceedance-event", "BuildAnalyticalExceedanceEvent",
      "4.4", "CLOUD", "stable", "analysis",
      "Build exceedance event dataset with ratio/tier enrichment"),
-    ("build-dashboard-data-mart", "BuildDashboardDataMart", "", "CLOUD",
+    ("build-dashboard-data-mart", "BuildDashboardDataMart", "6.7", "LOCAL",
      "stable", "analysis", "Build denormalized dashboard mart tables"),
     ("estimate-gw-flow-direction", "EstimateGWFlowDirection", "", "CLOUD",
      "stable", "analysis", "Estimate groundwater flow direction from 3+ wells"),

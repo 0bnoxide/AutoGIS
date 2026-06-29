@@ -1,0 +1,134 @@
+"""Tests for dashboard_data_mart transformation functions (Tool 6.7) — arcpy-free.
+
+Checklist mirrors the Approved design spec
+docs/superpowers/specs/2026-06-27-build-dashboard-data-mart-design.md
+Only the pure-Python transformation layer is exercised (the arcpy orchestrator
+is marked ``# pragma: no cover``). Output dict keys follow the Dash_* schemas in
+gdb_schema.py.
+"""
+import dataclasses
+
+from autogis.core.envmon.dashboard_data_mart import (
+    MartSummary,
+    build_dash_site_status,
+    build_dash_event_status,
+    build_dash_well_status,
+    build_dash_gw_level_summary,
+    build_dash_current_exceedances,
+    build_dash_analytical_summary,
+    build_dash_field_qa,
+    build_dash_lab_qa,
+    build_dash_open_issues,
+)
+
+
+def test_site_status_active_events_counts_wide_rows():
+    wide = [{"LocationID": "MW-01"}, {"LocationID": "MW-02"},
+            {"LocationID": "MW-03"}]
+    qa_err = [{"Severity": "ERROR", "Category": "x"}]
+    rows = build_dash_site_status(wide, qa_err, "H281", "2026Q2")
+    assert len(rows) == 1
+    assert rows[0]["ActiveEvents"] == 3
+    assert rows[0]["OpenQAIssues"] == 1
+    assert rows[0]["SiteID"] == "H281"
+
+
+def test_event_status_partial_lab_results_not_received():
+    samples = [{"LocationID": "MW-01", "SampleID": "S1"},
+               {"LocationID": "MW-02", "SampleID": "S2"}]
+    results = [{"LocationID": "MW-01", "AnalyteName": "Benzene"}]  # only MW-01
+    rows = build_dash_event_status(samples, results, "H281", "2026Q2")
+    assert rows[0]["WellsSampled"] == 2
+    assert rows[0]["LabReceived"] == 0  # partial -> not fully received
+
+
+def test_well_status_delta():
+    cur = [{"LocationID": "MW-01", "GWE_ft": 100.5, "Status": "measured"}]
+    prior = [{"LocationID": "MW-01", "GWE_ft": 100.0}]
+    rows = build_dash_well_status(cur, prior, "H281", "2026Q2")
+    assert abs(rows[0]["GWEDelta_ft"] - 0.5) < 1e-9
+
+
+def test_gw_level_summary_rising_trend():
+    cur = [{"LocationID": "MW-01", "GWE_ft": 100.5}]
+    prior = [{"LocationID": "MW-01", "GWE_ft": 100.0}]
+    rows = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")
+    assert rows[0]["Trend"] == "Rising"
+    assert abs(rows[0]["Delta_ft"] - 0.5) < 1e-9
+
+
+def test_gw_level_summary_falling_and_stable():
+    cur = [{"LocationID": "A", "GWE_ft": 99.0}, {"LocationID": "B", "GWE_ft": 100.05}]
+    prior = [{"LocationID": "A", "GWE_ft": 100.0}, {"LocationID": "B", "GWE_ft": 100.0}]
+    rows = {r["LocationID"]: r for r in
+            build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")}
+    assert rows["A"]["Trend"] == "Falling"
+    assert rows["B"]["Trend"] == "Stable"
+
+
+def test_current_exceedances_filters_exceedances_only():
+    results = [
+        {"LocationID": "MW-01", "AnalyteName": "Benzene", "ExceedsScreeningLevel": 1,
+         "ResultNumeric": 12.0, "Units": "ug/L"},
+        {"LocationID": "MW-02", "AnalyteName": "Toluene", "ExceedsScreeningLevel": 0,
+         "ResultNumeric": 1.0, "Units": "ug/L"},
+    ]
+    rows = build_dash_current_exceedances(results, "H281", "2026Q2")
+    assert len(rows) == 1
+    assert rows[0]["Analyte"] == "Benzene"
+
+
+def test_analytical_summary_one_row_per_result():
+    results = [
+        {"LocationID": "MW-01", "AnalyteName": "Benzene", "ResultNumeric": 12.0,
+         "Units": "ug/L", "IsDetected": 1, "ExceedsScreeningLevel": 1},
+        {"LocationID": "MW-02", "AnalyteName": "Toluene", "ResultNumeric": 0.0,
+         "Units": "ug/L", "IsDetected": 0, "ExceedsScreeningLevel": 0},
+    ]
+    rows = build_dash_analytical_summary(results, "H281", "2026Q2")
+    assert len(rows) == 2
+    benz = next(r for r in rows if r["Analyte"] == "Benzene")
+    assert benz["IsExceedance"] == 1
+
+
+def test_field_qa_filters_null_analyte():
+    qa = [
+        {"Category": "missing_well", "AnalyteName": "", "LocationID": "MW-01",
+         "Message": "no well", "Severity": "ERROR"},
+        {"Category": "lab_issue", "AnalyteName": "Benzene", "LocationID": "MW-02",
+         "Message": "lab", "Severity": "WARNING"},
+    ]
+    rows = build_dash_field_qa(qa, "H281", "2026Q2")
+    assert len(rows) == 1
+    assert rows[0]["LocationID"] == "MW-01"
+
+
+def test_lab_qa_filters_nonnull_analyte():
+    qa = [
+        {"Category": "missing_well", "AnalyteName": "", "LocationID": "MW-01",
+         "Message": "no well", "Severity": "ERROR"},
+        {"Category": "lab_issue", "AnalyteName": "Benzene", "LocationID": "MW-02",
+         "Message": "lab", "Severity": "WARNING"},
+    ]
+    rows = build_dash_lab_qa(qa, "H281", "2026Q2")
+    assert len(rows) == 1
+    assert rows[0]["Analyte"] == "Benzene"
+
+
+def test_open_issues_grouped_by_domain_severity_description():
+    qa = [
+        {"Category": "a", "Severity": "ERROR", "Message": "boom", "LocationID": ""},
+        {"Category": "a", "Severity": "ERROR", "Message": "boom", "LocationID": ""},
+        {"Category": "b", "Severity": "WARNING", "Message": "meh", "LocationID": ""},
+    ]
+    rows = build_dash_open_issues(qa, "H281", "2026Q2")
+    # Two distinct (Domain, Severity, Description) groups.
+    assert len(rows) == 2
+
+
+def test_mart_summary_is_json_serializable():
+    s = MartSummary(site_id="H281", event_id="2026Q2", built_at="2026-06-29",
+                    tables_updated=["Dash_SiteStatus"],
+                    row_counts={"Dash_SiteStatus": 1})
+    d = dataclasses.asdict(s)
+    assert d["row_counts"]["Dash_SiteStatus"] == 1

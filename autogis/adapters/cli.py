@@ -1797,6 +1797,24 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
     _render_qa(qa, report, "warning")
 
 
+@envmon.command("build-dashboard-data-mart")
+@click.argument("gdb", type=click.Path())
+@click.option("--site", "site_id", required=True)
+@click.option("--event", "event_id", required=True)
+@click.option("--prior-event", "prior_event_id", default=None)
+@click.option("--report", default=None, type=click.Path())
+def build_dashboard_data_mart_cmd(gdb, site_id, event_id, prior_event_id, report):
+    """Tool 6.7: truncate + repopulate the Dash_* mart tables (ArcGIS Pro)."""
+    _guard("build-dashboard-data-mart")
+    from autogis.core.envmon.dashboard_data_mart import build_dashboard_data_mart
+    summary = build_dashboard_data_mart(gdb, site_id, event_id,
+                                        prior_event_id=prior_event_id)
+    for table, n in summary.row_counts.items():
+        click.echo(f"{table}: {n} row(s)")
+    click.echo(f"Updated {len(summary.tables_updated)} table(s) "
+               f"for {site_id}/{event_id}.")
+
+
 @envmon.command("build-exceedance-event")
 @click.option("--results", "results_path", required=True, type=click.Path(exists=True))
 @click.option("--screening-levels", "sl_path", required=True, type=click.Path(exists=True))

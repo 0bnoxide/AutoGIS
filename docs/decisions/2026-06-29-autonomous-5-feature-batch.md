@@ -151,3 +151,61 @@ wrapper would have needed an adapter layer larger than the direct implementation
 The spec called it a "thin wrapper" but the upstream signature mismatch made a
 direct, sibling-consistent implementation simpler and clearer. Logged per advisor
 note that the wrapper framing was aspirational.
+## Feature 4 — export-lab-request (Tool 2.11) — DROPPED (superseded by PR #84)
+
+**Status:** DROPPED from this PR. While this branch was being built, PR #84
+landed an independent `lab_request_exporter.py` + `export-lab-request` command on
+`main` from the same spec (identical public function names). When rebasing this
+work onto current `main` for the PR, my Feature 4 was dropped in favor of #84's
+already-merged version (user decision, 2026-06-29). My `list-tools` registry
+entry for `export-lab-request` is retained and points at #84's command, which is
+correct. The original Feature-4 implementation/tests remain on the local
+`backup-5feat` tag if a later comparison is wanted.
+
+## Feature 5 — build-dashboard-data-mart (Tool 6.7)
+
+**Status:** DONE — `dashboard_data_mart.py` (10 transformation fns + arcpy
+orchestrator) + LOCAL `build-dashboard-data-mart` CLI + 12 tests (11 unit + 1
+guard smoke). Registered LOCAL in `capabilities.TOOLS`. Full suite 753 passed.
+
+### D5.1 — LOCAL tool; only the transformation layer is unit-tested
+**Chosen:** Per spec, this is a LOCAL (arcpy) tool. I implemented all 10
+`build_dash_*` transformation functions as pure Python (fully tested) and the
+`build_dashboard_data_mart()` orchestrator with `# pragma: no cover` (lazy arcpy
+import, truncate + InsertCursor repopulate). CLI routes through `_guard()` like
+tools 2–8.
+**Why:** Matches the spec's chosen architecture (Python transform + arcpy I/O)
+and the project invariant that core stays arcpy-free and testable headless. Added
+the command to `capabilities.TOOLS` as `Runtime.LOCAL` so `_guard` resolves it
+(otherwise it raises the "not registered" KeyError — the guard smoke test asserts
+that message is absent).
+
+### D5.2 — Trend lives in GWLevelSummary, not WellStatus (schema over spec test)
+**Chosen:** `build_dash_well_status` emits `GWEDelta_ft` (per the Dash_WellStatus
+schema, which has NO Trend column); the Rising/Falling/Stable `Trend` label is
+emitted by `build_dash_gw_level_summary` (whose schema DOES have Trend). My tests
+check Trend on the GWLevelSummary function.
+**Why:** The spec's test-strategy item attributes `Trend` to
+`build_dash_well_status`, but the `gdb_schema.py` Dash_WellStatus table has no
+Trend field — that would write a column that doesn't exist. Followed the schema
+(the durable contract) over the test-strategy prose. Thresholds: Δ>0.1 Rising,
+Δ<-0.1 Falling, else Stable (per spec Transformation Notes).
+
+### D5.3 — LabReceived / readiness use subset coverage
+**Chosen:** `LabReceived` (and `LabReady`) = every sampled LocationID has ≥1
+result row. Partial results → 0/False.
+**Why:** Matches spec test 2 ("partial lab results → LabReceived=False") with a
+simple, explainable rule. GIS/QA/Model readiness left 0 (those signals come from
+other tools — `EvaluateReportReadiness` owns the full readiness logic).
+
+---
+
+## Run summary
+
+All 5 features were implemented and committed individually on the original
+branch (suite 698 → 754). Four ship in this PR (appendix, list-tools,
+exceedance-event, dashboard-mart); Feature 4 (lab-request) was dropped as a
+duplicate of the already-merged PR #84. Invariants verified: new core modules
+import with no arcpy/arcgis present and have no core→adapter deps; DRAFT stubs
+untouched. The `superpowers` TDD loop (red → green → full suite → commit) was
+followed for each feature.

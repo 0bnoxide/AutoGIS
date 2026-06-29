@@ -483,3 +483,17 @@ def test_build_exceedance_event(tmp_path):
     )
     assert out.exists(), "Expected exceedance-event CSV was not created"
     assert "Exceedances: 1" in result.output
+# ===========================================================================
+# 14. build-dashboard-data-mart (Tool 6.7) — LOCAL; guard must fire cleanly
+# ===========================================================================
+
+def test_build_dashboard_data_mart_guards_without_arcpy(tmp_path):
+    """LOCAL tool: headless invocation must error cleanly via the runtime guard,
+    not raise an internal KeyError/traceback."""
+    result = _run(
+        "envmon", "build-dashboard-data-mart", str(tmp_path / "x.gdb"),
+        "--site", "H281", "--event", "2026Q2",
+    )
+    # require_runtime raises RuntimeUnavailable -> ClickException -> exit 1.
+    assert result.exit_code != 0
+    assert "not registered" not in result.output  # registry KeyError would say this
