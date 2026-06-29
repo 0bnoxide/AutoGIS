@@ -453,3 +453,33 @@ def test_list_tools_filter_local_only():
     result = _run("envmon", "list-tools", "--runtime", "LOCAL")
     assert result.exit_code == 0, result.output
     assert "CLOUD" not in result.output  # only LOCAL rows rendered
+
+
+# ===========================================================================
+# 13. build-exceedance-event (Tool 4.4)
+# ===========================================================================
+
+def test_build_exceedance_event(tmp_path):
+    """Results + screening levels -> exceedance dataset CSV; exit 0."""
+    results = tmp_path / "results.csv"
+    _write_csv(results, [
+        {"LocationID": "MW-01", "AnalyteName": "Benzene", "ResultValue": "12.0",
+         "ResultQualifier": "", "ReportedUnits": "ug/L",
+         "SampleDate": "2026-01-15", "SampleID": "S1"},
+    ])
+    sl = tmp_path / "sl.yaml"
+    sl.write_text(yaml.dump({"Benzene": 5.0}), encoding="utf-8")
+    out = tmp_path / "exc.csv"
+
+    result = _run(
+        "envmon", "build-exceedance-event",
+        "--results", str(results),
+        "--screening-levels", str(sl),
+        "--rule", "max_exceedance_per_location",
+        "--out", str(out),
+    )
+    assert result.exit_code == 0, (
+        f"build-exceedance-event exited {result.exit_code}:\n{result.output}"
+    )
+    assert out.exists(), "Expected exceedance-event CSV was not created"
+    assert "Exceedances: 1" in result.output

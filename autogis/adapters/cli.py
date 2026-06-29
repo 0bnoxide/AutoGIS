@@ -1797,6 +1797,40 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
     _render_qa(qa, report, "warning")
 
 
+@envmon.command("build-exceedance-event")
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--screening-levels", "sl_path", required=True, type=click.Path(exists=True))
+@click.option("--rule", default="max_exceedance_per_location",
+              type=click.Choice(["max_exceedance_per_location", "latest_per_location",
+                                 "specific_event_date", "date_range_latest"]))
+@click.option("--event-date", default=None)
+@click.option("--date-from", default=None)
+@click.option("--date-to", default=None)
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
+                               date_from, date_to, out, report):
+    """Build exceedance event dataset with ratio/tier enrichment (headless)."""
+    import csv as _csv
+    from autogis.core.envmon.build_exceedance_event import (
+        build_exceedance_event, load_screening_levels_yaml,
+        write_exceedance_event_csv)
+    from autogis.core.common.qa import QACollector
+
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    sl = load_screening_levels_yaml(Path(sl_path))
+    date_range = (date_from, date_to) if (date_from and date_to) else None
+    qa = QACollector()
+    records = build_exceedance_event(
+        rows, sl, rule=rule, event_date=event_date,
+        date_range=date_range, qa=qa)
+    write_exceedance_event_csv(records, Path(out))
+    exceed = sum(1 for r in records if r.has_exceedance)
+    click.echo(f"Records: {len(records)}  Exceedances: {exceed}  Output: {out}")
+    _render_qa(qa, report, "warning")
+
+
 @envmon.command("list-tools")
 @click.option("--runtime", "runtime_filter", default=None,
               type=click.Choice(["CLOUD", "LOCAL", "DRAFT"], case_sensitive=False))

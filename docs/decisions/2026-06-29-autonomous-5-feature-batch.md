@@ -118,3 +118,36 @@ the run.
 **Why:** A curated registry is the spec's chosen source of truth. Drift risk is
 accepted as a known tradeoff (a future drift-guard test against the live click
 group could be added). plan_path left blank for now (optional in the API).
+
+## Feature 3 — build-analytical-exceedance-event (Tool 4.4)
+
+**Status:** DONE — `build_exceedance_event.py` + `build-exceedance-event` CLI +
+11 tests (10 unit + 1 CLI smoke). Full suite 730 passed.
+
+### D3.1 — Grouping granularity: (location, analyte), not (location)
+**Chosen:** Group rows by (LocationID, AnalyteName); apply the selection rule
+within each group → one record per location-analyte pair.
+**Why:** The spec's API docstring and test strategy both say "one record per
+location-analyte pair", but its prose for `max_exceedance_per_location` reads
+"per location: row with highest result/screening_level". Those only reconcile if
+"per location" means per location-analyte. Chose the grouping that makes the
+stated output shape correct; exceedance ratios are analyte-specific anyway.
+
+### D3.2 — Tier boundaries lower-bound-inclusive; exceedance at ratio ≥ 1.0
+**Chosen:** `lo <= ratio < hi` per tier; ratio 1.0 → "1x-2x"; has_exceedance =
+ratio >= 1.0. ND or missing screening level → ratio None → tier "below",
+has_exceedance False.
+**Why:** Resolves the spec's overlapping bracket endpoints (its table lists both
+"0–1.0 below" and "1.0–2.0 1x-2x"). Making 1.0 the start of exceedance keeps the
+tier label and the has_exceedance flag mutually consistent (test 4).
+
+### D3.3 — Did NOT reuse build_current_event.select_samples()
+**Chosen:** Implemented selection inline rather than delegating to the existing
+`select_samples()` in `build_current_event.py`.
+**Why:** `select_samples` operates on differently-keyed dict rows
+(`ExceedsScreening`, `NumericValue`, `IsDetected`) and returns *rows* for a
+GDB-bound pivot, not the (loc,analyte) ratio/tier records this tool emits. A thin
+wrapper would have needed an adapter layer larger than the direct implementation.
+The spec called it a "thin wrapper" but the upstream signature mismatch made a
+direct, sibling-consistent implementation simpler and clearer. Logged per advisor
+note that the wrapper framing was aspirational.
