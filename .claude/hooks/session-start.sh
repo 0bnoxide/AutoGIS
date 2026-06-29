@@ -14,6 +14,16 @@ CBM="/c/Users/ichbi/AppData/Local/Programs/codebase-memory-mcp/codebase-memory-m
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
+# --- Start every session from a current pull (so sessions + the subagents and
+# worktrees that branch from HEAD develop against up-to-date code). Only on a
+# clean 'main' checkout, fast-forward only; fully guarded so a network/auth/
+# non-ff failure can't abort the rest of setup under `set -e`. Never pull onto a
+# feature branch or worktree. ponytail: ff-only on clean main; nothing fancier.
+if [ "$(git -C "$PROJECT_DIR" branch --show-current 2>/dev/null)" = "main" ] \
+   && [ -z "$(git -C "$PROJECT_DIR" status --porcelain 2>/dev/null)" ]; then
+  git -C "$PROJECT_DIR" pull --ff-only >/dev/null 2>&1 || true
+fi
+
 # Keep stdout clean in synchronous mode: send all install chatter to stderr.
 {
   # --- AutoGIS project deps (so the 113-test suite runs in fresh sessions) ---

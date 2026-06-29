@@ -63,6 +63,17 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
 
 ## Worktrees & session coordination
 
+- **`main` is READ-ONLY — branch before you write.** On `main` only *reading* is
+  permitted. Every write (Edit/Write/MultiEdit to a repo file, `git commit`,
+  `git push`) is **denied** by the PreToolUse coordination hook
+  (`hook_check.py`); writes to paths *outside* the repo — your memory dir, the
+  scratchpad — are exempt. Before any work: check out a feature branch and claim
+  it + your files via the coordination framework below. **This rule applies to
+  subagents too:** the hook fires for every tool call regardless of caller, so it
+  is enforced even for built-in agents — but state it explicitly in any subagent
+  prompt you write. One-off override: `AUTOGIS_COORD_FORCE=1`. The SessionStart
+  hook also fast-forward-pulls a clean `main` so every session (and the worktrees
+  that branch from HEAD) starts current.
 - **Worktrees live under `.claude/worktrees/`** (gitignored), not the
   `superpowers:using-git-worktrees` default `.worktrees/`. Prefer the native
   `EnterWorktree` tool (Step 1a); if you ever fall back to `git worktree add`,

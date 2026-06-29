@@ -45,12 +45,29 @@ def _reg_path(payload):
     return registry.claims_path(payload.get("cwd"))
 
 
+_POLICY = (
+    "[coord] BRANCH POLICY — 'main' is READ-ONLY. On main only reading is "
+    "allowed; any write (Edit/Write/MultiEdit to a repo file, git commit/push) "
+    "is blocked by the PreToolUse hook. Before doing any work: check out a "
+    "feature branch and claim it + your files via the session-coordination "
+    "framework (see CLAUDE.md > Worktrees & session coordination). This applies "
+    "to subagents too — the hook enforces it for every tool call regardless of "
+    "who makes it, so pass this rule along when you dispatch one. Override for a "
+    "one-off: AUTOGIS_COORD_FORCE=1."
+)
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
         claim_session(payload, _reg_path(payload))
     except Exception:
         pass
+    # State the read-only-main policy as session context (main session only;
+    # subagents are covered by the hook itself).
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": _POLICY}}))
     sys.exit(0)
 
 
