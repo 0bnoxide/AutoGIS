@@ -67,6 +67,33 @@ def test_pep604_optional_fields_round_trip(tmp_path):
     assert back == rows
 
 
+@dataclasses.dataclass
+class _StrRec:
+    required: str
+    optional: Optional[str]
+
+
+def test_blank_non_optional_str_round_trips_to_empty_string(tmp_path):
+    """A legitimately-blank non-Optional str must read back as "", not None."""
+    rows = [_StrRec("", None), _StrRec("x", "kept")]
+    out = tmp_path / "s.csv"
+    write_records_csv(rows, out)
+    back = read_records_csv(out, _StrRec)
+    assert back[0].required == ""        # non-Optional blank -> ""
+    assert back[0].optional is None      # Optional blank -> None
+    assert back[1].required == "x"
+    assert back[1].optional == "kept"
+
+
+def test_literal_none_string_preserved_for_str_field(tmp_path):
+    """The literal text "None" is a valid str value, not a null sentinel."""
+    out = tmp_path / "s.csv"
+    write_records_csv([_StrRec("None", "None")], out)
+    back = read_records_csv(out, _StrRec)
+    assert back[0].required == "None"
+    assert back[0].optional == "None"
+
+
 def test_record_class_inferred_from_first_record(tmp_path):
     out = tmp_path / "r.csv"
     write_records_csv([_Rec("a", 1, 2.0, date(2026, 1, 1))], out)  # no record_class

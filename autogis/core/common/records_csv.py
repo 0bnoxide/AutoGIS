@@ -2,8 +2,9 @@
 
 `read_records_csv` loads a CSV into a list of dataclass instances; `write_records_csv`
 writes a list of dataclass instances to a CSV. The two round-trip: a value written
-here reads back to the same Python value (``date`` -> ISO -> ``date``; ``None`` ->
-empty field -> ``None``; ``int`` empty -> ``0``).
+here reads back to the same Python value (``date`` -> ISO -> ``date``; Optional
+``None`` -> empty field -> ``None``; non-Optional ``str`` blank -> ``""``;
+``int`` empty -> ``0``).
 
 No arcpy dependency.
 """
@@ -20,24 +21,42 @@ from typing import List, Optional, Sequence, Type, TypeVar
 T = TypeVar("T")
 
 
-def _get_inner(hint):
-    """For Optional[X] return X, otherwise return hint unchanged.
+def _split_hint(hint):
+    """Return ``(inner_type, is_optional)`` for a possibly-Optional hint.
 
-    Recognizes both ``typing.Optional``/``Union`` and PEP 604 ``X | None``.
+    For ``Optional[X]`` / ``X | None`` returns ``(X, True)``; for a plain
+    ``X`` returns ``(X, False)``. Recognizes both ``typing.Optional``/``Union``
+    and PEP 604 ``X | None``.
     """
     origin = typing.get_origin(hint)
     if origin is typing.Union or origin is getattr(types, "UnionType", ()):
-        args = [a for a in typing.get_args(hint) if a is not type(None)]
-        return args[0] if args else str
-    return hint
+        args = typing.get_args(hint)
+        non_none = [a for a in args if a is not type(None)]
+        return (non_none[0] if non_none else str), (type(None) in args)
+    return hint, False
 
 
 def _coerce(value: str, hint):
-    """Coerce a CSV string to the field's resolved type hint."""
-    inner = _get_inner(hint)
+    """Coerce a CSV string to the field's resolved type hint.
+
+    A blank field deserializes to ``None`` only for Optional fields; for a
+    non-Optional ``str`` it stays ``""`` (and a literal ``"None"`` string is
+    preserved as-is) so the round-trip honors the field's annotation.
+    """
+    inner, optional = _split_hint(hint)
+    # str fields carry their text verbatim: only a truly-empty field is special-
+    # cased (to None when Optional, else ""). The literal "None" is a valid value.
+    if inner is str:
+        if value == "":
+            return None if optional else ""
+        return value
     if value in ("", "None"):
+        if optional:
+            return None
         if inner is int:
             return 0
+        if inner is float:
+            return 0.0
         return None
     if inner is int:
         try:
