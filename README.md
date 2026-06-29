@@ -14,12 +14,13 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~30 | plus 4 post-roadmap tools below |
-| Foundation laid (schema or module exists, not fully wired) | ~6 | |
-| Not started | ~43 | |
+| Fully implemented (CLI command + core module + tests) | ~40 | ~34 numbered roadmap tools + 6 headless post-roadmap tools |
+| Foundation laid (partial code, not fully wired) | ~4 | |
+| **Planned** (spec / plan written, not yet coded) | ~17 | roadmap tools; plus 11 post-roadmap extras — see *Planned* list below |
+| Not started (no spec or plan) | ~18 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **50 `core/envmon/` modules**, **~34 registered CLI commands**, and a
+The codebase now ships **50 `core/envmon/` modules**, **~43 registered CLI commands**, and a
 **560-test** arcpy-free suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot).
@@ -86,42 +87,122 @@ here have advanced past that snapshot).
 | Tool | Roadmap # | What exists | What's missing |
 |------|-----------|-------------|----------------|
 | BuildGroundwaterElevationEvent | 4.1 | `normalize_groundwater.py`, `build_current_event.py` | Dedicated event-builder + flags (Dry/NM/NS/anomalous) |
-| BuildAnalyticalExceedanceEvent | 4.4 | `build_current_event.py` emits `Env_CurrentEventWide` | Event-mode selectors (latest/range/max), style fields |
 | CreateBoringLogDatabase | 8.0a | `schema/boring.py` (7 dataclasses) + upgrade-schema tables | Standalone create/validate tool |
 | SyncFieldAttachments | 6.5 | Attachment harvester (separate domain) | Envmon-side attachment index table wiring |
-| UpdateWellElevationsFromLevelLoop | 8.2 | ProcessLevelLoop ships the computation | History-write + well-table update |
-| Dashboard tools (6.7–6.11) | — | `schema/dashboard.py` (10 dataclasses) | Every consuming tool |
+| Dashboard consuming tools (6.8–6.11) | — | `schema/dashboard.py` (10 dataclasses) | Every consuming tool (6.7 BuildDashboardDataMart has a plan) |
+
+Note: BuildAnalyticalExceedanceEvent (4.4) and UpdateWellElevationsFromLevelLoop (8.2) have
+moved to *Planned* — both have specs/plans and partial code foundations.
 
 </details>
 
 <details>
-<summary>Not started (selected)</summary>
+<summary>Planned — spec and/or implementation plan written, not yet coded</summary>
+
+Specs live in [`docs/superpowers/specs/`](docs/superpowers/specs/);
+plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
+
+**Data intake (§2)**
+
+| Tool | Roadmap # | Artifact |
+|------|-----------|---------|
+| CreateSurvey123SamplingEvent | 2.7 | spec + plan |
+
+**Analysis (§4)**
+
+| Tool | Roadmap # | Artifact |
+|------|-----------|---------|
+| BuildAnalyticalExceedanceEvent | 4.4 | spec + plan *(partial code foundation)* |
+| EstimateGWFlowDirection | 4.3 | spec + plan |
+| BuildMaxResultMapDataset | 4.9 | spec + plan |
+
+**Cartography (§5)**
+
+| Tool | Roadmap # | Artifact |
+|------|-----------|---------|
+| BuildAnalyticalKey | 5.5 | plan |
+| BuildReportFigurePackage | 5.7 | spec + plan |
+
+**AGOL / cloud (§6)**
+
+| Tool | Roadmap # | Artifact |
+|------|-----------|---------|
+| BuildDashboardDataMart | 6.7 | spec + plan |
+| AuditAGOLItemDependencies | 6.9 | plan |
+
+**Field / Survey123 (§7)**
+
+| Tool | Roadmap # | Artifact |
+|------|-----------|---------|
+| GenerateWellInspectionPhotoReport | 7.4 | spec + plan |
+
+**Survey / boring / drone (§8)**
+
+| Tool | Roadmap # | Artifact |
+|------|-----------|---------|
+| ImportFieldBoringLogs | 8.0b | plan |
+| UpdateWellElevationsFromLevelLoop | 8.2 | plan *(partial code foundation)* |
+| SurveyToWellElevationUpdate | 8.5 | spec + plan |
+| RegisterDroneFlight | 8.6 | plan |
+| ImportDroneProducts | 8.8 | spec + plan |
+
+**Reporting (§9)**
+
+| Tool | Roadmap # | Artifact |
+|------|-----------|---------|
+| BuildMonitoringReportAppendix | 9.2 | spec + plan |
+| IngestReviewerMapComments | 9.4 | spec + plan |
+
+**Admin (§10)**
+
+| Tool | Roadmap # | Artifact |
+|------|-----------|---------|
+| RunEnvJobQueue | 10.4 | plan |
+
+**Post-roadmap / infrastructure** (not counted in the 79-tool catalog)
+
+| Tool | Artifact |
+|------|---------|
+| BatchEDDImport (HYBRID) | plan |
+| BuildComplianceSummaryTable | spec + plan |
+| ExportEnvDataToGeoPackage | spec + plan |
+| ExportLabAnalyticalRequest | spec + plan |
+| GenerateQCSampleSummary | spec + plan |
+| GenerateRegulatorySubmissionTables | spec + plan |
+| GenerateSiteNarrative | spec + plan |
+| ListAvailableEnvTools | spec + plan |
+| MergeEventResults | spec + plan |
+| ValidateFieldDataCompleteness | spec + plan |
+| SessionCoordinationTier1 | spec + plan |
+
+</details>
+
+<details>
+<summary>Not started — no spec or implementation plan</summary>
 
 **Data intake (§2):** BatchImportEnvironmentalWorkbooks (2.2), MigrateLegacyMonitoringData (2.4),
-RegisterSourceDocuments (2.5), CreateSurvey123SamplingEvent (2.7)
+RegisterSourceDocuments (2.5)
 
-**Analysis (§4):** EstimateGWFlowDirection (4.3), GenerateDraftPlumeBoundary (4.5),
-GenerateWellTrendCharts (4.6), SelectSoilIntervalsForMapping (4.8), BuildMaxResultMapDataset (4.9)
+**Analysis (§4):** GenerateDraftPlumeBoundary (4.5), GenerateWellTrendCharts (4.6),
+SelectSoilIntervalsForMapping (4.8)
 
-**Cartography (§5):** GenerateArcadeLabelExpressions (5.4), BuildAnalyticalKey (5.5),
-GenerateSiteMapSeries (5.6), BuildReportFigurePackage (5.7), UpdateLayoutDynamicText (5.8)
+**Cartography (§5):** GenerateArcadeLabelExpressions (5.4), GenerateSiteMapSeries (5.6),
+UpdateLayoutDynamicText (5.8)
 
 **AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2), UpdateAGOLWebMapFromFigureSpec (6.3),
 RefreshMonitoringDashboardData (6.4), AuditAGOLSchemaAgainstLocalConfig (6.6),
-BuildDashboardDataMart (6.7), PublishDashboardFromSpec (6.8), AuditAGOLItemDependencies (6.9),
-PromoteAGOLDataBetweenStages (6.10), CreateHostedViewsForStakeholders (6.11)
+PublishDashboardFromSpec (6.8), PromoteAGOLDataBetweenStages (6.10),
+CreateHostedViewsForStakeholders (6.11)
 
 **Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1), CreateSamplingEventPlan (7.2),
-ReconcileFieldAndLabData (7.3), GenerateWellInspectionPhotoReport (7.4)
+ReconcileFieldAndLabData (7.3)
 
-**Survey / boring / drone / CAD (§8):** ImportFieldBoringLogs (8.0b), GenerateBoringLogPDFs (8.0c),
-SurveyToWellElevationUpdate (8.5), RegisterDroneFlight (8.6), ImportDroneProducts (8.8),
+**Survey / boring / drone / CAD (§8):** GenerateBoringLogPDFs (8.0c),
 BuildCADExportPackage (8.9), ExportContoursForCivil3D, ValidateSurveyDeliverable
 
-**Reporting (§9):** BuildMonitoringReportAppendix (9.2), GenerateEventChangeLog (9.3),
-IngestReviewerMapComments (9.4)
+**Reporting (§9):** GenerateEventChangeLog (9.3)
 
-**Admin (§10):** RunEnvJobQueue (10.4), GenerateSyntheticEnvWorkbook (10.6)
+**Admin (§10):** GenerateSyntheticEnvWorkbook (10.6)
 
 **AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
 — all deferred pending LLM seam design
@@ -220,10 +301,8 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon route-survey123` | `core/envmon/normalize_survey123.py` |
 
 LOCAL commands guard on `arcpy` and redirect to the `.pyt` toolbox inside ArcGIS Pro when it is
-absent. **Known issue:** three commands — `import-edd`, `import-rtk-survey`, and `route-survey123`
-— currently raise a raw `KeyError` instead of the clean guard message when run headless (their
-`_guard()` names are not registered in the `TOOLS` capability map). Run them inside ArcGIS Pro;
-a fix to the guard wiring is tracked separately.
+absent. `import-edd`, `import-rtk-survey`, and `route-survey123` are LOCAL-only and will print
+the standard guard message if run headless — use the `.pyt` toolbox or the guarded CLI inside Pro.
 
 ---
 
@@ -323,8 +402,8 @@ autogis envmon export-snapshot <geodatabase>
 # build-callouts, optimize-callouts, gw-contours, export-figures, full-pipeline follow the same pattern
 ```
 
-> `import-edd`, `import-rtk-survey`, and `route-survey123` are also Pro-only, but their headless
-> guard currently errors with a traceback instead of a clean message (see the Runtime Matrix note).
+> `import-edd`, `import-rtk-survey`, and `route-survey123` are also Pro-only; the `.pyt` toolbox
+> is the primary UI for all LOCAL commands.
 
 ---
 
@@ -458,11 +537,6 @@ the flag.
 The LOCAL (Pro-based) tools are not exercised in CI. Run them on a copy of real data inside Pro
 before trusting outputs.
 
-**Three Pro-guarded commands mis-guard when run headless.**
-`import-edd`, `import-rtk-survey`, and `route-survey123` raise a `KeyError` traceback instead of
-the clean "run inside ArcGIS Pro" message (their `_guard()` names are missing from the `TOOLS`
-map). They still work correctly inside Pro; the headless guard wiring is the bug.
-
 **Incremental harvest depends on feature service metadata.**
 `--incremental` relies on `GlobalID` and `EditDate` fields. If absent, falls back to a full re-download.
 
@@ -473,8 +547,10 @@ map). They still work correctly inside Pro; the headless guard wiring is the bug
 | Document | Contents |
 |----------|---------|
 | [`docs/pro-install.md`](docs/pro-install.md) | Full Pro setup: env clone, toolbox registration, cache/reload |
-| [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool |
+| [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool (snapshot; headline counts above are current) |
 | [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
+| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 45 features (architecture, algorithm, data-model decisions) |
+| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 76 features (step-by-step execution guides) |
 | [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy (latest: ADR-0028) |
 
 ---
