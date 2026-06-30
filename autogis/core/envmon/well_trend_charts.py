@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date as _date
 from pathlib import Path
 from typing import Optional
 
@@ -93,12 +94,30 @@ def load_history_csv(path: Path) -> list[TrendSeries]:
     result: list[TrendSeries] = []
     for series in groups.values():
         if series.dates:
-            paired = sorted(zip(series.dates, series.values))
+            # Sort chronologically. Parse ISO dates so ordering is by real date,
+            # not lexicographic (which would mis-order e.g. M/D/YYYY input); fall
+            # back to the raw string when a value isn't an ISO date.
+            paired = sorted(zip(series.dates, series.values),
+                            key=lambda dv: (_date_sort_key(dv[0]), dv[0]))
             dates, values = zip(*paired)
             series.dates = list(dates)
             series.values = list(values)
         result.append(series)
     return result
+
+
+def _date_sort_key(s: str):
+    """Sort key that orders ISO dates chronologically.
+
+    Returns ``(0, date)`` for a parseable ISO ``YYYY-MM-DD`` (so real dates sort
+    correctly), or ``(1, "")`` for anything else so non-ISO values fall to the
+    end deterministically (the raw string is used as the tiebreaker by the
+    caller).
+    """
+    try:
+        return (0, _date.fromisoformat(s.strip()))
+    except (ValueError, AttributeError):
+        return (1, _date.min)
 
 
 def _safe_sheet_name(name: str, suffix: str = "") -> str:
@@ -191,7 +210,12 @@ def write_trend_charts(
                 ws.add_chart(chart, anchor)
                 chart_count += 1
 
-                data_start_row += _BLOCK_ROWS
+                # Advance past this block. Use at least _BLOCK_ROWS (so the
+                # chart image has room), but never fewer than the data rows
+                # actually written (header + n) plus a 1-row gap — otherwise a
+                # series with >= _BLOCK_ROWS points would be overwritten by the
+                # next series' header and corrupt both charts' data ranges.
+                data_start_row += max(_BLOCK_ROWS, n + 2)
 
     if not wb.worksheets:
         # No series (empty input): openpyxl refuses to save a zero-sheet

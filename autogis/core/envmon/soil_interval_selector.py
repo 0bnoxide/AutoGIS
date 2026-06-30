@@ -56,6 +56,10 @@ def assign_tier(interval: SoilInterval) -> str:
       2. exceeds_screening → HOTSPOT
       3. is_detect (numeric, not flagged) → DETECT
       4. otherwise (numeric but flagged non-detect) → ND
+
+    HOTSPOT trusts the canonical ``ExceedsScreeningLevel`` flag from the source
+    CSV (that column is authoritative by design); exceedance is not re-derived
+    from result_value vs screening_level here.
     """
     if interval.result_value is None:
         return (IntervalTier.NO_DATA if interval.screening_level is not None

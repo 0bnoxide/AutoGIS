@@ -118,3 +118,34 @@ strict tests and logged: trend-charts empty-input crash (D1.1), soil-interval
 ND/NO_DATA contradiction (D3.1), and the comparison-excel freeze_panes blank-row
 off-by-one (D4.1). New CLI commands all registered in `TOOLS` + `TOOL_REGISTRY`
 (CLOUD); the registry drift-guard stays green. Next: adversarial review before PR.
+
+## Adversarial review (pre-PR) — findings + resolutions
+
+Two independent review agents ran before the PR (as requested).
+
+**envmon-spec-checker → PASS:** all 5 structural invariants verified empirically
+(arcpy-free, no core→adapter, canonical config untouched, DRAFT stubs intact,
+registry drift-guard holds).
+
+**pr-reviewer → REQUEST CHANGES (3 blockers + should-fixes), all addressed:**
+
+- **B1/B2 (export-comparison-excel) — producer/consumer contract mismatch.**
+  Verified against primary source `compare_events.py`: `_exc()` emits
+  CurrentExceedance as `"Y"/"N"/""` (my filter checked `"1"` → Exceedances sheet
+  always empty), and `_classify()` emits `INCREASED/DECREASED/STABLE/
+  NEW_DETECTION/NO_LONGER_DETECTED/NONDETECT_BOTH/INDETERMINATE` (my `_TREND_HEX`
+  only matched `STABLE`). **Fix:** re-keyed `_TREND_HEX` on the real tokens;
+  exceedance filter now matches `{Y,YES,1,TRUE}`. **Root cause was masked by
+  self-consistent fixtures** — rewrote the test fixtures to use the producer's
+  actual vocabulary so they exercise the real contract.
+- **B3 (well_trend_charts) — chart/data corruption at ≥20 points.** Fixed-20-row
+  blocks overwrote the prior series when `n ≥ 20` (the common quarterly-over-5yr
+  case). **Fix:** `data_start_row += max(_BLOCK_ROWS, n + 2)`. Added a 24-point
+  long-series regression test (with valid ISO dates) that fails on the old code.
+- **Should-fix:** `select-soil-intervals` now exposes `--fail-on` like the other
+  four commands; `load_history_csv` sorts dates via ISO parse (not lexicographic).
+- **Nits:** guarded non-numeric GeoJSON coordinates (→ WARNING, x/y null);
+  documented the `comment_id`-includes-text caveat; documented that soil HOTSPOT
+  trusts the canonical `ExceedsScreeningLevel` flag.
+
+Post-fix suite: **903 passed**.

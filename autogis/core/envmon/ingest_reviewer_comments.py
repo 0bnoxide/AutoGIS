@@ -59,7 +59,14 @@ _TRACKER_FIELDS: list[str] = [f.name for f in _fields(ReviewerComment)]
 def _make_comment_id(
     source_file: str, figure_ref: str, comment_text: str, reviewer: str
 ) -> str:
-    """Generate a stable, deterministic comment ID from key identifying fields."""
+    """Generate a stable, deterministic comment ID from key identifying fields.
+
+    Note: ``comment_text`` is part of the hash, so re-exporting a comment whose
+    wording was edited yields a *new* id and ``merge_tracker`` treats it as a new
+    record (the prior one persists). To keep a stable identity across edits,
+    supply a ``comment_id`` column in the source (the alias maps accept one) so
+    downstream tracking systems own the id.
+    """
     key = f"{source_file}|{figure_ref}|{comment_text}|{reviewer}"
     return "rc-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
 
@@ -220,7 +227,13 @@ def parse_comments_geojson(path: Path, *, qa: QACollector) -> list[ReviewerComme
         if geom.get("type") == "Point":
             coords = geom.get("coordinates") or []
             if len(coords) >= 2:
-                x, y = float(coords[0]), float(coords[1])
+                try:
+                    x, y = float(coords[0]), float(coords[1])
+                except (TypeError, ValueError):
+                    qa.add(SEV_WARNING, "geojson_bad_coordinates",
+                           f"{src}: feature {i} has non-numeric coordinates "
+                           f"{coords[:2]!r} — x/y will be null",
+                           source_workbook=src)
         else:
             qa.add(SEV_WARNING, "geojson_no_geometry",
                    f"{src}: feature {i} has no Point geometry — x/y will be null",

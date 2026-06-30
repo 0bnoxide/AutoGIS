@@ -1966,7 +1966,10 @@ def ingest_reviewer_comments_cmd(input_file, out_path, tracker_path, report, fai
 @click.option("--max-depth-ft", "max_depth_ft", type=float, default=None,
               help="Exclude intervals with top_depth_ft greater than this value.")
 @click.option("--report", default=None, type=click.Path())
-def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft, report):
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error", show_default=True)
+def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft,
+                              report, fail_on):
     """Assign display tiers to soil sample intervals and write a mapping CSV (headless)."""
     from autogis.core.envmon.soil_interval_selector import (
         load_soil_results_csv, select_intervals, write_intervals_csv)
@@ -1980,7 +1983,7 @@ def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft, r
                             max_depth_ft=max_depth_ft, qa=qa)
     write_intervals_csv(rows, Path(out))
     click.echo(f"Intervals selected: {len(rows)}  Output: {out}")
-    _render_qa(qa, report, "error")
+    _render_qa(qa, report, fail_on)
 
 
 @envmon.command("export-comparison-excel")

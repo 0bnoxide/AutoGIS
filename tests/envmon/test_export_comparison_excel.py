@@ -11,11 +11,14 @@ from autogis.core.common.qa import QACollector
 from autogis.core.envmon.export_comparison_excel import export_comparison_excel
 
 
-def _row(trend="STABLE", exceed="0"):
+# Fixture uses the REAL vocabulary emitted by compare_events.py:
+#   TrendClass from _classify(): INCREASED/DECREASED/STABLE/NEW_DETECTION/...
+#   CurrentExceedance from _exc(): "Y"/"N"/""
+def _row(trend="STABLE", exceed="N"):
     return {
         "SiteID": "S", "LocationID": "MW-1", "AnalyteCanonicalName": "Benzene",
         "Matrix": "GW", "TrendClass": trend, "CurrentExceedance": exceed,
-        "PreviousExceedance": "0", "CurrentResultRaw": "5.0",
+        "PreviousExceedance": "N", "CurrentResultRaw": "5.0",
         "PreviousResultRaw": "5.0", "Delta": "0", "PercentChange": "0",
     }
 
@@ -32,7 +35,7 @@ def test_basic_export(tmp_path):
 
 
 def test_exceedance_sheet(tmp_path):
-    rows = [_row("INCREASE", "1"), _row("STABLE", "0")]
+    rows = [_row("INCREASED", "Y"), _row("STABLE", "N")]
     out = tmp_path / "r.xlsx"
     qa = QACollector()
     export_comparison_excel(rows, out, qa=qa)
@@ -57,7 +60,7 @@ def test_no_records_warns(tmp_path):
 def test_trend_fill_applied(tmp_path):
     out = tmp_path / "r.xlsx"
     qa = QACollector()
-    export_comparison_excel([_row("INCREASE", "0")], out, qa=qa)
+    export_comparison_excel([_row("INCREASED", "N")], out, qa=qa)
     wb = load_workbook(out)
     ws = wb["AllResults"]
     headers = [c.value for c in ws[1]]
@@ -70,7 +73,7 @@ def test_trend_fill_applied(tmp_path):
 def test_exceedance_sheet_only_exceedances(tmp_path):
     out = tmp_path / "r.xlsx"
     qa = QACollector()
-    export_comparison_excel([_row("INCREASE", "1"), _row("STABLE", "0")], out, qa=qa)
+    export_comparison_excel([_row("INCREASED", "Y"), _row("STABLE", "N")], out, qa=qa)
     ws = load_workbook(out)["Exceedances"]
     # header + exactly one exceedance data row
     assert ws.max_row == 2
@@ -92,7 +95,7 @@ def test_export_comparison_excel_in_help():
 
 def test_cli_export_comparison_excel_end_to_end(tmp_path):
     src = tmp_path / "comparison.csv"
-    _write_comparison_csv(src, [_row("INCREASE", "1"), _row("STABLE", "0")])
+    _write_comparison_csv(src, [_row("INCREASED", "Y"), _row("STABLE", "N")])
     out = tmp_path / "out.xlsx"
     result = CliRunner().invoke(autogis, [
         "envmon", "export-comparison-excel",

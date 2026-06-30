@@ -13,15 +13,22 @@ from typing import List
 
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING, SEV_ERROR
 
+# Keys MUST match the TrendClass tokens emitted by compare_events._classify():
+# INCREASED / DECREASED / STABLE / NEW_DETECTION / NO_LONGER_DETECTED /
+# NONDETECT_BOTH / INDETERMINATE.
 _TREND_HEX = {
-    "INCREASE":          "FFCCCC",  # red tint
-    "DECREASE":          "CCE5FF",  # blue tint
-    "STABLE":            "CCFFCC",  # green tint
-    "NEW":               "FFFF99",
-    "LOST":              "FFFF99",
-    "BOTH_ND":           "FFFF99",
-    "INSUFFICIENT_DATA": "FFFF99",
+    "INCREASED":          "FFCCCC",  # red tint
+    "DECREASED":          "CCE5FF",  # blue tint
+    "STABLE":             "CCFFCC",  # green tint
+    "NEW_DETECTION":      "FFFF99",
+    "NO_LONGER_DETECTED": "FFFF99",
+    "NONDETECT_BOTH":     "FFFF99",
+    "INDETERMINATE":      "FFFF99",
 }
+
+# compare_events._exc() emits CurrentExceedance as "Y"/"N"/""; accept a few
+# lenient spellings so hand-edited CSVs still work.
+_EXCEEDANCE_TRUE = frozenset({"Y", "YES", "1", "TRUE"})
 
 
 def export_comparison_excel(
@@ -75,7 +82,8 @@ def export_comparison_excel(
 
     ws_exc = wb.create_sheet("Exceedances")
     exceed_rows = [r for r in records
-                   if str(r.get("CurrentExceedance", "")) == "1"]
+                   if str(r.get("CurrentExceedance", "")).strip().upper()
+                   in _EXCEEDANCE_TRUE]
     _write_sheet(ws_exc, exceed_rows)
 
     wb.save(output_path)

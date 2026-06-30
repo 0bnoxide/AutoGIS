@@ -182,6 +182,36 @@ def test_write_empty_series_list(tmp_path):
     assert out.exists()
 
 
+def _long_series(loc, n=24):
+    """A series with n points and valid monthly ISO dates (n can exceed 9)."""
+    dates, values = [], []
+    for i in range(n):
+        y, m = 2021 + i // 12, i % 12 + 1
+        dates.append(f"{y}-{m:02d}-01")
+        values.append(float(i + 1))
+    return TrendSeries(location_id=loc, analyte_name="Benzene",
+                       dates=dates, values=values, screening_level=None,
+                       units="ug/L")
+
+
+def test_long_series_does_not_overwrite_next_block(tmp_path):
+    """A series with >= _BLOCK_ROWS (20) points must not have its data clobbered
+    by the next stacked series' header (regression: fixed-20-row blocks)."""
+    out = tmp_path / "charts.xlsx"
+    s1 = _long_series("MW-1", n=24)   # 24 points -> spills past a 20-row block
+    s2 = _make_series(loc="MW-2", analyte="Benzene", n=3)
+    write_trend_charts([s1, s2], out)
+    ws = openpyxl.load_workbook(str(out))["Benzene"]
+    # MW-1 header at row 1, its 24 data rows at rows 2..25 must be intact.
+    assert ws.cell(row=1, column=2).value == "MW-1"
+    last_val = ws.cell(row=25, column=2).value   # 24th data point
+    assert last_val == 24.0
+    # MW-2's header must land strictly below MW-1's data block, not on top of it.
+    mw2_header_rows = [r for r in range(2, ws.max_row + 1)
+                       if ws.cell(row=r, column=2).value == "MW-2"]
+    assert mw2_header_rows and min(mw2_header_rows) >= 26
+
+
 # --- CLI --------------------------------------------------------------------
 
 def test_generate_trend_charts_in_help():
