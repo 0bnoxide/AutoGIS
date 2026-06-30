@@ -542,6 +542,54 @@ def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
     _render_qa(result.qa, report, fail_on)
 
 
+def _parse_interval_list(spec):
+    """'2-4,8-10' -> [(2.0, 4.0), (8.0, 10.0)]."""
+    if not spec:
+        return None
+    out = []
+    for chunk in spec.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        top, _, bottom = chunk.partition("-")
+        out.append((float(top), float(bottom)))
+    return out
+
+
+@envmon.command("select-soil-intervals")
+@click.option("--soil-results", required=True, type=click.Path(exists=True),
+              help="CSV of soil result rows with depth-interval fields.")
+@click.option("--rule", default="highest_exceedance",
+              type=click.Choice([
+                  "all", "shallowest", "deepest", "highest_result",
+                  "highest_exceedance", "interval_list", "confirmation_only"]),
+              help="Selection rule (default highest_exceedance).")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output map-selection CSV path.")
+@click.option("--interval-list", default=None,
+              help="Depth windows for interval_list rule, e.g. '2-4,8-10'.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def select_soil_intervals_cmd(soil_results, rule, out_path, interval_list,
+                              report, fail_on):
+    """Tool 4.8: select one defensible soil interval per callout, by rule."""
+    import csv as _csv
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.soil_interval_selector import (
+        select_intervals, IntervalSelection)
+
+    with Path(soil_results).open(newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    result = select_intervals(rows, rule=rule,
+                              interval_list=_parse_interval_list(interval_list))
+    out = write_records_csv(result.selected, Path(out_path),
+                            record_class=IntervalSelection)
+    click.echo(f"Written: {out}  ({len(result.selected)} intervals, "
+               f"rule={rule})")
+    _render_qa(result.qa, report, fail_on)
+
+
 @envmon.command("identify-data-gaps")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
