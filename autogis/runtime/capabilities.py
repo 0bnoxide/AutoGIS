@@ -219,6 +219,8 @@ _REGISTRY_SEED = [
      "intake", "Validate a boring-log CSV package (headless)"),
     ("import-boring-logs", "ImportFieldBoringLogs", "8.0b", "LOCAL", "stable",
      "intake", "Import a boring-log CSV package into the GDB"),
+    ("survey-to-well-elevation", "SurveyToWellElevationUpdate", "8.5", "LOCAL",
+     "stable", "field", "Push QA-passed RTK elevations to MonitoringWells.TOC_ft"),
 ]
 
 TOOL_REGISTRY: list = [

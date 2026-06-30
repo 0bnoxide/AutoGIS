@@ -1500,6 +1500,96 @@ def import_boring_logs_cmd(input_dir, gdb, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("survey-to-well-elevation")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True,
+              help="Site ID matching SiteID in MonitoringWells.")
+@click.option("--batch-id", default=None,
+              help="Override auto-generated batch ID (default: RTK-<hex>).")
+@click.option("--hrms-threshold", type=float, default=0.03, show_default=True,
+              help="Max horizontal RMS error (ft) for QA pass.")
+@click.option("--vrms-threshold", type=float, default=0.05, show_default=True,
+              help="Max vertical RMS error (ft) for QA pass.")
+@click.option("--elevation-type", default="TOC", show_default=True,
+              help="ElevationType tag for ElevationHistory (e.g. TOC, GS).")
+@click.option("--survey-date", default=None, help="ISO date YYYY-MM-DD; defaults to today.")
+@click.option("--vertical-datum", default="NAVD88", show_default=True,
+              help="Vertical datum label stored in ElevationHistory.")
+@click.option("--wells-csv", default=None, type=click.Path(exists=True),
+              help="CSV with a LocationID column — headless well list. "
+                   "Mutually exclusive with --gdb.")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="File geodatabase: read well IDs from MonitoringWells and write "
+                   "elevations (ArcGIS Pro). Mutually exclusive with --wells-csv.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show the update plan without writing to the GDB (use with --gdb).")
+@qa_report_options
+def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
+                                 vrms_threshold, elevation_type, survey_date,
+                                 vertical_datum, wells_csv, gdb, dry_run,
+                                 report, fail_on):
+    """Tool 8.5: push QA-passed RTK survey elevations to MonitoringWells.TOC_ft.
+
+    Headless path (--wells-csv): parse RTK CSV, QA-filter, match to a known-wells
+    CSV, print the plan — no arcpy. LOCAL path (--gdb): guard for arcpy, read well
+    IDs from MonitoringWells, and (unless --dry-run) write TOC_ft + ElevationHistory.
+    """
+    import uuid
+    from datetime import date as _date
+
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
+    from autogis.core.envmon.reconcile_locations import read_well_ids_csv
+    from autogis.core.envmon.survey_to_well_elevation import (
+        build_elevation_history_records, select_rtk_elevations_for_wells,
+        write_rtk_elevations_to_wells)
+
+    if gdb and wells_csv:
+        raise click.UsageError("--gdb and --wells-csv are mutually exclusive.")
+    if gdb:
+        _guard("survey-to-well-elevation")
+
+    bid = batch_id or f"RTK-{uuid.uuid4().hex[:8].upper()}"
+    sdate = _date.fromisoformat(survey_date) if survey_date else _date.today()
+
+    points = parse_rtk_csv(Path(csv_path))
+    qa = QACollector()
+
+    well_ids: set[str] = set()
+    if wells_csv:
+        well_ids = set(read_well_ids_csv(Path(wells_csv)))
+    elif gdb:
+        from autogis.runtime.sessions import arcpy_env as _arcpy
+        _ax = _arcpy()
+        wells_fc = str(Path(gdb) / "MonitoringWells")
+        if _ax.Exists(wells_fc):
+            with _ax.da.SearchCursor(wells_fc, ["LocationID"],
+                                     f"SiteID='{site_id}'") as cur:
+                for row in cur:
+                    if row[0]:
+                        well_ids.add(str(row[0]).strip())
+
+    plan = select_rtk_elevations_for_wells(
+        points, well_ids, bid, qa,
+        hrms_threshold_ft=hrms_threshold, vrms_threshold_ft=vrms_threshold,
+        elevation_type=elevation_type)
+
+    click.echo(f"Batch: {plan.batch_id}  Survey date: {sdate}  Site: {site_id}")
+    click.echo(f"Updates: {len(plan.updates)}  Skipped: {len(plan.skipped)}  "
+               f"Failed QA: {len(plan.failed_qa)}")
+    for loc_id, elev in plan.updates.items():
+        click.echo(f"  {loc_id}: {elev:.3f} ft ({plan.elevation_type})")
+
+    if gdb and not dry_run and plan.updates:
+        history_recs = build_elevation_history_records(
+            plan, sdate, vertical_datum=vertical_datum)
+        n = write_rtk_elevations_to_wells(gdb, site_id, plan, history_recs)
+        click.echo(f"Updated {n} MonitoringWells records + "
+                   f"{len(history_recs)} ElevationHistory rows.")
+
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")
