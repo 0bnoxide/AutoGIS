@@ -49,6 +49,13 @@ TOOLS: dict[str, Runtime] = {
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
     "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
     "build-dashboard-data-mart": Runtime.LOCAL,  # truncates/repopulates GDB
+    "register-source-doc": Runtime.CLOUD,      # tool 2.5 headless registry
+    "validate-boring-logs": Runtime.CLOUD,     # tool 8.0b headless validate
+    "import-boring-logs": Runtime.LOCAL,       # tool 8.0b GDB write
+    "register-drone-flight": Runtime.LOCAL,    # tool 8.6 GDB write
+    "validate-drone-products": Runtime.CLOUD,  # tool 8.8 headless validate
+    "import-drone-products": Runtime.LOCAL,    # tool 8.8 GDB write
+    "survey-to-well-elevation": Runtime.LOCAL,  # tool 8.5 GDB write (--gdb path)
 }
 
 
@@ -200,6 +207,8 @@ _REGISTRY_SEED = [
      "field", "Process a differential level loop"),
     ("drone-checkpoint-qa", "DroneGCPCheckpointQA", "11.1", "CLOUD", "stable",
      "field", "QA drone GCP/checkpoint residuals"),
+    ("register-source-doc", "RegisterSourceDocuments", "2.5", "CLOUD", "stable",
+     "intake", "Register an ingested source document (SHA-256 audit registry)"),
 ]
 
 TOOL_REGISTRY: list = [

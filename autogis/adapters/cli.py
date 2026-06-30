@@ -1336,6 +1336,47 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
     click.echo(f"Imported {len(points)} points: {passes} QA pass, {len(points)-passes} QA fail.")
 
 
+@envmon.command("register-source-doc")
+@click.option("--file", "file_path", required=True, type=click.Path(exists=True),
+              help="Path to the source file to register.")
+@click.option("--site", "site_id", required=True, help="Site ID (e.g. H281).")
+@click.option("--event", "event_id", required=True, help="Event ID (e.g. 2026-Q2).")
+@click.option("--tool", "tool_name", required=True, help="Tool that ingested the file.")
+@click.option("--registry", "registry_path", default="source_docs.csv",
+              show_default=True, type=click.Path(),
+              help="Path to the source-document registry CSV.")
+@click.option("--notes", default="", help="Optional free-text notes.")
+@click.option("--skip-if-registered", is_flag=True, default=False,
+              help="Exit cleanly without writing if the file hash is already registered.")
+def register_source_doc_cmd(file_path, site_id, event_id, tool_name,
+                            registry_path, notes, skip_if_registered):
+    """Tool 2.5: register a source document in the append-only registry (headless)."""
+    from datetime import datetime, timezone
+    from autogis.core.envmon.source_registry import (
+        SourceDocRecord, SourceRegistry, compute_sha256,
+    )
+
+    p = Path(file_path)
+    sha = compute_sha256(p)
+    reg = SourceRegistry(Path(registry_path))
+
+    if skip_if_registered and reg.is_registered(str(p), sha):
+        click.echo("Already registered, skipped.")
+        return
+
+    reg.register(SourceDocRecord(
+        registered_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+        file_path=str(p),
+        sha256=sha,
+        file_size_bytes=p.stat().st_size,
+        site_id=site_id,
+        event_id=event_id,
+        tool=tool_name,
+        notes=notes,
+    ))
+    click.echo(f"Registered: {sha[:8]} {p.name}")
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")
