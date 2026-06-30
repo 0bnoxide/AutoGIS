@@ -57,6 +57,10 @@ def build_gw_level_summary(
     current: Dict[str, List[ElevationHistory]] = {}
     historical: Dict[str, List[ElevationHistory]] = {}
     for e in active:
+        if not str(e.location_id or "").strip():
+            qa.add(SEV_WARNING, "blank_location_id",
+                   "Elevation record with blank location_id skipped")
+            continue
         if e.survey_date == event_date:
             current.setdefault(e.location_id, []).append(e)
         elif e.survey_date < event_date:

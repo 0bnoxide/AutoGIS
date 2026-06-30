@@ -1,5 +1,7 @@
 """Unit tests for build_gwe_event (Tool 4.1) — contour-event layer + flags."""
-from autogis.core.envmon.build_gwe_event import build_gwe_event
+from autogis.core.common.records_csv import read_records_csv
+from autogis.core.common.schema.envmon import EnvWaterLevelEvent
+from autogis.core.envmon.build_gwe_event import build_gwe_event, write_gwe_event
 
 
 def _wl(loc, gwe, status="OK", dtw=10.0, site="S1"):
@@ -93,3 +95,18 @@ def test_missing_elevation_excluded():
     res = build_gwe_event(wls, event_date="2026-06-15")
     by = {r.location_id: r for r in res.records}
     assert by["MW-1"].use_for_model is False
+
+
+def test_blank_location_id_skipped():
+    wls = [_wl("", 100.0), _wl("MW-1", 100.1)]
+    res = build_gwe_event(wls, event_date="2026-06-15")
+    assert [r.location_id for r in res.records] == ["MW-1"]
+
+
+def test_write_gwe_event_round_trips(tmp_path):
+    res = build_gwe_event([_wl("MW-1", 100.0)], event_date="2026-06-15")
+    out = write_gwe_event(res, tmp_path / "gwe.csv")
+    back = read_records_csv(out, EnvWaterLevelEvent)
+    assert len(back) == 1
+    assert back[0].location_id == "MW-1"
+    assert back[0].use_for_model is True   # exercises the #73 bool round-trip

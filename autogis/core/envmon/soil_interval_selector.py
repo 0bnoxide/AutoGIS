@@ -68,18 +68,45 @@ def _ratio(result: Optional[float], screening: Optional[float]) -> Optional[floa
     return result / screening
 
 
-def _to_selection(row: dict, rule: str) -> IntervalSelection:
-    result = _f(row.get("result_value"))
-    screening = _f(row.get("screening_level"))
-    return IntervalSelection(
-        location_id=str(row.get("location_id", "")).strip(),
-        analyte=str(row.get("analyte", "")).strip(),
-        depth_top=_f(row.get("depth_top")) or 0.0,
-        depth_bottom=_f(row.get("depth_bottom")) or 0.0,
-        result_value=result,
-        exceeds=_exceeds(result, screening),
-        selection_rule=rule,
-    )
+@dataclasses.dataclass
+class _Item:
+    sel: IntervalSelection
+    screening: Optional[float]
+    is_confirmation: bool
+
+
+def _build_items(soil_rows: List[dict], rule: str,
+                 qa: QACollector) -> List["_Item"]:
+    """Build selections, carrying screening + confirmation with each row so no
+    later step has to re-zip with soil_rows (which breaks once rows are skipped).
+    Blank location_id and missing depths are surfaced as QA warnings."""
+    items: List[_Item] = []
+    for row in soil_rows:
+        loc = str(row.get("location_id", "")).strip()
+        if not loc:
+            qa.add(SEV_WARNING, "blank_location_id",
+                   "Soil row with blank location_id skipped")
+            continue
+        top = _f(row.get("depth_top"))
+        bottom = _f(row.get("depth_bottom"))
+        if top is None or bottom is None:
+            qa.add(SEV_WARNING, "missing_depth",
+                   f"{loc}/{str(row.get('analyte', '')).strip()}: missing depth "
+                   f"interval; treated as 0 ft", location_id=loc)
+        result = _f(row.get("result_value"))
+        screening = _f(row.get("screening_level"))
+        items.append(_Item(
+            sel=IntervalSelection(
+                location_id=loc,
+                analyte=str(row.get("analyte", "")).strip(),
+                depth_top=top if top is not None else 0.0,
+                depth_bottom=bottom if bottom is not None else 0.0,
+                result_value=result,
+                exceeds=_exceeds(result, screening),
+                selection_rule=rule),
+            screening=screening,
+            is_confirmation=bool(row.get("is_confirmation"))))
+    return items
 
 
 def select_intervals(
@@ -96,59 +123,57 @@ def select_intervals(
     if qa is None:
         qa = QACollector()
 
-    sels = [_to_selection(r, rule) for r in soil_rows]
-    # Group by location for the per-location rules.
-    by_loc: Dict[str, List[IntervalSelection]] = {}
-    for s in sels:
-        by_loc.setdefault(s.location_id, []).append(s)
+    items = _build_items(soil_rows, rule, qa)
+    by_loc: Dict[str, List[_Item]] = {}
+    for it in items:
+        by_loc.setdefault(it.sel.location_id, []).append(it)
 
     selected: List[IntervalSelection] = []
 
     if rule == "all":
-        selected = list(sels)
+        selected = [it.sel for it in items]
     elif rule == "confirmation_only":
-        flags = [bool(r.get("is_confirmation")) for r in soil_rows]
-        selected = [s for s, keep in zip(sels, flags) if keep]
+        selected = [it.sel for it in items if it.is_confirmation]
     elif rule == "interval_list":
         windows = interval_list or []
-        for s in sels:
-            if any(wt <= s.depth_top and s.depth_bottom <= wb
-                   for wt, wb in windows):
-                selected.append(s)
+        selected = [it.sel for it in items
+                    if any(wt <= it.sel.depth_top and it.sel.depth_bottom <= wb
+                           for wt, wb in windows)]
     elif rule == "highest_result":
         best: Dict[Tuple[str, str], IntervalSelection] = {}
-        for s in sels:
-            if s.result_value is None:
+        for it in items:
+            if it.sel.result_value is None:
                 continue
-            key = (s.location_id, s.analyte)
+            key = (it.sel.location_id, it.sel.analyte)
             cur = best.get(key)
-            if cur is None or s.result_value > cur.result_value:
-                best[key] = s
+            if cur is None or it.sel.result_value > cur.result_value:
+                best[key] = it.sel
         selected = list(best.values())
     elif rule in ("shallowest", "deepest"):
         for loc, group in by_loc.items():
             if rule == "shallowest":
-                anchor = min(g.depth_top for g in group)
-                selected.extend(g for g in group if g.depth_top == anchor)
+                anchor = min(it.sel.depth_top for it in group)
+                selected.extend(it.sel for it in group
+                                if it.sel.depth_top == anchor)
             else:
-                anchor = max(g.depth_bottom for g in group)
-                selected.extend(g for g in group if g.depth_bottom == anchor)
+                anchor = max(it.sel.depth_bottom for it in group)
+                selected.extend(it.sel for it in group
+                                if it.sel.depth_bottom == anchor)
     elif rule == "highest_exceedance":
-        # one row per location: the max exceedance ratio.
-        ratios = {id(s): _ratio(s.result_value,
-                                _f(r.get("screening_level")))
-                  for s, r in zip(sels, soil_rows)}
         for loc, group in by_loc.items():
-            ranked = [g for g in group if ratios[id(g)] is not None]
+            ranked = [(it, _ratio(it.sel.result_value, it.screening))
+                      for it in group]
+            ranked = [(it, r) for it, r in ranked if r is not None]
             if not ranked:
                 qa.add(SEV_WARNING, "no_qualifying_interval",
                        f"{loc}: no interval has a screening level to rank by "
                        f"exceedance", location_id=loc)
                 continue
-            selected.append(max(ranked, key=lambda g: ratios[id(g)]))
+            selected.append(max(ranked, key=lambda pair: pair[1])[0].sel)
 
-    # Locations that contributed no selected row (other rules).
-    if rule not in ("highest_exceedance",):
+    # Locations that contributed no selected row (the non-exceedance rules
+    # already warn per location above).
+    if rule != "highest_exceedance":
         kept_locs = {s.location_id for s in selected}
         for loc in by_loc:
             if loc not in kept_locs:
@@ -157,5 +182,5 @@ def select_intervals(
                        location_id=loc)
 
     qa.add(SEV_INFO, "soil_intervals_selected",
-           f"select_intervals[{rule}]: {len(selected)} of {len(sels)} rows kept")
+           f"select_intervals[{rule}]: {len(selected)} of {len(items)} rows kept")
     return SelectionResult(selected=selected, rule=rule, qa=qa)

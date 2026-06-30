@@ -119,23 +119,25 @@ def generate_workbook(scenario: WorkbookScenario, out_path: Path) -> Path:
     if "formula_error" in feats and first_result_cell is not None:
         first_result_cell.value = "#VALUE!"
 
-    if "rpd_sheet" in feats:
+    if "rpd_sheet" in feats and wells:
         rpd = wb.create_sheet("RPD")
         for c, name in enumerate(
                 ["ParentSampleID", "DuplicateSampleID", "Analyte",
                  "ParentResult", "DuplicateResult", "RPD"], start=1):
             rpd.cell(row=1, column=c, value=name)
-        for i, analyte in enumerate(analytes, start=2):
+        parent_well = wells[0]
+        for analyte in analytes:
             parent = round(rng.uniform(1, 50), 2)
             dup = round(parent * rng.uniform(0.8, 1.2), 2)
-            rpd.append([f"{wells[0]}-S", f"{wells[0]}-D", analyte, parent, dup,
+            rpd.append([f"{parent_well}-S", f"{parent_well}-D", analyte, parent,
+                        dup,
                         round(abs(parent - dup) / ((parent + dup) / 2) * 100, 1)])
 
     if "ibi" in feats:
         ibi = wb.create_sheet("IBI")
         for c, name in enumerate(["StationID", "Metric", "Score"], start=1):
             ibi.cell(row=1, column=c, value=name)
-        for i, well in enumerate(wells[:scenario.n_wells], start=2):
+        for well in wells[:scenario.n_wells]:
             ibi.append([well, "TaxaRichness", rng.randint(1, 10)])
 
     out = Path(out_path)

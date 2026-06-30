@@ -475,6 +475,7 @@ def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
         build_gw_level_summary, GWLevelRow)
 
     elevations = read_records_csv(Path(elevations_csv), ElevationHistory)
+    qa = QACollector()
     toc: dict = {}
     if toc_csv:
         with Path(toc_csv).open(newline="", encoding="utf-8") as fh:
@@ -486,8 +487,10 @@ def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
                     try:
                         toc[loc] = float(raw)
                     except ValueError:
-                        pass
-    qa = QACollector()
+                        from autogis.core.common.qa import SEV_WARNING
+                        qa.add(SEV_WARNING, "bad_toc_value",
+                               f"{loc}: non-numeric toc_elevation {raw!r} "
+                               f"ignored", location_id=loc)
     rows = build_gw_level_summary(
         elevations, toc, event_date=_date.fromisoformat(event_date), qa=qa)
     out = write_records_csv(rows, Path(output), record_class=GWLevelRow)

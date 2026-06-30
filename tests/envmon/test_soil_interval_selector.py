@@ -78,6 +78,21 @@ def test_zero_screening_level_is_real_threshold():
     assert res.selected[0].exceeds is True
 
 
+def test_blank_location_id_skipped_with_warning():
+    """Blank location_id must not collapse unrelated borings into one '' group."""
+    rows = [_row("", "Pb", 2, 4, 5), _row("B-1", "Pb", 2, 4, 9),
+            _row("B-1", "Pb", 8, 10, 3)]
+    res = select_intervals(rows, rule="shallowest")
+    assert all(s.location_id == "B-1" for s in res.selected)
+    assert any(r.category == "blank_location_id" for r in res.qa.records)
+
+
+def test_missing_depth_warns():
+    rows = [_row("B-1", "Pb", None, None, 5)]
+    res = select_intervals(rows, rule="all")
+    assert any(r.category == "missing_depth" for r in res.qa.records)
+
+
 def test_unknown_rule_raises():
     with pytest.raises(ValueError):
         select_intervals([], rule="bogus")
