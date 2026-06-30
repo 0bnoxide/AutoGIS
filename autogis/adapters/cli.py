@@ -1541,6 +1541,271 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
     click.echo(f"Imported {len(points)} points: {passes} QA pass, {len(points)-passes} QA fail.")
 
 
+@envmon.command("register-source-doc")
+@click.option("--file", "file_path", required=True, type=click.Path(exists=True),
+              help="Path to the source file to register.")
+@click.option("--site", "site_id", required=True, help="Site ID (e.g. H281).")
+@click.option("--event", "event_id", required=True, help="Event ID (e.g. 2026-Q2).")
+@click.option("--tool", "tool_name", required=True, help="Tool that ingested the file.")
+@click.option("--registry", "registry_path", default="source_docs.csv",
+              show_default=True, type=click.Path(),
+              help="Path to the source-document registry CSV.")
+@click.option("--notes", default="", help="Optional free-text notes.")
+@click.option("--skip-if-registered", is_flag=True, default=False,
+              help="Exit cleanly without writing if the file hash is already registered.")
+def register_source_doc_cmd(file_path, site_id, event_id, tool_name,
+                            registry_path, notes, skip_if_registered):
+    """Tool 2.5: register a source document in the append-only registry (headless)."""
+    from datetime import datetime, timezone
+    from autogis.core.envmon.source_registry import (
+        SourceDocRecord, SourceRegistry, compute_sha256,
+    )
+
+    p = Path(file_path)
+    sha = compute_sha256(p)
+    reg = SourceRegistry(Path(registry_path))
+
+    if skip_if_registered and reg.is_registered(str(p), sha):
+        click.echo("Already registered, skipped.")
+        return
+
+    reg.register(SourceDocRecord(
+        registered_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+        file_path=str(p),
+        sha256=sha,
+        file_size_bytes=p.stat().st_size,
+        site_id=site_id,
+        event_id=event_id,
+        tool=tool_name,
+        notes=notes,
+    ))
+    click.echo(f"Registered: {sha[:8]} {p.name}")
+
+
+@envmon.command("register-drone-flight")
+@click.argument("flight_yaml", metavar="FLIGHT_YAML", type=click.Path(exists=True))
+@click.option("--gdb", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required for the write).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Validate the flight YAML only; do not write to the GDB.")
+@qa_report_options
+def register_drone_flight_cmd(flight_yaml, gdb, dry_run, report, fail_on):
+    """Tool 8.6: register a drone flight from an inventory YAML (ArcGIS Pro)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.register_drone_flight import (
+        load_flight_yaml, validate_flight_record, write_drone_flight)
+    rec = load_flight_yaml(Path(flight_yaml))
+    qa = QACollector()
+    validate_flight_record(rec, qa)
+    if not dry_run and qa.counts_by_severity().get("ERROR", 0) == 0:
+        _guard("register-drone-flight")
+        if write_drone_flight(gdb, rec):
+            click.echo(f"Flight {rec.flight_id} registered in {gdb}.")
+        else:
+            click.echo(f"DroneFlights table not found in {gdb}; nothing written.")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("validate-drone-products")
+@click.option("--manifest", "manifest_path", required=True, type=click.Path(exists=True),
+              help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
+@click.option("--flight-id", required=True, help="Drone flight ID to stamp on records.")
+@click.option("--check-paths", is_flag=True, default=False,
+              help="Verify that each product path exists on disk.")
+@qa_report_options
+def validate_drone_products_cmd(manifest_path, flight_id, check_paths, report, fail_on):
+    """Tool 8.8: validate a drone product manifest CSV (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_drone_products import (
+        parse_product_manifest, validate_drone_products)
+    records = parse_product_manifest(Path(manifest_path), flight_id)
+    qa = QACollector()
+    validate_drone_products(records, qa, check_paths=check_paths)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("import-drone-products")
+@click.option("--manifest", "manifest_path", required=True, type=click.Path(exists=True),
+              help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
+@click.option("--flight-id", required=True,
+              help="Drone flight ID. A matching DroneFlights row must already exist in the GDB.")
+@click.option("--site-id", required=True, help="Site identifier for logging.")
+@click.option("--gdb", "gdb_path", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required).")
+@click.option("--catalog-name", default="DroneMosaicDataset", show_default=True,
+              help="Name of the existing mosaic dataset inside the GDB.")
+@click.option("--gcp-csv", "gcp_csv_path", default=None, type=click.Path(exists=True),
+              help="Optional GCP CSV (point_id, northing, easting, elevation, point_type).")
+@qa_report_options
+def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
+                              catalog_name, gcp_csv_path, report, fail_on):
+    """Tool 8.8: import drone deliverables to raster catalog + GCP table (ArcGIS Pro)."""
+    _guard("import-drone-products")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_drone_products import (
+        parse_product_manifest, validate_drone_products, classify_records,
+        parse_gcp_csv, write_product_registry, add_rasters_to_catalog,
+        write_gcp_features)
+    records = parse_product_manifest(Path(manifest_path), flight_id)
+    qa = QACollector()
+    validate_drone_products(records, qa)
+    if qa.has_blocking(allow_warnings=True, allow_errors=False):
+        _render_qa(qa, report, fail_on)
+        return
+    rasters, others = classify_records(records)
+    n_reg = write_product_registry(gdb_path, records)
+    if n_reg:
+        click.echo(f"Registered {n_reg} product(s) in DroneProductRegistry.")
+    else:
+        click.echo("DroneProductRegistry table not found; no products registered.")
+    added = add_rasters_to_catalog(gdb_path, catalog_name, rasters)
+    click.echo(f"Added {added} raster(s) to mosaic dataset '{catalog_name}'.")
+    if others:
+        click.echo(f"Path-registered {len(others)} non-raster product(s) "
+                   f"(point cloud — no mosaic load in v1).")
+    if gcp_csv_path:
+        gcp_points = parse_gcp_csv(Path(gcp_csv_path), flight_id)
+        n_gcp = write_gcp_features(gdb_path, gcp_points)
+        click.echo(f"Wrote {n_gcp} GCP feature(s) to DroneControlPoints.")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("validate-boring-logs")
+@click.argument("input_dir", metavar="INPUT_DIR",
+                type=click.Path(exists=True, file_okay=False))
+@qa_report_options
+def validate_boring_logs_cmd(input_dir, report, fail_on):
+    """Tool 8.0b: validate a boring-log CSV package (headless).
+
+    INPUT_DIR holds boring_locations.csv, lithology.csv and samples.csv.
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_boring_logs import (
+        load_boring_package, validate_boring_package)
+    qa = QACollector()
+    locs, ivals, samps = load_boring_package(Path(input_dir), qa)
+    validate_boring_package(locs, ivals, samps, qa)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("import-boring-logs")
+@click.argument("input_dir", metavar="INPUT_DIR",
+                type=click.Path(exists=True, file_okay=False))
+@click.option("--gdb", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required).")
+@qa_report_options
+def import_boring_logs_cmd(input_dir, gdb, report, fail_on):
+    """Tool 8.0b: import a boring-log CSV package into the GDB (ArcGIS Pro)."""
+    _guard("import-boring-logs")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_boring_logs import (
+        load_boring_package, validate_boring_package, import_boring_package)
+    qa = QACollector()
+    locs, ivals, samps = load_boring_package(Path(input_dir), qa)
+    validate_boring_package(locs, ivals, samps, qa)
+    if not qa.has_blocking(allow_warnings=True, allow_errors=False):
+        import_boring_package(gdb, locs, ivals, samps)
+        click.echo(f"Imported {len(locs)} borings, {len(ivals)} intervals, "
+                   f"{len(samps)} samples.")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("survey-to-well-elevation")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True,
+              help="Site ID matching SiteID in MonitoringWells.")
+@click.option("--batch-id", default=None,
+              help="Override auto-generated batch ID (default: RTK-<hex>).")
+@click.option("--hrms-threshold", type=float, default=0.03, show_default=True,
+              help="Max horizontal RMS error (ft) for QA pass.")
+@click.option("--vrms-threshold", type=float, default=0.05, show_default=True,
+              help="Max vertical RMS error (ft) for QA pass.")
+@click.option("--elevation-type", default="TOC", show_default=True,
+              help="ElevationType tag for ElevationHistory (e.g. TOC, GS).")
+@click.option("--survey-date", default=None, help="ISO date YYYY-MM-DD; defaults to today.")
+@click.option("--vertical-datum", default="NAVD88", show_default=True,
+              help="Vertical datum label stored in ElevationHistory.")
+@click.option("--wells-csv", default=None, type=click.Path(exists=True),
+              help="CSV with a LocationID column — headless well list. "
+                   "Mutually exclusive with --gdb.")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="File geodatabase: read well IDs from MonitoringWells and write "
+                   "elevations (ArcGIS Pro). Mutually exclusive with --wells-csv.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show the update plan without writing to the GDB (use with --gdb).")
+@click.option("--approve", is_flag=True, default=False,
+              help="Mark written ElevationHistory rows ApprovedForUse=1 "
+                   "(default: pending — TOC_ft is updated, approval recorded as 0).")
+@qa_report_options
+def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
+                                 vrms_threshold, elevation_type, survey_date,
+                                 vertical_datum, wells_csv, gdb, dry_run, approve,
+                                 report, fail_on):
+    """Tool 8.5: push QA-passed RTK survey elevations to MonitoringWells.TOC_ft.
+
+    Headless path (--wells-csv): parse RTK CSV, QA-filter, match to a known-wells
+    CSV, print the plan — no arcpy. LOCAL path (--gdb): guard for arcpy, read well
+    IDs from MonitoringWells, and (unless --dry-run) write TOC_ft + ElevationHistory.
+    """
+    import uuid
+    from datetime import date as _date
+
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
+    from autogis.core.envmon.reconcile_locations import read_well_ids_csv
+    from autogis.core.envmon.survey_to_well_elevation import (
+        build_elevation_history_records, select_rtk_elevations_for_wells,
+        write_rtk_elevations_to_wells, sql_quote)
+
+    if gdb and wells_csv:
+        raise click.UsageError("--gdb and --wells-csv are mutually exclusive.")
+    if not gdb and not wells_csv:
+        raise click.UsageError(
+            "Provide --wells-csv (headless well list) or --gdb (ArcGIS Pro).")
+    if gdb:
+        _guard("survey-to-well-elevation")
+
+    bid = batch_id or f"RTK-{uuid.uuid4().hex[:8].upper()}"
+    sdate = _date.fromisoformat(survey_date) if survey_date else _date.today()
+
+    points = parse_rtk_csv(Path(csv_path))
+    qa = QACollector()
+
+    well_ids: set[str] = set()
+    if wells_csv:
+        well_ids = set(read_well_ids_csv(Path(wells_csv)))
+    elif gdb:
+        from autogis.runtime.sessions import arcpy_env as _arcpy
+        _ax = _arcpy()
+        wells_fc = str(Path(gdb) / "MonitoringWells")
+        if _ax.Exists(wells_fc):
+            with _ax.da.SearchCursor(wells_fc, ["LocationID"],
+                                     f"SiteID='{sql_quote(site_id)}'") as cur:
+                for row in cur:
+                    if row[0]:
+                        well_ids.add(str(row[0]).strip())
+
+    plan = select_rtk_elevations_for_wells(
+        points, well_ids, bid, qa,
+        hrms_threshold_ft=hrms_threshold, vrms_threshold_ft=vrms_threshold,
+        elevation_type=elevation_type)
+
+    click.echo(f"Batch: {plan.batch_id}  Survey date: {sdate}  Site: {site_id}")
+    click.echo(f"Updates: {len(plan.updates)}  Skipped: {len(plan.skipped)}  "
+               f"Failed QA: {len(plan.failed_qa)}")
+    for loc_id, elev in plan.updates.items():
+        click.echo(f"  {loc_id}: {elev:.3f} ft ({plan.elevation_type})")
+
+    if gdb and not dry_run and plan.updates:
+        history_recs = build_elevation_history_records(
+            plan, sdate, vertical_datum=vertical_datum, approved_for_use=approve)
+        n = write_rtk_elevations_to_wells(gdb, site_id, plan, history_recs)
+        click.echo(f"Updated {n} MonitoringWells records + "
+                   f"{len(history_recs)} ElevationHistory rows.")
+
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")
