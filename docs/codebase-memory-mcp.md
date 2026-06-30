@@ -19,7 +19,7 @@ anything else.
 
 | Thing | Correct value |
 |---|---|
-| Binary | `C:\Users\ichbi\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe` (v0.8.1, on PATH) |
+| Binary | `C:\Users\ichbi\AppData\Roaming\npm\node_modules\codebase-memory-mcp\bin\codebase-memory-mcp.exe` (v0.8.1, npm-global install; on PATH as `codebase-memory-mcp`) |
 | Registration | top-level `mcpServers` in `C:\Users\ichbi\.claude.json` |
 | Index (persistent) | `C:\Users\ichbi\.cache\codebase-memory-mcp\C-Users-ichbi-AutoGIS.db` |
 | When tools load | **Claude Code startup only** — restart after any registration change |
@@ -74,6 +74,36 @@ Python only.
 
 Append a dated entry whenever the MCP wiring or index setup changes, or a deviation
 is found and fixed. Newest first.
+
+### 2026-06-30 — stale index + harvest unindexed: SessionStart hook pointed at a dead binary
+- **Symptoms (long-standing):** the knowledge graph was chronically stale, and
+  `autogis/core/harvest/` (Tool 1, the harvester) had **zero node coverage**.
+- **Root cause 1 — stale index:** `.claude/hooks/session-start.sh` hardcoded
+  `CBM=.../AppData/Local/Programs/codebase-memory-mcp/...exe`, but the registered binary is
+  the **npm-global** install (`.../AppData/Roaming/npm/node_modules/codebase-memory-mcp/bin/...exe`).
+  The `[ -x "$CBM" ]` guard failed every session, so the refresh **silently no-op'd** — all
+  output went to `/dev/null`. The index only refreshed when an agent manually ran
+  `index_repository`. **Fix:** resolve via `command -v codebase-memory-mcp` (PATH) and **log the
+  outcome** (status + node/edge counts) to `~/.cache/codebase-memory-mcp/last-index.log` so the
+  silent-failure class is gone. Full index measured ~0.5s → stays synchronous.
+- **Root cause 2 — harvest unindexed:** `autogis/core/harvest/` had no `__init__.py` (the only
+  `core` subpackage missing one). The indexer only walks regular packages, so it skipped the
+  harvester source (a PEP 420 namespace package) while still indexing its tests. **Why it was
+  missing:** `.gitignore` had an unanchored `harvest/` (intended for the harvester's *output*
+  dir) that also matched the *source* package, so a package `__init__.py` was un-committable —
+  git silently ignored any attempt to add one. **Fix (two parts):** anchor the ignore to
+  `/harvest/` so it only matches a root-level output dir, AND add
+  `autogis/core/harvest/__init__.py`. **Verified:** a fresh index went 0 → **48** harvest source
+  nodes (the `harvest()` orchestrator alone has in-degree 17). Note: the indexer does **not**
+  honor this `.gitignore` rule — `__init__.py` is the sole indexing gate; the ignore fix is only
+  about making the package committable.
+- **Root cause 3 — "the monitor":** the background git-change watcher was off
+  (`auto_index=false`). **Enabled** it (`config set auto_index true`; activates on next server
+  start). Note: `detect_changes` is a working-tree diff/impact tool, **not** an index-freshness
+  check — don't use it to judge staleness.
+- **Verified via** an isolated worktree indexed as a throwaway project (the main working tree was
+  claimed by a parallel session at the time). Fixes are on branch
+  `worktree-fix-codebase-index-2026-06-30`.
 
 ### 2026-06-30 — cloud/web sessions can't get these tools (current platform limit)
 - **Question:** can a cloud (`CLAUDE_CODE_REMOTE=true`) Claude Code session — e.g. the

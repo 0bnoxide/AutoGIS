@@ -3,7 +3,12 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .venv/
-harvest/
+# Harvester OUTPUT dir for local attachment downloads — anchored to the repo root
+# so it does NOT also match the SOURCE package autogis/core/harvest/. The old
+# unanchored `harvest/` matched the package dir, which kept its __init__.py
+# un-committable (so the package shipped without one) — the reason the harvester
+# was absent from the codebase-memory index. See docs/codebase-memory-mcp.md 2026-06-30.
+/harvest/
 .superpowers/
 
 # headroom runtime artifacts (defense-in-depth; relocated to $HOME by the hook)
