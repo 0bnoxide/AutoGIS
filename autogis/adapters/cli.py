@@ -495,6 +495,53 @@ def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
     _render_qa(qa, report, fail_on)
 
 
+def _read_id_list(path) -> set:
+    """One id per line; blanks and '#' comments ignored."""
+    if not path:
+        return set()
+    out = set()
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if s and not s.startswith("#"):
+            out.add(s)
+    return out
+
+
+@envmon.command("build-gwe-event")
+@click.option("--water-levels", required=True, type=click.Path(exists=True),
+              help="CSV of water-level rows (location_id,gwe_ft,dtw_ft,status,...).")
+@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output EnvWaterLevelEvent CSV path.")
+@click.option("--exclude", default=None, type=click.Path(exists=True),
+              help="Text file of location_ids to exclude from contouring.")
+@click.option("--perched", default=None, type=click.Path(exists=True),
+              help="Text file of perched/separate-zone location_ids.")
+@click.option("--anomaly-stdev", default=3.0, type=float,
+              help="Robust outlier threshold (modified z-score; default 3.0).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
+                        anomaly_stdev, report, fail_on):
+    """Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags."""
+    import csv as _csv
+    from autogis.core.envmon.build_gwe_event import (
+        build_gwe_event, write_gwe_event)
+
+    with Path(water_levels).open(newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    result = build_gwe_event(
+        rows, event_date=event_date,
+        exclude_locations=_read_id_list(exclude),
+        perched_locations=_read_id_list(perched),
+        anomaly_stdev=anomaly_stdev)
+    out = write_gwe_event(result, Path(out_path))
+    click.echo(f"Written: {out}  ({result.contour_points} contour points, "
+               f"{result.excluded} excluded, {result.anomalous} anomalous)")
+    _render_qa(result.qa, report, fail_on)
+
+
 @envmon.command("identify-data-gaps")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
