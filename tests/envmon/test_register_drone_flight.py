@@ -101,6 +101,26 @@ def test_validate_flight_missing_date(tmp_path):
                and "flight_date" in r.message for r in qa.records)
 
 
+def test_blank_altitude_string_is_none(tmp_path):
+    data = yaml.safe_load(_YAML)
+    data["flight_altitude_m"] = ""
+    rec = load_flight_yaml(_write(tmp_path, yaml.dump(data)))
+    assert rec.flight_altitude_m is None
+
+
+def test_quoted_false_gcp_used_is_false(tmp_path):
+    text = _YAML.replace("gcp_used: true", 'gcp_used: "false"')
+    rec = load_flight_yaml(_write(tmp_path, text))
+    assert rec.gcp_used is False
+
+
+def test_blank_checkpoint_count_defaults_zero(tmp_path):
+    data = yaml.safe_load(_YAML)
+    data["checkpoint_count"] = ""
+    rec = load_flight_yaml(_write(tmp_path, yaml.dump(data)))
+    assert rec.checkpoint_count == 0
+
+
 def test_module_imports_without_arcpy():
     import importlib
     mod = importlib.import_module("autogis.core.envmon.register_drone_flight")

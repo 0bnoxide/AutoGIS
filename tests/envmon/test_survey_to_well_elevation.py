@@ -161,3 +161,9 @@ def test_empty_plan_produces_no_history_records():
     plan = select_rtk_elevations_for_wells([], set(), "B-18", qa)
     records = build_elevation_history_records(plan, date(2026, 6, 28))
     assert records == []
+
+
+def test_sql_quote_escapes_single_quotes():
+    from autogis.core.envmon.survey_to_well_elevation import sql_quote
+    assert sql_quote("O'Brien") == "O''Brien"
+    assert sql_quote("plain-id") == "plain-id"

@@ -23,6 +23,12 @@ VALID_PRODUCT_TYPES: frozenset[str] = frozenset(
 RASTER_PRODUCT_TYPES: frozenset[str] = frozenset({"orthomosaic", "DSM", "DEM"})
 
 
+def _s(row: dict, key: str) -> str:
+    """csv.DictReader fills missing trailing columns with None; coerce to str
+    before stripping so a short/malformed row never raises AttributeError."""
+    return (row.get(key) or "").strip()
+
+
 def parse_product_manifest(path: Path, flight_id: str) -> list[DroneProductRecord]:
     """Parse a product manifest CSV into DroneProductRecord instances.
 
@@ -35,15 +41,18 @@ def parse_product_manifest(path: Path, flight_id: str) -> list[DroneProductRecor
     out: list[DroneProductRecord] = []
     with Path(path).open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
-            res_raw = row.get("resolution_m", "").strip()
-            resolution = float(res_raw) if res_raw else None
+            res_raw = _s(row, "resolution_m")
+            try:
+                resolution = float(res_raw) if res_raw else None
+            except ValueError:
+                resolution = None
             out.append(DroneProductRecord(
                 product_id=str(uuid.uuid4()),
                 flight_id=flight_id,
-                product_type=row.get("product_type", "").strip(),
-                path=row.get("path", "").strip(),
-                crs=row.get("crs", "").strip(),
-                vertical_datum=row.get("vertical_datum", "").strip(),
+                product_type=_s(row, "product_type"),
+                path=_s(row, "path"),
+                crs=_s(row, "crs"),
+                vertical_datum=_s(row, "vertical_datum"),
                 resolution_m=resolution,
                 qa_status="pending",
             ))
@@ -121,7 +130,7 @@ def parse_gcp_csv(path: Path, flight_id: str) -> list[DroneControlPoint]:
     stamped from the caller argument.
     """
     def _opt_float(row: dict, key: str):
-        v = row.get(key, "").strip()
+        v = _s(row, key)
         try:
             return float(v) if v else None
         except ValueError:
@@ -135,10 +144,10 @@ def parse_gcp_csv(path: Path, flight_id: str) -> list[DroneControlPoint]:
             if n is None or e is None or z is None:
                 continue  # malformed control point (missing/non-numeric coord) — skip, don't crash
             out.append(DroneControlPoint(
-                point_id=row.get("point_id", "").strip(),
+                point_id=_s(row, "point_id"),
                 flight_id=flight_id,
                 northing=n, easting=e, elevation=z,
-                point_type=row.get("point_type", "GCP").strip() or "GCP",
+                point_type=_s(row, "point_type") or "GCP",
                 residual_h=_opt_float(row, "residual_h"),
                 residual_v=_opt_float(row, "residual_v"),
             ))
@@ -152,15 +161,18 @@ def parse_gcp_csv(path: Path, flight_id: str) -> list[DroneControlPoint]:
 def write_product_registry(  # pragma: no cover
     gdb_path: str,
     records: list[DroneProductRecord],
-) -> None:
-    """Insert DroneProductRecord rows into DroneProductRegistry (ArcGIS Pro)."""
+) -> int:
+    """Insert DroneProductRecord rows into DroneProductRegistry (ArcGIS Pro).
+
+    Returns the number of rows written; 0 if the table was absent.
+    """
     from pathlib import Path as _P
 
     from ...runtime.sessions import arcpy_env as _arcpy
     _ax = _arcpy()
     table = str(_P(gdb_path) / "DroneProductRegistry")
     if not _ax.Exists(table):
-        return
+        return 0
     fields = [
         "ProductID", "FlightID", "ProductType", "ProductPath",
         "CRS", "VerticalDatum", "Resolution_m", "QAStatus",
@@ -171,6 +183,7 @@ def write_product_registry(  # pragma: no cover
                 r.product_id, r.flight_id, r.product_type, r.path,
                 r.crs, r.vertical_datum, r.resolution_m, r.qa_status,
             ])
+    return len(records)
 
 
 def add_rasters_to_catalog(  # pragma: no cover
@@ -200,12 +213,13 @@ def add_rasters_to_catalog(  # pragma: no cover
 def write_gcp_features(  # pragma: no cover
     gdb_path: str,
     points: list[DroneControlPoint],
-) -> None:
+) -> int:
     """Insert DroneControlPoint rows into the DroneControlPoints table (ArcGIS Pro).
 
     DroneControlPoints is an attribute table (gdb_schema.py): coordinates are
     stored as Northing/Easting/Elevation_ft columns, residuals as
-    ResidualH_m/ResidualV_m. No geometry column.
+    ResidualH_m/ResidualV_m. No geometry column. Returns the number of rows
+    written; 0 if the table was absent.
     """
     from pathlib import Path as _P
 
@@ -213,7 +227,7 @@ def write_gcp_features(  # pragma: no cover
     _ax = _arcpy()
     table = str(_P(gdb_path) / "DroneControlPoints")
     if not _ax.Exists(table):
-        return
+        return 0
     fields = [
         "PointID", "FlightID", "Northing", "Easting", "Elevation_ft",
         "PointType", "ResidualH_m", "ResidualV_m",
@@ -224,3 +238,4 @@ def write_gcp_features(  # pragma: no cover
                 pt.point_id, pt.flight_id, pt.northing, pt.easting,
                 pt.elevation, pt.point_type, pt.residual_h, pt.residual_v,
             ])
+    return len(points)

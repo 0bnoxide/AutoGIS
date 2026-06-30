@@ -21,8 +21,14 @@ from ..common.qa import QACollector, SEV_ERROR, SEV_WARNING, SEV_INFO
 from ..common.schema.boring import BoringLocation, LithologyInterval, BoringSample
 
 
+def _s(row: dict, key: str) -> str:
+    """None-safe cell read: csv.DictReader fills missing trailing columns with
+    None, so coerce to str before stripping (a short row must not crash)."""
+    return (row.get(key) or "").strip()
+
+
 def _f(row: dict, key: str) -> Optional[float]:
-    v = row.get(key, "").strip()
+    v = _s(row, key)
     if not v:
         return None
     try:
@@ -36,14 +42,14 @@ def parse_boring_locations_csv(path: Path) -> list[BoringLocation]:
     with Path(path).open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             out.append(BoringLocation(
-                boring_id=row.get("BoringID", "").strip(),
-                site_id=row.get("SiteID", "").strip(),
-                location_type=row.get("LocationType", "").strip(),
+                boring_id=_s(row, "BoringID"),
+                site_id=_s(row, "SiteID"),
+                location_type=_s(row, "LocationType"),
                 northing=_f(row, "Northing"),
                 easting=_f(row, "Easting"),
                 ground_elevation=_f(row, "GroundElevation_ft"),
                 toc_elevation=_f(row, "TOCElevation_ft"),
-                status=row.get("Status", "").strip(),
+                status=_s(row, "Status"),
             ))
     return out
 
@@ -63,13 +69,13 @@ def parse_lithology_csv(
                 dropped += 1
                 continue
             out.append(LithologyInterval(
-                boring_id=row.get("BoringID", "").strip(),
+                boring_id=_s(row, "BoringID"),
                 top_depth=top, bottom_depth=bot,
-                uscs=row.get("USCS", "").strip(),
-                primary_material=row.get("PrimaryMaterial", "").strip(),
-                color=row.get("Color", "").strip(),
-                moisture=row.get("Moisture", "").strip(),
-                description=row.get("Description", "").strip(),
+                uscs=_s(row, "USCS"),
+                primary_material=_s(row, "PrimaryMaterial"),
+                color=_s(row, "Color"),
+                moisture=_s(row, "Moisture"),
+                description=_s(row, "Description"),
             ))
     if dropped and qa is not None:
         qa.add(SEV_WARNING, "lithology_rows_dropped_missing_depth",
@@ -93,11 +99,11 @@ def parse_boring_samples_csv(
                 dropped += 1
                 continue
             out.append(BoringSample(
-                sample_id=row.get("SampleID", "").strip(),
-                boring_id=row.get("BoringID", "").strip(),
-                sample_type=row.get("SampleType", "").strip(),
+                sample_id=_s(row, "SampleID"),
+                boring_id=_s(row, "BoringID"),
+                sample_type=_s(row, "SampleType"),
                 top_depth=top, bottom_depth=bot,
-                matrix=row.get("Matrix", "").strip(),
+                matrix=_s(row, "Matrix"),
             ))
     if dropped and qa is not None:
         qa.add(SEV_WARNING, "sample_rows_dropped_missing_depth",

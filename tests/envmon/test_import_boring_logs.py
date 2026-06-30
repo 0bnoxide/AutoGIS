@@ -122,6 +122,20 @@ def test_parse_lithology_no_warning_without_qa(tmp_path):
     assert len(ivals) == 2
 
 
+def test_parse_locations_short_row_does_not_crash(tmp_path):
+    # A row with trailing columns omitted (DictReader fills None) must not crash.
+    p = tmp_path / "loc.csv"
+    p.write_text(
+        "BoringID,SiteID,LocationType,Northing,Easting,GroundElevation_ft,Status\n"
+        "B-01,H281\n",
+        encoding="utf-8")
+    locs = parse_boring_locations_csv(p)
+    assert len(locs) == 1
+    assert locs[0].boring_id == "B-01"
+    assert locs[0].status == ""
+    assert locs[0].ground_elevation is None
+
+
 def test_module_imports_without_arcpy():
     import importlib
     mod = importlib.import_module("autogis.core.envmon.import_boring_logs")

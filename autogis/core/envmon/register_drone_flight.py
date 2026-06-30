@@ -28,7 +28,29 @@ def _coerce_date(value) -> date:
 
 
 def _opt_float(value):
-    return None if value is None else float(value)
+    """None / blank / non-numeric → None; otherwise float. Resilient to
+    hand-edited YAML like ``flight_altitude_m: ""``."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_bool(value) -> bool:
+    """YAML usually yields a real bool, but a quoted "false"/"no" is a str —
+    bool("false") is True, so parse strings explicitly."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes", "1", "on")
+    return bool(value)
+
+
+def _as_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def load_flight_yaml(path: Path) -> DroneFlight:
@@ -45,8 +67,8 @@ def load_flight_yaml(path: Path) -> DroneFlight:
         flight_altitude_m=_opt_float(data.get("flight_altitude_m")),
         overlap_forward_pct=_opt_float(data.get("overlap_forward_pct")),
         overlap_side_pct=_opt_float(data.get("overlap_side_pct")),
-        gcp_used=bool(data.get("gcp_used", False)),
-        checkpoint_count=int(data.get("checkpoint_count", 0)),
+        gcp_used=_as_bool(data.get("gcp_used", False)),
+        checkpoint_count=_as_int(data.get("checkpoint_count", 0)),
         processing_software=str(data.get("processing_software", "")),
         output_crs=str(data.get("output_crs", "")),
         vertical_datum=str(data.get("vertical_datum", "")),
@@ -75,15 +97,18 @@ def validate_flight_record(rec: DroneFlight, qa: QACollector) -> None:
 def write_drone_flight(  # pragma: no cover
     gdb_path: str,
     rec: DroneFlight,
-) -> None:
-    """Insert one DroneFlight row into the DroneFlights table (ArcGIS Pro)."""
+) -> int:
+    """Insert one DroneFlight row into DroneFlights (ArcGIS Pro).
+
+    Returns 1 if the row was written, 0 if the DroneFlights table was absent.
+    """
     from pathlib import Path as _P
 
     from ...runtime.sessions import arcpy_env as _arcpy
     _ax = _arcpy()
     table = str(_P(gdb_path) / "DroneFlights")
     if not _ax.Exists(table):
-        return
+        return 0
     fields = [
         "FlightID", "ProjectID", "SiteID", "FlightDate", "Pilot", "DroneModel",
         "Sensor", "FlightAltitude_m", "OverlapForward_pct", "OverlapSide_pct",
@@ -100,3 +125,4 @@ def write_drone_flight(  # pragma: no cover
             rec.vertical_datum, rec.orthomosaic_path, rec.dsm_path,
             rec.dem_path, rec.point_cloud_path, rec.qa_status,
         ])
+    return 1

@@ -1394,8 +1394,10 @@ def register_drone_flight_cmd(flight_yaml, gdb, dry_run, report, fail_on):
     validate_flight_record(rec, qa)
     if not dry_run and qa.counts_by_severity().get("ERROR", 0) == 0:
         _guard("register-drone-flight")
-        write_drone_flight(gdb, rec)
-        click.echo(f"Flight {rec.flight_id} registered in {gdb}.")
+        if write_drone_flight(gdb, rec):
+            click.echo(f"Flight {rec.flight_id} registered in {gdb}.")
+        else:
+            click.echo(f"DroneFlights table not found in {gdb}; nothing written.")
     _render_qa(qa, report, fail_on)
 
 
@@ -1446,8 +1448,11 @@ def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
         _render_qa(qa, report, fail_on)
         return
     rasters, others = classify_records(records)
-    write_product_registry(gdb_path, records)
-    click.echo(f"Registered {len(records)} product(s) in DroneProductRegistry.")
+    n_reg = write_product_registry(gdb_path, records)
+    if n_reg:
+        click.echo(f"Registered {n_reg} product(s) in DroneProductRegistry.")
+    else:
+        click.echo("DroneProductRegistry table not found; no products registered.")
     added = add_rasters_to_catalog(gdb_path, catalog_name, rasters)
     click.echo(f"Added {added} raster(s) to mosaic dataset '{catalog_name}'.")
     if others:
@@ -1455,8 +1460,8 @@ def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
                    f"(point cloud — no mosaic load in v1).")
     if gcp_csv_path:
         gcp_points = parse_gcp_csv(Path(gcp_csv_path), flight_id)
-        write_gcp_features(gdb_path, gcp_points)
-        click.echo(f"Wrote {len(gcp_points)} GCP feature(s) to DroneControlPoints.")
+        n_gcp = write_gcp_features(gdb_path, gcp_points)
+        click.echo(f"Wrote {n_gcp} GCP feature(s) to DroneControlPoints.")
     _render_qa(qa, report, fail_on)
 
 
@@ -1545,7 +1550,7 @@ def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
     from autogis.core.envmon.reconcile_locations import read_well_ids_csv
     from autogis.core.envmon.survey_to_well_elevation import (
         build_elevation_history_records, select_rtk_elevations_for_wells,
-        write_rtk_elevations_to_wells)
+        write_rtk_elevations_to_wells, sql_quote)
 
     if gdb and wells_csv:
         raise click.UsageError("--gdb and --wells-csv are mutually exclusive.")
@@ -1570,7 +1575,7 @@ def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
         wells_fc = str(Path(gdb) / "MonitoringWells")
         if _ax.Exists(wells_fc):
             with _ax.da.SearchCursor(wells_fc, ["LocationID"],
-                                     f"SiteID='{site_id}'") as cur:
+                                     f"SiteID='{sql_quote(site_id)}'") as cur:
                 for row in cur:
                     if row[0]:
                         well_ids.add(str(row[0]).strip())

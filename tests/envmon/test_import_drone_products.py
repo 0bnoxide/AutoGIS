@@ -233,6 +233,25 @@ def test_invalid_product_type_not_double_counted_as_duplicate(tmp_path):
     assert cats.count("invalid_product_type") == 2
 
 
+def test_parse_manifest_short_row_does_not_crash(tmp_path):
+    # Trailing columns omitted → DictReader fills None; must coerce, not crash.
+    content = "product_type,path,crs,vertical_datum,resolution_m\northomosaic,/o.tif\n"
+    records = parse_product_manifest(_write(tmp_path, "short.csv", content), "FLT")
+    assert len(records) == 1
+    assert records[0].product_type == "orthomosaic"
+    assert records[0].crs == ""
+    assert records[0].resolution_m is None
+
+
+def test_parse_gcp_csv_short_row_does_not_crash(tmp_path):
+    content = ("point_id,northing,easting,elevation,point_type,residual_h,residual_v\n"
+               "GCP-01,1.0,2.0,3.0\n")
+    pts = parse_gcp_csv(_write(tmp_path, "g.csv", content), "FLT")
+    assert len(pts) == 1
+    assert pts[0].point_type == "GCP"
+    assert pts[0].residual_h is None
+
+
 def test_module_imports_without_arcpy():
     import importlib
     mod = importlib.import_module("autogis.core.envmon.import_drone_products")

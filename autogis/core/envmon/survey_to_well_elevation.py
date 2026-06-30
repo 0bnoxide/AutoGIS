@@ -22,6 +22,12 @@ from ..common.schema.survey import ElevationHistory
 from .import_rtk_survey import RTKPoint, assign_qa_flags
 
 
+def sql_quote(value: str) -> str:
+    """Escape a string for a single-quoted ArcPy SQL where-clause literal by
+    doubling embedded single quotes (e.g. O'Brien-Site → O''Brien-Site)."""
+    return str(value).replace("'", "''")
+
+
 @dataclass
 class RTKElevationUpdatePlan:
     """Headless output of select_rtk_elevations_for_wells().
@@ -136,15 +142,16 @@ def write_rtk_elevations_to_wells(  # pragma: no cover
     for loc_id, elev in plan.updates.items():
         if _ax.Exists(elev_table):
             where_prior = (
-                f"LocationID='{loc_id}' AND "
-                f"ElevationType='{plan.elevation_type}' AND Superseded=0"
+                f"LocationID='{sql_quote(loc_id)}' AND "
+                f"ElevationType='{sql_quote(plan.elevation_type)}' AND Superseded=0"
             )
             with _ax.da.UpdateCursor(elev_table, ["Superseded"], where_prior) as cur:
                 for _ in cur:
                     cur.updateRow([1])
 
         if _ax.Exists(wells_fc):
-            where_well = f"SiteID='{site_id}' AND LocationID='{loc_id}'"
+            where_well = (f"SiteID='{sql_quote(site_id)}' AND "
+                          f"LocationID='{sql_quote(loc_id)}'")
             with _ax.da.UpdateCursor(wells_fc, ["TOC_ft"], where_well) as cur:
                 for _ in cur:
                     cur.updateRow([elev])
