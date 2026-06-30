@@ -452,6 +452,49 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("gw-level-summary")
+@click.option("--elevations-csv", required=True, type=click.Path(exists=True),
+              help="CSV of ElevationHistory rows.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output GW level summary CSV path.")
+@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--toc-csv", default=None, type=click.Path(exists=True),
+              help="Optional CSV with location_id,toc_elevation columns.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
+                         report, fail_on):
+    """Tool 5.1: per-well GW level/DTW/trend summary from elevation history."""
+    import csv as _csv
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
+    from autogis.core.common.schema.survey import ElevationHistory
+    from autogis.core.envmon.gw_level_summary import (
+        build_gw_level_summary, GWLevelRow)
+
+    elevations = read_records_csv(Path(elevations_csv), ElevationHistory)
+    toc: dict = {}
+    if toc_csv:
+        with Path(toc_csv).open(newline="", encoding="utf-8") as fh:
+            for row in _csv.DictReader(fh):
+                loc = (row.get("location_id") or "").strip()
+                raw = (row.get("toc_elevation") or "").strip()
+                # Empty -> no TOC for this well; "0" is a real datum, kept.
+                if loc and raw != "":
+                    try:
+                        toc[loc] = float(raw)
+                    except ValueError:
+                        pass
+    qa = QACollector()
+    rows = build_gw_level_summary(
+        elevations, toc, event_date=_date.fromisoformat(event_date), qa=qa)
+    out = write_records_csv(rows, Path(output), record_class=GWLevelRow)
+    click.echo(f"Written: {out}  ({len(rows)} well summary rows)")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("identify-data-gaps")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
