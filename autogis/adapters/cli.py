@@ -1764,6 +1764,113 @@ def export_lab_request_cmd(plan_path, groups_path, out, project_code,
     _render_qa(result.qa, report, "warning")
 
 
+@envmon.command("build-report-appendix")
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--screening-levels", "sl_path", default=None, type=click.Path(exists=True))
+@click.option("--group-map", "group_map_path", default=None, type=click.Path(exists=True))
+@click.option("--site", "site_id", default="")
+@click.option("--event-dates", default=None,
+              help="Comma-separated event dates to include (default: all).")
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
+                              event_dates, out, report):
+    """Build multi-sheet Excel analytical-data appendix (headless)."""
+    import csv as _csv, yaml as _yaml
+    from autogis.core.envmon.report_appendix_builder import (
+        build_appendix_sheet_specs, write_appendix_workbook)
+    from autogis.core.common.qa import QACollector
+
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    group_map = (_yaml.safe_load(Path(group_map_path).read_text())
+                 if group_map_path else None)
+    dates = [d.strip() for d in event_dates.split(",")] if event_dates else None
+    qa = QACollector()
+    specs = build_appendix_sheet_specs(rows, screening_levels=sl,
+                                       group_map=group_map)
+    result = write_appendix_workbook(rows, specs, Path(out), site_id=site_id,
+                                     event_dates=dates, qa=qa)
+    click.echo(f"Sheets: {result.sheet_count}  Wells: {result.well_count}  "
+               f"Events: {result.event_count}  Output: {out}")
+    _render_qa(qa, report, "warning")
+
+
+@envmon.command("build-dashboard-data-mart")
+@click.argument("gdb", type=click.Path())
+@click.option("--site", "site_id", required=True)
+@click.option("--event", "event_id", required=True)
+@click.option("--prior-event", "prior_event_id", default=None)
+@click.option("--report", default=None, type=click.Path())
+def build_dashboard_data_mart_cmd(gdb, site_id, event_id, prior_event_id, report):
+    """Tool 6.7: truncate + repopulate the Dash_* mart tables (ArcGIS Pro)."""
+    _guard("build-dashboard-data-mart")
+    from autogis.core.envmon.dashboard_data_mart import build_dashboard_data_mart
+    summary = build_dashboard_data_mart(gdb, site_id, event_id,
+                                        prior_event_id=prior_event_id)
+    for table, n in summary.row_counts.items():
+        click.echo(f"{table}: {n} row(s)")
+    click.echo(f"Updated {len(summary.tables_updated)} table(s) "
+               f"for {site_id}/{event_id}.")
+
+
+@envmon.command("build-exceedance-event")
+@click.option("--results", "results_path", required=True, type=click.Path(exists=True))
+@click.option("--screening-levels", "sl_path", required=True, type=click.Path(exists=True))
+@click.option("--rule", default="max_exceedance_per_location",
+              type=click.Choice(["max_exceedance_per_location", "latest_per_location",
+                                 "specific_event_date", "date_range_latest"]))
+@click.option("--event-date", default=None)
+@click.option("--date-from", default=None)
+@click.option("--date-to", default=None)
+@click.option("--out", required=True, type=click.Path())
+@click.option("--report", default=None, type=click.Path())
+def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
+                               date_from, date_to, out, report):
+    """Build exceedance event dataset with ratio/tier enrichment (headless)."""
+    import csv as _csv
+    from autogis.core.envmon.build_exceedance_event import (
+        build_exceedance_event, load_screening_levels_yaml,
+        write_exceedance_event_csv)
+    from autogis.core.common.qa import QACollector
+
+    with open(results_path, newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    sl = load_screening_levels_yaml(Path(sl_path))
+    date_range = (date_from, date_to) if (date_from and date_to) else None
+    qa = QACollector()
+    records = build_exceedance_event(
+        rows, sl, rule=rule, event_date=event_date,
+        date_range=date_range, qa=qa)
+    write_exceedance_event_csv(records, Path(out))
+    exceed = sum(1 for r in records if r.has_exceedance)
+    click.echo(f"Records: {len(records)}  Exceedances: {exceed}  Output: {out}")
+    _render_qa(qa, report, "warning")
+
+
+@envmon.command("list-tools")
+@click.option("--runtime", "runtime_filter", default=None,
+              type=click.Choice(["CLOUD", "LOCAL", "DRAFT"], case_sensitive=False))
+@click.option("--domain", default=None)
+@click.option("--status", default=None,
+              type=click.Choice(["stable", "draft", "planned"], case_sensitive=False))
+@click.option("--search", default=None)
+@click.option("--verbose", is_flag=True, default=False)
+def list_tools_cmd(runtime_filter, domain, status, search, verbose):
+    """List available envmon tools with capability metadata (headless)."""
+    from autogis.core.envmon.tool_registry import (
+        get_all_tools, filter_tools, format_tool_table)
+
+    entries = filter_tools(get_all_tools(), runtime=runtime_filter,
+                           domain=domain, status=status, search=search)
+    if not entries:
+        click.echo("No tools match the given filters.")
+        return
+    click.echo(format_tool_table(entries, verbose=verbose))
+    click.echo(f"\n{len(entries)} tool(s).")
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 

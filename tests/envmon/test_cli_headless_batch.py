@@ -396,3 +396,104 @@ def test_build_report_package(tmp_path):
     assert (out_dir / "figures" / "Fig-1A.pdf").exists(), (
         "Copied figure PDF not found in deliverable/figures/"
     )
+
+
+# ===========================================================================
+# 11. build-report-appendix (Tool 9.2)
+# ===========================================================================
+
+def test_build_report_appendix(tmp_path):
+    """Long-format results + group map -> multi-sheet xlsx; exit 0."""
+    results = tmp_path / "results.csv"
+    _write_csv(results, [
+        {"LocationID": "MW-01", "AnalyteName": "Benzene", "ResultValue": "12.0",
+         "ResultQualifier": "", "ReportedUnits": "ug/L", "SampleDate": "2026-01-15"},
+        {"LocationID": "MW-02", "AnalyteName": "Lead", "ResultValue": "ND",
+         "ResultQualifier": "ND", "ReportedUnits": "ug/L", "SampleDate": "2026-01-15"},
+    ])
+    sl = tmp_path / "sl.yaml"
+    sl.write_text(yaml.dump({"Benzene": 5.0, "Lead": 15.0}), encoding="utf-8")
+    gm = tmp_path / "groups.yaml"
+    gm.write_text(yaml.dump({"Benzene": "VOC", "Lead": "Metals"}), encoding="utf-8")
+    out = tmp_path / "appendix.xlsx"
+
+    result = _run(
+        "envmon", "build-report-appendix",
+        "--results", str(results),
+        "--screening-levels", str(sl),
+        "--group-map", str(gm),
+        "--out", str(out),
+    )
+    assert result.exit_code == 0, (
+        f"build-report-appendix exited {result.exit_code}:\n{result.output}"
+    )
+    assert out.exists(), "Expected appendix workbook was not created"
+
+
+# ===========================================================================
+# 12. list-tools (Tool 10.1)
+# ===========================================================================
+
+def test_list_tools_default(tmp_path):
+    """list-tools renders a table; exit 0."""
+    result = _run("envmon", "list-tools")
+    assert result.exit_code == 0, (
+        f"list-tools exited {result.exit_code}:\n{result.output}"
+    )
+    assert "command" in result.output and "runtime" in result.output
+
+
+def test_list_tools_search():
+    result = _run("envmon", "list-tools", "--search", "edd")
+    assert result.exit_code == 0, result.output
+    assert "import-edd" in result.output  # the EDD importer matches "edd"
+
+
+def test_list_tools_filter_local_only():
+    result = _run("envmon", "list-tools", "--runtime", "LOCAL")
+    assert result.exit_code == 0, result.output
+    assert "CLOUD" not in result.output  # only LOCAL rows rendered
+
+
+# ===========================================================================
+# 13. build-exceedance-event (Tool 4.4)
+# ===========================================================================
+
+def test_build_exceedance_event(tmp_path):
+    """Results + screening levels -> exceedance dataset CSV; exit 0."""
+    results = tmp_path / "results.csv"
+    _write_csv(results, [
+        {"LocationID": "MW-01", "AnalyteName": "Benzene", "ResultValue": "12.0",
+         "ResultQualifier": "", "ReportedUnits": "ug/L",
+         "SampleDate": "2026-01-15", "SampleID": "S1"},
+    ])
+    sl = tmp_path / "sl.yaml"
+    sl.write_text(yaml.dump({"Benzene": 5.0}), encoding="utf-8")
+    out = tmp_path / "exc.csv"
+
+    result = _run(
+        "envmon", "build-exceedance-event",
+        "--results", str(results),
+        "--screening-levels", str(sl),
+        "--rule", "max_exceedance_per_location",
+        "--out", str(out),
+    )
+    assert result.exit_code == 0, (
+        f"build-exceedance-event exited {result.exit_code}:\n{result.output}"
+    )
+    assert out.exists(), "Expected exceedance-event CSV was not created"
+    assert "Exceedances: 1" in result.output
+# ===========================================================================
+# 14. build-dashboard-data-mart (Tool 6.7) — LOCAL; guard must fire cleanly
+# ===========================================================================
+
+def test_build_dashboard_data_mart_guards_without_arcpy(tmp_path):
+    """LOCAL tool: headless invocation must error cleanly via the runtime guard,
+    not raise an internal KeyError/traceback."""
+    result = _run(
+        "envmon", "build-dashboard-data-mart", str(tmp_path / "x.gdb"),
+        "--site", "H281", "--event", "2026Q2",
+    )
+    # require_runtime raises RuntimeUnavailable -> ClickException -> exit 1.
+    assert result.exit_code != 0
+    assert "not registered" not in result.output  # registry KeyError would say this
