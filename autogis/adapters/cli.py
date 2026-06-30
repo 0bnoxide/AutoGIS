@@ -590,6 +590,28 @@ def select_soil_intervals_cmd(soil_results, rule, out_path, interval_list,
     _render_qa(result.qa, report, fail_on)
 
 
+@envmon.command("gen-synthetic-workbook")
+@click.option("--site-id", default="TEST01", help="Synthetic site_id.")
+@click.option("--wells", default=10, type=int, help="Number of wells.")
+@click.option("--events", default=4, type=int, help="Number of events.")
+@click.option("--features", default="",
+              help="Comma-separated messiness features (e.g. 'nondetects,rpd_sheet').")
+@click.option("--seed", default=0, type=int, help="Deterministic seed.")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+def gen_synthetic_workbook_cmd(site_id, wells, events, features, seed, out_path):
+    """Tool 10.6: write a seeded synthetic environmental workbook for parser hardening."""
+    from autogis.core.envmon.synthetic_workbook import (
+        generate_workbook, WorkbookScenario)
+
+    feats = {f.strip() for f in features.split(",") if f.strip()}
+    scenario = WorkbookScenario(site_id=site_id, n_wells=wells, n_events=events,
+                                features=feats, seed=seed)
+    out = generate_workbook(scenario, Path(out_path))
+    click.echo(f"Written: {out}  (wells={wells}, events={events}, "
+               f"features={sorted(feats) or 'clean'}, seed={seed})")
+
+
 @envmon.command("identify-data-gaps")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
