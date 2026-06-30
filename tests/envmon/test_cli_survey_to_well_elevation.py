@@ -59,3 +59,15 @@ def test_gdb_write_without_arcpy_is_clean(tmp_path):
     ])
     assert result.exit_code != 0
     assert "arcpy" in result.output.lower() or "ArcGIS Pro" in result.output
+
+
+def test_requires_wells_csv_or_gdb(tmp_path):
+    """Neither --wells-csv nor --gdb must error (not silently exit 0 with no work)."""
+    rtk = tmp_path / "rtk.csv"
+    rtk.write_text("PointID,Northing,Easting,Elevation_ft\nMW-01,0,0,100.0\n",
+                   encoding="utf-8")
+    result = CliRunner().invoke(autogis, [
+        "envmon", "survey-to-well-elevation", str(rtk), "--site", "SITE-001",
+    ])
+    assert result.exit_code != 0
+    assert "wells-csv" in result.output or "gdb" in result.output.lower()

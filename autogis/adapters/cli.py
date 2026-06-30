@@ -1472,8 +1472,8 @@ def validate_boring_logs_cmd(input_dir, report, fail_on):
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.import_boring_logs import (
         load_boring_package, validate_boring_package)
-    locs, ivals, samps = load_boring_package(Path(input_dir))
     qa = QACollector()
+    locs, ivals, samps = load_boring_package(Path(input_dir), qa)
     validate_boring_package(locs, ivals, samps, qa)
     _render_qa(qa, report, fail_on)
 
@@ -1490,8 +1490,8 @@ def import_boring_logs_cmd(input_dir, gdb, report, fail_on):
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.import_boring_logs import (
         load_boring_package, validate_boring_package, import_boring_package)
-    locs, ivals, samps = load_boring_package(Path(input_dir))
     qa = QACollector()
+    locs, ivals, samps = load_boring_package(Path(input_dir), qa)
     validate_boring_package(locs, ivals, samps, qa)
     if not qa.has_blocking(allow_warnings=True, allow_errors=False):
         import_boring_package(gdb, locs, ivals, samps)
@@ -1523,10 +1523,13 @@ def import_boring_logs_cmd(input_dir, gdb, report, fail_on):
                    "elevations (ArcGIS Pro). Mutually exclusive with --wells-csv.")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Show the update plan without writing to the GDB (use with --gdb).")
+@click.option("--approve", is_flag=True, default=False,
+              help="Mark written ElevationHistory rows ApprovedForUse=1 "
+                   "(default: pending — TOC_ft is updated, approval recorded as 0).")
 @qa_report_options
 def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
                                  vrms_threshold, elevation_type, survey_date,
-                                 vertical_datum, wells_csv, gdb, dry_run,
+                                 vertical_datum, wells_csv, gdb, dry_run, approve,
                                  report, fail_on):
     """Tool 8.5: push QA-passed RTK survey elevations to MonitoringWells.TOC_ft.
 
@@ -1546,6 +1549,9 @@ def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
 
     if gdb and wells_csv:
         raise click.UsageError("--gdb and --wells-csv are mutually exclusive.")
+    if not gdb and not wells_csv:
+        raise click.UsageError(
+            "Provide --wells-csv (headless well list) or --gdb (ArcGIS Pro).")
     if gdb:
         _guard("survey-to-well-elevation")
 
@@ -1582,7 +1588,7 @@ def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
 
     if gdb and not dry_run and plan.updates:
         history_recs = build_elevation_history_records(
-            plan, sdate, vertical_datum=vertical_datum)
+            plan, sdate, vertical_datum=vertical_datum, approved_for_use=approve)
         n = write_rtk_elevations_to_wells(gdb, site_id, plan, history_recs)
         click.echo(f"Updated {n} MonitoringWells records + "
                    f"{len(history_recs)} ElevationHistory rows.")

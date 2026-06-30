@@ -64,6 +64,9 @@ def validate_flight_record(rec: DroneFlight, qa: QACollector) -> None:
         if not getattr(rec, f_name):
             qa.add(SEV_ERROR, "missing_required_field",
                    f"DroneFlight missing required field {f_name!r}")
+    if rec.flight_date == date.min:
+        qa.add(SEV_ERROR, "missing_required_field",
+               "DroneFlight missing required field 'flight_date'")
     if rec.flight_altitude_m is not None and rec.flight_altitude_m <= 0:
         qa.add(SEV_ERROR, "invalid_altitude",
                f"flight_altitude_m must be positive, got {rec.flight_altitude_m}")

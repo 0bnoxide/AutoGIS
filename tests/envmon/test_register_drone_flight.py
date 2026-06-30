@@ -91,6 +91,16 @@ def test_load_flight_yaml_defaults(tmp_path):
     assert rec.qa_status == "pending"
 
 
+def test_validate_flight_missing_date(tmp_path):
+    data = yaml.safe_load(_YAML)
+    data.pop("flight_date")
+    rec = load_flight_yaml(_write(tmp_path, yaml.dump(data)))
+    qa = QACollector()
+    validate_flight_record(rec, qa)
+    assert any(r.category == "missing_required_field"
+               and "flight_date" in r.message for r in qa.records)
+
+
 def test_module_imports_without_arcpy():
     import importlib
     mod = importlib.import_module("autogis.core.envmon.register_drone_flight")

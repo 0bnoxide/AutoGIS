@@ -79,7 +79,9 @@ def validate_drone_products(
                    f"Duplicate product_type '{rec.product_type}' for flight "
                    f"'{rec.flight_id}'. Each flight should have at most one of "
                    f"each product type.")
-        if rec.product_type:
+        # Only track valid types for duplicate detection — an invalid type
+        # already raised invalid_product_type and shouldn't also read as a dup.
+        if rec.product_type in VALID_PRODUCT_TYPES:
             seen_types.add(rec.product_type)
         if not rec.path:
             qa.add(SEV_ERROR, "empty_path",
@@ -120,17 +122,22 @@ def parse_gcp_csv(path: Path, flight_id: str) -> list[DroneControlPoint]:
     """
     def _opt_float(row: dict, key: str):
         v = row.get(key, "").strip()
-        return float(v) if v else None
+        try:
+            return float(v) if v else None
+        except ValueError:
+            return None
 
     out: list[DroneControlPoint] = []
     with Path(path).open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
+            n, e, z = (_opt_float(row, "northing"), _opt_float(row, "easting"),
+                       _opt_float(row, "elevation"))
+            if n is None or e is None or z is None:
+                continue  # malformed control point (missing/non-numeric coord) — skip, don't crash
             out.append(DroneControlPoint(
                 point_id=row.get("point_id", "").strip(),
                 flight_id=flight_id,
-                northing=float(row["northing"]),
-                easting=float(row["easting"]),
-                elevation=float(row["elevation"]),
+                northing=n, easting=e, elevation=z,
                 point_type=row.get("point_type", "GCP").strip() or "GCP",
                 residual_h=_opt_float(row, "residual_h"),
                 residual_v=_opt_float(row, "residual_v"),

@@ -48,14 +48,20 @@ def parse_boring_locations_csv(path: Path) -> list[BoringLocation]:
     return out
 
 
-def parse_lithology_csv(path: Path) -> list[LithologyInterval]:
+def parse_lithology_csv(
+    path: Path, qa: Optional[QACollector] = None,
+) -> list[LithologyInterval]:
+    """Parse lithology rows. Rows lacking a numeric Top/BottomDepth_ft are
+    dropped; if *qa* is supplied the drop is surfaced (never silent)."""
     out: list[LithologyInterval] = []
+    dropped = 0
     with Path(path).open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             top = _f(row, "TopDepth_ft")
             bot = _f(row, "BottomDepth_ft")
             if top is None or bot is None:
-                continue  # ponytail: skip rows lacking required depths (see QA below)
+                dropped += 1
+                continue
             out.append(LithologyInterval(
                 boring_id=row.get("BoringID", "").strip(),
                 top_depth=top, bottom_depth=bot,
@@ -65,17 +71,27 @@ def parse_lithology_csv(path: Path) -> list[LithologyInterval]:
                 moisture=row.get("Moisture", "").strip(),
                 description=row.get("Description", "").strip(),
             ))
+    if dropped and qa is not None:
+        qa.add(SEV_WARNING, "lithology_rows_dropped_missing_depth",
+               f"{dropped} lithology row(s) dropped: missing/invalid "
+               f"TopDepth_ft or BottomDepth_ft")
     return out
 
 
-def parse_boring_samples_csv(path: Path) -> list[BoringSample]:
+def parse_boring_samples_csv(
+    path: Path, qa: Optional[QACollector] = None,
+) -> list[BoringSample]:
+    """Parse sample rows. Rows lacking a numeric Top/BottomDepth_ft are dropped;
+    if *qa* is supplied the drop is surfaced (never silent)."""
     out: list[BoringSample] = []
+    dropped = 0
     with Path(path).open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             top = _f(row, "TopDepth_ft")
             bot = _f(row, "BottomDepth_ft")
             if top is None or bot is None:
-                continue  # ponytail: skip rows lacking required depths
+                dropped += 1
+                continue
             out.append(BoringSample(
                 sample_id=row.get("SampleID", "").strip(),
                 boring_id=row.get("BoringID", "").strip(),
@@ -83,19 +99,26 @@ def parse_boring_samples_csv(path: Path) -> list[BoringSample]:
                 top_depth=top, bottom_depth=bot,
                 matrix=row.get("Matrix", "").strip(),
             ))
+    if dropped and qa is not None:
+        qa.add(SEV_WARNING, "sample_rows_dropped_missing_depth",
+               f"{dropped} sample row(s) dropped: missing/invalid "
+               f"TopDepth_ft or BottomDepth_ft")
     return out
 
 
 def load_boring_package(
-    input_dir: Path,
+    input_dir: Path, qa: Optional[QACollector] = None,
 ) -> tuple[list[BoringLocation], list[LithologyInterval], list[BoringSample]]:
-    """Parse the three package CSVs from *input_dir*; missing files → empty lists."""
+    """Parse the three package CSVs from *input_dir*; missing files → empty lists.
+
+    Pass *qa* so dropped rows (missing required depths) are surfaced as warnings.
+    """
     d = Path(input_dir)
     locs = (parse_boring_locations_csv(d / "boring_locations.csv")
             if (d / "boring_locations.csv").exists() else [])
-    intervals = (parse_lithology_csv(d / "lithology.csv")
+    intervals = (parse_lithology_csv(d / "lithology.csv", qa)
                  if (d / "lithology.csv").exists() else [])
-    samples = (parse_boring_samples_csv(d / "samples.csv")
+    samples = (parse_boring_samples_csv(d / "samples.csv", qa)
                if (d / "samples.csv").exists() else [])
     return locs, intervals, samples
 

@@ -210,6 +210,29 @@ def test_parse_gcp_csv_coordinates(tmp_path):
     assert abs(pts[0].elevation - 512.34) < 0.001
 
 
+def test_parse_gcp_csv_skips_malformed_row(tmp_path):
+    """A GCP row with missing/non-numeric coords is skipped, not a raw traceback."""
+    bad = ("point_id,northing,easting,elevation,point_type\n"
+           "GCP-01,4527893.12,293847.55,512.34,GCP\n"
+           "GCP-BAD,,,,GCP\n"
+           "GCP-NAN,abc,293900.0,510.0,GCP\n")
+    pts = parse_gcp_csv(_write(tmp_path, "g.csv", bad), "FLT-001")
+    assert len(pts) == 1
+    assert pts[0].point_id == "GCP-01"
+
+
+def test_invalid_product_type_not_double_counted_as_duplicate(tmp_path):
+    content = ("product_type,path,crs,vertical_datum,resolution_m\n"
+               "badtype,/a.tif,EPSG:4326,,\n"
+               "badtype,/b.tif,EPSG:4326,,\n")
+    records = parse_product_manifest(_write(tmp_path, "x.csv", content), "FLT")
+    qa = QACollector()
+    validate_drone_products(records, qa)
+    cats = [r.category for r in qa.records]
+    assert "duplicate_product_type" not in cats
+    assert cats.count("invalid_product_type") == 2
+
+
 def test_module_imports_without_arcpy():
     import importlib
     mod = importlib.import_module("autogis.core.envmon.import_drone_products")

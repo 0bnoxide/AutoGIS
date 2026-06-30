@@ -50,3 +50,11 @@ def test_import_boring_logs_without_arcpy_is_clean(tmp_path):
     ])
     assert result.exit_code != 0
     assert "arcpy" in result.output.lower() or "ArcGIS Pro" in result.output
+
+
+def test_validate_boring_logs_surfaces_dropped_rows(tmp_path):
+    """A lithology row with blank depths must be surfaced, never silently dropped."""
+    lith = _LITH + "B-01,,,SM,Fill,Brown,Moist,typo no depths\n"
+    d = _pkg(tmp_path, lith=lith)
+    result = CliRunner().invoke(autogis, ["envmon", "validate-boring-logs", str(d)])
+    assert "lithology_rows_dropped_missing_depth" in result.output

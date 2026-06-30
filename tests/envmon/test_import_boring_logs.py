@@ -102,6 +102,26 @@ def test_validate_package_clean_has_no_errors(tmp_path):
     assert qa.counts_by_severity().get("ERROR", 0) == 0
 
 
+def test_parse_lithology_warns_on_dropped_rows_when_qa_given(tmp_path):
+    rows = _LITH_ROWS + [{"BoringID": "B-01", "TopDepth_ft": "", "BottomDepth_ft": "",
+                          "USCS": "", "PrimaryMaterial": "", "Color": "",
+                          "Moisture": "", "Description": "no depths"}]
+    qa = QACollector()
+    ivals = parse_lithology_csv(_write(tmp_path, "lith.csv", rows), qa)
+    assert len(ivals) == 2
+    assert any(r.category == "lithology_rows_dropped_missing_depth"
+               for r in qa.records)
+
+
+def test_parse_lithology_no_warning_without_qa(tmp_path):
+    rows = _LITH_ROWS + [{"BoringID": "B-01", "TopDepth_ft": "", "BottomDepth_ft": "",
+                          "USCS": "", "PrimaryMaterial": "", "Color": "",
+                          "Moisture": "", "Description": "no depths"}]
+    # No qa supplied → still drops, just no record (backward-compatible signature).
+    ivals = parse_lithology_csv(_write(tmp_path, "lith.csv", rows))
+    assert len(ivals) == 2
+
+
 def test_module_imports_without_arcpy():
     import importlib
     mod = importlib.import_module("autogis.core.envmon.import_boring_logs")
