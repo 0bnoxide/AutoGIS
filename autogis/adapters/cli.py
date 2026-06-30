@@ -1871,6 +1871,235 @@ def list_tools_cmd(runtime_filter, domain, status, search, verbose):
     click.echo(f"\n{len(entries)} tool(s).")
 
 
+@envmon.command("draft-parser-profile")
+@click.argument("workbook", type=click.Path(exists=True))
+@click.option("--output", required=True, type=click.Path(),
+              help="Path to write the draft YAML profile.")
+@click.option("--profile-id", default="DRAFT", show_default=True,
+              help="Profile ID embedded in the output YAML.")
+@click.option("--scan-rows", type=int, default=40, show_default=True,
+              help="Rows to scan per sheet for structure detection.")
+def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
+    """Tool 2.1: inspect a workbook and write a draft parser profile YAML (headless)."""
+    import json as _json
+    import yaml as _yaml
+    from autogis.core.envmon.excel_workbook_inspector import (
+        inspect_workbook_structure,
+        propose_parser_profile,
+    )
+
+    report = inspect_workbook_structure(Path(workbook), scan_rows=scan_rows)
+    profile_dict = propose_parser_profile(report, profile_id=profile_id)
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_yaml.dump(profile_dict, allow_unicode=True, sort_keys=False),
+                   encoding="utf-8")
+    click.echo(f"Draft profile written: {out}  "
+               f"({len(report.sheets)} sheet(s) — REVIEW BEFORE USE)")
+
+
+@envmon.command("batch-import-workbooks")
+@click.option("--manifest", required=True, type=click.Path(exists=True),
+              help="CSV with columns: workbook_path, profile_path, site_id.")
+@click.option("--output-dir", required=True, type=click.Path(),
+              help="Directory to write sample_records.csv, result_records.csv, "
+                   "and batch_manifest.csv.")
+@click.option("--analytes", default=None, type=click.Path(exists=True),
+              help="Analyte dictionary YAML (optional).")
+@click.option("--screening", default=None, type=click.Path(exists=True),
+              help="Screening levels YAML (optional).")
+@click.option("--event-date", default=None,
+              help="Force event date for all workbooks (YYYY-MM-DD).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def batch_import_workbooks_cmd(manifest, output_dir, analytes, screening,
+                               event_date, report, fail_on):
+    """Tool 2.2: batch-import multiple EDD workbooks from a manifest CSV (headless)."""
+    import dataclasses as _dc
+    import yaml as _yaml
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.batch_workbook_importer import (
+        read_manifest_csv, run_batch_import, BatchManifestRow)
+
+    manifest_rows = read_manifest_csv(Path(manifest))
+    analyte_dict = _yaml.safe_load(Path(analytes).read_text(encoding="utf-8")) \
+        if analytes else {}
+    screening_lvls = _yaml.safe_load(Path(screening).read_text(encoding="utf-8")) \
+        if screening else {}
+    ev_date = _date.fromisoformat(event_date) if event_date else None
+    qa = QACollector()
+
+    result = run_batch_import(
+        manifest_rows,
+        analyte_dictionary=analyte_dict,
+        screening_levels=screening_lvls,
+        event_date_override=ev_date,
+        qa=qa,
+    )
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    write_records_csv(result.manifest,
+                      out_dir / "batch_manifest.csv",
+                      record_class=BatchManifestRow)
+    if result.all_samples:
+        write_records_csv(result.all_samples,
+                          out_dir / "sample_records.csv",
+                          record_class=type(result.all_samples[0]))
+    if result.all_results:
+        write_records_csv(result.all_results,
+                          out_dir / "result_records.csv",
+                          record_class=type(result.all_results[0]))
+
+    ok = sum(1 for m in result.manifest if m.Status == "OK")
+    click.echo(f"Batch import: {ok}/{len(result.manifest)} OK  "
+               f"→ {len(result.all_samples)} samples, "
+               f"{len(result.all_results)} results  "
+               f"[{out_dir}]")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("migrate-legacy-data")
+@click.option("--input-csv", required=True, type=click.Path(exists=True),
+              help="Wide-format legacy CSV (rows = samples, columns = analytes).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output long-format result CSV path.")
+@click.option("--location-col", default="LocationID", show_default=True)
+@click.option("--date-col", default="SampleDate", show_default=True)
+@click.option("--matrix-col", default=None,
+              help="Column name for matrix (omit to use --default-matrix).")
+@click.option("--sample-id-col", default=None,
+              help="Column for sample ID (auto-generated if omitted).")
+@click.option("--site-id", default="", help="Site ID to embed in output rows.")
+@click.option("--default-matrix", default="GW", show_default=True)
+@click.option("--default-units", default="ug/L", show_default=True)
+@click.option("--nondetect-prefix", default="<", show_default=True,
+              help="String prefix indicating a non-detect result.")
+@click.option("--units-yaml", default=None, type=click.Path(exists=True),
+              help="YAML mapping analyte_name -> units override.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def migrate_legacy_data_cmd(input_csv, output, location_col, date_col,
+                             matrix_col, sample_id_col, site_id,
+                             default_matrix, default_units, nondetect_prefix,
+                             units_yaml, report, fail_on):
+    """Tool 2.4: convert wide-format legacy CSV to long-format result records (headless)."""
+    import dataclasses as _dc
+    import yaml as _yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.legacy_migrator import (
+        MigrationConfig, migrate_wide_csv, LegacyResultRow)
+
+    cfg = MigrationConfig(
+        location_col=location_col, date_col=date_col,
+        matrix_col=matrix_col, sample_id_col=sample_id_col,
+        site_id=site_id, default_matrix=default_matrix,
+        default_units=default_units, nondetect_prefix=nondetect_prefix,
+    )
+    units_map = _yaml.safe_load(Path(units_yaml).read_text(encoding="utf-8")) \
+        if units_yaml else {}
+    qa = QACollector()
+
+    rows = migrate_wide_csv(Path(input_csv), cfg, units_map=units_map, qa=qa)
+    write_records_csv(rows, Path(output), record_class=LegacyResultRow)
+    click.echo(f"Migrated: {len(rows)} result rows → {output}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("create-sampling-plan")
+@click.option("--wells-csv", required=True, type=click.Path(exists=True),
+              help="CSV of well network (required: location_id; optional: matrix, "
+                   "analyte_groups).")
+@click.option("--analyte-groups", required=True, type=click.Path(exists=True),
+              help="YAML mapping group_name -> {bottles, bottle_size_ml, "
+                   "preservation, matrix}.")
+@click.option("--event-date", required=True,
+              help="Planned sampling date YYYY-MM-DD.")
+@click.option("--site-id", default="", help="Site ID.")
+@click.option("--prior-event-date", default=None,
+              help="Prior event date YYYY-MM-DD (optional).")
+@click.option("--samples-output", required=True, type=click.Path(),
+              help="Path to write planned sample list CSV.")
+@click.option("--bottles-output", required=True, type=click.Path(),
+              help="Path to write bottle count summary CSV.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def create_sampling_plan_cmd(wells_csv, analyte_groups, event_date, site_id,
+                              prior_event_date, samples_output, bottles_output,
+                              report, fail_on):
+    """Tool 7.2: generate planned sample list and bottle count for an event (headless)."""
+    import yaml as _yaml
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.sampling_plan import (
+        read_well_network_csv, create_sampling_plan,
+        PlannedSample, BottleCountRow)
+
+    wells = read_well_network_csv(Path(wells_csv))
+    groups = _yaml.safe_load(Path(analyte_groups).read_text(encoding="utf-8"))
+    ev_date = _date.fromisoformat(event_date)
+    prior = _date.fromisoformat(prior_event_date) if prior_event_date else None
+    qa = QACollector()
+
+    plan = create_sampling_plan(
+        wells, groups, site_id=site_id,
+        event_date=ev_date, prior_event_date=prior, qa=qa)
+
+    write_records_csv(plan.samples, Path(samples_output),
+                      record_class=PlannedSample)
+    write_records_csv(plan.bottle_summary, Path(bottles_output),
+                      record_class=BottleCountRow)
+    click.echo(f"Sampling plan: {len(plan.samples)} planned samples  "
+               f"→ {samples_output}")
+    click.echo(f"Bottle summary: {len(plan.bottle_summary)} groups  "
+               f"→ {bottles_output}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("reconcile-field-lab")
+@click.option("--field-csv", required=True, type=click.Path(exists=True),
+              help="Field samples CSV (required: sample_id, location_id, "
+                   "collection_date).")
+@click.option("--lab-csv", required=True, type=click.Path(exists=True),
+              help="Lab results CSV (required: sample_id, location_id, "
+                   "analysis_date, analyte_name).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output reconciliation flags CSV.")
+@click.option("--date-tolerance", type=int, default=1, show_default=True,
+              help="Allowed date gap in days before DATE_MISMATCH flag.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def reconcile_field_lab_cmd(field_csv, lab_csv, output, date_tolerance,
+                             report, fail_on):
+    """Tool 7.3: compare field records to lab results, flag mismatches (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.field_lab_reconciler import (
+        read_field_samples_csv, read_lab_results_csv,
+        reconcile_field_and_lab, ReconciliationFlag)
+
+    field_samples = read_field_samples_csv(Path(field_csv))
+    lab_results = read_lab_results_csv(Path(lab_csv))
+    qa = QACollector()
+
+    flags = reconcile_field_and_lab(
+        field_samples, lab_results,
+        date_tolerance_days=date_tolerance, qa=qa)
+    write_records_csv(flags, Path(output), record_class=ReconciliationFlag)
+    errors = sum(1 for f in flags if f.Severity == "ERROR")
+    click.echo(f"Reconciliation: {len(flags)} flag(s) "
+               f"({errors} errors) → {output}")
+    _render_qa(qa, report, fail_on)
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 
