@@ -78,3 +78,21 @@ while `test_assign_tier_no_data` (result_value=None, screening_level=5.0) expect
 None result + screening_level present → NO_DATA (screened analyte, data gap);
 None result + no screening_level → ND (true reported non-detect). Tests are the
 contract; the plan's module code would have failed its own test.
+
+## Feature 4 — export-comparison-excel (Tool 4.8)
+
+**Status:** DONE — `export_comparison_excel.py` + `export-comparison-excel` CLI +
+8 tests. Registered CLOUD. Suite 913 → 921.
+
+### D4.1 — Fixed an off-by-one blank-row bug in the plan's openpyxl code
+The plan set `ws.freeze_panes = ws["A2"]`. Accessing the cell object `ws["A2"]`
+**materializes** an empty cell at row 2, so the subsequent `ws.append()` writes
+the first data row at row 3 — leaving a blank row 2 and mis-placing the
+TrendClass fill (which targets `ws.max_row`). The plan's 4 tests passed only
+because they never checked cell positions; my stricter tests (fill at row 2,
+exceedance-sheet row count) caught it. Fixed to the string form
+`ws.freeze_panes = "A2"`.
+
+### D4.2 — Dropped the plan's openpyxl try/except ImportError
+openpyxl is a required dep (ADR-008); kept the lazy import (arcpy-free invariant)
+but removed the dead missing-openpyxl branch.

@@ -1983,6 +1983,28 @@ def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft, r
     _render_qa(qa, report, "error")
 
 
+@envmon.command("export-comparison-excel")
+@click.option("--comparison-csv", required=True, type=click.Path(exists=True),
+              help="ComparisonRecord CSV (output of compare-events).")
+@click.option("--output", required=True, type=click.Path())
+@click.option("--overwrite", is_flag=True, default=False)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error", show_default=True)
+def export_comparison_excel_cmd(comparison_csv, output, overwrite, report, fail_on):
+    """Tool 4.8: export comparison results to a formatted Excel workbook (headless)."""
+    import csv as _csv
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.export_comparison_excel import export_comparison_excel
+
+    with open(comparison_csv, newline="", encoding="utf-8") as fh:
+        records = list(_csv.DictReader(fh))
+    qa = QACollector()
+    export_comparison_excel(records, Path(output), overwrite=overwrite, qa=qa)
+    click.echo(f"Records: {len(records)}  Output: {output}")
+    _render_qa(qa, report, fail_on)
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 

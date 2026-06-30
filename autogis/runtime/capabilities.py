@@ -52,6 +52,7 @@ TOOLS: dict[str, Runtime] = {
     "generate-trend-charts": Runtime.CLOUD,  # tool 4.6 headless openpyxl charts
     "ingest-reviewer-comments": Runtime.CLOUD,  # tool 9.4 headless parser
     "select-soil-intervals": Runtime.CLOUD,  # tool headless stdlib tiering
+    "export-comparison-excel": Runtime.CLOUD,  # tool 4.8 headless openpyxl
 }
 
 
@@ -212,6 +213,9 @@ _REGISTRY_SEED = [
     ("select-soil-intervals", "SelectSoilIntervalsForMapping", "", "CLOUD",
      "stable", "cartography",
      "Assign HOTSPOT/DETECT/ND/NO_DATA tiers to soil intervals for mapping"),
+    ("export-comparison-excel", "ExportComparisonResultsToExcel", "4.8", "CLOUD",
+     "stable", "reporting",
+     "Export compare-events records to a trend-coloured Excel workbook"),
 ]
 
 TOOL_REGISTRY: list = [
