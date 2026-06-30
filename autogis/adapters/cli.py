@@ -1950,6 +1950,39 @@ def ingest_reviewer_comments_cmd(input_file, out_path, tracker_path, report, fai
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("select-soil-intervals")
+@click.option("--results-csv", "results_csv", required=True,
+              type=click.Path(exists=True),
+              help="Soil results CSV (LocationID, TopDepthFt, BottomDepthFt, "
+                   "AnalyteName, ResultValue, ResultQualifier, ReportedUnits, "
+                   "ScreeningLevel, ExceedsScreeningLevel).")
+@click.option("--out", required=True, type=click.Path(),
+              help="Output CSV path for tiered intervals.")
+@click.option("--analytes", default=None,
+              help="Comma-separated analyte names to include (default: all).")
+@click.option("--tiers", default=None,
+              help="Comma-separated tiers to include: HOTSPOT,DETECT,ND,NO_DATA "
+                   "(default: all).")
+@click.option("--max-depth-ft", "max_depth_ft", type=float, default=None,
+              help="Exclude intervals with top_depth_ft greater than this value.")
+@click.option("--report", default=None, type=click.Path())
+def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft, report):
+    """Assign display tiers to soil sample intervals and write a mapping CSV (headless)."""
+    from autogis.core.envmon.soil_interval_selector import (
+        load_soil_results_csv, select_intervals, write_intervals_csv)
+    from autogis.core.common.qa import QACollector
+
+    analyte_list = [a.strip() for a in analytes.split(",")] if analytes else None
+    tier_list = [t.strip().upper() for t in tiers.split(",")] if tiers else None
+    qa = QACollector()
+    intervals = load_soil_results_csv(results_csv)
+    rows = select_intervals(intervals, analytes=analyte_list, tiers=tier_list,
+                            max_depth_ft=max_depth_ft, qa=qa)
+    write_intervals_csv(rows, Path(out))
+    click.echo(f"Intervals selected: {len(rows)}  Output: {out}")
+    _render_qa(qa, report, "error")
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 

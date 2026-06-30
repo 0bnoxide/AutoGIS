@@ -64,3 +64,17 @@ The plan provided complete module + test code with stable comment-id hashing,
 status lifecycle, multi-format parsers (CSV/GeoJSON/XLSX), and status-preserving
 merge. Followed it faithfully; no deviations needed. Live AGOL fetch kept out of
 scope (headless boundary) as the plan specifies.
+
+## Feature 3 — select-soil-intervals (Tool — cartography intake)
+
+**Status:** DONE — `soil_interval_selector.py` + `select-soil-intervals` CLI +
+14 tests. Registered CLOUD. Suite 899 → 913.
+
+### D3.1 — Fixed an internal contradiction in the plan (ND vs NO_DATA)
+The plan's `assign_tier` returned `NO_DATA` for *any* None result_value, but its
+own `test_assign_tier_nd` (result_value=None, screening_level=None) expects `ND`
+while `test_assign_tier_no_data` (result_value=None, screening_level=5.0) expects
+`NO_DATA`. The only differing field is `screening_level`. Implemented the split:
+None result + screening_level present → NO_DATA (screened analyte, data gap);
+None result + no screening_level → ND (true reported non-detect). Tests are the
+contract; the plan's module code would have failed its own test.

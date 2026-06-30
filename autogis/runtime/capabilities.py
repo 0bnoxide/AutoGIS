@@ -51,6 +51,7 @@ TOOLS: dict[str, Runtime] = {
     "build-dashboard-data-mart": Runtime.LOCAL,  # truncates/repopulates GDB
     "generate-trend-charts": Runtime.CLOUD,  # tool 4.6 headless openpyxl charts
     "ingest-reviewer-comments": Runtime.CLOUD,  # tool 9.4 headless parser
+    "select-soil-intervals": Runtime.CLOUD,  # tool headless stdlib tiering
 }
 
 
@@ -208,6 +209,9 @@ _REGISTRY_SEED = [
     ("ingest-reviewer-comments", "IngestReviewerMapComments", "9.4", "CLOUD",
      "stable", "reporting",
      "Ingest reviewer markups (CSV/GeoJSON/XLSX) into a tracked comment table"),
+    ("select-soil-intervals", "SelectSoilIntervalsForMapping", "", "CLOUD",
+     "stable", "cartography",
+     "Assign HOTSPOT/DETECT/ND/NO_DATA tiers to soil intervals for mapping"),
 ]
 
 TOOL_REGISTRY: list = [
