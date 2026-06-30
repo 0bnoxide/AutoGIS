@@ -2005,6 +2005,34 @@ def export_comparison_excel_cmd(comparison_csv, output, overwrite, report, fail_
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("generate-job-queue")
+@click.option("--manifest", required=True, type=click.Path(exists=True),
+              help="YAML with sites, tools, and optional per-tool args.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output JSON queue file.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error", show_default=True)
+def generate_job_queue_cmd(manifest, output, report, fail_on):
+    """Tool 10.4: generate an ordered job-queue JSON from a manifest YAML (headless)."""
+    import json as _json
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.job_queue import generate_job_queue
+
+    spec = yaml.safe_load(Path(manifest).read_text(encoding="utf-8")) or {}
+    site_ids = spec.get("sites") or []
+    tool_names = spec.get("tools") or []
+    extra_args = spec.get("args") or {}
+    qa = QACollector()
+    entries = generate_job_queue(site_ids, tool_names, extra_args, qa=qa)
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_json.dumps([e.to_dict() for e in entries], indent=2),
+                   encoding="utf-8")
+    click.echo(f"Jobs: {len(entries)}  Output: {output}")
+    _render_qa(qa, report, fail_on)
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 

@@ -96,3 +96,25 @@ exceedance-sheet row count) caught it. Fixed to the string form
 ### D4.2 — Dropped the plan's openpyxl try/except ImportError
 openpyxl is a required dep (ADR-008); kept the lazy import (arcpy-free invariant)
 but removed the dead missing-openpyxl branch.
+
+## Feature 5 — generate-job-queue (Tool 10.4)
+
+**Status:** DONE — `job_queue.py` + `generate-job-queue` CLI + 8 tests.
+Registered CLOUD. Suite 921 → 929.
+
+### D5.1 — Implemented per spec; filled the CLI body
+Module given by the plan (orders jobs CLOUD→HYBRID→LOCAL from `capabilities.TOOLS`,
+site×tool cross-product, per-tool/per-site arg merge). Filled the `...` CLI body:
+read manifest YAML (sites/tools/args), write the queue as a JSON array of
+`{tool, site_id, runtime, args, order}`. No deviations.
+
+---
+
+## Batch 3 run summary
+
+All 5 headless tools implemented TDD-first, each committed individually. Suite
+grew **830 → 929** (99 new tests, 0 failures). Three plan-bug fixes surfaced by
+strict tests and logged: trend-charts empty-input crash (D1.1), soil-interval
+ND/NO_DATA contradiction (D3.1), and the comparison-excel freeze_panes blank-row
+off-by-one (D4.1). New CLI commands all registered in `TOOLS` + `TOOL_REGISTRY`
+(CLOUD); the registry drift-guard stays green. Next: adversarial review before PR.

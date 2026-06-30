@@ -53,6 +53,7 @@ TOOLS: dict[str, Runtime] = {
     "ingest-reviewer-comments": Runtime.CLOUD,  # tool 9.4 headless parser
     "select-soil-intervals": Runtime.CLOUD,  # tool headless stdlib tiering
     "export-comparison-excel": Runtime.CLOUD,  # tool 4.8 headless openpyxl
+    "generate-job-queue": Runtime.CLOUD,  # tool 10.4 headless JSON manifest
 }
 
 
@@ -216,6 +217,8 @@ _REGISTRY_SEED = [
     ("export-comparison-excel", "ExportComparisonResultsToExcel", "4.8", "CLOUD",
      "stable", "reporting",
      "Export compare-events records to a trend-coloured Excel workbook"),
+    ("generate-job-queue", "GenerateRunJobQueue", "10.4", "CLOUD", "stable",
+     "admin", "Generate an ordered batch job-queue JSON from a manifest"),
 ]
 
 TOOL_REGISTRY: list = [
