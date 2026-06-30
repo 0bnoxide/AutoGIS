@@ -26,12 +26,11 @@ class MigrationConfig:
     date_col: str = "SampleDate"
     matrix_col: Optional[str] = "Matrix"
     sample_id_col: Optional[str] = None    # auto-generated if None
-    units_row_index: Optional[int] = None  # 0-based row in header block
     site_id: str = ""
     batch_id: str = ""
     default_matrix: str = "GW"
     default_units: str = "ug/L"
-    nondetect_prefix: str = "ND"           # e.g. "<", "ND", "U"
+    nondetect_prefix: str = "<"            # most common: "<5.0" → nondetect
 
     @classmethod
     def from_dict(cls, d: dict) -> "MigrationConfig":
@@ -64,13 +63,20 @@ def _parse_date(raw: str) -> Optional[date]:
     return None
 
 
+_BLANK_VALUES = frozenset(("-", "N/A", "NA", "n/a", "n/A", "N/a"))
+
+
 def _parse_result(raw: str, nd_prefix: str) -> tuple[Optional[float], bool, str]:
     """Return (value_or_None, is_nondetect, original)."""
     raw = raw.strip()
-    if not raw or raw in ("-", "N/A", "NA", "n/a"):
+    if not raw or raw in _BLANK_VALUES:
         return None, False, raw
     is_nd = raw.upper().startswith(nd_prefix.upper()) or raw.startswith("<")
-    numeric_str = raw.lstrip("<>UuJj ").strip()
+    # Strip the ND prefix exactly, then common qualifier chars.
+    numeric_str = raw
+    if is_nd and nd_prefix and raw.upper().startswith(nd_prefix.upper()):
+        numeric_str = raw[len(nd_prefix):]
+    numeric_str = numeric_str.lstrip("<>UuJj ").strip()
     try:
         return float(numeric_str), is_nd, raw
     except ValueError:
@@ -141,7 +147,7 @@ def migrate_wide_csv(
 
         for analyte in analyte_cols:
             raw_val = row.get(analyte, "").strip()
-            if not raw_val or raw_val in ("-", "N/A", "NA"):
+            if not raw_val or raw_val in _BLANK_VALUES:
                 continue
             val, is_nd, orig = _parse_result(raw_val, config.nondetect_prefix)
             if val is None and not is_nd:

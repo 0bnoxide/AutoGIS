@@ -1881,14 +1881,15 @@ def list_tools_cmd(runtime_filter, domain, status, search, verbose):
               help="Rows to scan per sheet for structure detection.")
 def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
     """Tool 2.1: inspect a workbook and write a draft parser profile YAML (headless)."""
-    import json as _json
     import yaml as _yaml
+    from autogis.core.common.qa import QACollector
     from autogis.core.envmon.excel_workbook_inspector import (
         inspect_workbook_structure,
         propose_parser_profile,
     )
 
-    report = inspect_workbook_structure(Path(workbook), scan_rows=scan_rows)
+    qa = QACollector()
+    report = inspect_workbook_structure(Path(workbook), scan_rows=scan_rows, qa=qa)
     profile_dict = propose_parser_profile(report, profile_id=profile_id)
     out = Path(output)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1896,6 +1897,8 @@ def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
                    encoding="utf-8")
     click.echo(f"Draft profile written: {out}  "
                f"({len(report.sheets)} sheet(s) — REVIEW BEFORE USE)")
+    if qa.records:
+        _render_qa(qa, None, "error")
 
 
 @envmon.command("batch-import-workbooks")
@@ -1916,7 +1919,6 @@ def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
 def batch_import_workbooks_cmd(manifest, output_dir, analytes, screening,
                                event_date, report, fail_on):
     """Tool 2.2: batch-import multiple EDD workbooks from a manifest CSV (headless)."""
-    import dataclasses as _dc
     import yaml as _yaml
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
@@ -1988,7 +1990,6 @@ def migrate_legacy_data_cmd(input_csv, output, location_col, date_col,
                              default_matrix, default_units, nondetect_prefix,
                              units_yaml, report, fail_on):
     """Tool 2.4: convert wide-format legacy CSV to long-format result records (headless)."""
-    import dataclasses as _dc
     import yaml as _yaml
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import write_records_csv

@@ -266,6 +266,31 @@ class TestCreateSamplingPlan:
                  "--bottles-output", str(tmp_path / "b.csv"))
         assert r.exit_code == 0, r.output
 
+    def test_per_well_analyte_group_restriction(self, tmp_path):
+        """Wells with analyte_groups column only get those groups, not all."""
+        wells = tmp_path / "wells.csv"
+        # MW-01 gets only voc; MW-02 gets all groups (no restriction)
+        _write_csv(wells, [
+            {"location_id": "MW-01", "matrix": "GW", "analyte_groups": "voc"},
+            {"location_id": "MW-02", "matrix": "GW", "analyte_groups": ""},
+        ])
+        groups = tmp_path / "groups.yaml"
+        self._make_groups(groups)
+        samples_out = tmp_path / "samples.csv"
+        bottles_out = tmp_path / "bottles.csv"
+        r = _run("envmon", "create-sampling-plan",
+                 "--wells-csv", str(wells),
+                 "--analyte-groups", str(groups),
+                 "--event-date", "2024-06-01",
+                 "--samples-output", str(samples_out),
+                 "--bottles-output", str(bottles_out))
+        assert r.exit_code == 0, r.output
+        samples = list(csv.DictReader(samples_out.open(encoding="utf-8")))
+        # MW-01: only voc (1); MW-02: voc + metals (2) → 3 total
+        assert len(samples) == 3
+        mw01 = [s for s in samples if s["LocationID"] == "MW-01"]
+        assert all(s["AnalyteGroup"] == "voc" for s in mw01)
+
 
 # ---------------------------------------------------------------------------
 # 5. reconcile-field-lab (Tool 7.3)
