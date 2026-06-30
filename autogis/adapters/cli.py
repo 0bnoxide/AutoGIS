@@ -612,6 +612,48 @@ def gen_synthetic_workbook_cmd(site_id, wells, events, features, seed, out_path)
                f"features={sorted(feats) or 'clean'}, seed={seed})")
 
 
+@envmon.command("build-analytical-key")
+@click.option("--analyte-dict", required=True, type=click.Path(exists=True),
+              help="Analyte dictionary YAML.")
+@click.option("--screening-levels", required=True, type=click.Path(exists=True),
+              help="Screening levels YAML.")
+@click.option("--matrix", required=True, type=click.Choice(["GW", "SOIL"]),
+              help="Matrix — units and screening are keyed by it.")
+@click.option("--out", "out_path", default=None, type=click.Path(),
+              help="Output path; format by extension (.csv/.xlsx/.md). "
+                   "Omitted -> markdown to stdout.")
+@click.option("--analyte-filter", default=None,
+              help="Comma-separated canonical names to include.")
+@click.option("--site-id", default="", help="Site id for the markdown title.")
+def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
+                             analyte_filter, site_id):
+    """Tool 5.5: build the analytical key/legend table (analyte, units, screening, NE)."""
+    from autogis.core.common.config import (
+        load_analyte_dictionary, load_screening_levels)
+    from autogis.core.envmon.build_analytical_key import (
+        build_analytical_key, format_key_markdown, write_key_csv, write_key_xlsx)
+
+    analytes = load_analyte_dictionary(Path(analyte_dict))
+    screening = load_screening_levels(Path(screening_levels))
+    flt = ([s.strip() for s in analyte_filter.split(",") if s.strip()]
+           if analyte_filter else None)
+    rows = build_analytical_key(analytes, screening, matrix=matrix,
+                                analyte_filter=flt)
+    if not out_path:
+        click.echo(format_key_markdown(rows, matrix=matrix, site_id=site_id))
+        return
+    suffix = Path(out_path).suffix.lower()
+    if suffix == ".csv":
+        write_key_csv(rows, Path(out_path))
+    elif suffix == ".xlsx":
+        write_key_xlsx(rows, Path(out_path), matrix=matrix)
+    else:
+        Path(out_path).write_text(
+            format_key_markdown(rows, matrix=matrix, site_id=site_id),
+            encoding="utf-8")
+    click.echo(f"Written: {out_path}  ({len(rows)} analytes, matrix={matrix})")
+
+
 @envmon.command("identify-data-gaps")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
