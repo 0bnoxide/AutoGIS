@@ -16,7 +16,8 @@ shortcuts understanding the problem or skips validation/security/error handling.
 
 The codebase-memory MCP server is **wired at USER scope** (stdio), not via a repo
 file. The binary lives at
-`C:\Users\ichbi\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe`
+`C:\Users\ichbi\AppData\Roaming\npm\node_modules\codebase-memory-mcp\bin\codebase-memory-mcp.exe`
+(npm-global install, on PATH as `codebase-memory-mcp`)
 and is registered in `~/.claude.json` (`claude mcp add --scope user`). There is no
 project `.mcp.json` — a previous one pointed at a non-existent npm package and was
 removed. The persistent index lives at
