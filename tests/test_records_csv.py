@@ -99,3 +99,42 @@ def test_record_class_inferred_from_first_record(tmp_path):
     write_records_csv([_Rec("a", 1, 2.0, date(2026, 1, 1))], out)  # no record_class
     back = read_records_csv(out, _Rec)
     assert back[0].name == "a"
+
+
+@dataclasses.dataclass
+class _BoolRec:
+    name: str
+    flag: bool
+    maybe: Optional[bool]
+
+
+def test_bool_fields_round_trip(tmp_path):
+    """bool must read back as a real bool, not the string "True"/"False" (#73)."""
+    rows = [
+        _BoolRec("a", True, True),
+        _BoolRec("b", False, False),
+        _BoolRec("c", True, None),
+    ]
+    out = tmp_path / "b.csv"
+    write_records_csv(rows, out)
+    back = read_records_csv(out, _BoolRec)
+    assert back == rows
+    assert back[1].flag is False  # a written False must read back as bool False
+
+
+def test_blank_bool_is_none_when_optional_else_false(tmp_path):
+    """Blank field -> None for Optional[bool], False for a required bool (#73)."""
+    out = tmp_path / "b.csv"
+    out.write_text("name,flag,maybe\nx,,\n", encoding="utf-8")
+    back = read_records_csv(out, _BoolRec)
+    assert back[0].flag is False      # required blank -> False
+    assert back[0].maybe is None      # Optional blank -> None
+
+
+def test_whitespace_only_bool_treated_as_blank(tmp_path):
+    """' ' / ' None ' are blanks too — strip before the sentinel check."""
+    out = tmp_path / "b.csv"
+    out.write_text('name,flag,maybe\nx, , None \n', encoding="utf-8")
+    back = read_records_csv(out, _BoolRec)
+    assert back[0].flag is False      # required whitespace -> False
+    assert back[0].maybe is None      # Optional whitespace/' None ' -> None

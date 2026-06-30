@@ -452,6 +452,211 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("gw-level-summary")
+@click.option("--elevations-csv", required=True, type=click.Path(exists=True),
+              help="CSV of ElevationHistory rows.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output GW level summary CSV path.")
+@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--toc-csv", default=None, type=click.Path(exists=True),
+              help="Optional CSV with location_id,toc_elevation columns.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
+                         report, fail_on):
+    """Tool 5.1: per-well GW level/DTW/trend summary from elevation history."""
+    import csv as _csv
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
+    from autogis.core.common.schema.survey import ElevationHistory
+    from autogis.core.envmon.gw_level_summary import (
+        build_gw_level_summary, GWLevelRow)
+
+    elevations = read_records_csv(Path(elevations_csv), ElevationHistory)
+    qa = QACollector()
+    toc: dict = {}
+    if toc_csv:
+        with Path(toc_csv).open(newline="", encoding="utf-8") as fh:
+            for row in _csv.DictReader(fh):
+                loc = (row.get("location_id") or "").strip()
+                raw = (row.get("toc_elevation") or "").strip()
+                # Empty -> no TOC for this well; "0" is a real datum, kept.
+                if loc and raw != "":
+                    try:
+                        toc[loc] = float(raw)
+                    except ValueError:
+                        from autogis.core.common.qa import SEV_WARNING
+                        qa.add(SEV_WARNING, "bad_toc_value",
+                               f"{loc}: non-numeric toc_elevation {raw!r} "
+                               f"ignored", location_id=loc)
+    rows = build_gw_level_summary(
+        elevations, toc, event_date=_date.fromisoformat(event_date), qa=qa)
+    out = write_records_csv(rows, Path(output), record_class=GWLevelRow)
+    click.echo(f"Written: {out}  ({len(rows)} well summary rows)")
+    _render_qa(qa, report, fail_on)
+
+
+def _read_id_list(path) -> set:
+    """One id per line; blanks and '#' comments ignored."""
+    if not path:
+        return set()
+    out = set()
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if s and not s.startswith("#"):
+            out.add(s)
+    return out
+
+
+@envmon.command("build-gwe-event")
+@click.option("--water-levels", required=True, type=click.Path(exists=True),
+              help="CSV of water-level rows (location_id,gwe_ft,dtw_ft,status,...).")
+@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output EnvWaterLevelEvent CSV path.")
+@click.option("--exclude", default=None, type=click.Path(exists=True),
+              help="Text file of location_ids to exclude from contouring.")
+@click.option("--perched", default=None, type=click.Path(exists=True),
+              help="Text file of perched/separate-zone location_ids.")
+@click.option("--anomaly-stdev", default=3.0, type=float,
+              help="Robust outlier threshold (modified z-score; default 3.0).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
+                        anomaly_stdev, report, fail_on):
+    """Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags."""
+    import csv as _csv
+    from autogis.core.envmon.build_gwe_event import (
+        build_gwe_event, write_gwe_event)
+
+    with Path(water_levels).open(newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    result = build_gwe_event(
+        rows, event_date=event_date,
+        exclude_locations=_read_id_list(exclude),
+        perched_locations=_read_id_list(perched),
+        anomaly_stdev=anomaly_stdev)
+    out = write_gwe_event(result, Path(out_path))
+    click.echo(f"Written: {out}  ({result.contour_points} contour points, "
+               f"{result.excluded} excluded, {result.anomalous} anomalous)")
+    _render_qa(result.qa, report, fail_on)
+
+
+def _parse_interval_list(spec):
+    """'2-4,8-10' -> [(2.0, 4.0), (8.0, 10.0)]."""
+    if not spec:
+        return None
+    out = []
+    for chunk in spec.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        top, _, bottom = chunk.partition("-")
+        out.append((float(top), float(bottom)))
+    return out
+
+
+@envmon.command("select-soil-intervals")
+@click.option("--soil-results", required=True, type=click.Path(exists=True),
+              help="CSV of soil result rows with depth-interval fields.")
+@click.option("--rule", default="highest_exceedance",
+              type=click.Choice([
+                  "all", "shallowest", "deepest", "highest_result",
+                  "highest_exceedance", "interval_list", "confirmation_only"]),
+              help="Selection rule (default highest_exceedance).")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output map-selection CSV path.")
+@click.option("--interval-list", default=None,
+              help="Depth windows for interval_list rule, e.g. '2-4,8-10'.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def select_soil_intervals_cmd(soil_results, rule, out_path, interval_list,
+                              report, fail_on):
+    """Tool 4.8: select one defensible soil interval per callout, by rule."""
+    import csv as _csv
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.soil_interval_selector import (
+        select_intervals, IntervalSelection)
+
+    with Path(soil_results).open(newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    result = select_intervals(rows, rule=rule,
+                              interval_list=_parse_interval_list(interval_list))
+    out = write_records_csv(result.selected, Path(out_path),
+                            record_class=IntervalSelection)
+    click.echo(f"Written: {out}  ({len(result.selected)} intervals, "
+               f"rule={rule})")
+    _render_qa(result.qa, report, fail_on)
+
+
+@envmon.command("gen-synthetic-workbook")
+@click.option("--site-id", default="TEST01", help="Synthetic site_id.")
+@click.option("--wells", default=10, type=int, help="Number of wells.")
+@click.option("--events", default=4, type=int, help="Number of events.")
+@click.option("--features", default="",
+              help="Comma-separated messiness features (e.g. 'nondetects,rpd_sheet').")
+@click.option("--seed", default=0, type=int, help="Deterministic seed.")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+def gen_synthetic_workbook_cmd(site_id, wells, events, features, seed, out_path):
+    """Tool 10.6: write a seeded synthetic environmental workbook for parser hardening."""
+    from autogis.core.envmon.synthetic_workbook import (
+        generate_workbook, WorkbookScenario)
+
+    feats = {f.strip() for f in features.split(",") if f.strip()}
+    scenario = WorkbookScenario(site_id=site_id, n_wells=wells, n_events=events,
+                                features=feats, seed=seed)
+    out = generate_workbook(scenario, Path(out_path))
+    click.echo(f"Written: {out}  (wells={wells}, events={events}, "
+               f"features={sorted(feats) or 'clean'}, seed={seed})")
+
+
+@envmon.command("build-analytical-key")
+@click.option("--analyte-dict", required=True, type=click.Path(exists=True),
+              help="Analyte dictionary YAML.")
+@click.option("--screening-levels", required=True, type=click.Path(exists=True),
+              help="Screening levels YAML.")
+@click.option("--matrix", required=True, type=click.Choice(["GW", "SOIL"]),
+              help="Matrix — units and screening are keyed by it.")
+@click.option("--out", "out_path", default=None, type=click.Path(),
+              help="Output path; format by extension (.csv/.xlsx/.md). "
+                   "Omitted -> markdown to stdout.")
+@click.option("--analyte-filter", default=None,
+              help="Comma-separated canonical names to include.")
+@click.option("--site-id", default="", help="Site id for the markdown title.")
+def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
+                             analyte_filter, site_id):
+    """Tool 5.5: build the analytical key/legend table (analyte, units, screening, NE)."""
+    from autogis.core.common.config import (
+        load_analyte_dictionary, load_screening_levels)
+    from autogis.core.envmon.build_analytical_key import (
+        build_analytical_key, format_key_markdown, write_key_csv, write_key_xlsx)
+
+    analytes = load_analyte_dictionary(Path(analyte_dict))
+    screening = load_screening_levels(Path(screening_levels))
+    flt = ([s.strip() for s in analyte_filter.split(",") if s.strip()]
+           if analyte_filter else None)
+    rows = build_analytical_key(analytes, screening, matrix=matrix,
+                                analyte_filter=flt)
+    if not out_path:
+        click.echo(format_key_markdown(rows, matrix=matrix, site_id=site_id))
+        return
+    suffix = Path(out_path).suffix.lower()
+    if suffix == ".csv":
+        write_key_csv(rows, Path(out_path))
+    elif suffix == ".xlsx":
+        write_key_xlsx(rows, Path(out_path), matrix=matrix)
+    else:
+        Path(out_path).write_text(
+            format_key_markdown(rows, matrix=matrix, site_id=site_id),
+            encoding="utf-8")
+    click.echo(f"Written: {out_path}  ({len(rows)} analytes, matrix={matrix})")
+
+
 @envmon.command("identify-data-gaps")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
