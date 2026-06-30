@@ -44,6 +44,48 @@ def _num(v) -> Optional[float]:
         return None
 
 
+def _event_date_str(v) -> str:
+    """Normalize an EventDate (date/datetime/str) to an ISO 'YYYY-MM-DD' string."""
+    if isinstance(v, (_dt.date, _dt.datetime)):
+        return v.strftime("%Y-%m-%d")
+    return str(v or "")
+
+
+def select_prior_water_levels(
+    all_water_levels: List[dict],
+    current_water_levels: List[dict],
+    prior_event_id: Optional[str] = None,
+) -> List[dict]:
+    """Pick the *prior* water-level row per LocationID from a multi-event table.
+
+    For each well, return the measurement with the latest ``EventDate`` strictly
+    *before* that well's current event date — not whichever row happens to come
+    last in cursor order. When ``prior_event_id`` is an explicit ISO date
+    (``YYYY-MM-DD``), candidates are restricted to that date instead.
+
+    Pure / arcpy-free so the orchestrator's prior-selection is unit-testable.
+    """
+    explicit = bool(prior_event_id) and len(str(prior_event_id)) == 10 \
+        and str(prior_event_id)[4] == "-"
+    current_date = {r.get("LocationID", ""): _event_date_str(r.get("EventDate"))
+                    for r in current_water_levels}
+    by_loc: Dict[str, dict] = {}
+    for r in all_water_levels:
+        loc = r.get("LocationID", "")
+        ed = _event_date_str(r.get("EventDate"))
+        if explicit:
+            if ed != str(prior_event_id):
+                continue
+        else:
+            cur = current_date.get(loc)
+            if cur is not None and not (ed and ed < cur):
+                continue  # keep only measurements strictly before the current one
+        prev = by_loc.get(loc)
+        if prev is None or ed > _event_date_str(prev.get("EventDate")):
+            by_loc[loc] = r
+    return list(by_loc.values())
+
+
 # ---------------------------------------------------------------------------
 # Pure-Python transformation functions (arcpy-free, unit-tested)
 # ---------------------------------------------------------------------------
@@ -253,7 +295,12 @@ def build_dashboard_data_mart(  # pragma: no cover - requires arcpy
     def _read(table: str) -> List[dict]:
         fields = [f.name for f in arcpy.ListFields(f"{gdb_path}/{table}")]
         with arcpy.da.SearchCursor(f"{gdb_path}/{table}", fields) as cur:
-            return [dict(zip(fields, row)) for row in cur]
+            rows = [dict(zip(fields, row)) for row in cur]
+        # Scope every source read to this site so a multi-site GDB does not leak
+        # another site's data/QA into this site's mart.
+        if "SiteID" in fields:
+            rows = [r for r in rows if r.get("SiteID") == site_id]
+        return rows
 
     wide = _read("Env_CurrentEventWide")
     qa_rows = _read("Env_ImportQA")
@@ -261,7 +308,9 @@ def build_dashboard_data_mart(  # pragma: no cover - requires arcpy
     samples = _read("Env_Samples")
     results = _read("Env_AnalyticalResults")
     wl = _read("Env_CurrentWaterLevelEvent")
-    prior_wl = _read("Env_WaterLevels") if prior_event_id else []
+    prior_wl = (select_prior_water_levels(_read("Env_WaterLevels"), wl,
+                                          prior_event_id)
+                if prior_event_id else [])
     exceedances = [r for r in results
                    if int(r.get("ExceedsScreeningLevel", 0) or 0) == 1]
 

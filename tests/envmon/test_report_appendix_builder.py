@@ -140,3 +140,16 @@ def test_summary_detection_frequency_format(tmp_path):
     freqs = [c.value for c in detect_row[2:] if isinstance(c.value, str)
              and "/" in str(c.value)]
     assert freqs, "expected d/n detection-frequency cells in summary"
+
+
+def test_empty_results_produces_placeholder_not_crash(tmp_path):
+    """Empty results -> no specs -> workbook still saves with a placeholder sheet
+    and a QA warning, rather than openpyxl raising on a zero-sheet workbook."""
+    specs = build_appendix_sheet_specs([], screening_levels=_SL,
+                                       group_map=_GROUP_MAP)
+    assert specs == []
+    out = tmp_path / "empty.xlsx"
+    res = write_appendix_workbook([], specs, out)
+    assert out.exists()
+    assert len(load_workbook(out).worksheets) >= 1
+    assert any(r.category == "empty_appendix_workbook" for r in res.qa.records)

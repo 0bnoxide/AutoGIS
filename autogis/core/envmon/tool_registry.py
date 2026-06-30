@@ -83,9 +83,9 @@ def format_tool_table(entries: List[ToolEntry], *, verbose: bool = False) -> str
     """
     if verbose:
         headers = ["command", "runtime", "domain", "status", "roadmap",
-                   "description"]
+                   "description", "plan_path"]
         rows = [[t.command, t.runtime, t.domain, t.status, t.roadmap_id,
-                 t.description] for t in entries]
+                 t.description, t.plan_path] for t in entries]
     else:
         headers = ["command", "runtime", "domain", "description"]
         rows = [[t.command, t.runtime, t.domain, t.description]

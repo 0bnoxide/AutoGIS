@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -102,7 +102,8 @@ def build_appendix_sheet_specs(
     return specs
 
 
-def _cell_text(row: Optional[dict], nd_qualifier: str) -> str:
+def _cell_text(row: Optional[dict], nd_qualifier: str) -> Union[str, float]:
+    """Excel cell value: a float for detected numerics, else a status string."""
     if row is None:
         return "--"
     if _is_nondetect(row):
@@ -199,6 +200,16 @@ def write_appendix_workbook(
         if not spec.analytes:
             qa.add(SEV_WARNING, "empty_appendix_sheet",
                    f"Sheet '{spec.sheet_name}' has no analytes.")
+
+    if not wb.worksheets:
+        # No analyte groups (empty/invalid results): openpyxl refuses to save a
+        # zero-sheet workbook, so emit a placeholder sheet + QA warning instead
+        # of crashing the CLI.
+        ws = wb.create_sheet("No Data")
+        ws.append(["No analyte data found for the given inputs."])
+        qa.add(SEV_WARNING, "empty_appendix_workbook",
+               "No analyte groups to write; produced a placeholder 'No Data' "
+               "sheet. Check the results input and group map.")
 
     wb.save(out_path)
     qa.add(SEV_INFO, "appendix_built",

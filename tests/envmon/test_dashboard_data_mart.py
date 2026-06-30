@@ -10,6 +10,7 @@ import dataclasses
 
 from autogis.core.envmon.dashboard_data_mart import (
     MartSummary,
+    select_prior_water_levels,
     build_dash_site_status,
     build_dash_event_status,
     build_dash_well_status,
@@ -20,6 +21,32 @@ from autogis.core.envmon.dashboard_data_mart import (
     build_dash_lab_qa,
     build_dash_open_issues,
 )
+
+
+def test_select_prior_picks_latest_before_current():
+    """Per well, the prior row is the latest EventDate strictly before the
+    current event — not whichever row is last in iteration order."""
+    current = [{"LocationID": "MW-01", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-01", "EventDate": "2026-03-15", "GWE_ft": 100.0},
+        {"LocationID": "MW-01", "EventDate": "2025-12-15", "GWE_ft": 99.0},
+        # A later/equal-to-current row must be ignored as a "prior".
+        {"LocationID": "MW-01", "EventDate": "2026-06-15", "GWE_ft": 100.5},
+    ]
+    prior = select_prior_water_levels(all_wl, current)
+    assert len(prior) == 1
+    assert prior[0]["EventDate"] == "2026-03-15"  # latest strictly-before
+
+
+def test_select_prior_explicit_event_date_restricts_candidates():
+    current = [{"LocationID": "MW-01", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-01", "EventDate": "2026-03-15", "GWE_ft": 100.0},
+        {"LocationID": "MW-01", "EventDate": "2025-12-15", "GWE_ft": 99.0},
+    ]
+    prior = select_prior_water_levels(all_wl, current, prior_event_id="2025-12-15")
+    assert len(prior) == 1
+    assert prior[0]["EventDate"] == "2025-12-15"
 
 
 def test_site_status_active_events_counts_wide_rows():
