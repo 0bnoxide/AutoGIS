@@ -50,6 +50,7 @@ TOOLS: dict[str, Runtime] = {
     "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
     "build-dashboard-data-mart": Runtime.LOCAL,  # truncates/repopulates GDB
     "generate-trend-charts": Runtime.CLOUD,  # tool 4.6 headless openpyxl charts
+    "ingest-reviewer-comments": Runtime.CLOUD,  # tool 9.4 headless parser
 }
 
 
@@ -204,6 +205,9 @@ _REGISTRY_SEED = [
     ("generate-trend-charts", "GenerateWellTrendCharts", "4.6", "CLOUD",
      "stable", "reporting",
      "Excel LineChart trend workbook per location/analyte"),
+    ("ingest-reviewer-comments", "IngestReviewerMapComments", "9.4", "CLOUD",
+     "stable", "reporting",
+     "Ingest reviewer markups (CSV/GeoJSON/XLSX) into a tracked comment table"),
 ]
 
 TOOL_REGISTRY: list = [

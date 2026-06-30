@@ -1917,6 +1917,39 @@ def generate_trend_charts_cmd(history_csv, out, analytes, wells, sl_path,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("ingest-reviewer-comments")
+@click.argument("input_file", metavar="INPUT", type=click.Path(exists=True))
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output tracker CSV path (created or overwritten).")
+@click.option("--tracker", "tracker_path", default=None, type=click.Path(),
+              help="Existing comment tracker CSV to merge into (optional).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write QA report to PATH (.md/.json/.csv by extension).")
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error", show_default=True)
+def ingest_reviewer_comments_cmd(input_file, out_path, tracker_path, report, fail_on):
+    """Tool 9.4: ingest reviewer map comments/redlines into a tracked table.
+
+    INPUT may be a flat CSV, GeoJSON FeatureCollection (AGOL comment export),
+    or XLSX spreadsheet; format is auto-detected from the extension. Pass a
+    previous --out as --tracker to merge while preserving existing status.
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.ingest_reviewer_comments import (
+        ingest_comments, read_tracker_csv, merge_tracker,
+        write_tracker_csv, format_comment_summary)
+
+    qa = QACollector()
+    incoming = ingest_comments(Path(input_file), qa=qa)
+    existing = read_tracker_csv(Path(tracker_path)) if tracker_path else []
+    merged = merge_tracker(existing, incoming, qa=qa)
+    out = Path(out_path)
+    write_tracker_csv(merged, out)
+    click.echo(f"Written: {out}  ({len(merged)} comment(s))")
+    click.echo(format_comment_summary(merged))
+    _render_qa(qa, report, fail_on)
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 

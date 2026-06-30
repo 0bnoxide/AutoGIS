@@ -53,3 +53,14 @@ Copilot reviewer flagged on PR #88, fixed here before review.
 The plan guarded `import yaml` with a json fallback. pyyaml is a required project
 dep (cli.py already imports it at top), so the guard is dead code — used `yaml`
 directly per the plan's own "no try/except ImportError" constraint.
+
+## Feature 2 — ingest-reviewer-comments (Tool 9.4)
+
+**Status:** DONE — `ingest_reviewer_comments.py` + `ingest-reviewer-comments`
+CLI + 52 tests (44 core + 8 CLI). Registered CLOUD. Suite 847 → 899.
+
+### D2.1 — Implemented the plan verbatim (it was fully specified)
+The plan provided complete module + test code with stable comment-id hashing,
+status lifecycle, multi-format parsers (CSV/GeoJSON/XLSX), and status-preserving
+merge. Followed it faithfully; no deviations needed. Live AGOL fetch kept out of
+scope (headless boundary) as the plan specifies.
