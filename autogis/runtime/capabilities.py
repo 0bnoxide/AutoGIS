@@ -215,6 +215,10 @@ _REGISTRY_SEED = [
      "field", "Validate a drone product manifest (headless)"),
     ("import-drone-products", "ImportDroneProducts", "8.8", "LOCAL", "stable",
      "field", "Import drone deliverables into the GDB raster catalog"),
+    ("validate-boring-logs", "ImportFieldBoringLogs", "8.0b", "CLOUD", "stable",
+     "intake", "Validate a boring-log CSV package (headless)"),
+    ("import-boring-logs", "ImportFieldBoringLogs", "8.0b", "LOCAL", "stable",
+     "intake", "Import a boring-log CSV package into the GDB"),
 ]
 
 TOOL_REGISTRY: list = [

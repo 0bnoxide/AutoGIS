@@ -1460,6 +1460,46 @@ def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("validate-boring-logs")
+@click.argument("input_dir", metavar="INPUT_DIR",
+                type=click.Path(exists=True, file_okay=False))
+@qa_report_options
+def validate_boring_logs_cmd(input_dir, report, fail_on):
+    """Tool 8.0b: validate a boring-log CSV package (headless).
+
+    INPUT_DIR holds boring_locations.csv, lithology.csv and samples.csv.
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_boring_logs import (
+        load_boring_package, validate_boring_package)
+    locs, ivals, samps = load_boring_package(Path(input_dir))
+    qa = QACollector()
+    validate_boring_package(locs, ivals, samps, qa)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("import-boring-logs")
+@click.argument("input_dir", metavar="INPUT_DIR",
+                type=click.Path(exists=True, file_okay=False))
+@click.option("--gdb", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required).")
+@qa_report_options
+def import_boring_logs_cmd(input_dir, gdb, report, fail_on):
+    """Tool 8.0b: import a boring-log CSV package into the GDB (ArcGIS Pro)."""
+    _guard("import-boring-logs")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_boring_logs import (
+        load_boring_package, validate_boring_package, import_boring_package)
+    locs, ivals, samps = load_boring_package(Path(input_dir))
+    qa = QACollector()
+    validate_boring_package(locs, ivals, samps, qa)
+    if not qa.has_blocking(allow_warnings=True, allow_errors=False):
+        import_boring_package(gdb, locs, ivals, samps)
+        click.echo(f"Imported {len(locs)} borings, {len(ivals)} intervals, "
+                   f"{len(samps)} samples.")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")
