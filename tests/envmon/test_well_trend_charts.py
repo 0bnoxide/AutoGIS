@@ -256,3 +256,22 @@ def test_cli_analyte_filter(tmp_path):
     assert result.exit_code == 0, result.output
     wb = openpyxl.load_workbook(str(out_path))
     assert "Benzene" in wb.sheetnames and "Toluene" not in wb.sheetnames
+
+
+def test_cli_screening_levels_non_dict_errors(tmp_path):
+    """A non-mapping --screening-levels YAML must fail cleanly, not traceback."""
+    csv_path = tmp_path / "history.csv"
+    _write_history_csv(csv_path, [
+        {"LocationID": "MW-1", "AnalyteName": "Benzene",
+         "SampleDate": "2026-01-01", "ResultValue": "5.0"},
+    ])
+    sl = tmp_path / "sl.yaml"
+    sl.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+    out = tmp_path / "trends.xlsx"
+    result = CliRunner().invoke(cli_root, [
+        "envmon", "generate-trend-charts",
+        "--history-csv", str(csv_path), "--out", str(out),
+        "--screening-levels", str(sl),
+    ])
+    assert result.exit_code != 0
+    assert "must be a YAML mapping" in result.output

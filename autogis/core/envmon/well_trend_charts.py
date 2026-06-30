@@ -110,9 +110,8 @@ def _date_sort_key(s: str):
     """Sort key that orders ISO dates chronologically.
 
     Returns ``(0, date)`` for a parseable ISO ``YYYY-MM-DD`` (so real dates sort
-    correctly), or ``(1, "")`` for anything else so non-ISO values fall to the
-    end deterministically (the raw string is used as the tiebreaker by the
-    caller).
+    correctly), or ``(1, date.min)`` for anything else so non-ISO values fall to
+    the end deterministically (the caller uses the raw string as the tiebreaker).
     """
     try:
         return (0, _date.fromisoformat(s.strip()))

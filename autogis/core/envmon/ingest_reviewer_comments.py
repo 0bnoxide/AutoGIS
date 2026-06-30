@@ -314,9 +314,12 @@ def parse_comments_xlsx(
 def ingest_comments(path: Path, *, qa: QACollector) -> list[ReviewerComment]:
     """Ingest reviewer comments from ``path``, auto-detecting format by extension.
 
-    Supported: .csv .geojson .json .xlsx .xls. Emits SEV_ERROR and returns []
+    Supported: .csv .geojson .json .xlsx. Emits SEV_ERROR and returns []
     for unrecognized extensions; SEV_WARNING per comment with empty
     comment_text/figure_ref; SEV_INFO "ingest_complete" on success.
+
+    Legacy binary ``.xls`` is NOT supported — openpyxl cannot read it; convert
+    to ``.xlsx`` first.
     """
     p = Path(path)
     ext = p.suffix.lower()
@@ -324,12 +327,14 @@ def ingest_comments(path: Path, *, qa: QACollector) -> list[ReviewerComment]:
         comments = parse_comments_csv(p)
     elif ext in (".geojson", ".json"):
         comments = parse_comments_geojson(p, qa=qa)
-    elif ext in (".xlsx", ".xls"):
+    elif ext == ".xlsx":
         comments = parse_comments_xlsx(p, qa=qa)
     else:
+        detail = (" Legacy binary .xls is not readable by openpyxl; convert "
+                  "to .xlsx." if ext == ".xls" else "")
         qa.add(SEV_ERROR, "unknown_format",
                f"Unsupported file extension {ext!r} for {p.name}. "
-               "Supported: .csv, .geojson, .json, .xlsx",
+               f"Supported: .csv, .geojson, .json, .xlsx.{detail}",
                source_workbook=p.name)
         return []
     for c in comments:
@@ -356,10 +361,18 @@ def merge_tracker(
 
     A ``comment_id`` already in ``existing`` is not updated (its status,
     assigned_to, resolved_date, resolution_note are preserved); new ids are
-    appended; nothing is deleted. Returns existing (original order) + new.
+    appended; nothing is deleted. ``incoming`` is de-duplicated by
+    ``comment_id`` (first occurrence wins) so a source export with repeated rows
+    cannot inflate the tracker. Returns existing (original order) + new.
     """
     existing_ids = {c.comment_id for c in existing}
-    new_comments = [c for c in incoming if c.comment_id not in existing_ids]
+    new_comments: list[ReviewerComment] = []
+    seen_new: set[str] = set()
+    for c in incoming:
+        if c.comment_id in existing_ids or c.comment_id in seen_new:
+            continue
+        seen_new.add(c.comment_id)
+        new_comments.append(c)
     qa.add(SEV_INFO, "merge_complete",
            f"Merge: {len(existing)} existing + {len(incoming)} incoming "
            f"→ {len(new_comments)} new, {len(existing) + len(new_comments)} total")

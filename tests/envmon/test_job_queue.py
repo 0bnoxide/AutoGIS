@@ -84,3 +84,16 @@ def test_cli_generate_job_queue_end_to_end(tmp_path):
     assert queue[0]["tool"] == "inspect"
     assert queue[0]["args"] == {"format": "json"}
     assert all(set(j) == {"tool", "site_id", "runtime", "args", "order"} for j in queue)
+
+
+def test_cli_manifest_non_dict_errors(tmp_path):
+    """A non-mapping --manifest YAML must fail cleanly, not traceback."""
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text("- just\n- a\n- list\n", encoding="utf-8")
+    out = tmp_path / "queue.json"
+    result = CliRunner().invoke(autogis, [
+        "envmon", "generate-job-queue",
+        "--manifest", str(manifest), "--output", str(out),
+    ])
+    assert result.exit_code != 0
+    assert "must be a YAML mapping" in result.output

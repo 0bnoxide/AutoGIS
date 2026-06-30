@@ -149,3 +149,20 @@ registry drift-guard holds).
   trusts the canonical `ExceedsScreeningLevel` flag.
 
 Post-fix suite: **903 passed**.
+
+## PR #95 Copilot review — 6 findings, all fixed
+
+1. `.xls` advertised but unreadable by openpyxl — `ingest_comments()` now treats
+   `.xls` as unsupported (clean SEV_ERROR + [], with a "convert to .xlsx" hint);
+   docstrings corrected. (+ test)
+2. `merge_tracker` could inflate the tracker when `incoming` repeats a
+   `comment_id` — now de-dupes incoming by id (first wins). (+ test)
+3. `generate-trend-charts --screening-levels`: a non-mapping YAML now raises a
+   clean `ClickException` instead of an IndexError/KeyError traceback. (+ test)
+4. `generate-job-queue --manifest`: a non-mapping YAML now raises a clean
+   `ClickException` instead of an AttributeError traceback. (+ test)
+5. `export_comparison_excel` module docstring synced to the real exceedance
+   contract (`Y`/`N` truthy set, not `"1"`).
+6. `well_trend_charts._date_sort_key` docstring synced (`(1, date.min)`).
+
+Post-fix suite: **907 passed**.

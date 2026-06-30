@@ -2,7 +2,8 @@
 
 Reads comparison records (output of Tool 4.7 ``compare-events``) and writes a
 two-sheet workbook: ``AllResults`` (all records, TrendClass colour-coded) and
-``Exceedances`` (rows where ``CurrentExceedance == "1"``).
+``Exceedances`` (rows whose ``CurrentExceedance`` is truthy — the producer emits
+``"Y"``/``"N"``; ``_EXCEEDANCE_TRUE`` also accepts ``YES``/``1``/``TRUE``).
 
 Headless: openpyxl only (imported lazily), no arcpy.
 """

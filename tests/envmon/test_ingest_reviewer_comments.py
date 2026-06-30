@@ -499,3 +499,22 @@ def test_format_comment_summary_truncates_open_preview_at_5():
     ]
     summary = format_comment_summary(comments)
     assert "3 more" in summary or "3" in summary
+
+
+def test_ingest_comments_xls_unsupported(tmp_path):
+    """Legacy .xls cannot be read by openpyxl -> clean error + [], not a raise."""
+    p = tmp_path / "comments.xls"
+    p.write_bytes(b"\xd0\xcf\x11\xe0fake-ole")  # OLE/BIFF magic-ish
+    qa = QACollector()
+    result = ingest_comments(p, qa=qa)
+    assert result == []
+    errors = [r for r in qa.records if r.severity == SEV_ERROR]
+    assert any(".xls" in r.message or "xls" in r.message.lower() for r in errors)
+
+
+def test_merge_tracker_dedupes_incoming_duplicates():
+    """Repeated comment_id in one incoming batch must not inflate the tracker."""
+    dup = ReviewerComment("rc-1", "f.csv", "csv", "F1", "Fix me", "Alice")
+    result = merge_tracker([], [dup, dup, dup], qa=QACollector())
+    assert len(result) == 1
+    assert result[0].comment_id == "rc-1"

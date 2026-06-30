@@ -1904,6 +1904,10 @@ def generate_trend_charts_cmd(history_csv, out, analytes, wells, sl_path,
         series_list = [s for s in series_list if s.location_id in keep_wells]
     if sl_path:
         sl_map = yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) or {}
+        if not isinstance(sl_map, dict):
+            raise click.ClickException(
+                f"--screening-levels {sl_path} must be a YAML mapping of "
+                f"{{AnalyteName: level}}, got {type(sl_map).__name__}.")
         for s in series_list:
             if s.analyte_name in sl_map:
                 try:
@@ -2023,6 +2027,10 @@ def generate_job_queue_cmd(manifest, output, report, fail_on):
     from autogis.core.envmon.job_queue import generate_job_queue
 
     spec = yaml.safe_load(Path(manifest).read_text(encoding="utf-8")) or {}
+    if not isinstance(spec, dict):
+        raise click.ClickException(
+            f"--manifest {manifest} must be a YAML mapping with 'sites'/'tools' "
+            f"keys, got {type(spec).__name__}.")
     site_ids = spec.get("sites") or []
     tool_names = spec.get("tools") or []
     extra_args = spec.get("args") or {}
