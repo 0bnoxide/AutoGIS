@@ -129,3 +129,12 @@ def test_blank_bool_is_none_when_optional_else_false(tmp_path):
     back = read_records_csv(out, _BoolRec)
     assert back[0].flag is False      # required blank -> False
     assert back[0].maybe is None      # Optional blank -> None
+
+
+def test_whitespace_only_bool_treated_as_blank(tmp_path):
+    """' ' / ' None ' are blanks too — strip before the sentinel check."""
+    out = tmp_path / "b.csv"
+    out.write_text('name,flag,maybe\nx, , None \n', encoding="utf-8")
+    back = read_records_csv(out, _BoolRec)
+    assert back[0].flag is False      # required whitespace -> False
+    assert back[0].maybe is None      # Optional whitespace/' None ' -> None

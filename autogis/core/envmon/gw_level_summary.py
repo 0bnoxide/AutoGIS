@@ -69,10 +69,12 @@ def build_gw_level_summary(
     rows: List[GWLevelRow] = []
     for loc_id, recs in sorted(current.items()):
         if len(recs) > 1:
+            # All recs here share survey_date == event_date, so there is no
+            # "latest" to pick by date; take the last in input order.
             qa.add(SEV_WARNING, "multiple_approved_elevations",
                    f"{loc_id}: {len(recs)} approved elevations for {event_date}; "
-                   f"using latest survey_date", location_id=loc_id)
-        best = sorted(recs, key=lambda r: r.survey_date)[-1]
+                   f"using the last in input order", location_id=loc_id)
+        best = recs[-1]
 
         toc = toc_elevations.get(loc_id)
         dtw = (toc - best.elevation) if toc is not None else None

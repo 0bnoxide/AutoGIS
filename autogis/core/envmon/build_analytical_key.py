@@ -139,10 +139,11 @@ def format_key_markdown(rows: list, matrix: str, site_id: str = "") -> str:
                  "reporting limit.")
     lines.append("")
     if has_draft:
-        lines.append("> \\* **NE = Not Established.** Screening levels marked "
-                     "\\* are pre-production stubs (source contains _TODO). Do "
-                     "not use for regulatory reporting until replaced with "
-                     "verified citations.")
+        lines.append("> **NE** = screening level Not Established (null or "
+                     "absent). **\\*** = unverified / pre-production: the level "
+                     "is null, absent, or its source contains _TODO. Do not use "
+                     "NE or starred rows for regulatory reporting until replaced "
+                     "with verified citations.")
     return "\n".join(lines)
 
 

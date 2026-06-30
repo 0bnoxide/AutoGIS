@@ -54,9 +54,10 @@ def _coerce(value: str, hint):
     # int, and a written "False" must not survive as a truthy non-empty string
     # (#73). Blank -> None when Optional, else False.
     if inner is bool:
-        if value in ("", "None"):
+        s = value.strip()
+        if s in ("", "None"):     # strip first: " " / " None " are blanks too
             return None if optional else False
-        return value.strip().lower() in ("true", "1", "yes")
+        return s.lower() in ("true", "1", "yes")
     if value in ("", "None"):
         if optional:
             return None
