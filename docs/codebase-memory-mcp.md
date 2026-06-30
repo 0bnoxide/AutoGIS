@@ -30,7 +30,8 @@ anything else.
 # `claude` is the bundled CLI, e.g.:
 #   C:\Users\ichbi\AppData\Local\Packages\Claude_*\LocalCache\Roaming\Claude\claude-code\<ver>\claude.exe
 claude mcp add --scope user codebase-memory-mcp `
-  "C:\Users\ichbi\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe"
+  "C:\Users\ichbi\AppData\Roaming\npm\node_modules\codebase-memory-mcp\bin\codebase-memory-mcp.exe"
+# (the binary is also on PATH, so `claude mcp add --scope user codebase-memory-mcp codebase-memory-mcp` works too)
 ```
 
 > Do **not** add `mcpServers` to `~/.claude/settings.json` — this Claude Code
