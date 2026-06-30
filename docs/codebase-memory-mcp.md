@@ -75,6 +75,34 @@ Python only.
 Append a dated entry whenever the MCP wiring or index setup changes, or a deviation
 is found and fixed. Newest first.
 
+### 2026-06-30 — cloud/web sessions can't get these tools (current platform limit)
+- **Question:** can a cloud (`CLAUDE_CODE_REMOTE=true`) Claude Code session — e.g. the
+  nightly remote-trigger agent — use the `mcp__codebase-memory-mcp__*` tools? The
+  graph-codebase-navigator agent kept reporting it could only fall back to grep.
+- **Answer: no, by no repo- or config-side mechanism reachable from here.** Tiered by
+  certainty:
+  - **Proven dead (firsthand, commit `5624f90`):** a repo `.mcp.json` +
+    `enabledMcpjsonServers` is *ignored* by the web harness — it resolved
+    `enabledMcpjsonServers=[]` / `hasTrustDialogAccepted=false`, tools never registered.
+    The old web wiring (`c64735c`) was deleted *because* of this, not by accident.
+  - **Established (transport mismatch):** the supported cloud-MCP channel is the remote
+    trigger's `mcp_connections`, which accepts **HTTP-transport servers only**.
+    codebase-memory-mcp is **stdio-only** (`--ui --port` is a viz UI, not an MCP
+    transport), so it cannot be provisioned there.
+  - **Inferred (timing):** a SessionStart-hook `claude mcp add --scope user` can't help
+    the session that's currently booting — MCP servers load at **startup**, before the
+    hook's registration lands. This only rules out an unsupported hack.
+- **Probe note:** a throwaway remote trigger was used to test this empirically. It could
+  not be made to clone the repo at all (the code-source attachment is bound to the
+  environment/routine via the claude.ai UI, **not** settable through the trigger
+  create/update API), so the hook never ran in the probe. Moot, because the hack's
+  best case (inferred timing) is unusable anyway. See issue #89 for the raw probe output.
+- **Not a permanent law:** would become possible if cloud MCP gains stdio support, or via
+  host-level config that can't be set from the repo. Until then, cloud sessions correctly
+  fall back to Grep/Glob/Read (graph-codebase-navigator already handles this).
+- **Local wiring untouched** — the Windows user-scope setup above still works and was not
+  modified by this investigation.
+
 ### 2026-06-24 — restored user-scope wiring; removed broken `.mcp.json`
 - **Symptom:** `mcp__codebase-memory-mcp__*` tools absent; `index_status` errored
   "No such tool available".

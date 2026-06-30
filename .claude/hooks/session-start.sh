@@ -12,42 +12,6 @@ CBM="/c/Users/ichbi/AppData/Local/Programs/codebase-memory-mcp/codebase-memory-m
 [ -x "$CBM" ] && "$CBM" cli index_repository \
   '{"repo_path":"C:/Users/ichbi/AutoGIS","mode":"full"}' >/dev/null 2>&1 || true
 
-# --- [PROBE] codebase-memory-mcp for REMOTE sessions only ---------------------
-# Tests whether a hook-time USER-SCOPE MCP registration is picked up in cloud
-# (the 06-21 attempt used PROJECT scope -> hit the trust wall). Remote-only,
-# never runs locally, fully non-fatal, NO indexing (isolates the trust/timing
-# variable). Writes /tmp/cbm-probe.log for the probe agent to read back.
-if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
-  {
-    PLOG=/tmp/cbm-probe.log
-    echo "[cbm-probe] start $(date -u +%FT%TZ) CLAUDE_CODE_REMOTE=${CLAUDE_CODE_REMOTE:-}" > "$PLOG"
-    RBIN="/usr/local/bin/codebase-memory-mcp"
-    if [ ! -x "$RBIN" ]; then
-      curl -fsSL --max-time 120 \
-        "https://github.com/DeusData/codebase-memory-mcp/releases/latest/download/codebase-memory-mcp-linux-amd64-portable.tar.gz" \
-        -o /tmp/cbm.tar.gz \
-        && tar -xzf /tmp/cbm.tar.gz -C /usr/local/bin codebase-memory-mcp \
-        && chmod +x "$RBIN"
-    fi
-    echo "[cbm-probe] binary: $(ls -la "$RBIN" 2>&1)" >> "$PLOG"
-    # Documented user-scope registration; non-fatal if `claude` is absent.
-    claude mcp add --scope user codebase-memory-mcp "$RBIN" >> "$PLOG" 2>&1 \
-      || echo "[cbm-probe] 'claude mcp add' failed or unavailable" >> "$PLOG"
-    echo "[cbm-probe] --- claude mcp list ---" >> "$PLOG"
-    claude mcp list >> "$PLOG" 2>&1 || echo "[cbm-probe] 'claude mcp list' failed" >> "$PLOG"
-    echo "[cbm-probe] --- ~/.claude.json mcpServers ---" >> "$PLOG"
-    python - >> "$PLOG" 2>&1 <<'PYEOF' || echo "[cbm-probe] config read failed" >> "$PLOG"
-import json, os
-try:
-    d = json.load(open(os.path.expanduser("~/.claude.json")))
-    print(json.dumps(d.get("mcpServers", {}), indent=1))
-except Exception as e:
-    print("ERR", e)
-PYEOF
-    echo "[cbm-probe] done $(date -u +%FT%TZ)" >> "$PLOG"
-  } 1>&2 || true
-fi
-
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 # --- Start every session from a current pull (so sessions + the subagents and
