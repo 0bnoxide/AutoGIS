@@ -54,6 +54,13 @@ TOOLS: dict[str, Runtime] = {
     "select-soil-intervals": Runtime.CLOUD,  # tool headless stdlib tiering
     "export-comparison-excel": Runtime.CLOUD,  # tool 4.8 headless openpyxl
     "generate-job-queue": Runtime.CLOUD,  # tool 10.4 headless JSON manifest
+    "register-source-doc": Runtime.CLOUD,      # tool 2.5 headless registry
+    "validate-boring-logs": Runtime.CLOUD,     # tool 8.0b headless validate
+    "import-boring-logs": Runtime.LOCAL,       # tool 8.0b GDB write
+    "register-drone-flight": Runtime.LOCAL,    # tool 8.6 GDB write
+    "validate-drone-products": Runtime.CLOUD,  # tool 8.8 headless validate
+    "import-drone-products": Runtime.LOCAL,    # tool 8.8 GDB write
+    "survey-to-well-elevation": Runtime.LOCAL,  # tool 8.5 GDB write (--gdb path)
 }
 
 
@@ -165,6 +172,18 @@ _REGISTRY_SEED = [
      "stable", "analysis", "Build denormalized dashboard mart tables"),
     ("estimate-gw-flow-direction", "EstimateGWFlowDirection", "", "CLOUD",
      "stable", "analysis", "Estimate groundwater flow direction from 3+ wells"),
+    ("gw-level-summary", "BuildGroundwaterLevelSummary", "5.1", "CLOUD",
+     "stable", "analysis",
+     "Per-well GW level/DTW/trend summary from elevation history"),
+    ("build-gwe-event", "BuildGroundwaterElevationEvent", "4.1", "CLOUD",
+     "stable", "analysis",
+     "Per-event GW-elevation contour layer with exclusion flags"),
+    ("gen-synthetic-workbook", "GenerateSyntheticEnvWorkbook", "10.6", "CLOUD",
+     "stable", "admin",
+     "Generate a seeded synthetic environmental workbook for parser hardening"),
+    ("build-analytical-key", "BuildAnalyticalKey", "5.5", "CLOUD",
+     "stable", "cartography",
+     "Build the analytical key/legend table (analyte, units, screening, NE)"),
     ("merge-event-results", "MergeEventResults", "", "CLOUD", "stable",
      "intake", "Merge multiple event result CSVs"),
     ("import-edd", "ImportLabEDD", "2.3", "LOCAL", "stable", "intake",
@@ -219,6 +238,20 @@ _REGISTRY_SEED = [
      "Export compare-events records to a trend-coloured Excel workbook"),
     ("generate-job-queue", "GenerateRunJobQueue", "10.4", "CLOUD", "stable",
      "admin", "Generate an ordered batch job-queue JSON from a manifest"),
+    ("register-source-doc", "RegisterSourceDocuments", "2.5", "CLOUD", "stable",
+     "intake", "Register an ingested source document (SHA-256 audit registry)"),
+    ("register-drone-flight", "RegisterDroneFlight", "8.6", "LOCAL", "stable",
+     "field", "Register a drone flight from an inventory YAML"),
+    ("validate-drone-products", "ImportDroneProducts", "8.8", "CLOUD", "stable",
+     "field", "Validate a drone product manifest (headless)"),
+    ("import-drone-products", "ImportDroneProducts", "8.8", "LOCAL", "stable",
+     "field", "Import drone deliverables into the GDB raster catalog"),
+    ("validate-boring-logs", "ImportFieldBoringLogs", "8.0b", "CLOUD", "stable",
+     "intake", "Validate a boring-log CSV package (headless)"),
+    ("import-boring-logs", "ImportFieldBoringLogs", "8.0b", "LOCAL", "stable",
+     "intake", "Import a boring-log CSV package into the GDB"),
+    ("survey-to-well-elevation", "SurveyToWellElevationUpdate", "8.5", "LOCAL",
+     "stable", "field", "Push QA-passed RTK elevations to MonitoringWells.TOC_ft"),
 ]
 
 TOOL_REGISTRY: list = [

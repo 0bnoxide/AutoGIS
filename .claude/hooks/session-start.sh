@@ -1,16 +1,33 @@
 #!/bin/bash
 # SessionStart hook for Claude Code — runs in both local and remote sessions.
-# Always: refresh the codebase-memory knowledge graph (no-op if binary absent).
+# Always: refresh the codebase-memory knowledge graph (logs outcome to
+# ~/.cache/codebase-memory-mcp/last-index.log — silent no-op was the old bug).
 # Always: install headroom context-compression tool and project deps.
 set -euo pipefail
 
-# --- Refresh codebase-memory knowledge graph (local binary; skipped if absent) ---
-# Indexing is incremental (~50ms no-op when nothing changed). The repo path is
-# the canonical checkout (not $CLAUDE_PROJECT_DIR) so worktree sessions still
-# refresh the one registered project; forward slashes required by the JSON arg.
-CBM="/c/Users/ichbi/AppData/Local/Programs/codebase-memory-mcp/codebase-memory-mcp.exe"
-[ -x "$CBM" ] && "$CBM" cli index_repository \
-  '{"repo_path":"C:/Users/ichbi/AutoGIS","mode":"full"}' >/dev/null 2>&1 || true
+# --- Refresh codebase-memory knowledge graph ------------------------------
+# Resolve the binary from PATH (the npm-global install) instead of a hardcoded
+# path. The old hardcoded path silently rotted to a no-op when the install
+# moved (.../Local/Programs -> npm global), so the index went chronically stale
+# with zero signal — all output was sent to /dev/null. Now: index synchronously
+# and ALWAYS log the outcome (status + node/edge counts) so a failed or stale
+# index is a one-`cat last-index.log` diagnosis next session. See the 2026-06-30
+# deviation log in docs/codebase-memory-mcp.md. repo_path is the canonical
+# checkout (not $CLAUDE_PROJECT_DIR) so worktree sessions refresh the one
+# registered project; forward slashes required by the JSON arg.
+CBM="$(command -v codebase-memory-mcp || true)"
+CBM_LOG="$HOME/.cache/codebase-memory-mcp/last-index.log"
+mkdir -p "$(dirname "$CBM_LOG")"
+if [ -n "$CBM" ]; then
+  if "$CBM" cli index_repository '{"repo_path":"C:/Users/ichbi/AutoGIS","mode":"full"}' >/dev/null 2>&1; then
+    echo "$(date -Iseconds) ok $("$CBM" cli index_status '{"project":"C-Users-ichbi-AutoGIS"}' 2>/dev/null)" >> "$CBM_LOG"
+  else
+    rc=$?
+    echo "$(date -Iseconds) FAILED index_repository rc=$rc" >> "$CBM_LOG"
+  fi
+else
+  echo "$(date -Iseconds) FAILED codebase-memory-mcp not found on PATH" >> "$CBM_LOG"
+fi
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 

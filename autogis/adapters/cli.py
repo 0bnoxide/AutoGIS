@@ -452,6 +452,163 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("gw-level-summary")
+@click.option("--elevations-csv", required=True, type=click.Path(exists=True),
+              help="CSV of ElevationHistory rows.")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output GW level summary CSV path.")
+@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--toc-csv", default=None, type=click.Path(exists=True),
+              help="Optional CSV with location_id,toc_elevation columns.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
+                         report, fail_on):
+    """Tool 5.1: per-well GW level/DTW/trend summary from elevation history."""
+    import csv as _csv
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import read_records_csv, write_records_csv
+    from autogis.core.common.schema.survey import ElevationHistory
+    from autogis.core.envmon.gw_level_summary import (
+        build_gw_level_summary, GWLevelRow)
+
+    elevations = read_records_csv(Path(elevations_csv), ElevationHistory)
+    qa = QACollector()
+    toc: dict = {}
+    if toc_csv:
+        with Path(toc_csv).open(newline="", encoding="utf-8") as fh:
+            for row in _csv.DictReader(fh):
+                loc = (row.get("location_id") or "").strip()
+                raw = (row.get("toc_elevation") or "").strip()
+                # Empty -> no TOC for this well; "0" is a real datum, kept.
+                if loc and raw != "":
+                    try:
+                        toc[loc] = float(raw)
+                    except ValueError:
+                        from autogis.core.common.qa import SEV_WARNING
+                        qa.add(SEV_WARNING, "bad_toc_value",
+                               f"{loc}: non-numeric toc_elevation {raw!r} "
+                               f"ignored", location_id=loc)
+    rows = build_gw_level_summary(
+        elevations, toc, event_date=_date.fromisoformat(event_date), qa=qa)
+    out = write_records_csv(rows, Path(output), record_class=GWLevelRow)
+    click.echo(f"Written: {out}  ({len(rows)} well summary rows)")
+    _render_qa(qa, report, fail_on)
+
+
+def _read_id_list(path) -> set:
+    """One id per line; blanks and '#' comments ignored."""
+    if not path:
+        return set()
+    out = set()
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if s and not s.startswith("#"):
+            out.add(s)
+    return out
+
+
+@envmon.command("build-gwe-event")
+@click.option("--water-levels", required=True, type=click.Path(exists=True),
+              help="CSV of water-level rows (location_id,gwe_ft,dtw_ft,status,...).")
+@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output EnvWaterLevelEvent CSV path.")
+@click.option("--exclude", default=None, type=click.Path(exists=True),
+              help="Text file of location_ids to exclude from contouring.")
+@click.option("--perched", default=None, type=click.Path(exists=True),
+              help="Text file of perched/separate-zone location_ids.")
+@click.option("--anomaly-stdev", default=3.0, type=float,
+              help="Robust outlier threshold (modified z-score; default 3.0).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
+                        anomaly_stdev, report, fail_on):
+    """Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags."""
+    import csv as _csv
+    from autogis.core.envmon.build_gwe_event import (
+        build_gwe_event, write_gwe_event)
+
+    with Path(water_levels).open(newline="", encoding="utf-8") as fh:
+        rows = list(_csv.DictReader(fh))
+    result = build_gwe_event(
+        rows, event_date=event_date,
+        exclude_locations=_read_id_list(exclude),
+        perched_locations=_read_id_list(perched),
+        anomaly_stdev=anomaly_stdev)
+    out = write_gwe_event(result, Path(out_path))
+    click.echo(f"Written: {out}  ({result.contour_points} contour points, "
+               f"{result.excluded} excluded, {result.anomalous} anomalous)")
+    _render_qa(result.qa, report, fail_on)
+
+
+@envmon.command("gen-synthetic-workbook")
+@click.option("--site-id", default="TEST01", help="Synthetic site_id.")
+@click.option("--wells", default=10, type=int, help="Number of wells.")
+@click.option("--events", default=4, type=int, help="Number of events.")
+@click.option("--features", default="",
+              help="Comma-separated messiness features (e.g. 'nondetects,rpd_sheet').")
+@click.option("--seed", default=0, type=int, help="Deterministic seed.")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+def gen_synthetic_workbook_cmd(site_id, wells, events, features, seed, out_path):
+    """Tool 10.6: write a seeded synthetic environmental workbook for parser hardening."""
+    from autogis.core.envmon.synthetic_workbook import (
+        generate_workbook, WorkbookScenario)
+
+    feats = {f.strip() for f in features.split(",") if f.strip()}
+    scenario = WorkbookScenario(site_id=site_id, n_wells=wells, n_events=events,
+                                features=feats, seed=seed)
+    out = generate_workbook(scenario, Path(out_path))
+    click.echo(f"Written: {out}  (wells={wells}, events={events}, "
+               f"features={sorted(feats) or 'clean'}, seed={seed})")
+
+
+@envmon.command("build-analytical-key")
+@click.option("--analyte-dict", required=True, type=click.Path(exists=True),
+              help="Analyte dictionary YAML.")
+@click.option("--screening-levels", required=True, type=click.Path(exists=True),
+              help="Screening levels YAML.")
+@click.option("--matrix", required=True, type=click.Choice(["GW", "SOIL"]),
+              help="Matrix — units and screening are keyed by it.")
+@click.option("--out", "out_path", default=None, type=click.Path(),
+              help="Output path; format by extension (.csv/.xlsx/.md). "
+                   "Omitted -> markdown to stdout.")
+@click.option("--analyte-filter", default=None,
+              help="Comma-separated canonical names to include.")
+@click.option("--site-id", default="", help="Site id for the markdown title.")
+def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
+                             analyte_filter, site_id):
+    """Tool 5.5: build the analytical key/legend table (analyte, units, screening, NE)."""
+    from autogis.core.common.config import (
+        load_analyte_dictionary, load_screening_levels)
+    from autogis.core.envmon.build_analytical_key import (
+        build_analytical_key, format_key_markdown, write_key_csv, write_key_xlsx)
+
+    analytes = load_analyte_dictionary(Path(analyte_dict))
+    screening = load_screening_levels(Path(screening_levels))
+    flt = ([s.strip() for s in analyte_filter.split(",") if s.strip()]
+           if analyte_filter else None)
+    rows = build_analytical_key(analytes, screening, matrix=matrix,
+                                analyte_filter=flt)
+    if not out_path:
+        click.echo(format_key_markdown(rows, matrix=matrix, site_id=site_id))
+        return
+    suffix = Path(out_path).suffix.lower()
+    if suffix == ".csv":
+        write_key_csv(rows, Path(out_path))
+    elif suffix == ".xlsx":
+        write_key_xlsx(rows, Path(out_path), matrix=matrix)
+    else:
+        Path(out_path).write_text(
+            format_key_markdown(rows, matrix=matrix, site_id=site_id),
+            encoding="utf-8")
+    click.echo(f"Written: {out_path}  ({len(rows)} analytes, matrix={matrix})")
+
+
 @envmon.command("identify-data-gaps")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
@@ -1336,6 +1493,271 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
     click.echo(f"Imported {len(points)} points: {passes} QA pass, {len(points)-passes} QA fail.")
 
 
+@envmon.command("register-source-doc")
+@click.option("--file", "file_path", required=True, type=click.Path(exists=True),
+              help="Path to the source file to register.")
+@click.option("--site", "site_id", required=True, help="Site ID (e.g. H281).")
+@click.option("--event", "event_id", required=True, help="Event ID (e.g. 2026-Q2).")
+@click.option("--tool", "tool_name", required=True, help="Tool that ingested the file.")
+@click.option("--registry", "registry_path", default="source_docs.csv",
+              show_default=True, type=click.Path(),
+              help="Path to the source-document registry CSV.")
+@click.option("--notes", default="", help="Optional free-text notes.")
+@click.option("--skip-if-registered", is_flag=True, default=False,
+              help="Exit cleanly without writing if the file hash is already registered.")
+def register_source_doc_cmd(file_path, site_id, event_id, tool_name,
+                            registry_path, notes, skip_if_registered):
+    """Tool 2.5: register a source document in the append-only registry (headless)."""
+    from datetime import datetime, timezone
+    from autogis.core.envmon.source_registry import (
+        SourceDocRecord, SourceRegistry, compute_sha256,
+    )
+
+    p = Path(file_path)
+    sha = compute_sha256(p)
+    reg = SourceRegistry(Path(registry_path))
+
+    if skip_if_registered and reg.is_registered(str(p), sha):
+        click.echo("Already registered, skipped.")
+        return
+
+    reg.register(SourceDocRecord(
+        registered_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+        file_path=str(p),
+        sha256=sha,
+        file_size_bytes=p.stat().st_size,
+        site_id=site_id,
+        event_id=event_id,
+        tool=tool_name,
+        notes=notes,
+    ))
+    click.echo(f"Registered: {sha[:8]} {p.name}")
+
+
+@envmon.command("register-drone-flight")
+@click.argument("flight_yaml", metavar="FLIGHT_YAML", type=click.Path(exists=True))
+@click.option("--gdb", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required for the write).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Validate the flight YAML only; do not write to the GDB.")
+@qa_report_options
+def register_drone_flight_cmd(flight_yaml, gdb, dry_run, report, fail_on):
+    """Tool 8.6: register a drone flight from an inventory YAML (ArcGIS Pro)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.register_drone_flight import (
+        load_flight_yaml, validate_flight_record, write_drone_flight)
+    rec = load_flight_yaml(Path(flight_yaml))
+    qa = QACollector()
+    validate_flight_record(rec, qa)
+    if not dry_run and qa.counts_by_severity().get("ERROR", 0) == 0:
+        _guard("register-drone-flight")
+        if write_drone_flight(gdb, rec):
+            click.echo(f"Flight {rec.flight_id} registered in {gdb}.")
+        else:
+            click.echo(f"DroneFlights table not found in {gdb}; nothing written.")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("validate-drone-products")
+@click.option("--manifest", "manifest_path", required=True, type=click.Path(exists=True),
+              help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
+@click.option("--flight-id", required=True, help="Drone flight ID to stamp on records.")
+@click.option("--check-paths", is_flag=True, default=False,
+              help="Verify that each product path exists on disk.")
+@qa_report_options
+def validate_drone_products_cmd(manifest_path, flight_id, check_paths, report, fail_on):
+    """Tool 8.8: validate a drone product manifest CSV (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_drone_products import (
+        parse_product_manifest, validate_drone_products)
+    records = parse_product_manifest(Path(manifest_path), flight_id)
+    qa = QACollector()
+    validate_drone_products(records, qa, check_paths=check_paths)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("import-drone-products")
+@click.option("--manifest", "manifest_path", required=True, type=click.Path(exists=True),
+              help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
+@click.option("--flight-id", required=True,
+              help="Drone flight ID. A matching DroneFlights row must already exist in the GDB.")
+@click.option("--site-id", required=True, help="Site identifier for logging.")
+@click.option("--gdb", "gdb_path", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required).")
+@click.option("--catalog-name", default="DroneMosaicDataset", show_default=True,
+              help="Name of the existing mosaic dataset inside the GDB.")
+@click.option("--gcp-csv", "gcp_csv_path", default=None, type=click.Path(exists=True),
+              help="Optional GCP CSV (point_id, northing, easting, elevation, point_type).")
+@qa_report_options
+def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
+                              catalog_name, gcp_csv_path, report, fail_on):
+    """Tool 8.8: import drone deliverables to raster catalog + GCP table (ArcGIS Pro)."""
+    _guard("import-drone-products")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_drone_products import (
+        parse_product_manifest, validate_drone_products, classify_records,
+        parse_gcp_csv, write_product_registry, add_rasters_to_catalog,
+        write_gcp_features)
+    records = parse_product_manifest(Path(manifest_path), flight_id)
+    qa = QACollector()
+    validate_drone_products(records, qa)
+    if qa.has_blocking(allow_warnings=True, allow_errors=False):
+        _render_qa(qa, report, fail_on)
+        return
+    rasters, others = classify_records(records)
+    n_reg = write_product_registry(gdb_path, records)
+    if n_reg:
+        click.echo(f"Registered {n_reg} product(s) in DroneProductRegistry.")
+    else:
+        click.echo("DroneProductRegistry table not found; no products registered.")
+    added = add_rasters_to_catalog(gdb_path, catalog_name, rasters)
+    click.echo(f"Added {added} raster(s) to mosaic dataset '{catalog_name}'.")
+    if others:
+        click.echo(f"Path-registered {len(others)} non-raster product(s) "
+                   f"(point cloud — no mosaic load in v1).")
+    if gcp_csv_path:
+        gcp_points = parse_gcp_csv(Path(gcp_csv_path), flight_id)
+        n_gcp = write_gcp_features(gdb_path, gcp_points)
+        click.echo(f"Wrote {n_gcp} GCP feature(s) to DroneControlPoints.")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("validate-boring-logs")
+@click.argument("input_dir", metavar="INPUT_DIR",
+                type=click.Path(exists=True, file_okay=False))
+@qa_report_options
+def validate_boring_logs_cmd(input_dir, report, fail_on):
+    """Tool 8.0b: validate a boring-log CSV package (headless).
+
+    INPUT_DIR holds boring_locations.csv, lithology.csv and samples.csv.
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_boring_logs import (
+        load_boring_package, validate_boring_package)
+    qa = QACollector()
+    locs, ivals, samps = load_boring_package(Path(input_dir), qa)
+    validate_boring_package(locs, ivals, samps, qa)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("import-boring-logs")
+@click.argument("input_dir", metavar="INPUT_DIR",
+                type=click.Path(exists=True, file_okay=False))
+@click.option("--gdb", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required).")
+@qa_report_options
+def import_boring_logs_cmd(input_dir, gdb, report, fail_on):
+    """Tool 8.0b: import a boring-log CSV package into the GDB (ArcGIS Pro)."""
+    _guard("import-boring-logs")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_boring_logs import (
+        load_boring_package, validate_boring_package, import_boring_package)
+    qa = QACollector()
+    locs, ivals, samps = load_boring_package(Path(input_dir), qa)
+    validate_boring_package(locs, ivals, samps, qa)
+    if not qa.has_blocking(allow_warnings=True, allow_errors=False):
+        import_boring_package(gdb, locs, ivals, samps)
+        click.echo(f"Imported {len(locs)} borings, {len(ivals)} intervals, "
+                   f"{len(samps)} samples.")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("survey-to-well-elevation")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--site", "site_id", required=True,
+              help="Site ID matching SiteID in MonitoringWells.")
+@click.option("--batch-id", default=None,
+              help="Override auto-generated batch ID (default: RTK-<hex>).")
+@click.option("--hrms-threshold", type=float, default=0.03, show_default=True,
+              help="Max horizontal RMS error (ft) for QA pass.")
+@click.option("--vrms-threshold", type=float, default=0.05, show_default=True,
+              help="Max vertical RMS error (ft) for QA pass.")
+@click.option("--elevation-type", default="TOC", show_default=True,
+              help="ElevationType tag for ElevationHistory (e.g. TOC, GS).")
+@click.option("--survey-date", default=None, help="ISO date YYYY-MM-DD; defaults to today.")
+@click.option("--vertical-datum", default="NAVD88", show_default=True,
+              help="Vertical datum label stored in ElevationHistory.")
+@click.option("--wells-csv", default=None, type=click.Path(exists=True),
+              help="CSV with a LocationID column — headless well list. "
+                   "Mutually exclusive with --gdb.")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="File geodatabase: read well IDs from MonitoringWells and write "
+                   "elevations (ArcGIS Pro). Mutually exclusive with --wells-csv.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show the update plan without writing to the GDB (use with --gdb).")
+@click.option("--approve", is_flag=True, default=False,
+              help="Mark written ElevationHistory rows ApprovedForUse=1 "
+                   "(default: pending — TOC_ft is updated, approval recorded as 0).")
+@qa_report_options
+def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
+                                 vrms_threshold, elevation_type, survey_date,
+                                 vertical_datum, wells_csv, gdb, dry_run, approve,
+                                 report, fail_on):
+    """Tool 8.5: push QA-passed RTK survey elevations to MonitoringWells.TOC_ft.
+
+    Headless path (--wells-csv): parse RTK CSV, QA-filter, match to a known-wells
+    CSV, print the plan — no arcpy. LOCAL path (--gdb): guard for arcpy, read well
+    IDs from MonitoringWells, and (unless --dry-run) write TOC_ft + ElevationHistory.
+    """
+    import uuid
+    from datetime import date as _date
+
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
+    from autogis.core.envmon.reconcile_locations import read_well_ids_csv
+    from autogis.core.envmon.survey_to_well_elevation import (
+        build_elevation_history_records, select_rtk_elevations_for_wells,
+        write_rtk_elevations_to_wells, sql_quote)
+
+    if gdb and wells_csv:
+        raise click.UsageError("--gdb and --wells-csv are mutually exclusive.")
+    if not gdb and not wells_csv:
+        raise click.UsageError(
+            "Provide --wells-csv (headless well list) or --gdb (ArcGIS Pro).")
+    if gdb:
+        _guard("survey-to-well-elevation")
+
+    bid = batch_id or f"RTK-{uuid.uuid4().hex[:8].upper()}"
+    sdate = _date.fromisoformat(survey_date) if survey_date else _date.today()
+
+    points = parse_rtk_csv(Path(csv_path))
+    qa = QACollector()
+
+    well_ids: set[str] = set()
+    if wells_csv:
+        well_ids = set(read_well_ids_csv(Path(wells_csv)))
+    elif gdb:
+        from autogis.runtime.sessions import arcpy_env as _arcpy
+        _ax = _arcpy()
+        wells_fc = str(Path(gdb) / "MonitoringWells")
+        if _ax.Exists(wells_fc):
+            with _ax.da.SearchCursor(wells_fc, ["LocationID"],
+                                     f"SiteID='{sql_quote(site_id)}'") as cur:
+                for row in cur:
+                    if row[0]:
+                        well_ids.add(str(row[0]).strip())
+
+    plan = select_rtk_elevations_for_wells(
+        points, well_ids, bid, qa,
+        hrms_threshold_ft=hrms_threshold, vrms_threshold_ft=vrms_threshold,
+        elevation_type=elevation_type)
+
+    click.echo(f"Batch: {plan.batch_id}  Survey date: {sdate}  Site: {site_id}")
+    click.echo(f"Updates: {len(plan.updates)}  Skipped: {len(plan.skipped)}  "
+               f"Failed QA: {len(plan.failed_qa)}")
+    for loc_id, elev in plan.updates.items():
+        click.echo(f"  {loc_id}: {elev:.3f} ft ({plan.elevation_type})")
+
+    if gdb and not dry_run and plan.updates:
+        history_recs = build_elevation_history_records(
+            plan, sdate, vertical_datum=vertical_datum, approved_for_use=approve)
+        n = write_rtk_elevations_to_wells(gdb, site_id, plan, history_recs)
+        click.echo(f"Updated {n} MonitoringWells records + "
+                   f"{len(history_recs)} ElevationHistory rows.")
+
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")
@@ -2041,6 +2463,233 @@ def generate_job_queue_cmd(manifest, output, report, fail_on):
     out.write_text(_json.dumps([e.to_dict() for e in entries], indent=2),
                    encoding="utf-8")
     click.echo(f"Jobs: {len(entries)}  Output: {output}")
+@envmon.command("draft-parser-profile")
+@click.argument("workbook", type=click.Path(exists=True))
+@click.option("--output", required=True, type=click.Path(),
+              help="Path to write the draft YAML profile.")
+@click.option("--profile-id", default="DRAFT", show_default=True,
+              help="Profile ID embedded in the output YAML.")
+@click.option("--scan-rows", type=int, default=40, show_default=True,
+              help="Rows to scan per sheet for structure detection.")
+def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
+    """Tool 2.1: inspect a workbook and write a draft parser profile YAML (headless)."""
+    import yaml as _yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.excel_workbook_inspector import (
+        inspect_workbook_structure,
+        propose_parser_profile,
+    )
+
+    qa = QACollector()
+    report = inspect_workbook_structure(Path(workbook), scan_rows=scan_rows, qa=qa)
+    profile_dict = propose_parser_profile(report, profile_id=profile_id)
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_yaml.dump(profile_dict, allow_unicode=True, sort_keys=False),
+                   encoding="utf-8")
+    click.echo(f"Draft profile written: {out}  "
+               f"({len(report.sheets)} sheet(s) — REVIEW BEFORE USE)")
+    if qa.records:
+        _render_qa(qa, None, "error")
+
+
+@envmon.command("batch-import-workbooks")
+@click.option("--manifest", required=True, type=click.Path(exists=True),
+              help="CSV with columns: workbook_path, profile_path, site_id.")
+@click.option("--output-dir", required=True, type=click.Path(),
+              help="Directory to write sample_records.csv, result_records.csv, "
+                   "and batch_manifest.csv.")
+@click.option("--analytes", default=None, type=click.Path(exists=True),
+              help="Analyte dictionary YAML (optional).")
+@click.option("--screening", default=None, type=click.Path(exists=True),
+              help="Screening levels YAML (optional).")
+@click.option("--event-date", default=None,
+              help="Force event date for all workbooks (YYYY-MM-DD).")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def batch_import_workbooks_cmd(manifest, output_dir, analytes, screening,
+                               event_date, report, fail_on):
+    """Tool 2.2: batch-import multiple EDD workbooks from a manifest CSV (headless)."""
+    import yaml as _yaml
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.batch_workbook_importer import (
+        read_manifest_csv, run_batch_import, BatchManifestRow)
+
+    manifest_rows = read_manifest_csv(Path(manifest))
+    analyte_dict = _yaml.safe_load(Path(analytes).read_text(encoding="utf-8")) \
+        if analytes else {}
+    screening_lvls = _yaml.safe_load(Path(screening).read_text(encoding="utf-8")) \
+        if screening else {}
+    ev_date = _date.fromisoformat(event_date) if event_date else None
+    qa = QACollector()
+
+    result = run_batch_import(
+        manifest_rows,
+        analyte_dictionary=analyte_dict,
+        screening_levels=screening_lvls,
+        event_date_override=ev_date,
+        qa=qa,
+    )
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    write_records_csv(result.manifest,
+                      out_dir / "batch_manifest.csv",
+                      record_class=BatchManifestRow)
+    if result.all_samples:
+        write_records_csv(result.all_samples,
+                          out_dir / "sample_records.csv",
+                          record_class=type(result.all_samples[0]))
+    if result.all_results:
+        write_records_csv(result.all_results,
+                          out_dir / "result_records.csv",
+                          record_class=type(result.all_results[0]))
+
+    ok = sum(1 for m in result.manifest if m.Status == "OK")
+    click.echo(f"Batch import: {ok}/{len(result.manifest)} OK  "
+               f"→ {len(result.all_samples)} samples, "
+               f"{len(result.all_results)} results  "
+               f"[{out_dir}]")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("migrate-legacy-data")
+@click.option("--input-csv", required=True, type=click.Path(exists=True),
+              help="Wide-format legacy CSV (rows = samples, columns = analytes).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output long-format result CSV path.")
+@click.option("--location-col", default="LocationID", show_default=True)
+@click.option("--date-col", default="SampleDate", show_default=True)
+@click.option("--matrix-col", default=None,
+              help="Column name for matrix (omit to use --default-matrix).")
+@click.option("--sample-id-col", default=None,
+              help="Column for sample ID (auto-generated if omitted).")
+@click.option("--site-id", default="", help="Site ID to embed in output rows.")
+@click.option("--default-matrix", default="GW", show_default=True)
+@click.option("--default-units", default="ug/L", show_default=True)
+@click.option("--nondetect-prefix", default="<", show_default=True,
+              help="String prefix indicating a non-detect result.")
+@click.option("--units-yaml", default=None, type=click.Path(exists=True),
+              help="YAML mapping analyte_name -> units override.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def migrate_legacy_data_cmd(input_csv, output, location_col, date_col,
+                             matrix_col, sample_id_col, site_id,
+                             default_matrix, default_units, nondetect_prefix,
+                             units_yaml, report, fail_on):
+    """Tool 2.4: convert wide-format legacy CSV to long-format result records (headless)."""
+    import yaml as _yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.legacy_migrator import (
+        MigrationConfig, migrate_wide_csv, LegacyResultRow)
+
+    cfg = MigrationConfig(
+        location_col=location_col, date_col=date_col,
+        matrix_col=matrix_col, sample_id_col=sample_id_col,
+        site_id=site_id, default_matrix=default_matrix,
+        default_units=default_units, nondetect_prefix=nondetect_prefix,
+    )
+    units_map = _yaml.safe_load(Path(units_yaml).read_text(encoding="utf-8")) \
+        if units_yaml else {}
+    qa = QACollector()
+
+    rows = migrate_wide_csv(Path(input_csv), cfg, units_map=units_map, qa=qa)
+    write_records_csv(rows, Path(output), record_class=LegacyResultRow)
+    click.echo(f"Migrated: {len(rows)} result rows → {output}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("create-sampling-plan")
+@click.option("--wells-csv", required=True, type=click.Path(exists=True),
+              help="CSV of well network (required: location_id; optional: matrix, "
+                   "analyte_groups).")
+@click.option("--analyte-groups", required=True, type=click.Path(exists=True),
+              help="YAML mapping group_name -> {bottles, bottle_size_ml, "
+                   "preservation, matrix}.")
+@click.option("--event-date", required=True,
+              help="Planned sampling date YYYY-MM-DD.")
+@click.option("--site-id", default="", help="Site ID.")
+@click.option("--prior-event-date", default=None,
+              help="Prior event date YYYY-MM-DD (optional).")
+@click.option("--samples-output", required=True, type=click.Path(),
+              help="Path to write planned sample list CSV.")
+@click.option("--bottles-output", required=True, type=click.Path(),
+              help="Path to write bottle count summary CSV.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def create_sampling_plan_cmd(wells_csv, analyte_groups, event_date, site_id,
+                              prior_event_date, samples_output, bottles_output,
+                              report, fail_on):
+    """Tool 7.2: generate planned sample list and bottle count for an event (headless)."""
+    import yaml as _yaml
+    from datetime import date as _date
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.sampling_plan import (
+        read_well_network_csv, create_sampling_plan,
+        PlannedSample, BottleCountRow)
+
+    wells = read_well_network_csv(Path(wells_csv))
+    groups = _yaml.safe_load(Path(analyte_groups).read_text(encoding="utf-8"))
+    ev_date = _date.fromisoformat(event_date)
+    prior = _date.fromisoformat(prior_event_date) if prior_event_date else None
+    qa = QACollector()
+
+    plan = create_sampling_plan(
+        wells, groups, site_id=site_id,
+        event_date=ev_date, prior_event_date=prior, qa=qa)
+
+    write_records_csv(plan.samples, Path(samples_output),
+                      record_class=PlannedSample)
+    write_records_csv(plan.bottle_summary, Path(bottles_output),
+                      record_class=BottleCountRow)
+    click.echo(f"Sampling plan: {len(plan.samples)} planned samples  "
+               f"→ {samples_output}")
+    click.echo(f"Bottle summary: {len(plan.bottle_summary)} groups  "
+               f"→ {bottles_output}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("reconcile-field-lab")
+@click.option("--field-csv", required=True, type=click.Path(exists=True),
+              help="Field samples CSV (required: sample_id, location_id, "
+                   "collection_date).")
+@click.option("--lab-csv", required=True, type=click.Path(exists=True),
+              help="Lab results CSV (required: sample_id, location_id, "
+                   "analysis_date, analyte_name).")
+@click.option("--output", required=True, type=click.Path(),
+              help="Output reconciliation flags CSV.")
+@click.option("--date-tolerance", type=int, default=1, show_default=True,
+              help="Allowed date gap in days before DATE_MISMATCH flag.")
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error")
+def reconcile_field_lab_cmd(field_csv, lab_csv, output, date_tolerance,
+                             report, fail_on):
+    """Tool 7.3: compare field records to lab results, flag mismatches (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.records_csv import write_records_csv
+    from autogis.core.envmon.field_lab_reconciler import (
+        read_field_samples_csv, read_lab_results_csv,
+        reconcile_field_and_lab, ReconciliationFlag)
+
+    field_samples = read_field_samples_csv(Path(field_csv))
+    lab_results = read_lab_results_csv(Path(lab_csv))
+    qa = QACollector()
+
+    flags = reconcile_field_and_lab(
+        field_samples, lab_results,
+        date_tolerance_days=date_tolerance, qa=qa)
+    write_records_csv(flags, Path(output), record_class=ReconciliationFlag)
+    errors = sum(1 for f in flags if f.Severity == "ERROR")
+    click.echo(f"Reconciliation: {len(flags)} flag(s) "
+               f"({errors} errors) → {output}")
     _render_qa(qa, report, fail_on)
 
 
