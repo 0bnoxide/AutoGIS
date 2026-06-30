@@ -49,6 +49,7 @@ TOOLS: dict[str, Runtime] = {
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
     "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
     "build-dashboard-data-mart": Runtime.LOCAL,  # truncates/repopulates GDB
+    "generate-trend-charts": Runtime.CLOUD,  # tool 4.6 headless openpyxl charts
 }
 
 
@@ -200,6 +201,9 @@ _REGISTRY_SEED = [
      "field", "Process a differential level loop"),
     ("drone-checkpoint-qa", "DroneGCPCheckpointQA", "11.1", "CLOUD", "stable",
      "field", "QA drone GCP/checkpoint residuals"),
+    ("generate-trend-charts", "GenerateWellTrendCharts", "4.6", "CLOUD",
+     "stable", "reporting",
+     "Excel LineChart trend workbook per location/analyte"),
 ]
 
 TOOL_REGISTRY: list = [

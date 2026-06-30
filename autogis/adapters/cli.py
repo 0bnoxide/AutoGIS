@@ -1871,6 +1871,52 @@ def list_tools_cmd(runtime_filter, domain, status, search, verbose):
     click.echo(f"\n{len(entries)} tool(s).")
 
 
+@envmon.command("generate-trend-charts")
+@click.option("--history-csv", required=True, type=click.Path(exists=True),
+              help="History CSV (LocationID, AnalyteName, SampleDate, "
+                   "ResultValue, ReportedUnits, ScreeningLevel).")
+@click.option("--out", required=True, type=click.Path(), help="Output .xlsx path.")
+@click.option("--analytes", default=None,
+              help="Comma-separated analytes to include (default: all).")
+@click.option("--wells", default=None,
+              help="Comma-separated location IDs to include (default: all).")
+@click.option("--screening-levels", "sl_path", default=None,
+              type=click.Path(exists=True),
+              help="Optional YAML {AnalyteName: screening level} overriding the CSV.")
+@click.option("--max-per-sheet", type=int, default=20, show_default=True)
+@click.option("--report", default=None, type=click.Path())
+@click.option("--fail-on", type=click.Choice(["error", "warning"]),
+              default="error", show_default=True)
+def generate_trend_charts_cmd(history_csv, out, analytes, wells, sl_path,
+                              max_per_sheet, report, fail_on):
+    """Tool 4.6: generate Excel trend-chart workbook from a history CSV (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.well_trend_charts import (
+        load_history_csv, write_trend_charts)
+
+    qa = QACollector()
+    series_list = load_history_csv(Path(history_csv))
+    if analytes:
+        keep = {a.strip() for a in analytes.split(",")}
+        series_list = [s for s in series_list if s.analyte_name in keep]
+    if wells:
+        keep_wells = {w.strip() for w in wells.split(",")}
+        series_list = [s for s in series_list if s.location_id in keep_wells]
+    if sl_path:
+        sl_map = yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) or {}
+        for s in series_list:
+            if s.analyte_name in sl_map:
+                try:
+                    s.screening_level = float(sl_map[s.analyte_name])
+                except (TypeError, ValueError):
+                    pass
+    chart_count = write_trend_charts(series_list, Path(out),
+                                     max_per_sheet=max_per_sheet)
+    click.echo(f"Written: {out}  ({len(series_list)} series, "
+               f"{chart_count} chart(s))")
+    _render_qa(qa, report, fail_on)
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 
