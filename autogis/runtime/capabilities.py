@@ -209,6 +209,8 @@ _REGISTRY_SEED = [
      "field", "QA drone GCP/checkpoint residuals"),
     ("register-source-doc", "RegisterSourceDocuments", "2.5", "CLOUD", "stable",
      "intake", "Register an ingested source document (SHA-256 audit registry)"),
+    ("register-drone-flight", "RegisterDroneFlight", "8.6", "LOCAL", "stable",
+     "field", "Register a drone flight from an inventory YAML"),
 ]
 
 TOOL_REGISTRY: list = [

@@ -1377,6 +1377,28 @@ def register_source_doc_cmd(file_path, site_id, event_id, tool_name,
     click.echo(f"Registered: {sha[:8]} {p.name}")
 
 
+@envmon.command("register-drone-flight")
+@click.argument("flight_yaml", metavar="FLIGHT_YAML", type=click.Path(exists=True))
+@click.option("--gdb", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required for the write).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Validate the flight YAML only; do not write to the GDB.")
+@qa_report_options
+def register_drone_flight_cmd(flight_yaml, gdb, dry_run, report, fail_on):
+    """Tool 8.6: register a drone flight from an inventory YAML (ArcGIS Pro)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.register_drone_flight import (
+        load_flight_yaml, validate_flight_record, write_drone_flight)
+    rec = load_flight_yaml(Path(flight_yaml))
+    qa = QACollector()
+    validate_flight_record(rec, qa)
+    if not dry_run and qa.counts_by_severity().get("ERROR", 0) == 0:
+        _guard("register-drone-flight")
+        write_drone_flight(gdb, rec)
+        click.echo(f"Flight {rec.flight_id} registered in {gdb}.")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")
