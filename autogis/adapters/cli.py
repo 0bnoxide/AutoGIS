@@ -1399,6 +1399,67 @@ def register_drone_flight_cmd(flight_yaml, gdb, dry_run, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("validate-drone-products")
+@click.option("--manifest", "manifest_path", required=True, type=click.Path(exists=True),
+              help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
+@click.option("--flight-id", required=True, help="Drone flight ID to stamp on records.")
+@click.option("--check-paths", is_flag=True, default=False,
+              help="Verify that each product path exists on disk.")
+@qa_report_options
+def validate_drone_products_cmd(manifest_path, flight_id, check_paths, report, fail_on):
+    """Tool 8.8: validate a drone product manifest CSV (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_drone_products import (
+        parse_product_manifest, validate_drone_products)
+    records = parse_product_manifest(Path(manifest_path), flight_id)
+    qa = QACollector()
+    validate_drone_products(records, qa, check_paths=check_paths)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("import-drone-products")
+@click.option("--manifest", "manifest_path", required=True, type=click.Path(exists=True),
+              help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
+@click.option("--flight-id", required=True,
+              help="Drone flight ID. A matching DroneFlights row must already exist in the GDB.")
+@click.option("--site-id", required=True, help="Site identifier for logging.")
+@click.option("--gdb", "gdb_path", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required).")
+@click.option("--catalog-name", default="DroneMosaicDataset", show_default=True,
+              help="Name of the existing mosaic dataset inside the GDB.")
+@click.option("--gcp-csv", "gcp_csv_path", default=None, type=click.Path(exists=True),
+              help="Optional GCP CSV (point_id, northing, easting, elevation, point_type).")
+@qa_report_options
+def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
+                              catalog_name, gcp_csv_path, report, fail_on):
+    """Tool 8.8: import drone deliverables to raster catalog + GCP table (ArcGIS Pro)."""
+    _guard("import-drone-products")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_drone_products import (
+        parse_product_manifest, validate_drone_products, classify_records,
+        parse_gcp_csv, write_product_registry, add_rasters_to_catalog,
+        write_gcp_features)
+    records = parse_product_manifest(Path(manifest_path), flight_id)
+    qa = QACollector()
+    validate_drone_products(records, qa)
+    if qa.has_blocking(allow_warnings=True, allow_errors=False):
+        _render_qa(qa, report, fail_on)
+        return
+    rasters, others = classify_records(records)
+    write_product_registry(gdb_path, records)
+    click.echo(f"Registered {len(records)} product(s) in DroneProductRegistry.")
+    added = add_rasters_to_catalog(gdb_path, catalog_name, rasters)
+    click.echo(f"Added {added} raster(s) to mosaic dataset '{catalog_name}'.")
+    if others:
+        click.echo(f"Path-registered {len(others)} non-raster product(s) "
+                   f"(point cloud — no mosaic load in v1).")
+    if gcp_csv_path:
+        gcp_points = parse_gcp_csv(Path(gcp_csv_path), flight_id)
+        write_gcp_features(gdb_path, gcp_points)
+        click.echo(f"Wrote {len(gcp_points)} GCP feature(s) to DroneControlPoints.")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")
