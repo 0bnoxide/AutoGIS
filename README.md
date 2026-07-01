@@ -9,21 +9,24 @@ GUI, and the importable core itself).
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-06-28**. The
+Status against the 79-tool environmental monitoring roadmap, as of **2026-06-30**. The
 Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~40 | ~34 numbered roadmap tools + 6 headless post-roadmap tools |
-| Foundation laid (partial code, not fully wired) | ~4 | |
-| **Planned** (spec / plan written, not yet coded) | ~27 | roadmap tools; plus 11 post-roadmap extras — see *Planned* list below |
+| Fully implemented (CLI command + core module + tests) | ~76 | ~60 numbered roadmap tools + 16 headless post-roadmap tools |
+| Foundation laid (partial code, not fully wired) | ~3 | |
+| **Planned** (spec / plan written, not yet coded) | ~7 | roadmap tools — see *Planned* list below |
 | Not started (no spec or plan) | ~12 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **50 `core/envmon/` modules**, **~43 registered CLI commands**, and a
-**560-test** arcpy-free suite. For the authoritative per-tool breakdown see
+The codebase now ships **85 `core/envmon/` modules** (86 `.py` files including `__init__.py`),
+**~81 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 84 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1082-test** arcpy-free
+suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
-here have advanced past that snapshot).
+here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
+2026-06-30, PRs #81/#84/#88/#92/#93/#95/#96).
 
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
@@ -56,6 +59,46 @@ here have advanced past that snapshot).
 | RunHistoryReport / Query | 10.1 | `envmon run-history-report` / `envmon run-history` |
 | WriteRunHistory | 10.5 | internal (`core/common/run_history.py`, used by the readiness gate) |
 | PublishEnvironmentalLayersToAGOL | 6.1 | `agol publish-layer` |
+| BuildGroundwaterElevationEvent | 4.1 | `envmon build-gwe-event` |
+| EstimateGWFlowDirection | 4.3 | `envmon estimate-gw-flow-direction` (DRAFT) |
+| BuildAnalyticalExceedanceEvent | 4.4 | `envmon build-exceedance-event` |
+| GenerateWellTrendCharts | 4.6 | `envmon generate-trend-charts` |
+| SelectSoilIntervalsForMapping | 4.8 | `envmon select-soil-intervals` |
+| BuildMaxResultMapDataset | 4.9 | `envmon build-max-result-dataset` |
+| GenerateArcadeLabelExpressions | 5.4 | `envmon generate-arcade-labels` |
+| BuildAnalyticalKey | 5.5 | `envmon build-analytical-key` |
+| BuildReportFigurePackage | 5.7 | `envmon build-report-package` |
+| RegisterSourceDocuments | 2.5 | `envmon register-source-doc` |
+| BatchImportEnvironmentalWorkbooks | 2.2 | `envmon batch-import-workbooks` |
+| MigrateLegacyMonitoringData | 2.4 | `envmon migrate-legacy-data` |
+| SurveyToWellElevationUpdate | 8.5 | `envmon survey-to-well-elevation` *(HYBRID — `--gdb` write path is LOCAL)* |
+| RegisterDroneFlight | 8.6 | `envmon register-drone-flight` *(HYBRID — GDB write path is LOCAL)* |
+| ImportDroneProducts | 8.8 | `envmon validate-drone-products` (headless QA half; the GDB-writing half is LOCAL — see below) |
+| ImportFieldBoringLogs | 8.0b | `envmon validate-boring-logs` (headless QA half; the GDB-writing half is LOCAL — see below) |
+| CreateSamplingEventPlan | 7.2 | `envmon create-sampling-plan` |
+| ReconcileFieldAndLabData | 7.3 | `envmon reconcile-field-lab` |
+| BuildMonitoringReportAppendix | 9.2 | `envmon build-report-appendix` |
+| GenerateEventChangeLog | 9.3 | `envmon generate-event-changelog` |
+| IngestReviewerMapComments | 9.4 | `envmon ingest-reviewer-comments` |
+| GenerateSyntheticEnvWorkbook | 10.6 | `envmon gen-synthetic-workbook` |
+| RunEnvJobQueue | 10.4 | `envmon generate-job-queue` |
+
+Post-roadmap extras (not counted in the 79-tool catalog):
+
+| Tool | CLI command |
+|------|-------------|
+| GWLevelSummary | `envmon gw-level-summary` |
+| BuildComplianceSummaryTable | `envmon build-compliance-table` |
+| ExportEnvDataToGeoPackage | `envmon export-geopackage` |
+| ExportLabAnalyticalRequest | `envmon export-lab-request` |
+| GenerateQCSampleSummary | `envmon generate-qc-summary` |
+| GenerateRegulatorySubmissionTables | `envmon generate-reg-tables` |
+| GenerateSiteNarrative | `envmon generate-site-narrative` |
+| ListAvailableEnvTools | `envmon list-tools` |
+| MergeEventResults | `envmon merge-event-results` |
+| ValidateFieldDataCompleteness | `envmon validate-field-completeness` |
+| ExportComparisonExcel | `envmon export-comparison-excel` |
+| DraftParserProfileFromWorkbook | `envmon draft-parser-profile` |
 
 </details>
 
@@ -78,6 +121,9 @@ here have advanced past that snapshot).
 | ExportEventDatabaseSnapshot | 9.0a | `envmon export-snapshot` |
 | ImportRTKSurveyPoints | 8.3 | `envmon import-rtk-survey` |
 | RouteSurvey123Submission | 7.1b | `envmon route-survey123` |
+| ImportDroneProducts | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) |
+| ImportFieldBoringLogs | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) |
+| BuildDashboardDataMart | 6.7 | `envmon build-dashboard-data-mart` |
 
 </details>
 
@@ -86,13 +132,13 @@ here have advanced past that snapshot).
 
 | Tool | Roadmap # | What exists | What's missing |
 |------|-----------|-------------|----------------|
-| BuildGroundwaterElevationEvent | 4.1 | `normalize_groundwater.py`, `build_current_event.py` | Dedicated event-builder + flags (Dry/NM/NS/anomalous) |
 | CreateBoringLogDatabase | 8.0a | `schema/boring.py` (7 dataclasses) + upgrade-schema tables | Standalone create/validate tool |
 | SyncFieldAttachments | 6.5 | Attachment harvester (separate domain) | Envmon-side attachment index table wiring |
-| Dashboard consuming tools (6.8–6.11) | — | `schema/dashboard.py` (10 dataclasses) | Every consuming tool (6.7 BuildDashboardDataMart has a plan) |
+| Dashboard consuming tools (6.8–6.11) | — | `schema/dashboard.py` (10 dataclasses), `dashboard_data_mart.py` (6.7, shipped) | Every consuming tool |
 
-Note: BuildAnalyticalExceedanceEvent (4.4) and UpdateWellElevationsFromLevelLoop (8.2) have
-moved to *Planned* — both have specs/plans and partial code foundations.
+Note: BuildGroundwaterElevationEvent (4.1) and BuildAnalyticalExceedanceEvent (4.4) have
+shipped (see *Fully implemented* above). UpdateWellElevationsFromLevelLoop (8.2) remains in
+*Planned* — spec/plan and a partial code foundation only.
 
 </details>
 
@@ -106,37 +152,25 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
-| BatchImportEnvironmentalWorkbooks | 2.2 | plan |
-| MigrateLegacyMonitoringData | 2.4 | plan |
-| RegisterSourceDocuments | 2.5 | plan |
 | CreateSurvey123SamplingEvent | 2.7 | spec + plan |
 
 **Analysis (§4)**
 
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
-| BuildAnalyticalExceedanceEvent | 4.4 | spec + plan *(partial code foundation)* |
-| EstimateGWFlowDirection | 4.3 | spec + plan |
 | GenerateDraftPlumeBoundary | 4.5 | plan |
-| GenerateWellTrendCharts | 4.6 | plan |
-| SelectSoilIntervalsForMapping | 4.8 | plan |
-| BuildMaxResultMapDataset | 4.9 | spec + plan |
 
 **Cartography (§5)**
 
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
-| GenerateArcadeLabelExpressions | 5.4 | plan |
-| BuildAnalyticalKey | 5.5 | plan |
 | GenerateSiteMapSeries | 5.6 | plan |
-| BuildReportFigurePackage | 5.7 | spec + plan |
-| UpdateLayoutDynamicText | 5.8 | plan |
+| UpdateLayoutDynamicText | 5.8 | plan *(`layout_manager.py` exists but is not wired to any CLI command)* |
 
 **AGOL / cloud (§6)**
 
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
-| BuildDashboardDataMart | 6.7 | spec + plan |
 | AuditAGOLItemDependencies | 6.9 | plan |
 
 **Field / Survey123 (§7)**
@@ -149,41 +183,19 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
-| ImportFieldBoringLogs | 8.0b | plan |
 | UpdateWellElevationsFromLevelLoop | 8.2 | plan *(partial code foundation)* |
-| SurveyToWellElevationUpdate | 8.5 | spec + plan |
-| RegisterDroneFlight | 8.6 | plan |
-| ImportDroneProducts | 8.8 | spec + plan |
-
-**Reporting (§9)**
-
-| Tool | Roadmap # | Artifact |
-|------|-----------|---------|
-| BuildMonitoringReportAppendix | 9.2 | spec + plan |
-| GenerateEventChangeLog | 9.3 | plan |
-| IngestReviewerMapComments | 9.4 | spec + plan |
-
-**Admin (§10)**
-
-| Tool | Roadmap # | Artifact |
-|------|-----------|---------|
-| RunEnvJobQueue | 10.4 | plan |
 
 **Post-roadmap / infrastructure** (not counted in the 79-tool catalog)
 
 | Tool | Artifact |
 |------|---------|
 | BatchEDDImport (HYBRID) | plan |
-| BuildComplianceSummaryTable | spec + plan |
-| ExportEnvDataToGeoPackage | spec + plan |
-| ExportLabAnalyticalRequest | spec + plan |
-| GenerateQCSampleSummary | spec + plan |
-| GenerateRegulatorySubmissionTables | spec + plan |
-| GenerateSiteNarrative | spec + plan |
-| ListAvailableEnvTools | spec + plan |
-| MergeEventResults | spec + plan |
-| ValidateFieldDataCompleteness | spec + plan |
-| SessionCoordinationTier1 | spec + plan |
+
+Note: SessionCoordinationTier1 has shipped (`.claude/coordination/coord_cli.py`,
+`hook_check.py`, `registry.py` — see the *Worktrees & session coordination* section of
+`CLAUDE.md`); it is separate infrastructure tooling, not an `autogis envmon` CLI command, so it
+is not carried in the tables above. A remediation follow-up (parallel-session edge cases) is
+still design-only.
 
 </details>
 
@@ -195,13 +207,10 @@ RefreshMonitoringDashboardData (6.4), AuditAGOLSchemaAgainstLocalConfig (6.6),
 PublishDashboardFromSpec (6.8), PromoteAGOLDataBetweenStages (6.10),
 CreateHostedViewsForStakeholders (6.11)
 
-**Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1), CreateSamplingEventPlan (7.2),
-ReconcileFieldAndLabData (7.3)
+**Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1)
 
 **Survey / boring / drone / CAD (§8):** GenerateBoringLogPDFs (8.0c),
 BuildCADExportPackage (8.9), ExportContoursForCivil3D, ValidateSurveyDeliverable
-
-**Admin (§10):** GenerateSyntheticEnvWorkbook (10.6)
 
 **AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
 — all deferred pending LLM seam design
@@ -223,7 +232,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (50 modules), and `autogis.core.agol` (publishing) sit on top of common
+  (85 modules), and `autogis.core.agol` (publishing) sit on top of common
 - **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
   (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
   core functions — the two interfaces cannot drift
@@ -279,6 +288,41 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon run-history-report` | CLOUD | `core/envmon/history_report.py` |
 | `autogis envmon run-history` | CLOUD | `core/common/run_history.py` |
 | `autogis agol publish-layer` | — (AGOL auth) | `core/agol/publish.py` |
+| `autogis envmon build-gwe-event` | CLOUD | `core/envmon/build_gwe_event.py` |
+| `autogis envmon gw-level-summary` | CLOUD | `core/envmon/gw_level_summary.py` |
+| `autogis envmon estimate-gw-flow-direction` | CLOUD | `core/envmon/estimate_gw_flow_direction.py` (DRAFT) |
+| `autogis envmon build-exceedance-event` | CLOUD | `core/envmon/build_exceedance_event.py` |
+| `autogis envmon generate-trend-charts` | CLOUD | `core/envmon/well_trend_charts.py` |
+| `autogis envmon select-soil-intervals` | CLOUD | `core/envmon/soil_interval_selector.py` |
+| `autogis envmon export-comparison-excel` | CLOUD | `core/envmon/export_comparison_excel.py` |
+| `autogis envmon build-max-result-dataset` | CLOUD | `core/envmon/max_result_dataset.py` |
+| `autogis envmon generate-arcade-labels` | CLOUD | `core/envmon/arcade_label_generator.py` |
+| `autogis envmon build-analytical-key` | CLOUD | `core/envmon/build_analytical_key.py` |
+| `autogis envmon build-report-package` | CLOUD | `core/envmon/report_figure_package.py` |
+| `autogis envmon register-source-doc` | CLOUD | `core/envmon/source_registry.py` |
+| `autogis envmon batch-import-workbooks` | CLOUD | `core/envmon/batch_workbook_importer.py` |
+| `autogis envmon migrate-legacy-data` | CLOUD | `core/envmon/legacy_migrator.py` |
+| `autogis envmon draft-parser-profile` | CLOUD | `core/envmon/excel_workbook_inspector.py` |
+| `autogis envmon create-sampling-plan` | CLOUD | `core/envmon/sampling_plan.py` |
+| `autogis envmon reconcile-field-lab` | CLOUD | `core/envmon/field_lab_reconciler.py` |
+| `autogis envmon build-report-appendix` | CLOUD | `core/envmon/report_appendix_builder.py` |
+| `autogis envmon generate-event-changelog` | CLOUD | `core/envmon/event_changelog.py` |
+| `autogis envmon ingest-reviewer-comments` | CLOUD | `core/envmon/ingest_reviewer_comments.py` |
+| `autogis envmon gen-synthetic-workbook` | CLOUD | `core/envmon/synthetic_workbook.py` |
+| `autogis envmon generate-job-queue` | CLOUD | `core/envmon/job_queue.py` |
+| `autogis envmon build-compliance-table` | CLOUD | `core/envmon/compliance_summary.py` |
+| `autogis envmon export-geopackage` | CLOUD | `core/envmon/geopackage_exporter.py` |
+| `autogis envmon export-lab-request` | CLOUD | `core/envmon/lab_request_exporter.py` |
+| `autogis envmon generate-qc-summary` | CLOUD | `core/envmon/qc_sample_summary.py` |
+| `autogis envmon generate-reg-tables` | CLOUD | `core/envmon/regulatory_table_builder.py` |
+| `autogis envmon generate-site-narrative` | CLOUD | `core/envmon/site_narrative_generator.py` |
+| `autogis envmon list-tools` | CLOUD | `core/envmon/tool_registry.py` |
+| `autogis envmon merge-event-results` | CLOUD | `core/envmon/event_results_merger.py` |
+| `autogis envmon validate-field-completeness` | CLOUD | `core/envmon/field_completeness_validator.py` |
+| `autogis envmon validate-drone-products` | CLOUD | `core/envmon/import_drone_products.py` (QA-only half; GDB write is LOCAL) |
+| `autogis envmon validate-boring-logs` | CLOUD | `core/envmon/import_boring_logs.py` (QA-only half; GDB write is LOCAL) |
+| `autogis envmon survey-to-well-elevation --wells-csv` | HYBRID | `core/envmon/survey_to_well_elevation.py` (`--gdb` write path is LOCAL) |
+| `autogis envmon register-drone-flight --dry-run` | HYBRID | `core/envmon/register_drone_flight.py` (GDB write path is LOCAL) |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
@@ -298,10 +342,16 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon import-edd` | `core/envmon/edd_importer.py` |
 | `autogis envmon import-rtk-survey` | `core/envmon/import_rtk_survey.py` |
 | `autogis envmon route-survey123` | `core/envmon/normalize_survey123.py` |
+| `autogis envmon import-drone-products` | `core/envmon/import_drone_products.py` |
+| `autogis envmon import-boring-logs` | `core/envmon/import_boring_logs.py` |
+| `autogis envmon build-dashboard-data-mart` | `core/envmon/dashboard_data_mart.py` |
+| `autogis envmon survey-to-well-elevation --gdb` | `core/envmon/survey_to_well_elevation.py` (HYBRID command; headless via `--wells-csv`) |
+| `autogis envmon register-drone-flight` (non-dry-run) | `core/envmon/register_drone_flight.py` (HYBRID command; headless via `--dry-run`) |
 
 LOCAL commands guard on `arcpy` and redirect to the `.pyt` toolbox inside ArcGIS Pro when it is
-absent. `import-edd`, `import-rtk-survey`, and `route-survey123` are LOCAL-only and will print
-the standard guard message if run headless — use the `.pyt` toolbox or the guarded CLI inside Pro.
+absent. `import-edd`, `import-rtk-survey`, `route-survey123`, `import-drone-products`,
+`import-boring-logs`, and `build-dashboard-data-mart` are LOCAL-only and will print the standard
+guard message if run headless — use the `.pyt` toolbox or the guarded CLI inside Pro.
 
 ---
 
@@ -332,7 +382,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 560 passing tests
+python -m pytest -q           # 1082 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -383,6 +433,36 @@ autogis envmon build-survey-form --site <site.yaml> --analytes <analytes.yaml> -
 autogis envmon validate-rtk-survey <points.csv>
 autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
 autogis envmon reconcile-survey123-lab --survey <s123.csv> --edd <lab.csv> --edd-profile <profile.yaml> --site <id>
+autogis envmon survey-to-well-elevation <rtk.csv> --site <id> --wells-csv <wells.csv>       # headless
+autogis envmon register-drone-flight <flight.yaml> --gdb <gdb> --dry-run                    # headless
+autogis envmon validate-boring-logs <input_dir>
+autogis envmon validate-drone-products --manifest <products.csv> --flight-id <id>
+
+# Batch intake & planning
+autogis envmon draft-parser-profile <workbook.xlsx> --output <profile.yaml>
+autogis envmon batch-import-workbooks --manifest <manifest.csv> --output-dir <out>
+autogis envmon migrate-legacy-data --input-csv <legacy.csv> --output <out.csv>
+autogis envmon register-source-doc --file <doc.pdf> --site <id> --event <id> --tool <name>
+autogis envmon create-sampling-plan --wells-csv <wells.csv> --analyte-groups <groups.yaml> --event-date <YYYY-MM-DD> --samples-output <samples.csv> --bottles-output <bottles.csv>
+autogis envmon reconcile-field-lab --field-csv <field.csv> --lab-csv <lab.csv> --output <out.csv>
+
+# Analysis & cartography extras
+autogis envmon build-gwe-event --water-levels <levels.csv> --event-date <YYYY-MM-DD> --out <out.csv>
+autogis envmon gw-level-summary --elevations-csv <history.csv> --event-date <YYYY-MM-DD> --output <out.csv>
+autogis envmon estimate-gw-flow-direction --wells-csv <wells.csv> --site-id <id> --event-date <YYYY-MM-DD> --run-id <id> --output <out.csv>
+autogis envmon build-exceedance-event --results <results.csv> --screening-levels <levels.yaml> --out <out.csv>
+autogis envmon generate-trend-charts --history-csv <history.csv> --out <charts.xlsx>
+autogis envmon select-soil-intervals --results-csv <soil.csv> --out <out.csv>
+autogis envmon build-analytical-key --analyte-dict <analytes.yaml> --screening-levels <levels.yaml> --matrix GW
+autogis envmon generate-arcade-labels --analytes "Benzene,PCE" --out <labels.json>
+
+# Reporting extras
+autogis envmon build-report-appendix --results <results.csv> --out <out.xlsx>
+autogis envmon generate-event-changelog --prior-csv <prior.csv> --current-csv <current.csv> --out <changelog.csv>
+autogis envmon ingest-reviewer-comments <comments.xlsx> --out <out.csv>
+autogis envmon generate-job-queue --manifest <manifest.yaml> --output <queue.json>
+autogis envmon gen-synthetic-workbook --site-id <id> --out <synthetic.xlsx>
+autogis envmon list-tools
 
 # Publishing
 autogis agol publish-layer --source <data> --title "<service title>"
@@ -401,8 +481,11 @@ autogis envmon export-snapshot <geodatabase>
 # build-callouts, optimize-callouts, gw-contours, export-figures, full-pipeline follow the same pattern
 ```
 
-> `import-edd`, `import-rtk-survey`, and `route-survey123` are also Pro-only; the `.pyt` toolbox
-> is the primary UI for all LOCAL commands.
+> `import-edd`, `import-rtk-survey`, `route-survey123`, `import-drone-products`,
+> `import-boring-logs`, and `build-dashboard-data-mart` are also Pro-only; the `.pyt` toolbox is
+> the primary UI for all LOCAL commands. `survey-to-well-elevation --gdb` and
+> `register-drone-flight` (non-dry-run) are HYBRID: headless without `--gdb` /
+> with `--dry-run`, Pro-only when writing to the geodatabase.
 
 ---
 
@@ -485,7 +568,7 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 50 modules
+│   ├── envmon/          # Environmental monitoring — 85 modules
 │   └── agol/            # AGOL publishing
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
@@ -497,7 +580,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 560 arcpy-free unit tests
+└── tests/               # 1082 arcpy-free tests
 ```
 
 ### Key modules
@@ -507,7 +590,7 @@ autogis/
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
 | `core/common/schema/` | 5 modules (boring, dashboard, drone, envmon, survey) exporting ~30 typed dataclasses |
-| `core/envmon/` | 50 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/envmon/` | 85 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
@@ -550,13 +633,14 @@ before trusting outputs.
 | [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 43 features (architecture, algorithm, data-model decisions) |
 | [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 86 features (step-by-step execution guides) |
-| [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy (latest: ADR-0028) |
+| [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy (latest: ADR-0029) |
 
 ---
 
 ## Contributing
 
-Test baseline: **560 passing tests**. All core logic is arcpy-free and CI-able.
+Test baseline: **1082 tests** (`python -m pytest --collect-only -q`). All core logic is
+arcpy-free and CI-able.
 
 ```bash
 python -m pytest -q
