@@ -49,17 +49,22 @@ def read_gw_model_csv(path: Path) -> List[ObservationRow]:
         reader = csv.DictReader(fh)
         model_names = [f for f in (reader.fieldnames or [])
                        if f not in ("well_id", "observed_ft")]
-        for row in reader:
-            predictions = {}
-            for model in model_names:
-                raw = (row.get(model) or "").strip()
-                if raw:
-                    predictions[model] = float(raw)
-            rows.append(ObservationRow(
-                well_id=row["well_id"],
-                observed_ft=float(row["observed_ft"]),
-                predictions=predictions,
-            ))
+        for line_no, row in enumerate(reader, start=2):  # header is line 1
+            try:
+                predictions = {}
+                for model in model_names:
+                    raw = (row.get(model) or "").strip()
+                    if raw:
+                        predictions[model] = float(raw)
+                rows.append(ObservationRow(
+                    well_id=row["well_id"],
+                    observed_ft=float(row["observed_ft"]),
+                    predictions=predictions,
+                ))
+            except (KeyError, ValueError) as exc:
+                raise ValueError(
+                    f"{path}: line {line_no}: invalid observation record ({exc})"
+                ) from exc
     return rows
 
 

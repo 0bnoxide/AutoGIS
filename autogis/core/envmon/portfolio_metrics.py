@@ -66,6 +66,17 @@ def build_portfolio_metrics(
             if latest is None or latest.status != "success":
                 missing.append(tool)
 
+        # missing[] is recomputed independently of evaluate_readiness()'s own
+        # pass/fail (see ADR-0030) so it can't silently drift from `ready` if
+        # evaluate_readiness() ever grows another failure path (e.g. a
+        # qa_csv/figure_spec check) — flag disagreement instead of hiding it.
+        if ready != (not missing):
+            qa.add(SEV_INFO, "portfolio_status_inconsistent",
+                   f"Site {site_id!r}: evaluate_readiness() ready={ready} but "
+                   f"missing-tools recomputation found {missing or 'none'}; "
+                   f"evaluate_readiness()'s status() is authoritative for `ready`.",
+                   site_id=site_id)
+
         site_records = run_history.query(site_id=site_id)
         last_activity = (
             max(r.finished_at for r in site_records).isoformat(timespec="seconds")

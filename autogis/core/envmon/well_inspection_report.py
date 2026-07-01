@@ -11,6 +11,7 @@ No arcpy dependency. No openpyxl. Pure stdlib.
 from __future__ import annotations
 
 import csv
+import re
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -18,6 +19,22 @@ from typing import Dict, List, Optional
 from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 
 _PASSING_CONDITIONS = {"GOOD", "OK", "PASS", "SATISFACTORY"}
+_UNSAFE_NAME_CHARS = re.compile(r"[\\/]")
+
+
+def _sanitize_well_id(well_id: str, *, qa: QACollector) -> str:
+    """Return a filesystem-safe well ID for use as a bare file stem.
+
+    WellID values come from a caller-supplied CSV, so a value like
+    ``"../../evil"`` must not be allowed to escape ``output_dir``.
+    """
+    safe = _UNSAFE_NAME_CHARS.sub("_", well_id).strip()
+    if safe in ("", ".", ".."):
+        safe = "_invalid_well_id"
+    if safe != well_id:
+        qa.add(SEV_WARNING, "unsafe_well_id",
+               f"WellID {well_id!r} is not filesystem-safe; using {safe!r} instead.")
+    return safe
 
 
 def _load_csv(path: Optional[Path]) -> List[dict]:
@@ -176,13 +193,22 @@ def build_well_inspection_reports(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     written: List[Path] = []
+    seen_well_ids: set = set()
     for well_row in wells:
         wid = well_row.get("WellID", "")
+        if wid in seen_well_ids:
+            qa.add(SEV_WARNING, "duplicate_well_id",
+                   f"WellID {wid!r} appears more than once in the wells CSV; "
+                   f"only the first occurrence's report was written.")
+            continue
+        seen_well_ids.add(wid)
+
         content = generate_well_report(
             wid, well_row, inspections_by_well.get(wid, []),
             generated_date=generated_date,
         )
-        path = output_dir / f"{wid}.md"
+        safe_wid = _sanitize_well_id(wid, qa=qa)
+        path = output_dir / f"{safe_wid}.md"
         path.write_text(content, encoding="utf-8")
         written.append(path)
 

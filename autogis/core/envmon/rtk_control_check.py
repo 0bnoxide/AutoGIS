@@ -66,16 +66,21 @@ def read_control_check_csv(path: Path) -> List[ControlCheckPoint]:
     """
     points = []
     with open(path, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            points.append(ControlCheckPoint(
-                control_id=row["control_id"],
-                published_x=float(row["published_x"]),
-                published_y=float(row["published_y"]),
-                published_z=float(row["published_z"]),
-                surveyed_x=float(row["surveyed_x"]),
-                surveyed_y=float(row["surveyed_y"]),
-                surveyed_z=float(row["surveyed_z"]),
-            ))
+        for line_no, row in enumerate(csv.DictReader(fh), start=2):  # header is line 1
+            try:
+                points.append(ControlCheckPoint(
+                    control_id=row["control_id"],
+                    published_x=float(row["published_x"]),
+                    published_y=float(row["published_y"]),
+                    published_z=float(row["published_z"]),
+                    surveyed_x=float(row["surveyed_x"]),
+                    surveyed_y=float(row["surveyed_y"]),
+                    surveyed_z=float(row["surveyed_z"]),
+                ))
+            except (KeyError, ValueError) as exc:
+                raise ValueError(
+                    f"{path}: line {line_no}: invalid control-check record ({exc})"
+                ) from exc
     return points
 
 

@@ -93,3 +93,35 @@ def test_build_well_inspection_reports_no_maintenance_log(tmp_path):
     assert len(written) == 2
     assert "No inspection records" in (out_dir / "MW-1.md").read_text(encoding="utf-8")
     assert any(r.category == "wells_never_inspected" for r in qa.records)
+
+
+def test_malicious_well_id_cannot_escape_output_dir(tmp_path):
+    """A WellID containing '../' must not write outside output_dir."""
+    wells_csv = tmp_path / "wells.csv"
+    wells_csv.write_text("WellID\n../../evil\n", encoding="utf-8")
+    out_dir = tmp_path / "reports"
+    qa = QACollector()
+    written = build_well_inspection_reports(
+        wells_csv, out_dir, site_id="H281", qa=qa)
+
+    assert not (tmp_path / "evil.md").exists()
+    for path in written:
+        assert path.resolve().is_relative_to(out_dir.resolve())
+    assert any(r.category == "unsafe_well_id" for r in qa.records)
+
+
+def test_duplicate_well_id_does_not_silently_overwrite(tmp_path):
+    """Two wells-CSV rows sharing a WellID must warn, not silently drop one."""
+    wells_csv = tmp_path / "wells.csv"
+    wells_csv.write_text(
+        "WellID,Location\nMW-1,North\nMW-1,South\n", encoding="utf-8")
+    out_dir = tmp_path / "reports"
+    qa = QACollector()
+    written = build_well_inspection_reports(
+        wells_csv, out_dir, site_id="H281", qa=qa)
+
+    # Only the first occurrence is written; count reflects reality.
+    well_reports = [p for p in written if p.name != "SiteSummary.md"]
+    assert len(well_reports) == 1
+    assert "North" in (out_dir / "MW-1.md").read_text(encoding="utf-8")
+    assert any(r.category == "duplicate_well_id" for r in qa.records)

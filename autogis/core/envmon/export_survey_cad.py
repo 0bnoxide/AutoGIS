@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import dataclasses
 import json
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -22,6 +23,25 @@ from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .import_rtk_survey import RTKPoint
 
 _DEFAULT_LAYER = "Miscellaneous"
+_UNSAFE_NAME_CHARS = re.compile(r"[\\/]")
+
+
+def _sanitize_layer_name(layer_name: str, *, qa: QACollector) -> str:
+    """Return a filesystem-safe layer name for use as a bare file stem.
+
+    Layer names come from a caller-supplied YAML map, so a value like
+    ``"../../etc/pwn"`` must not be allowed to escape ``output_dir``. Path
+    separators (either slash) are replaced with ``_``; ``""``/``"."``/``".."``
+    are replaced with a fixed fallback name.
+    """
+    safe = _UNSAFE_NAME_CHARS.sub("_", layer_name).strip()
+    if safe in ("", ".", ".."):
+        safe = "_invalid_layer"
+    if safe != layer_name:
+        qa.add(SEV_WARNING, "unsafe_layer_name",
+               f"Layer name {layer_name!r} is not filesystem-safe; "
+               f"using {safe!r} instead.")
+    return safe
 
 
 @dataclasses.dataclass
@@ -135,8 +155,15 @@ def export_survey_to_cad_gis(
 
     layers = group_points_by_layer(points, feature_code_map, qa=qa)
 
+    # Sanitize layer names for filesystem safety; merge any raw names that
+    # collide after sanitization rather than letting one overwrite another.
+    safe_layers: Dict[str, List[RTKPoint]] = {}
+    for raw_name, layer_points in layers.items():
+        safe_name = _sanitize_layer_name(raw_name, qa=qa)
+        safe_layers.setdefault(safe_name, []).extend(layer_points)
+
     manifest: List[LayerManifestEntry] = []
-    for layer_name, layer_points in sorted(layers.items()):
+    for layer_name, layer_points in sorted(safe_layers.items()):
         csv_path = output_dir / f"{layer_name}.csv"
         write_layer_csv(layer_points, csv_path)
         if write_geojson:

@@ -1,4 +1,6 @@
 """Tests for groundwater interpolation model cross-validation."""
+import pytest
+
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.evaluate_gw_models import (
     ObservationRow,
@@ -83,6 +85,36 @@ def test_read_gw_model_csv(tmp_path):
     assert len(rows) == 2
     assert rows[0].predictions == {"TIN": 100.1}
     assert rows[1].predictions == {"TIN": 104.9, "IDW": 106.0}
+
+
+def test_read_gw_model_csv_malformed_row_reports_line_number(tmp_path):
+    csv_path = tmp_path / "obs.csv"
+    csv_path.write_text(
+        "well_id,observed_ft,TIN\n"
+        "MW-1,100.0,100.1\n"
+        "MW-2,not_a_number,104.9\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="line 3"):
+        read_gw_model_csv(csv_path)
+
+
+def test_read_gw_model_csv_header_only(tmp_path):
+    csv_path = tmp_path / "obs.csv"
+    csv_path.write_text("well_id,observed_ft,TIN\n", encoding="utf-8")
+    assert read_gw_model_csv(csv_path) == []
+
+
+def test_duplicate_well_id_double_counted_in_rmse():
+    """No natural-key constraint: duplicate well_id rows both contribute to
+    that model's stats (documented behavior, not silently deduplicated)."""
+    qa = QACollector()
+    observations = [
+        ObservationRow("MW-1", 100.0, {"TIN": 100.0}),
+        ObservationRow("MW-1", 100.0, {"TIN": 102.0}),
+    ]
+    stats = evaluate_gw_models(observations, qa=qa)
+    assert stats[0].n_points == 2
 
 
 def test_write_model_stats_csv(tmp_path):

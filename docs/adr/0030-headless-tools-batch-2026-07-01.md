@@ -136,6 +136,16 @@ Ship five headless, arcpy-free tools, each registered `Runtime.CLOUD` in
 - CSV/GeoJSON coordinate convention: `x = Easting`, `y = Northing`,
   `z = Elevation_ft` — coordinates pass through the caller's CRS unprojected,
   matching the existing `export-geojson` tool's convention.
+- **Path traversal (cold review, landed inline):** the layer-name → filename
+  step originally used the YAML map's values (and, in `GenerateWellInspectionReports`
+  below, the wells CSV's `WellID` values) unsanitized — a map entry of
+  `{"EVIL": "../../etc/pwn"}` or a `WellID` of `../../evil` wrote outside
+  `output_dir` entirely. Both tools now route the file stem through a
+  `_sanitize_*` helper (`\\`/`/` → `_`, `.`/`..`/empty → a fixed fallback
+  name) before constructing any path, emit a `WARNING` when sanitization
+  changes the name, and — for `ExportSurveyToCADGIS` specifically — merge
+  raw layer names that collide after sanitization instead of letting one
+  silently overwrite the other.
 
 **GenerateWellInspectionReports**
 - Pure stdlib, **Markdown** output (same rationale as
@@ -153,6 +163,21 @@ Ship five headless, arcpy-free tools, each registered `Runtime.CLOUD` in
   inspection rows is flagged `wells_never_inspected` (WARNING) rather than
   silently reported as passing; a well whose latest condition isn't in
   `{GOOD, OK, PASS, SATISFACTORY}` is flagged `wells_need_attention`.
+- **Duplicate `WellID` (cold review, landed inline):** two wells-CSV rows
+  sharing a `WellID` originally overwrote the same `.md` file silently, with
+  `build_well_inspection_reports()`'s return value still (incorrectly)
+  claiming both were written. Now the second occurrence is skipped with a
+  `duplicate_well_id` WARNING and the returned/counted file list matches what
+  is actually on disk.
+
+**GeneratePortfolioMetrics (cold-review addendum)**
+- `missing_tools` is recomputed independently of `evaluate_readiness()`'s own
+  pass/fail by design (see above), which a cold review flagged as a latent
+  drift risk if `evaluate_readiness()` ever grows another failure path this
+  function doesn't mirror. Added a defensive `portfolio_status_inconsistent`
+  INFO record whenever `ready` and `(not missing)` disagree, so a future
+  divergence is surfaced in the QA report instead of silently mis-stating a
+  site's status.
 
 ---
 
@@ -162,9 +187,16 @@ Ship five headless, arcpy-free tools, each registered `Runtime.CLOUD` in
 
 - Five more catalog tools shippable without arcpy, all reusing established
   seams (`QACollector`, `RunHistory`, `evaluate_readiness`,
-  `import_rtk_survey.parse_rtk_csv`) — low architectural risk, 41 new tests,
-  full suite green (1123 passing), all five commands smoke-tested through the
-  actual CLI (not just the core function) end-to-end with real fixtures.
+  `import_rtk_survey.parse_rtk_csv`) — low architectural risk, full suite
+  green (1134 passing: 41 tests from the initial batch + 11 more added after
+  cold review), all five commands smoke-tested through the actual CLI (not
+  just the core function) end-to-end with real fixtures.
+- Cold review (envmon-spec-checker + pr-reviewer) ran on the branch:
+  spec-checker PASS; pr-reviewer's first pass was REQUEST CHANGES (two path
+  traversal bugs via unsanitized layer-name/WellID-to-filename construction,
+  one silent-overwrite data-loss bug on duplicate `WellID`, plus two
+  should-fix robustness gaps) — all landed inline with tests before opening
+  the PR, per the findings recorded above.
 - Closes three multi-year "conditional fit" gaps
   (`RTKControlCheckReport`/roadmap #15 boring-survey-drone list,
   `EvaluateGroundwaterSurfaceModels`/#13, `ExportSurveyToCADGIS`/#16) by

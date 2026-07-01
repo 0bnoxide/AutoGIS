@@ -1,4 +1,6 @@
 """Tests for RTK control-network check (rtk_control_check.py)."""
+import pytest
+
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.rtk_control_check import (
     ControlCheckPoint,
@@ -91,6 +93,42 @@ def test_read_control_check_csv(tmp_path):
     assert len(points) == 2
     assert points[0].control_id == "CP-1"
     assert points[1].surveyed_z == 502.0
+
+
+def test_read_control_check_csv_malformed_row_reports_line_number(tmp_path):
+    csv_path = tmp_path / "control.csv"
+    csv_path.write_text(
+        "control_id,published_x,published_y,published_z,"
+        "surveyed_x,surveyed_y,surveyed_z\n"
+        "CP-1,1000.0,2000.0,500.0,1000.01,2000.01,500.02\n"
+        "CP-2,not_a_number,2010.0,502.0,1010.0,2010.0,502.0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="line 3"):
+        read_control_check_csv(csv_path)
+
+
+def test_read_control_check_csv_header_only(tmp_path):
+    csv_path = tmp_path / "control.csv"
+    csv_path.write_text(
+        "control_id,published_x,published_y,published_z,"
+        "surveyed_x,surveyed_y,surveyed_z\n",
+        encoding="utf-8",
+    )
+    assert read_control_check_csv(csv_path) == []
+
+
+def test_duplicate_control_id_processed_independently(tmp_path):
+    """No natural-key constraint: duplicate control_id rows are both scored."""
+    qa = QACollector()
+    summary = evaluate_control_check(
+        [_cp("CP-1"), _cp("CP-1", dx=0.5)],
+        horizontal_tolerance_ft=0.05,
+        qa=qa,
+    )
+    assert summary.n_points == 2
+    assert summary.n_pass == 1
+    assert summary.n_fail == 1
 
 
 def test_write_results_csv(tmp_path):

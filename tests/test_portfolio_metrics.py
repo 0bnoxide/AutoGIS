@@ -107,6 +107,34 @@ def test_last_activity_is_most_recent_run(tmp_path):
     assert statuses[0].last_activity == "2026-06-05T12:00:00"
 
 
+def test_disagreement_between_ready_and_missing_is_flagged(tmp_path, monkeypatch):
+    """If evaluate_readiness() and the missing-tools recomputation ever
+    disagree (e.g. a future evaluate_readiness failure path this function
+    doesn't independently re-derive), that must be surfaced, not hidden."""
+    import autogis.core.envmon.portfolio_metrics as portfolio_metrics_mod
+    from autogis.core.common.qa import QACollector as _QAC, SEV_ERROR
+
+    history = _history_with(tmp_path, [
+        _record("SITE-A", "import-gdb", "success", "2026-06-01T00:00:00"),
+    ])
+
+    def fake_evaluate_readiness(**kwargs):
+        qa = _QAC()
+        qa.add(SEV_ERROR, "some_future_check", "simulated unrelated failure")
+        return qa
+
+    monkeypatch.setattr(
+        portfolio_metrics_mod, "evaluate_readiness", fake_evaluate_readiness)
+
+    qa = QACollector()
+    statuses = build_portfolio_metrics(history, ["import-gdb"], qa=qa)
+    # evaluate_readiness() says FAIL (ready=False) but the independent
+    # missing-tools recomputation finds nothing missing -> disagreement.
+    assert statuses[0].ready is False
+    assert statuses[0].missing_tools == ""
+    assert any(r.category == "portfolio_status_inconsistent" for r in qa.records)
+
+
 def test_write_portfolio_csv(tmp_path):
     history = _history_with(tmp_path, [
         _record("SITE-A", "import-gdb", "success", "2026-06-01T00:00:00"),

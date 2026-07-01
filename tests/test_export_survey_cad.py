@@ -1,5 +1,6 @@
 """Tests for feature-code-mapped RTK survey CSV/GeoJSON export."""
 import json
+from pathlib import Path
 
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.export_survey_cad import (
@@ -108,3 +109,32 @@ def test_export_empty_points(tmp_path):
     manifest = export_survey_to_cad_gis([], {}, tmp_path / "out", qa=qa)
     assert manifest == []
     assert any(r.category == "no_points" for r in qa.records)
+
+
+def test_malicious_layer_name_cannot_escape_output_dir(tmp_path):
+    """A layer name containing '../' must not write outside output_dir."""
+    qa = QACollector()
+    output_dir = tmp_path / "out"
+    points = [_pt("X-1", "EVIL")]
+    manifest = export_survey_to_cad_gis(
+        points, {"EVIL": "../../etc/pwn"}, output_dir, qa=qa)
+
+    # Nothing was written outside output_dir.
+    assert not (tmp_path.parent / "etc").exists()
+    assert not (tmp_path / "etc").exists()
+    for entry in manifest:
+        assert Path(entry.output_path).resolve().is_relative_to(output_dir.resolve())
+    assert any(r.category == "unsafe_layer_name" for r in qa.records)
+
+
+def test_colliding_sanitized_layer_names_merge_not_overwrite(tmp_path):
+    """Two raw layer names that sanitize to the same safe name must merge,
+    not silently drop one group's points."""
+    qa = QACollector()
+    output_dir = tmp_path / "out"
+    points = [_pt("A-1", "A"), _pt("B-1", "B")]
+    manifest = export_survey_to_cad_gis(
+        points, {"A": "../x", "B": "..\\x"}, output_dir, qa=qa)
+
+    assert len(manifest) == 1
+    assert manifest[0].point_count == 2
