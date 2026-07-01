@@ -1,7 +1,7 @@
 # Concurrent-Session Coordination Remediation — Design
 
 **Date:** 2026-06-30
-**Status:** Approved (design); pending implementation plan
+**Status:** Design gate — pending approval; implementation follows once approved
 **Scope chosen by user:** Full bundle **+ hard guard**
 **Source:** Hand-off "Operational gotchas" + memory
 `worktree-isolation-parallel-sessions.md`. All root causes empirically verified
@@ -10,7 +10,8 @@ this session (see each section).
 ## Goal
 
 Remediate three operational gotchas that repeatedly cost time when many Claude
-sessions run in the **same** `C:\Users\ichbi\AutoGIS` main working tree:
+sessions run in the **same** main working tree (repo root, i.e.
+`$CLAUDE_PROJECT_DIR`):
 
 1. **Shared-HEAD checkouts** — another session's `git checkout` moves *your*
    HEAD, landing your commits on the wrong branch.
@@ -88,9 +89,12 @@ the export from the shell hook, inside the existing `if [ -n "${CLAUDE_ENV_FILE:
 block that already writes the HEADROOM vars — one cohesive place for every
 `$CLAUDE_ENV_FILE` write.
 
-`session-start.sh` does not currently read its stdin payload; add a guarded read +
-session_id extract (the one-liner pattern `post-edit-pytest.sh` already uses), then
-export **idempotently** — append only if absent, so resume/compact re-fires don't
+`session-start.sh` does not currently read its stdin payload; add a stdin read +
+session_id extract — the same unconditional `payload=$(cat)` pattern
+`post-edit-pytest.sh` already uses. No extra guard around the read itself: Claude
+Code always supplies a payload on stdin for both hook events, so `post-edit-pytest.sh`
+relies on that guarantee today and this reuses it verbatim. Then export
+**idempotently** — append only if absent, so resume/compact re-fires don't
 accumulate duplicate `export` lines (review finding #4):
 
 ```sh
@@ -129,8 +133,9 @@ def resolve_sid(reg_path, cwd, env, explicit=None):
     # Last-resort fallback: the live `worktree` claim whose value == abspath(cwd).
     # Unique to one session ONLY in a steady-state, already-claimed worktree.
     root = os.path.abspath(cwd)
-    matches = [c["session_id"] for c in registry.list_claims(reg_path)
-               if c.get("kind") == "worktree" and registry.samepath(c.get("value"), root)]
+    matches = [c.get("session_id") for c in registry.list_claims(reg_path)
+               if c.get("session_id") and c.get("kind") == "worktree"
+               and registry.samepath(c.get("value", ""), root)]
     return matches[0] if len(matches) == 1 else None
 ```
 
@@ -223,10 +228,10 @@ def _in_main_tree(cwd):
     out = _rev_parse(cwd, "--git-dir", "--git-common-dir").splitlines()
     return len(out) == 2 and registry.samepath(out[0], out[1])  # git error → [] → False
 
-def _shared_main_tree(reg_path, sid, cwd, in_main_tree=None):
+def _shared_main_tree(reg_path, sid, cwd, main_tree_func=None):
     if not registry.tree_sharers(reg_path, sid, registry.repo_root(cwd)):
-        return False                             # cheap registry read first
-    return (in_main_tree or _in_main_tree)(cwd)  # git only when contention exists
+        return False                                  # cheap registry read first
+    return (main_tree_func or _in_main_tree)(cwd)      # git only when contention exists
 ```
 
 `_in_main_tree` is **injectable** (param `main_tree_func`, default `_in_main_tree`)
