@@ -76,6 +76,36 @@ Python only.
 Append a dated entry whenever the MCP wiring or index setup changes, or a deviation
 is found and fixed. Newest first.
 
+### 2026-06-30 — third defect: `index_repository(mode:"full")` silently skips cache-poisoned files
+- **Symptom:** even after PR #91 fixed root causes 1–2 below, the graph was **still** missing the
+  5 PR #95 modules (`export_comparison_excel`, `ingest_reviewer_comments`, `job_queue`,
+  `soil_interval_selector`, `well_trend_charts`).
+- **Evidence (`~/.cache/codebase-memory-mcp/last-index.log`, timestamped — no interpretation
+  needed):** **9 consecutive** SessionStart-triggered `index_repository(mode:"full")` runs from
+  22:05–22:29 all returned an **identical 5446 nodes / 15961 edges**, even though `main`
+  (`5d1d1ea`, committed 07:16) had contained those modules for **~13 h**. The count only moved to
+  **5654 / 16869** at 22:31:43 — a manual `delete_project` + fresh `index_repository` (which has no
+  cache to consult).
+- **Root cause 4 (distinct from 1–3):** `mode:"full"` means *full scope of edge types* (all files
+  \+ similarity/semantic), **not** "rebuild from scratch." It still consults the per-file
+  content-hash incremental cache — the very mechanism that *avoids full rebuilds* — and skips any
+  file whose hash matches. That cache was **poisoned** for the 5 modules (hash recorded but nodes
+  never persisted — most likely a partial/interrupted index during the busy multi-PR merge
+  window), so every subsequent "full" reindex skipped them silently. RC1 (dead binary path) and
+  RC2 (missing harvest pkg) do not touch this path.
+- **Fix / workaround:** `delete_project` then `index_repository` clears the cache and forces a true
+  rebuild. **Verified:** `search_graph` now returns real Function/Class nodes for all 5; File-node
+  parity `autogis` 126/126, `tests` 127/127, `envmon` 86/86, worktree contamination 0; index stable
+  at 5654/16869.
+- **Not fixable in-repo:** the cache logic lives in the external compiled binary
+  (`bin/codebase-memory-mcp.exe`). Optional in-repo hardening (**not built** — YAGNI unless this
+  recurs): a SessionStart *parity guard* comparing `git ls-files '*.py'` count to the indexed `.py`
+  File-node count and forcing `delete_project` + rebuild on mismatch.
+- **Caveat for future sessions:** do **not** treat unchanged or rising `mode:"full"` node counts as
+  proof of freshness — they aren't (this corrects the earlier "full rebuild every session"
+  assumption). Verify freshness by **parity** (indexed `.py` File nodes vs `git ls-files '*.py'`) or
+  by `search_graph` returning real symbol nodes for recently-merged modules.
+
 ### 2026-06-30 — poisoned incremental cache: files permanently un-indexed despite being on disk
 - **Symptom:** 5 envmon modules from the PR #95 batch (`export_comparison_excel`,
   `ingest_reviewer_comments`, `job_queue`, `soil_interval_selector`, `well_trend_charts`)
