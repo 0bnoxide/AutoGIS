@@ -1,0 +1,110 @@
+"""Tests for feature-code-mapped RTK survey CSV/GeoJSON export."""
+import json
+
+from autogis.core.common.qa import QACollector
+from autogis.core.envmon.export_survey_cad import (
+    export_survey_to_cad_gis,
+    group_points_by_layer,
+    load_feature_code_map,
+    write_layer_csv,
+    write_layer_geojson,
+)
+from autogis.core.envmon.import_rtk_survey import RTKPoint
+
+
+def _pt(point_id, feature_code=""):
+    return RTKPoint(
+        point_id=point_id, northing=2000.0, easting=1000.0, elevation_ft=50.0,
+        feature_code=feature_code,
+    )
+
+
+def test_group_points_by_mapped_layer():
+    qa = QACollector()
+    points = [_pt("MW-1", "MW"), _pt("GCP-1", "GCP"), _pt("MW-2", "MW")]
+    layers = group_points_by_layer(
+        points, {"MW": "MonitoringWells", "GCP": "DroneControlPoints"}, qa=qa)
+    assert set(layers) == {"MonitoringWells", "DroneControlPoints"}
+    assert len(layers["MonitoringWells"]) == 2
+    assert len(layers["DroneControlPoints"]) == 1
+
+
+def test_unmapped_code_routes_to_default_and_warns():
+    qa = QACollector()
+    points = [_pt("X-1", "XYZ")]
+    layers = group_points_by_layer(points, {"MW": "MonitoringWells"}, qa=qa)
+    assert "Miscellaneous" in layers
+    assert any(r.category == "unmapped_feature_codes" for r in qa.records)
+
+
+def test_configured_default_overrides_miscellaneous():
+    qa = QACollector()
+    points = [_pt("X-1", "XYZ")]
+    layers = group_points_by_layer(
+        points, {"MW": "MonitoringWells", "default": "Other"}, qa=qa)
+    assert "Other" in layers
+    assert "Miscellaneous" not in layers
+
+
+def test_blank_feature_code_routes_to_default():
+    qa = QACollector()
+    points = [_pt("X-1", "")]
+    layers = group_points_by_layer(points, {"MW": "MonitoringWells"}, qa=qa)
+    assert "Miscellaneous" in layers
+    # blank codes are not "unmapped" (nothing to map)
+    assert not any(r.category == "unmapped_feature_codes" for r in qa.records)
+
+
+def test_write_layer_csv(tmp_path):
+    out = tmp_path / "MonitoringWells.csv"
+    write_layer_csv([_pt("MW-1", "MW")], out)
+    text = out.read_text(encoding="utf-8")
+    assert "MW-1" in text
+    assert "1000.0" in text  # easting -> x
+
+
+def test_write_layer_geojson(tmp_path):
+    out = tmp_path / "MonitoringWells.geojson"
+    write_layer_geojson([_pt("MW-1", "MW")], out)
+    fc = json.loads(out.read_text(encoding="utf-8"))
+    assert fc["type"] == "FeatureCollection"
+    assert fc["features"][0]["geometry"]["coordinates"] == [1000.0, 2000.0, 50.0]
+
+
+def test_load_feature_code_map(tmp_path):
+    path = tmp_path / "map.yaml"
+    path.write_text("MW: MonitoringWells\nGCP: DroneControlPoints\n", encoding="utf-8")
+    mapping = load_feature_code_map(path)
+    assert mapping == {"MW": "MonitoringWells", "GCP": "DroneControlPoints"}
+
+
+def test_export_survey_to_cad_gis_writes_manifest(tmp_path):
+    qa = QACollector()
+    points = [_pt("MW-1", "MW"), _pt("GCP-1", "GCP")]
+    output_dir = tmp_path / "out"
+    manifest = export_survey_to_cad_gis(
+        points, {"MW": "MonitoringWells", "GCP": "DroneControlPoints"},
+        output_dir, qa=qa,
+    )
+    assert {m.layer_name for m in manifest} == {"MonitoringWells", "DroneControlPoints"}
+    assert (output_dir / "MonitoringWells.csv").exists()
+    assert (output_dir / "manifest.json").exists()
+    manifest_data = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest_data) == 2
+
+
+def test_export_with_geojson_flag(tmp_path):
+    qa = QACollector()
+    output_dir = tmp_path / "out"
+    export_survey_to_cad_gis(
+        [_pt("MW-1", "MW")], {"MW": "MonitoringWells"}, output_dir,
+        write_geojson=True, qa=qa,
+    )
+    assert (output_dir / "MonitoringWells.geojson").exists()
+
+
+def test_export_empty_points(tmp_path):
+    qa = QACollector()
+    manifest = export_survey_to_cad_gis([], {}, tmp_path / "out", qa=qa)
+    assert manifest == []
+    assert any(r.category == "no_points" for r in qa.records)
