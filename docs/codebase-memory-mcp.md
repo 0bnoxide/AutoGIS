@@ -106,6 +106,43 @@ is found and fixed. Newest first.
   assumption). Verify freshness by **parity** (indexed `.py` File nodes vs `git ls-files '*.py'`) or
   by `search_graph` returning real symbol nodes for recently-merged modules.
 
+### 2026-06-30 — poisoned incremental cache: files permanently un-indexed despite being on disk
+- **Symptom:** 5 envmon modules from the PR #95 batch (`export_comparison_excel`,
+  `ingest_reviewer_comments`, `job_queue`, `soil_interval_selector`, `well_trend_charts`)
+  had **zero graph nodes** in the canonical index even though they were present on disk,
+  unchanged, and parsed fine (a clean-room build of identical content produced full
+  function/class nodes for all 5). `autogis/core/harvest/` was separately missing —
+  see the entry below, a different root cause (no `__init__.py` at index time).
+- **Root cause, confirmed by direct reproduction:** the `file_hashes` change-detection
+  table has a `sha256` column, but it is **always empty** in v0.8.1 (checked ~90 rows
+  across both `fast` and `full` mode) — change detection is **mtime-based**, not
+  hash-based. If a file's `mtime_ns` is cached but its nodes are (for any reason) zero,
+  every later `index_repository` call — **any mode** — sees "mtime unchanged → already
+  indexed" and skips it **permanently**. This is a genuine bug, not simple staleness: a
+  competing theory (files were just "latent," not yet re-indexed since the PR #95 merge,
+  and a plain re-run would have picked them up) was empirically **refuted** — see repro
+  below.
+- **Reproduced on a disposable throwaway project** (never on canonical): indexed
+  `autogis/core/envmon/` alone (788 nodes), manually deleted just `well_trend_charts.py`'s
+  12 nodes via direct sqlite while leaving its `file_hashes` row/mtime untouched (the file
+  itself was never touched on disk), then ran a plain incremental
+  `index_repository(mode="full")` — no `delete_project`. Result: node count stayed at 776
+  (788−12); `search_graph` confirmed zero nodes for that file. A repeated incremental call
+  would produce the same result indefinitely.
+- **Fix:** `delete_project` then `index_repository(mode="full")` via the MCP tools — a
+  full rebuild through the live server. **Do not hand-edit `nodes`/`file_hashes` via
+  sqlite against a project you care about** — the server holds the DB open (WAL-mode),
+  and out-of-band mutation risks the same class of inconsistency that likely caused the
+  poisoning in the first place. (The raw-SQL repro above was only run against a disposable
+  scratch project, with explicit user sign-off, specifically because of this risk.) A full
+  rebuild also catches any other files poisoned the same way that haven't been noticed yet
+  — surgical single-row deletion doesn't. Cost is trivial for this repo's size (~5-10s).
+  Canonical index went 4990→5654 nodes, 13492→16869 edges after the rebuild, matching a
+  clean-room reference build.
+- **Still unknown:** what causes a file to get its mtime cached without nodes in the first
+  place (binary is compiled — can't inspect the extraction path). If it recurs, don't
+  re-diagnose the mechanism from scratch — go straight to `delete_project` + full reindex.
+
 ### 2026-06-30 — stale index + harvest unindexed: SessionStart hook pointed at a dead binary
 - **Symptoms (long-standing):** the knowledge graph was chronically stale, and
   `autogis/core/harvest/` (Tool 1, the harvester) had **zero node coverage**.
