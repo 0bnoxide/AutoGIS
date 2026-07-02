@@ -3188,9 +3188,15 @@ def reconcile_field_lab_cmd(field_csv, lab_csv, output, date_tolerance,
               help="Starting k for --hull-method concave (npg enforces k>=3).")
 @click.option("--out", "out_path", default=None, type=click.Path(),
               help="Write GeoJSON to this path (stdout if omitted).")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="File geodatabase: write the draft polygon to "
+                   "Env_PlumeBoundary_Draft (ArcGIS Pro).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Compute and print the boundary without writing to --gdb.")
 @qa_report_options
 def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analyte,
-                             hull_method, k_neighbors, out_path, report, fail_on):
+                             hull_method, k_neighbors, out_path, gdb, dry_run,
+                             report, fail_on):
     """Tool 4.5: draft plume-extent polygon (convex/concave hull) from exceedance points.
 
     DRAFT output for analyst review only — not a geostatistical model. Provide
@@ -3201,12 +3207,15 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.draft_plume_boundary import (
         compute_draft_plume_boundary, filter_results_to_exceedance_points,
-        load_exceedance_points_csv, result_to_geojson, result_to_wkt)
+        load_exceedance_points_csv, result_to_geojson, result_to_wkt,
+        write_plume_draft_to_gdb)
 
     if points_csv and (results_csv or coords_csv):
         raise click.UsageError("--points is mutually exclusive with --results/--coords.")
     if not points_csv and not (results_csv and coords_csv):
         raise click.UsageError("Provide --points, or both --results and --coords.")
+    if gdb:
+        _guard("draft-plume-boundary")
 
     qa = QACollector()
     if points_csv:
@@ -3230,6 +3239,10 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
             click.echo(f"GeoJSON written to {out_path}")
         else:
             click.echo(geojson)
+
+        if gdb and not dry_run:
+            write_plume_draft_to_gdb(gdb, site_id, result)
+            click.echo(f"Written to {gdb}/Env_PlumeBoundary_Draft (ReviewStatus=DRAFT)")
 
     _render_qa(qa, report, fail_on)
 
