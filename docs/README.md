@@ -12,6 +12,9 @@ where things live; it does not replace reading the files themselves.
   ADRs (autonomous judgment-call audit trail), not a substitute for one.
 - **`../CLAUDE.md`** (repo root) — the canonical session/project guide: layout,
   invariants, worktree/coordination protocol, deferred roadmap groups.
+- **[`new-envmon-tool-checklist.md`](new-envmon-tool-checklist.md)** — blessed
+  helpers to reuse before writing a new envmon tool. Not dated/point-in-time;
+  kept current, enforced by `envmon-spec-checker`.
 
 ## Design history, per feature
 

@@ -57,6 +57,16 @@ Check the files you are given (or, if none are named, the diff:
    `runtime/sessions.py` itself (`arcpy_env`'s own implementation) or
    `adapters/guard.py`/`adapters/toolbox.pyt`.
 
+8. **New-tool checklist adoption (`docs/new-envmon-tool-checklist.md`) — flag.**
+   For a *new* `core/envmon` module, check each row of that checklist: does it
+   reuse `QACollector`/`_render_qa`/`qa_report_options` for QA reporting,
+   `records_csv` for dataclass-table CSV I/O, `validate_config.safe_load` for
+   defensive YAML loads, and the canonical config loaders — instead of
+   hand-rolling an equivalent? Flag a hand-rolled reimplementation of any of
+   these (e.g. a bespoke `csv.DictWriter` loop over `dataclasses.fields`
+   where `write_records_csv` would do). Not a blocker — reuse is a quality
+   bar, not a correctness one — but call out which row applies.
+
 ## Output
 
 - A bulleted list of findings, each tagged `[BLOCKER]` or `[FLAG]`, with
