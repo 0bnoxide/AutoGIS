@@ -1,8 +1,33 @@
 # ADR-017: CSV-based append-only run history log
 
-**Status:** Accepted
+**Status:** Accepted (write side deferred — see below)
 
 **Date:** 2026-06-25
+
+## Status update (2026-07-02)
+
+`RunHistory.write` has zero production callers: no CLI command, `.pyt` `execute()`,
+or core module writes a `RunRecord`. `EvaluateReportReadiness` and `envmon
+run-history` (the readers this ADR names) are shipped and will see an empty/absent
+log unless the user hand-authors `run_history.csv`. `job_queue.py` and
+`dashboard_data_mart.py` — the other two consumers this ADR names — don't reference
+`RunHistory` at all.
+
+A generic write-side hook (e.g. a click `result_callback` wrapping every `envmon`
+command) was considered and rejected: it would fire under every `CliRunner` test in
+the suite (stray-file writes / failures in read-only test dirs unless explicitly
+disabled), and — more importantly — it can only capture `tool_name`/timing/
+success-vs-exception generically. `site_id`, `event_id`, and `qa_count_*` are not
+uniformly available at the adapter layer (commands `click.echo` rather than return
+structured results, and readers filter on `site_id`), so a generic hook would
+produce a log `evaluate-readiness` still couldn't use correctly — worse than no log,
+since it looks populated. Populating those fields correctly means touching each
+command body, the "80 call sites" this ADR's original decision explicitly avoided.
+
+**Write side deferred until a per-command wiring decision is made deliberately**
+(tracked in issue #104), not fast-tracked as a generic hook. The read side
+(`query`/`latest`) and CSV format below remain valid design; only production writers
+are missing.
 
 ## Context
 

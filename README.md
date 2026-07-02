@@ -57,7 +57,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | ExportGeoJSONResults | — | `envmon export-geojson` |
 | ValidateScheduleYAML | — | `envmon validate-schedule` |
 | RunHistoryReport / Query | 10.1 | `envmon run-history-report` / `envmon run-history` |
-| WriteRunHistory | 10.5 | internal (`core/common/run_history.py`, used by the readiness gate) |
+| WriteRunHistory | 10.5 | not implemented -- `RunHistory.write()` exists (`core/common/run_history.py`) but has no production caller; `run_history.csv` is user-populated today (see ADR-0017 status update, issue #104) |
 | PublishEnvironmentalLayersToAGOL | 6.1 | `agol publish-layer` |
 | BuildGroundwaterElevationEvent | 4.1 | `envmon build-gwe-event` |
 | EstimateGWFlowDirection | 4.3 | `envmon estimate-gw-flow-direction` (DRAFT) |
