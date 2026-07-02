@@ -1,0 +1,79 @@
+# ============================================================================
+# PARSER PROFILE — H272 Havre GW Analytical      *** ANCHORS VERIFIED, NOT YET
+#                                                     DISPATCHABLE — see below ***
+# ============================================================================
+# Anchors below were confirmed against the real workbook
+# ("T 2 -GW anlaytical data DRAFT .xlsx", sheets "GW Quality" / "GW Quality
+# (2)") via Tool 1 (draft-parser-profile) plus targeted header-row reads.
+# The source workbook itself never enters this repo; only structural facts
+# (row/column anchors, header label text) and the public MDEQ RBSL numbers
+# the client's own table already carries crossed over.
+#
+# Tool 1's heuristic guessed analyte_header_row=40 for these sheets — WRONG,
+# an artifact of propose_parser_profile() picking header_rows[-1] (the last
+# ambiguous candidate in the scan window) rather than the real header row.
+# The real analyte header is row 6, confirmed directly: row 6 reads
+# Benzene/Toluene/Ethylbenzene/Xylenes/Total Purgeable Hydrocarbons/MTBE/... —
+# exactly the RBSL-table analytes, one row above the confirmed units row (7)
+# and RBSL row (8, "MDEQ RBSL1"). This is the concrete example the DRAFT
+# banner on H281_Glasgow_DataTables.yaml warns about: never trust an
+# auto-proposed anchor without a human/targeted check.
+#
+# Site: Holiday Stationstore #272 / Circle K Store 2746272, Havre, MT.
+# "GW Quality" carries an extra "Total BTEX" derived column (Q) not present
+# on "GW Quality (2)" — marked ignored_columns, not an independently
+# regulated analyte.
+#
+# KNOWN GAP — WHY THIS PROFILE HAS NO end-to-end IMPORT PATH YET:
+# Every sheet here reports analytical results with NO water-level columns
+# (a genuinely different physical layout than H281_Glasgow's single combined
+# sheet, which has MPE/DTW/GWE + analytes together). The codebase currently
+# recognizes exactly these SheetProfile.data_type values, each wired to one
+# normalize_*_table function: GW_ANALYTICAL_AND_WATER_LEVEL,
+# GW_WATER_LEVEL_ONLY (both normalize_groundwater.py), METALS, SOIL, IBI
+# (table_normalizer.py), RPD (normalize_rpd.py). None of these fit a plain
+# "GW organics, no water level, not metals/IBI/soil" sheet — using
+# GW_ANALYTICAL_AND_WATER_LEVEL here would run normalize_gw_table_2 against
+# nonexistent mpe/dtw/gwe columns and spam a QA warning per row.
+# A `data_type: GW_ANALYTICAL` + matching normalize_*_table wrapper (a small,
+# well-precedented mirror of normalize_metals_table) would close this, but
+# its only production caller is import_to_gdb.py, which is arcpy-gated —
+# out of scope this round per explicit instruction. This profile's row/col
+# anchors are real and verified; only the dispatch wiring is missing. Build
+# it when GDB-import work for this site is back in scope.
+# ============================================================================
+
+profile_id: H272_Havre_GW_Analytical
+profile_description: >-
+  Groundwater analytical results table (Table 2) for Holiday Stationstore
+  #272 / Circle K Store 2746272, Havre, MT. VPH/EPH fraction results only —
+  water-level data ships separately, see H272_Havre_GW_Elevation.yaml.
+workbook_type: gw_analytical_only
+date_system: "1900"
+formula_handling: use_cached_then_qa
+
+sheets:
+  - sheet_name: "GW Quality"
+    data_type: GW_ANALYTICAL           # not yet wired — see banner above
+    title_rows: [1, 2, 3]
+    group_header_row: 5
+    analyte_header_row: 6              # Tool 1 heuristic wrongly said 40
+    units_row: 7
+    screening_level_row: 8             # "MDEQ RBSL1" (Montana DEQ Tier 1)
+    data_start_row: 9
+    id_column: A
+    date_column: B
+    analyte_columns: {from: C, to: P}  # Benzene .. C11-C22 Aromatics (14)
+    ignored_columns: [Q]               # "Total BTEX" — derived, not RBSL'd
+
+  - sheet_name: "GW Quality (2)"
+    data_type: GW_ANALYTICAL           # not yet wired — see banner above
+    title_rows: [1, 2, 3]
+    group_header_row: 5
+    analyte_header_row: 6
+    units_row: 7
+    screening_level_row: 8
+    data_start_row: 9
+    id_column: A
+    date_column: B
+    analyte_columns: {from: C, to: P}  # same 14 analytes; no Total BTEX column
