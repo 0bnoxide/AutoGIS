@@ -4,7 +4,8 @@ from datetime import date
 
 from autogis.core.common.qa import QACollector
 from autogis.core.common.schema.survey import LevelLoopObservation, LevelLoopRun
-from autogis.core.envmon.level_loop import process_level_loop
+from autogis.core.envmon.level_loop import (
+    ElevationUpdatePlan, process_level_loop, select_elevations_for_update)
 
 
 def _obs(setup, point, bs=None, fs=None, is_=None):
@@ -134,3 +135,71 @@ def test_duplicate_turning_point_warns():
         obs, run_id="L1", site_id="S", survey_date=date(2026, 4, 1),
         benchmark_id="BM", known_elevation=100.0, tolerance=0.5, qa=qa)
     assert any(r.category == "duplicate_turning_point" for r in qa.records)
+
+
+def _run(adjusted=True, misclosure_ft=0.0, closure_tolerance_ft=0.05):
+    return LevelLoopRun(
+        run_id="L1", site_id="S", survey_date=date(2026, 4, 1),
+        benchmark_id="BM", known_elevation=100.0,
+        misclosure_ft=misclosure_ft, closure_tolerance_ft=closure_tolerance_ft,
+        adjusted=adjusted)
+
+
+def test_select_elevations_blocked_when_not_adjusted():
+    run = _run(adjusted=False)
+    plan = select_elevations_for_update(run, [], well_ids=set())
+    assert isinstance(plan, ElevationUpdatePlan)
+    assert plan.blocked is True
+    assert plan.block_reason == "not_adjusted"
+    assert plan.updates == {}
+
+
+def test_select_elevations_blocked_when_misclosure_exceeds_tolerance():
+    run = _run(adjusted=True, misclosure_ft=0.2, closure_tolerance_ft=0.05)
+    plan = select_elevations_for_update(run, [], well_ids=set())
+    assert plan.blocked is True
+    assert plan.block_reason == "misclosure_exceeds_tolerance"
+    assert plan.updates == {}
+
+
+def test_select_elevations_excludes_benchmark():
+    run = _run()
+    obs = [
+        LevelLoopObservation(run_id="L1", setup_id="2", point_id="BM",
+                             foresight=3.0, elevation=100.0),
+        LevelLoopObservation(run_id="L1", setup_id="1", point_id="MW-1",
+                             foresight=3.0, elevation=98.950),
+    ]
+    plan = select_elevations_for_update(run, obs, well_ids={"MW-1", "BM"})
+    assert "BM" not in plan.updates
+    assert plan.updates["MW-1"] == 98.950
+
+
+def test_select_elevations_unknown_well_id_goes_to_skipped():
+    run = _run()
+    obs = [
+        LevelLoopObservation(run_id="L1", setup_id="1", point_id="MW-2",
+                             foresight=3.0, elevation=97.0),
+    ]
+    plan = select_elevations_for_update(run, obs, well_ids=set())
+    assert plan.skipped == ["MW-2"]
+    assert plan.updates == {}
+
+
+def test_select_elevations_last_row_wins_for_repeated_point_id():
+    run = _run()
+    obs = [
+        LevelLoopObservation(run_id="L1", setup_id="1", point_id="MW-3",
+                             foresight=3.0, elevation=50.0),
+        LevelLoopObservation(run_id="L1", setup_id="2", point_id="MW-3",
+                             intermediate_sight=1.0, elevation=51.0),
+    ]
+    plan = select_elevations_for_update(run, obs, well_ids={"MW-3"})
+    assert plan.updates["MW-3"] == 51.0
+
+
+def test_select_elevations_empty_observations():
+    run = _run()
+    plan = select_elevations_for_update(run, [], well_ids={"MW-1"})
+    assert plan.updates == {}
+    assert plan.skipped == []
