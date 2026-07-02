@@ -70,6 +70,8 @@ TOOLS: dict[str, Runtime] = {
     "well-inspection-report": Runtime.CLOUD,  # Markdown well inspection report, headless
     "update-well-elevations": Runtime.LOCAL,  # tool 8.2 GDB write (--gdb path)
     "draft-plume-boundary": Runtime.LOCAL,    # tool 4.5 GDB write (--gdb path)
+    "build-cad-package": Runtime.LOCAL,  # tool 8.9 Export-to-CAD — needs arcpy
+    "export-civil3d": Runtime.LOCAL,     # tool 8.2 LandXML/contour leg needs arcpy; PNEZD CSV is headless
 }
 
 
@@ -279,6 +281,10 @@ _REGISTRY_SEED = [
      "intake", "Create/validate the normalized boring-log SQLite database"),
     ("index-field-attachments", "SyncFieldAttachments", "6.5", "CLOUD", "stable",
      "agol", "Index a harvester manifest into the AttachmentIndex table"),
+    ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "stable",
+     "cartography", "Export GIS layers to a Civil 3D-ready CAD package (DWG/DXF)"),
+    ("export-civil3d", "ExportContoursForCivil3D", "8.2", "LOCAL", "stable",
+     "cartography", "Export PNEZD point CSV + projection note (headless); contours/LandXML via Pro"),
 ]
 
 TOOL_REGISTRY: list = [

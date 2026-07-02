@@ -3328,6 +3328,56 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("build-cad-package")
+@click.option("--layers", required=True, type=click.Path(exists=True),
+              help="Text file listing selected GIS layers, one per line.")
+@click.option("--mapping", required=True, type=click.Path(exists=True),
+              help="YAML {gis_layer: {cad_layer, color, linetype}} mapping.")
+@click.option("--crs", required=True, help="Output coordinate system, e.g. EPSG:2256.")
+def build_cad_package_cmd(layers, mapping, crs):
+    """Tool 8.9: export GIS layers to a CAD package (ArcGIS Pro)."""
+    _guard("build-cad-package")
+    from autogis.core.envmon import cad_layer_map  # noqa: F401
+    raise click.ClickException(
+        "build-cad-package requires ArcGIS Pro (arcpy Export-to-CAD) and has "
+        "no .pyt toolbox entry yet -- see issue #105 (CLI/.pyt seam gap)."
+    )
+
+
+@envmon.command("export-civil3d")
+@click.option("--points", "points_csv", required=True, type=click.Path(exists=True),
+              help="CSV of elevation points: location_id,x,y,z[,description].")
+@click.option("--crs", required=True, help="e.g. EPSG:2256; recorded in the projection note.")
+@click.option("--out-dir", required=True, type=click.Path(),
+              help="Directory for points_pnezd.csv + projection_note.txt.")
+@click.option("--start-number", type=int, default=1, show_default=True,
+              help="First PNEZD point number.")
+@click.option("--landxml", is_flag=True, default=False,
+              help="Contour polylines/LandXML export (ArcGIS Pro only).")
+@qa_report_options
+def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, report, fail_on):
+    """Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless);
+    --landxml routes to the .pyt toolbox."""
+    if landxml:
+        _guard("export-civil3d")
+        raise click.ClickException(
+            "--landxml requires ArcGIS Pro (contour polylines/LandXML) and has "
+            "no .pyt toolbox entry yet -- see issue #105 (CLI/.pyt seam gap).")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.civil3d_points import (
+        build_pnezd, load_gwe_points_csv, write_pnezd_csv, write_projection_note)
+
+    qa = QACollector()
+    records = load_gwe_points_csv(Path(points_csv))
+    pts = build_pnezd(records, crs=crs, start_number=start_number, qa=qa)
+    out = Path(out_dir)
+    csv_path = write_pnezd_csv(pts, out / "points_pnezd.csv")
+    note_path = write_projection_note(crs, out / "projection_note.txt")
+    click.echo(f"{len(pts)} PNEZD point(s) -> {csv_path}")
+    click.echo(f"Projection note -> {note_path}")
+    _render_qa(qa, report, fail_on)
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 
