@@ -22,7 +22,7 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 The codebase now ships **85 `core/envmon/` modules** (86 `.py` files including `__init__.py`),
 **~81 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 84 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1082-test** arcpy-free
+`manage-callout-overrides` subcommands are counted individually), and a **1084-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -382,7 +382,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1082 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1084 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -580,7 +580,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1082 arcpy-free tests
+└── tests/               # 1084 arcpy-free tests
 ```
 
 ### Key modules
@@ -633,13 +633,14 @@ before trusting outputs.
 | [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 43 features (architecture, algorithm, data-model decisions) |
 | [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 86 features (step-by-step execution guides) |
-| [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy (latest: ADR-0029) |
+| [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy, per-batch decisions (current list: the index in [`docs/adr/README.md`](docs/adr/README.md)) |
+| [`docs/adr/logs/`](docs/adr/logs/) | Daily agent-decision logs — autonomous judgment calls recorded for audit (a supplement to ADRs, not a substitute) |
 
 ---
 
 ## Contributing
 
-Test baseline: **1082 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1084 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash

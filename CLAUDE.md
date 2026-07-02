@@ -74,6 +74,21 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
 - Screening levels and the H281 parser profile are pre-production stubs — do not
   remove DRAFT banners or `_TODO` markers until verified against real data.
 
+## Decision records
+
+Two separate records — easy to conflate, keep both:
+
+- **ADRs** (`docs/adr/NNNN-*.md`): the durable record of any architectural /
+  structural / invariant / **tool-batch** decision. Ship a batch or make a design
+  call → add an ADR (`/new-adr`; format in `docs/adr/README.md`). This is the
+  "regular" logging and it is **required** — it lapsed for the 2026-06-29/30
+  batches and had to be backfilled (ADR-0030/0031).
+- **Agent-decision logs** (`docs/adr/logs/YYYY-MM-DD-agent-decisions.md`): an audit
+  of the agent's *autonomous judgment calls* ("free will"). A **supplement** to
+  ADRs, **not** a substitute — logging a judgment call does not discharge the ADR,
+  and these logs live only in `docs/adr/logs/` (not a parallel path). See
+  `docs/adr/logs/README.md`.
+
 ## Worktrees & session coordination
 
 - **`main` is READ-ONLY — branch before you write.** On `main` only *reading* is

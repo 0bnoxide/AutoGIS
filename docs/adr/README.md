@@ -48,6 +48,8 @@ Each ADR follows this structure:
 | [027](0027-import-rtk-survey-points.md) | ImportRTKSurveyPoints — configurable-column CSV parser + two-table GDB write | Accepted | 2026-06-28 |
 | [028](0028-cloud-tools-batch-2026-06-28.md) | Cloud-tools batch — 5 headless QA/export/reporting tools | Accepted | 2026-06-28 |
 | [029](0029-validation-adapters-are-intentionally-thin.md) | validate_*/manage_* are intentionally thin adapters (don't fuse) | Accepted | 2026-06-29 |
+| [030](0030-autonomous-headless-batches-2026-06-29.md) | Autonomous headless tool batches (2026-06-29) — PRs #81/#84/#88 | Accepted | 2026-06-29 |
+| [031](0031-autonomous-headless-batches-2026-06-30.md) | Autonomous headless tool batches (2026-06-30) — PRs #92/#93/#95/#96 | Accepted | 2026-06-30 |
 
 ## File naming
 
@@ -62,3 +64,10 @@ When proposing a new ADR:
 3. Start with **Proposed** status
 4. Submit for review/discussion
 5. Update status to **Accepted** or **Deprecated** after resolution
+
+## Agent-decision logs vs ADRs
+
+`docs/adr/logs/YYYY-MM-DD-agent-decisions.md` records the agent's **autonomous
+judgment calls** for audit — a *supplement* to ADRs, **not** a substitute. A
+tool-batch or architectural decision still needs an ADR here (logging the
+judgment calls does not discharge it). See [`logs/README.md`](logs/README.md).
