@@ -1,7 +1,7 @@
 # Agent Decisions Log — 2026-07-01 Headless Tools Batch
 
 Recorded by Claude Code during an autonomous 5-feature implementation session
-(web/cloud, arcpy absent). See ADR-0030 for the full write-up; this log
+(web/cloud, arcpy absent). See ADR-0032 for the full write-up; this log
 captures the narrower judgment calls behind it.
 
 ---

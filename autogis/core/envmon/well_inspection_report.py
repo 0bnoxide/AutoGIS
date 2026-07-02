@@ -194,6 +194,7 @@ def build_well_inspection_reports(
     output_dir.mkdir(parents=True, exist_ok=True)
     written: List[Path] = []
     seen_well_ids: set = set()
+    deduped_wells: List[dict] = []
     for well_row in wells:
         wid = well_row.get("WellID", "")
         if wid in seen_well_ids:
@@ -202,6 +203,7 @@ def build_well_inspection_reports(
                    f"only the first occurrence's report was written.")
             continue
         seen_well_ids.add(wid)
+        deduped_wells.append(well_row)
 
         content = generate_well_report(
             wid, well_row, inspections_by_well.get(wid, []),
@@ -213,7 +215,7 @@ def build_well_inspection_reports(
         written.append(path)
 
     summary_content = generate_site_summary(
-        wells, inspections_by_well, site_id=site_id,
+        deduped_wells, inspections_by_well, site_id=site_id,
         generated_date=generated_date, qa=qa,
     )
     summary_path = output_dir / "SiteSummary.md"

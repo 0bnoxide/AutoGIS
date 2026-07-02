@@ -67,7 +67,7 @@ def build_portfolio_metrics(
                 missing.append(tool)
 
         # missing[] is recomputed independently of evaluate_readiness()'s own
-        # pass/fail (see ADR-0030) so it can't silently drift from `ready` if
+        # pass/fail (see ADR-0032) so it can't silently drift from `ready` if
         # evaluate_readiness() ever grows another failure path (e.g. a
         # qa_csv/figure_spec check) — flag disagreement instead of hiding it.
         if ready != (not missing):

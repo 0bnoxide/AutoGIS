@@ -84,6 +84,7 @@ def _decode(row: dict) -> RunRecord:
 class RunHistory:
     def __init__(self, path: Path) -> None:
         self._path = Path(path)
+        self._cache: Optional[list[RunRecord]] = None
 
     def write(self, record: RunRecord) -> None:
         try:
@@ -96,17 +97,27 @@ class RunHistory:
                 writer.writerow(_encode(record))
         except Exception as exc:
             log.warning("RunHistory.write failed (best-effort): %s", exc)
+        finally:
+            self._cache = None
 
     def _load(self) -> list[RunRecord]:
+        # Cached per instance: no call site interleaves write() and
+        # query()/latest() on the same instance, so each instance is
+        # effectively a read-only snapshot and re-parsing the CSV on every
+        # call is pure waste.
+        if self._cache is not None:
+            return self._cache
         if not self._path.exists():
-            return []
+            self._cache = []
+            return self._cache
         try:
             with self._path.open(newline="", encoding="utf-8") as fh:
-                return [_decode(row) for row in csv.DictReader(fh)]
+                self._cache = [_decode(row) for row in csv.DictReader(fh)]
         except Exception as exc:
             raise RunHistoryError(
                 f"Cannot read run history at {self._path}: {exc}"
             ) from exc
+        return self._cache
 
     def query(
         self,

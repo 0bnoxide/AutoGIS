@@ -1,4 +1,4 @@
-# ADR-0030 — Headless tools batch (2026-07-01): RTK control check, portfolio
+# ADR-0032 — Headless tools batch (2026-07-01): RTK control check, portfolio
 metrics, GW model cross-validation, survey CAD/GIS export, well inspection
 reports
 
@@ -73,7 +73,7 @@ Ship five headless, arcpy-free tools, each registered `Runtime.CLOUD` in
 - QA via `QACollector` (`core/common/qa.py`); CLI exit/report via the
   existing module-level `_render_qa(qa, report, fail_on)` and
   `qa_report_options` decorator in `cli.py`.
-- One `tests/test_*.py` per tool, 41 new tests, plus a manual CLI smoke pass
+- One `tests/test_*.py` per tool, 52 new tests, plus a manual CLI smoke pass
   (`--help` and a real invocation for all five commands) to catch Click
   wiring bugs the core-level unit tests can't see.
 

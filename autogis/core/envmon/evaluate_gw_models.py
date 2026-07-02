@@ -14,7 +14,7 @@ import math
 from pathlib import Path
 from typing import Dict, List
 
-from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
+from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_INFO
 
 
 @dataclasses.dataclass
@@ -103,13 +103,11 @@ def evaluate_gw_models(
 
     stats: List[ModelStats] = []
     for model in model_names:
+        # model_names is built from the union of keys actually present in
+        # obs.predictions (above), so every model here has >=1 prediction —
+        # errors is never empty.
         errors = [obs.predictions[model] - obs.observed_ft
                   for obs in observations if model in obs.predictions]
-
-        if not errors:
-            qa.add(SEV_WARNING, "model_has_no_predictions",
-                   f"Model {model!r} has no predictions across any well.")
-            continue
 
         n = len(errors)
         rmse = math.sqrt(sum(e ** 2 for e in errors) / n)
