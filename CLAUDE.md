@@ -74,6 +74,25 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
 - Screening levels and the H281 parser profile are pre-production stubs — do not
   remove DRAFT banners or `_TODO` markers until verified against real data.
 
+## Deferred tool groups — do not build without a phase-gate decision
+
+Two roadmap groups are **out of scope until a deliberate phase-gate decision reopens
+them.** Do not implement, spec, or fast-track any of these without the user
+explicitly re-opening that group first:
+
+- **AI-assisted (§11):** `AIDraftParserProfile`, `AIExplainQAReport`,
+  `AIDraftFigureSpec`, `AIMapReviewChecklist` — deferred pending LLM seam design
+  (`docs/superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md`).
+- **Conditional / geostatistical (Phase 5):** ~8 tools (kriging / EBK / surface
+  modeling) — blocked on architecture review (`docs/CONDITIONAL_TOOLS_REVIEW.md`,
+  `docs/superpowers/specs/2026-06-28-geostatistical-conditional-tools-design.md`).
+
+These are a **separate future development phase**: the codebase gets refined
+thoroughly first, before either group is even considered. Other roadmap batches have
+been quietly fast-tracked before without a formal gate decision — treat
+"deferred"/"blocked" on these two groups as binding until the user says otherwise,
+not as a backlog to pick from when idle.
+
 ## Decision records
 
 Two separate records — easy to conflate, keep both:

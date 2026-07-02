@@ -987,6 +987,49 @@ def generate_arcade_labels_cmd(analytes_str, field_prefix, out, report):
     _render_qa(qa, report, "error")
 
 
+@envmon.command("generate-python-labels")
+@click.option(
+    "--analytes", "analytes_str", required=True,
+    help="Comma-separated analyte names (e.g. 'Benzene,PCE,Toluene').",
+)
+@click.option(
+    "--field-prefix", default="",
+    help="Optional field name prefix (e.g. 'Env_').",
+)
+@click.option(
+    "--out", required=True, type=click.Path(),
+    help="Output JSON file path.",
+)
+@click.option(
+    "--report", default=None, type=click.Path(),
+    help="Optional QA report output path.",
+)
+def generate_python_labels_cmd(analytes_str, field_prefix, out, report):
+    """Tool 5.4b: generate Python label expressions for ArcGIS Pro layers (headless)."""
+    from autogis.core.common.qa import QACollector, SEV_INFO
+    from autogis.core.envmon.python_label_generator import (
+        generate_python_labels, write_label_expressions,
+    )
+
+    analytes = [a.strip() for a in analytes_str.split(",") if a.strip()]
+    if not analytes:
+        raise click.UsageError("--analytes must contain at least one analyte name.")
+
+    specs = generate_python_labels(analytes, field_prefix=field_prefix)
+    write_label_expressions(specs, Path(out))
+
+    qa = QACollector()
+    qa.add(
+        SEV_INFO, "python_labels_written",
+        f"{len(specs)} expression(s) for {len(analytes)} analyte(s) → {out}",
+    )
+    click.echo(
+        f"Written {len(specs)} Python expression(s) for {len(analytes)} "
+        f"analyte(s) to: {out}"
+    )
+    _render_qa(qa, report, "error")
+
+
 @envmon.command("generate-event-changelog")
 @click.option("--prior-csv", required=True, type=click.Path(exists=True),
               help="CSV of prior event analytical results (LocationID, AnalyteName, "

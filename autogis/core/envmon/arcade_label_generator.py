@@ -13,14 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-
-class LabelExpressionType:
-    """String constants for Arcade label expression variants."""
-
-    RESULT_WITH_UNITS: str = "RESULT_WITH_UNITS"
-    EXCEEDANCE_CALLOUT: str = "EXCEEDANCE_CALLOUT"
-    ND_CALLOUT: str = "ND_CALLOUT"
-    WELL_ID_ONLY: str = "WELL_ID_ONLY"
+from autogis.core.envmon.label_expression_common import (
+    LabelExpressionType, derive_label_fields,
+)
 
 
 @dataclass
@@ -140,12 +135,12 @@ def generate_arcade_labels(
 
     for analyte in analytes:
         # Derive field names from the analyte name + prefix
-        safe_name = analyte.replace(" ", "_").replace(",", "").replace("/", "_")
-        value_field = f"{field_prefix}{safe_name}_Value"
-        units_field = f"{field_prefix}{safe_name}_Units"
-        sl_field = f"{field_prefix}{safe_name}_SL"
-        id_field = f"{field_prefix}LocationID"
-        layer_base = safe_name
+        fields = derive_label_fields(analyte, field_prefix)
+        value_field = fields.value_field
+        units_field = fields.units_field
+        sl_field = fields.sl_field
+        id_field = fields.id_field
+        layer_base = fields.layer_base
 
         # 1. RESULT_WITH_UNITS
         specs.append(ArcadeLabelSpec(
