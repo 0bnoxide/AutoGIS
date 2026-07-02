@@ -55,6 +55,7 @@ Each ADR follows this structure:
 | [034](0034-python-label-expression-generator.md) | GeneratePythonLabelExpressions — sibling of the Arcade label generator | Accepted | 2026-07-02 |
 | [035](0035-cad-civil3d-handoff-batch.md) | CAD/Civil 3D handoff batch — BuildCADExportPackage, ExportContoursForCivil3D | Accepted | 2026-07-02 |
 | [037](0037-h272-real-data-verification.md) | Real-data verification of H281-family screening levels and parser profile | Accepted | 2026-07-02 |
+| [038](0038-record-dataclass-naming-convention.md) | Record-dataclass naming — PascalCase iff GDB-mirroring | Accepted | 2026-07-02 |
 
 ## File naming
 
