@@ -22,7 +22,10 @@ def qa_report_options(func):
     func = click.option(
         "--fail-on", type=click.Choice(["error", "warning"]), default="error",
     )(func)
-    func = click.option("--report", default=None, type=click.Path())(func)
+    func = click.option(
+        "--report", default=None, type=click.Path(),
+        help="Write QA report to PATH (.md/.json/.csv by extension).",
+    )(func)
     return func
 
 
@@ -1871,6 +1874,11 @@ def promote_cmd(profile, stage_map_path, layer, from_stage, to_stage,
 @click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
 @click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
 @click.option("--report", default=None, type=click.Path())
+# Deliberately NOT @qa_report_options: this command's --fail-on defaults to
+# "warning" (not the shared contract's "error") because RTK precision
+# warnings are routinely expected and shouldn't fail a pipeline by default.
+# Exempted by name in tests/test_capabilities.py's QA-contract consistency
+# test -- don't "fix" this default without updating that test too.
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="warning")
 def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, report, fail_on):
     """Validate an RTK survey CSV for precision and fix-type QA (headless)."""
