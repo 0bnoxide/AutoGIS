@@ -1573,6 +1573,221 @@ def publish_layer(profile, title, source, tags, folder, share_with, no_overwrite
         raise SystemExit(1)
 
 
+@agol.command("audit-schema")
+@click.option("--spec", "spec_path", required=True, type=click.Path(exists=True),
+              help="Path to local layer schema spec (YAML/JSON).")
+@click.option("--layer-url", default=None,
+              help="Full AGOL FeatureLayer REST URL.")
+@click.option("--item-id", default=None,
+              help="AGOL item ID (use with --layer-index when item has multiple layers).")
+@click.option("--layer-index", type=int, default=0, show_default=True,
+              help="Layer index within the item (0-based).")
+@click.option("--profile", default=None,
+              help="ArcGIS API for Python profile name.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Write report to this file path (stdout if omitted).")
+@click.option("--format", "fmt",
+              type=click.Choice(["text", "csv", "json"]), default="text",
+              show_default=True, help="Output format.")
+@click.option("--fail-on-drift", is_flag=True, default=False,
+              help="Exit with status 1 if any drift is detected.")
+def audit_schema_cmd(spec_path, layer_url, item_id, layer_index, profile,
+                     output, fmt, fail_on_drift):
+    """Tool 6.6: compare a hosted AGOL feature layer schema against a local spec (HYBRID)."""
+    import csv as _csv
+    import io
+    import json as _json
+
+    from autogis.core.agol.audit_schema import (
+        DriftItem,
+        diff_schema,
+        fetch_layer_schema,
+        format_drift_report,
+    )
+    from autogis.core.common.config import load_config
+
+    if not layer_url and not item_id:
+        raise click.UsageError("Provide --layer-url or --item-id.")
+
+    local_spec = load_config(Path(spec_path))
+    gis = agol_from_profile(profile)
+    fetched_schema = fetch_layer_schema(
+        gis, layer_url=layer_url, item_id=item_id, layer_index=layer_index)
+    report = diff_schema(fetched_schema, local_spec)
+
+    if fmt == "text":
+        content = format_drift_report(report)
+    elif fmt == "json":
+        content = _json.dumps({
+            "layer_name": report.layer_name,
+            "total_agol_fields": report.total_agol_fields,
+            "total_spec_fields": report.total_spec_fields,
+            "has_drift": report.has_drift,
+            "drift_items": [dataclasses.asdict(d) for d in report.drift_items],
+        }, indent=2)
+    else:  # csv
+        buf = io.StringIO()
+        cols = [f.name for f in dataclasses.fields(DriftItem)]
+        w = _csv.DictWriter(buf, fieldnames=cols)
+        w.writeheader()
+        for d in report.drift_items:
+            w.writerow(dataclasses.asdict(d))
+        content = buf.getvalue()
+
+    if output:
+        Path(output).write_text(content, encoding="utf-8")
+        click.echo(f"Report written: {output}  "
+                   f"({'DRIFT' if report.has_drift else 'CLEAN'})")
+    else:
+        click.echo(content)
+
+    if fail_on_drift and report.has_drift:
+        raise SystemExit(1)
+
+
+@agol.command("audit-dependencies")
+@click.option("--item-id", required=True, help="AGOL item ID to audit.")
+@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@click.option("--max-depth", type=int, default=2, show_default=True,
+              help="Maximum dependency-walk depth.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Write report to this file path (stdout if omitted).")
+@click.option("--format", "fmt", type=click.Choice(["csv", "json"]), default="csv",
+              show_default=True, help="Output format.")
+def audit_dependencies_cmd(item_id, profile, max_depth, output, fmt):
+    """Tool 6.9: find items that reference/depend on an AGOL item (HYBRID)."""
+    import csv as _csv
+    import io
+    import json as _json
+
+    from autogis.core.agol.audit_dependencies import (
+        DependencyRecord, audit_item_dependencies)
+    from autogis.core.common.qa import QACollector
+
+    gis = agol_from_profile(profile)
+    qa = QACollector()
+    records = audit_item_dependencies(gis, item_id, qa=qa, max_depth=max_depth)
+    for rec in qa.records:
+        click.echo(f"[{rec.severity}] {rec.message}")
+
+    if fmt == "json":
+        content = _json.dumps([dataclasses.asdict(r) for r in records], indent=2)
+    else:
+        buf = io.StringIO()
+        cols = [f.name for f in dataclasses.fields(DependencyRecord)]
+        w = _csv.DictWriter(buf, fieldnames=cols)
+        w.writeheader()
+        for r in records:
+            w.writerow(dataclasses.asdict(r))
+        content = buf.getvalue()
+
+    if output:
+        Path(output).write_text(content, encoding="utf-8")
+        click.echo(f"Wrote {len(records)} dependency record(s) to {output}")
+    else:
+        click.echo(content)
+
+
+@agol.command("refresh-dashboard")
+@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@click.option("--mart-dir", required=True, type=click.Path(exists=True, file_okay=False),
+              help="Directory of per-table mart dumps, one <TableName>.json "
+                   "(list of row dicts) per Dash_* table.")
+@click.option("--layer-map", "layer_map_path", required=True, type=click.Path(exists=True),
+              help="YAML mapping Dash_* table name -> hosted layer/table item id.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Validate row schema against hosted layers/tables; write nothing.")
+@click.option("--report", default=None, type=click.Path())
+def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
+    """Tool 6.4: push local Dash_* data-mart tables to hosted AGOL layers (HYBRID).
+
+    NOTE: --mart-dir expects one <TableName>.json (list of row dicts) per Dash_*
+    table. Tool 6.7 (BuildDashboardDataMart) currently writes straight into a
+    GDB via arcpy — a JSON-dump step between 6.7 and this command does not
+    exist yet, so --mart-dir must be populated by hand or a future export tool.
+    """
+    import json
+    from autogis.core.agol.dashboard_refresh import refresh_dashboard_data
+
+    gis = agol_from_profile(profile)
+    layer_map = yaml.safe_load(Path(layer_map_path).read_text(encoding="utf-8"))
+    mart_tables = {
+        p.stem: json.loads(p.read_text(encoding="utf-8"))
+        for p in Path(mart_dir).glob("Dash_*.json")
+    }
+    result = refresh_dashboard_data(gis, mart_tables, layer_map, dry_run=dry_run)
+    for rec in result.qa.records:
+        click.echo(f"[{rec.severity}] {rec.message}")
+    click.echo(f"tables_refreshed={result.tables_refreshed} "
+               f"rows_pushed={result.rows_pushed} failures={result.failures}")
+    if report:
+        _render_qa(result.qa, report, "warning")
+    if result.failures:
+        raise SystemExit(1)
+
+
+@agol.command("publish-dashboard")
+@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@click.option("--spec", required=True, type=click.Path(exists=True),
+              help="Dashboard spec YAML (title, web-map item, cards, charts, selectors, ...)")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Compile and print the dashboard JSON without publishing")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write QA report to PATH (.md/.json/.csv by extension)")
+def publish_dashboard_cmd(profile, spec, dry_run, report):
+    """Tool 6.8: compile a YAML dashboard spec and create-or-update the AGOL Dashboard item."""
+    import json
+    from autogis.core.agol.dashboard_publish import publish_dashboard
+
+    spec_dict = yaml.safe_load(Path(spec).read_text(encoding="utf-8"))
+    # dry_run never touches gis (see publish_dashboard), so skip session setup entirely
+    gis = None if dry_run else agol_from_profile(profile)
+    result = publish_dashboard(gis, spec_dict, dry_run=dry_run)
+
+    for rec in result.qa.records:
+        click.echo(f"[{rec.severity}] {rec.message}")
+    if dry_run:
+        click.echo(json.dumps(result.dashboard_json, indent=2))
+    if report:
+        _render_qa(result.qa, report, "warning")
+    if not dry_run and not result.item_id:
+        raise SystemExit(1)
+
+
+@agol.command("promote")
+@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@click.option("--stage-map", "stage_map_path", required=True, type=click.Path(exists=True),
+              help="YAML mapping: layer -> {dev,qa,prod: item_id}")
+@click.option("--layer", required=True, help="Logical layer name (key in the stage map)")
+@click.option("--from", "from_stage", required=True,
+              type=click.Choice(["dev", "qa", "prod"]), help="Source stage")
+@click.option("--to", "to_stage", required=True,
+              type=click.Choice(["dev", "qa", "prod"]), help="Target stage")
+@click.option("--approve", is_flag=True, default=False,
+              help="Explicitly approve a qa->prod promotion")
+@click.option("--approved-by", default=None, help="Approver name (required for qa->prod)")
+@click.option("--run-history", "run_history_path", default="run_history.csv",
+              show_default=True, type=click.Path(), help="Run-history CSV path")
+def promote_cmd(profile, stage_map_path, layer, from_stage, to_stage,
+                approve, approved_by, run_history_path):
+    """Tool 6.10: promote an AGOL layer's data between DEV/QA/PROD stages."""
+    from autogis.core.agol.promote import promote_layer
+    from autogis.core.common.run_history import RunHistory
+
+    gis = agol_from_profile(profile)
+    stage_map = yaml.safe_load(Path(stage_map_path).read_text(encoding="utf-8"))
+    result = promote_layer(
+        gis, layer=layer, stage_map=stage_map,
+        from_stage=from_stage, to_stage=to_stage,
+        approved_by=(approved_by if approve else None),
+        run_history=RunHistory(Path(run_history_path)),
+    )
+    for rec in result.qa.records:
+        click.echo(f"[{rec.severity}] {rec.message}")
+    if result.status != "promoted":
+        raise SystemExit(1)
+
+
 @envmon.command("validate-rtk-survey")
 @click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
 @click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
@@ -1906,6 +2121,84 @@ def survey_to_well_elevation_cmd(csv_path, site_id, batch_id, hrms_threshold,
                    f"{len(history_recs)} ElevationHistory rows.")
 
     _render_qa(qa, report, fail_on)
+
+
+@envmon.command("update-well-elevations")
+@click.option("--run-csv", "run_csv", required=True, type=click.Path(exists=True),
+              help="CSV of the single LevelLoopRun row (Tool 8.1 --run-output).")
+@click.option("--observations-csv", "observations_csv", required=True,
+              type=click.Path(exists=True),
+              help="CSV of adjusted LevelLoopObservation rows (Tool 8.1 --observations-output).")
+@click.option("--site", "site_id", required=True,
+              help="Site ID matching SiteID in MonitoringWells.")
+@click.option("--wells-csv", default=None, type=click.Path(exists=True),
+              help="CSV with a LocationID column — headless well list. "
+                   "Mutually exclusive with --gdb.")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="File geodatabase: read well IDs from MonitoringWells and write "
+                   "TOC_ft + ElevationHistory (ArcGIS Pro). Mutually exclusive with --wells-csv.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show the update plan without writing to the GDB (use with --gdb).")
+def update_well_elevations_cmd(run_csv, observations_csv, site_id, wells_csv, gdb, dry_run):
+    """Tool 8.2: push a closed level-loop run's elevations to MonitoringWells.TOC_ft.
+
+    Headless path (--wells-csv): read the Tool 8.1 run + observations CSVs, filter to
+    known wells, print the update plan -- no arcpy. LOCAL path (--gdb): guard for
+    arcpy, read well IDs from MonitoringWells, and (unless --dry-run) write TOC_ft +
+    ElevationHistory via update_well_elevations().
+    """
+    from autogis.core.common.records_csv import read_records_csv
+    from autogis.core.common.schema.survey import LevelLoopObservation, LevelLoopRun
+    from autogis.core.envmon.level_loop import (
+        select_elevations_for_update, update_well_elevations)
+    from autogis.core.envmon.reconcile_locations import read_well_ids_csv
+    from autogis.core.envmon.survey_to_well_elevation import sql_quote
+
+    if gdb and wells_csv:
+        raise click.UsageError("--gdb and --wells-csv are mutually exclusive.")
+    if not gdb and not wells_csv:
+        raise click.UsageError(
+            "Provide --wells-csv (headless well list) or --gdb (ArcGIS Pro).")
+    if gdb:
+        _guard("update-well-elevations")
+
+    runs = read_records_csv(Path(run_csv), LevelLoopRun)
+    if len(runs) != 1:
+        raise click.UsageError(f"Expected exactly one LevelLoopRun row, got {len(runs)}.")
+    run = runs[0]
+    observations = read_records_csv(Path(observations_csv), LevelLoopObservation)
+
+    well_ids: set[str] = set()
+    if wells_csv:
+        well_ids = set(read_well_ids_csv(Path(wells_csv)))
+    elif gdb:
+        from autogis.runtime.sessions import arcpy_env as _arcpy
+        _ax = _arcpy()
+        wells_fc = str(Path(gdb) / "MonitoringWells")
+        if _ax.Exists(wells_fc):
+            with _ax.da.SearchCursor(wells_fc, ["LocationID"],
+                                     f"SiteID='{sql_quote(site_id)}'") as cur:
+                for row in cur:
+                    if row[0]:
+                        well_ids.add(str(row[0]).strip())
+
+    plan = select_elevations_for_update(run, observations, well_ids)
+
+    if plan.blocked:
+        raise click.ClickException(
+            f"Update blocked: {plan.block_reason} "
+            f"(misclosure={run.misclosure_ft} tolerance={run.closure_tolerance_ft} "
+            f"adjusted={run.adjusted})")
+
+    click.echo(f"Run: {plan.run_id}  Site: {site_id}")
+    click.echo(f"Updates: {len(plan.updates)}  Skipped: {len(plan.skipped)}")
+    for loc_id, elev in plan.updates.items():
+        click.echo(f"  {loc_id}: {elev:.3f} ft (TOC)")
+
+    if gdb and not dry_run and plan.updates:
+        n = update_well_elevations(gdb, site_id, plan)
+        click.echo(f"Updated {n} MonitoringWells records + "
+                   f"{len(plan.updates)} ElevationHistory rows.")
 
 
 @envmon.command("reconcile-survey123-lab")
@@ -2874,6 +3167,70 @@ def reconcile_field_lab_cmd(field_csv, lab_csv, output, date_tolerance,
     errors = sum(1 for f in flags if f.Severity == "ERROR")
     click.echo(f"Reconciliation: {len(flags)} flag(s) "
                f"({errors} errors) → {output}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("draft-plume-boundary")
+@click.option("--results", "results_csv", default=None, type=click.Path(exists=True),
+              help="AnalyticalResultRecord CSV — filtered to ExceedsScreeningLevel=1 rows. "
+                   "Mutually exclusive with --points.")
+@click.option("--coords", "coords_csv", default=None, type=click.Path(exists=True),
+              help="location_id,x,y CSV — required with --results.")
+@click.option("--points", "points_csv", default=None, type=click.Path(exists=True),
+              help="Pre-filtered location_id,x,y[,analyte,event_date] exceedance-point CSV. "
+                   "Mutually exclusive with --results/--coords.")
+@click.option("--site", "site_id", default="", help="Site ID stored for provenance.")
+@click.option("--analyte", default=None,
+              help="Filter to a single analyte (only used with --results).")
+@click.option("--hull-method", type=click.Choice(["convex", "concave"]),
+              default="convex", show_default=True)
+@click.option("--k-neighbors", type=int, default=3, show_default=True,
+              help="Starting k for --hull-method concave (npg enforces k>=3).")
+@click.option("--out", "out_path", default=None, type=click.Path(),
+              help="Write GeoJSON to this path (stdout if omitted).")
+@qa_report_options
+def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analyte,
+                             hull_method, k_neighbors, out_path, report, fail_on):
+    """Tool 4.5: draft plume-extent polygon (convex/concave hull) from exceedance points.
+
+    DRAFT output for analyst review only — not a geostatistical model. Provide
+    either --points (pre-filtered) or --results + --coords (filtered here).
+    """
+    import json as _json
+
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.draft_plume_boundary import (
+        compute_draft_plume_boundary, filter_results_to_exceedance_points,
+        load_exceedance_points_csv, result_to_geojson, result_to_wkt)
+
+    if points_csv and (results_csv or coords_csv):
+        raise click.UsageError("--points is mutually exclusive with --results/--coords.")
+    if not points_csv and not (results_csv and coords_csv):
+        raise click.UsageError("Provide --points, or both --results and --coords.")
+
+    qa = QACollector()
+    if points_csv:
+        points = load_exceedance_points_csv(Path(points_csv))
+    else:
+        points = filter_results_to_exceedance_points(
+            Path(results_csv), Path(coords_csv), analyte=analyte, qa=qa)
+
+    result = compute_draft_plume_boundary(
+        points, hull_method=hull_method, k_neighbors=k_neighbors,
+        site_id=site_id, analyte=analyte, qa=qa)
+
+    if result is not None:
+        click.echo(f"[DRAFT] {result.hull_method} hull, "
+                   f"{len(result.hull_vertices)} vertices, "
+                   f"{result.n_exceedance_points} exceedance point(s)")
+        click.echo(f"[DRAFT] {result_to_wkt(result)}")
+        geojson = _json.dumps(result_to_geojson(result), indent=2)
+        if out_path:
+            Path(out_path).write_text(geojson, encoding="utf-8")
+            click.echo(f"GeoJSON written to {out_path}")
+        else:
+            click.echo(geojson)
+
     _render_qa(qa, report, fail_on)
 
 
