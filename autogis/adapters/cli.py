@@ -1133,7 +1133,7 @@ def import_gdb_cmd(site_config, workbook):
     _guard("import-gdb")
     from autogis.core.envmon import import_to_gdb  # noqa: F401  (arcpy path)
     raise click.ClickException(
-        "import-gdb runs inside ArcGIS Pro only. Use the HarvestAttachments "
+        "import-gdb runs inside ArcGIS Pro only. Use the ImportToGdb "
         "tool in the .pyt toolbox."
     )
 
@@ -1158,7 +1158,7 @@ def build_callouts_cmd(site_config, figure_spec):
     _guard("build-callouts")
     from autogis.core.envmon import build_figure_dataset  # noqa: F401
     raise click.ClickException(
-        "build-callouts runs inside ArcGIS Pro only. Use the BuildFigureDataset "
+        "build-callouts runs inside ArcGIS Pro only. Use the BuildCallouts "
         "tool in the .pyt toolbox."
     )
 

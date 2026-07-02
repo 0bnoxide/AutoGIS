@@ -1,7 +1,7 @@
 """Runtime guard for the suite's adapters.
 
-LOCAL tools (the 7 arcpy-touching envmon tools) are *registered* in both the
-CLI and the ``.pyt`` but only *runnable* where ``arcpy`` is present (ArcGIS
+LOCAL tools (the arcpy-touching envmon tools) are *registered* in the CLI
+(and, for tools 2-8, the ``.pyt``) but only *runnable* where ``arcpy`` is present (ArcGIS
 Pro). ``require_runtime(name)`` is the single gate: it consults the capability
 registry (``runtime.capabilities.requires_arcpy``) and, for a LOCAL tool with
 no arcpy on the path, raises a clear ``RuntimeUnavailable`` instead of letting

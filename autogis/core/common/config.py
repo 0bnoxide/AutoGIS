@@ -12,9 +12,8 @@ envmon's TWO config styles (deltas C5): field-typed ``SheetProfile`` /
 field-typed here and re-exported from ``core/harvest/models.py`` for
 back-compat.
 
-Note: ``load_config`` here is envmon's flat YAML+JSON loader — a different
-function from ``autogis/adapters/config_loader.py:load_config`` (the harness
-tuple-returning loader). They live in different modules; no conflict.
+Note: ``load_config`` here is envmon's flat YAML+JSON loader (the former
+harness ``config_loader`` was retired; this is the only ``load_config`` now).
 """
 from __future__ import annotations
 
