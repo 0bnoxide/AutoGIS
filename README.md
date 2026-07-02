@@ -14,19 +14,19 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~83 | ~62 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~90 | ~69 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | ~1 | |
-| **Planned** (spec / plan written, not yet coded) | ~7 | roadmap tools — see *Planned* list below |
-| Not started (no spec or plan) | ~12 | excludes §11 AI tools + geostatistical Phase 5 |
+| **Planned** (spec / plan written, not yet coded) | ~4 | roadmap tools — see *Planned* list below |
+| Not started (no spec or plan) | ~8 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **92 `core/envmon/` modules** (93 `.py` files including `__init__.py`),
-**~88 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 91 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1160-test** arcpy-free
+The codebase now ships **93 `core/envmon/` modules** (94 `.py` files including `__init__.py`),
+**~95 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 98 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1267-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
-2026-07-01, PRs #81/#84/#88/#92/#93/#95/#96/#102).
+2026-07-02, PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119).
 
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
@@ -84,6 +84,13 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | IngestReviewerMapComments | 9.4 | `envmon ingest-reviewer-comments` |
 | GenerateSyntheticEnvWorkbook | 10.6 | `envmon gen-synthetic-workbook` |
 | RunEnvJobQueue | 10.4 | `envmon generate-job-queue` |
+| GenerateDraftPlumeBoundary | 4.5 | `envmon draft-plume-boundary` *(HYBRID — `--gdb` write path is LOCAL; DRAFT output)* |
+| RefreshMonitoringDashboardData | 6.4 | `agol refresh-dashboard` |
+| AuditAGOLSchemaAgainstLocalConfig | 6.6 | `agol audit-schema` |
+| PublishDashboardFromSpec | 6.8 | `agol publish-dashboard` |
+| AuditAGOLItemDependencies | 6.9 | `agol audit-dependencies` |
+| PromoteAGOLDataBetweenStages | 6.10 | `agol promote` |
+| UpdateWellElevationsFromLevelLoop | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* |
 
 Post-roadmap extras (not counted in the 79-tool catalog):
 
@@ -139,11 +146,10 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 
 | Tool | Roadmap # | What exists | What's missing |
 |------|-----------|-------------|----------------|
-| Dashboard consuming tools (6.8–6.11) | — | `schema/dashboard.py` (10 dataclasses), `dashboard_data_mart.py` (6.7, shipped) | Every consuming tool |
+| Dashboard consuming tools (6.11) | — | `schema/dashboard.py` (10 dataclasses), `dashboard_data_mart.py` (6.7), RefreshMonitoringDashboardData (6.4), PublishDashboardFromSpec (6.8), PromoteAGOLDataBetweenStages (6.10) — all shipped | CreateHostedViewsForStakeholders |
 
-Note: BuildGroundwaterElevationEvent (4.1) and BuildAnalyticalExceedanceEvent (4.4) have
-shipped (see *Fully implemented* above). UpdateWellElevationsFromLevelLoop (8.2) remains in
-*Planned* — spec/plan and a partial code foundation only.
+Note: BuildGroundwaterElevationEvent (4.1), BuildAnalyticalExceedanceEvent (4.4), and
+UpdateWellElevationsFromLevelLoop (8.2) have all shipped (see *Fully implemented* above).
 
 </details>
 
@@ -159,12 +165,6 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 |------|-----------|---------|
 | CreateSurvey123SamplingEvent | 2.7 | spec + plan |
 
-**Analysis (§4)**
-
-| Tool | Roadmap # | Artifact |
-|------|-----------|---------|
-| GenerateDraftPlumeBoundary | 4.5 | plan |
-
 **Cartography (§5)**
 
 | Tool | Roadmap # | Artifact |
@@ -172,23 +172,11 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 | GenerateSiteMapSeries | 5.6 | plan |
 | UpdateLayoutDynamicText | 5.8 | plan *(`layout_manager.py` exists but is not wired to any CLI command)* |
 
-**AGOL / cloud (§6)**
-
-| Tool | Roadmap # | Artifact |
-|------|-----------|---------|
-| AuditAGOLItemDependencies | 6.9 | plan |
-
 **Field / Survey123 (§7)**
 
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
 | GenerateWellInspectionPhotoReport | 7.4 | spec + plan |
-
-**Survey / boring / drone (§8)**
-
-| Tool | Roadmap # | Artifact |
-|------|-----------|---------|
-| UpdateWellElevationsFromLevelLoop | 8.2 | plan *(partial code foundation)* |
 
 **Post-roadmap / infrastructure** (not counted in the 79-tool catalog)
 
@@ -208,8 +196,6 @@ still design-only.
 <summary>Not started — no spec or implementation plan</summary>
 
 **AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2), UpdateAGOLWebMapFromFigureSpec (6.3),
-RefreshMonitoringDashboardData (6.4), AuditAGOLSchemaAgainstLocalConfig (6.6),
-PublishDashboardFromSpec (6.8), PromoteAGOLDataBetweenStages (6.10),
 CreateHostedViewsForStakeholders (6.11)
 
 **Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1)
@@ -237,7 +223,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (92 modules), and `autogis.core.agol` (publishing) sit on top of common
+  (93 modules), and `autogis.core.agol` (publishing) sit on top of common
 - **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
   (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
   core functions — the two interfaces cannot drift
@@ -394,7 +380,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1160 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1267 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -587,7 +573,7 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 92 modules
+│   ├── envmon/          # Environmental monitoring — 93 modules
 │   └── agol/            # AGOL publishing
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
@@ -599,7 +585,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1160 arcpy-free tests
+└── tests/               # 1267 arcpy-free tests
 ```
 
 ### Key modules
@@ -609,7 +595,7 @@ autogis/
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
 | `core/common/schema/` | 6 modules (attachments, boring, dashboard, drone, envmon, survey) exporting ~31 typed dataclasses |
-| `core/envmon/` | 92 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/envmon/` | 93 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
@@ -659,7 +645,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1160 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1267 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash

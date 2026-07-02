@@ -105,3 +105,56 @@ def test_densify_polyline_midpoint_correct():
     midpoints = result[1:-1]
     assert any(abs(p[0] - 1.0) < 1e-10 and abs(p[1]) < 1e-10
                for p in midpoints)
+
+
+from autogis.core.common.numpy_geom import concave_hull
+
+
+def test_concave_hull_returns_ndarray():
+    xy = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0],
+                   [0.0, 1.0], [0.5, 0.5]])
+    result = concave_hull(xy)
+    assert isinstance(result, np.ndarray)
+    assert result.shape[1] == 2
+
+
+def test_concave_hull_at_least_three_vertices():
+    xy = np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0],
+                   [0.0, 2.0], [1.0, 1.0]])
+    result = concave_hull(xy)
+    assert len(result) >= 3
+
+
+def test_concave_hull_open_ring_first_ne_last():
+    """concave_hull must return an OPEN ring so serializers can close it."""
+    xy = np.array([[0.0, 0.0], [3.0, 0.0], [3.0, 3.0],
+                   [0.0, 3.0], [1.5, 1.5]])
+    result = concave_hull(xy)
+    # Should NOT be closed (first == last); open ring is the contract.
+    if len(result) > 1:
+        assert not np.allclose(result[0], result[-1])
+
+
+def test_concave_hull_k_parameter_accepted():
+    """k parameter must be accepted without error."""
+    xy = np.array([[0.0, 0.0], [4.0, 0.0], [4.0, 4.0],
+                   [0.0, 4.0], [2.0, 2.0], [1.0, 1.0]])
+    result = concave_hull(xy, k=4)
+    assert isinstance(result, np.ndarray)
+    assert len(result) >= 3
+
+
+def test_concave_hull_exact_three_points():
+    """Three points is the minimum — hull is those three points."""
+    xy = np.array([[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]])
+    result = concave_hull(xy)
+    assert len(result) >= 3
+
+
+def test_concave_hull_degrades_gracefully_on_collinear():
+    """Collinear points may cause algorithm failure; must not raise."""
+    xy = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0],
+                   [3.0, 0.0], [1.5, 0.0]])
+    # Should not raise — degrades to convex_hull if concave fails
+    result = concave_hull(xy)
+    assert isinstance(result, np.ndarray)

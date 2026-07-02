@@ -68,6 +68,8 @@ TOOLS: dict[str, Runtime] = {
     "evaluate-gw-models": Runtime.CLOUD,  # model prediction cross-validation, headless
     "export-survey-cad": Runtime.CLOUD,  # feature-code CSV/GeoJSON export, headless
     "well-inspection-report": Runtime.CLOUD,  # Markdown well inspection report, headless
+    "update-well-elevations": Runtime.LOCAL,  # tool 8.2 GDB write (--gdb path)
+    "draft-plume-boundary": Runtime.LOCAL,    # tool 4.5 GDB write (--gdb path)
 }
 
 
@@ -259,6 +261,10 @@ _REGISTRY_SEED = [
      "intake", "Import a boring-log CSV package into the GDB"),
     ("survey-to-well-elevation", "SurveyToWellElevationUpdate", "8.5", "LOCAL",
      "stable", "field", "Push QA-passed RTK elevations to MonitoringWells.TOC_ft"),
+    ("update-well-elevations", "UpdateWellElevationsFromLevelLoop", "8.2", "LOCAL",
+     "stable", "field", "Push adjusted level-loop elevations to MonitoringWells.TOC_ft"),
+    ("draft-plume-boundary", "GenerateDraftPlumeBoundary", "4.5", "LOCAL",
+     "stable", "cartography", "Draft plume-extent polygon (hull) from exceedance points"),
     ("rtk-control-check", "RTKControlCheckReport", "", "CLOUD", "stable", "field",
      "Compare RTK-surveyed control shots to published benchmarks"),
     ("portfolio-metrics", "GeneratePortfolioMetrics", "", "CLOUD", "stable", "admin",
