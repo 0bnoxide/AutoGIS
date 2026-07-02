@@ -146,3 +146,58 @@ def test_generate_labels_field_names_match_arcade_generator():
     assert arcade_result.value_field == python_result.value_field
     assert arcade_result.units_field == python_result.units_field
     assert arcade_result.analyte_field == python_result.analyte_field
+
+
+# ---------------------------------------------------------------------------
+# write_label_expressions
+# ---------------------------------------------------------------------------
+import json
+
+from autogis.core.envmon.python_label_generator import write_label_expressions
+
+
+def test_write_produces_json_file(tmp_path):
+    specs = generate_python_labels(["Benzene", "Toluene"])
+    out = tmp_path / "labels.json"
+    write_label_expressions(specs, out)
+    assert out.exists()
+
+
+def test_written_json_is_parseable(tmp_path):
+    specs = generate_python_labels(["Benzene"])
+    out = tmp_path / "labels.json"
+    write_label_expressions(specs, out)
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert isinstance(data, list)
+
+
+def test_written_json_has_expected_keys(tmp_path):
+    specs = generate_python_labels(["Benzene"])
+    out = tmp_path / "labels.json"
+    write_label_expressions(specs, out)
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert len(data) > 0
+    entry = data[0]
+    assert "layer_name" in entry
+    assert "expression_type" in entry
+    assert "python_expression" in entry
+    assert "expression_engine" in entry
+
+
+def test_written_json_expression_engine_is_python(tmp_path):
+    specs = generate_python_labels(["Benzene"])
+    out = tmp_path / "labels.json"
+    write_label_expressions(specs, out)
+    data = json.loads(out.read_text(encoding="utf-8"))
+    for entry in data:
+        assert entry["expression_engine"] == "Python"
+
+
+def test_written_json_python_expression_is_string(tmp_path):
+    specs = generate_python_labels(["Benzene"])
+    out = tmp_path / "labels.json"
+    write_label_expressions(specs, out)
+    data = json.loads(out.read_text(encoding="utf-8"))
+    for entry in data:
+        assert isinstance(entry["python_expression"], str)
+        assert len(entry["python_expression"]) > 0

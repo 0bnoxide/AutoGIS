@@ -198,3 +198,40 @@ def generate_python_labels(
         ))
 
     return specs
+
+
+def write_label_expressions(specs: list[PythonLabelSpec], out_path: Path) -> None:
+    """Serialise a list of PythonLabelSpec objects to a JSON file.
+
+    Each entry in the output array has:
+        - layer_name: str
+        - expression_type: str
+        - analyte_field: str
+        - value_field: str
+        - units_field: str
+        - sl_field: str | null
+        - python_expression: str
+        - expression_engine: str  ("Python" -- the labelClass.expressionEngine value)
+
+    Args:
+        specs: List of PythonLabelSpec objects from generate_python_labels().
+        out_path: Destination .json file path (parent directories created if needed).
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = [
+        {
+            "layer_name": s.layer_name,
+            "expression_type": s.expression_type,
+            "analyte_field": s.analyte_field,
+            "value_field": s.value_field,
+            "units_field": s.units_field,
+            "sl_field": s.sl_field,
+            "python_expression": s.expression,
+            "expression_engine": EXPRESSION_ENGINE,
+        }
+        for s in specs
+    ]
+
+    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
