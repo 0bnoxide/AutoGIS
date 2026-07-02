@@ -2417,9 +2417,9 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
 @click.option("--out", required=True, type=click.Path())
 @click.option("--manifest", "manifest_path", default=None, type=click.Path())
 @click.option("--no-dedup", is_flag=True, default=False)
-@click.option("--report", default=None, type=click.Path())
+@qa_report_options
 def merge_event_results_cmd(result_paths, results_dir, event_labels,
-                             out, manifest_path, no_dedup, report):
+                             out, manifest_path, no_dedup, report, fail_on):
     """Merge multiple event result CSVs into one long-format file (headless)."""
     from autogis.core.envmon.event_results_merger import merge_event_results
 
@@ -2436,7 +2436,7 @@ def merge_event_results_cmd(result_paths, results_dir, event_labels,
     )
     click.echo(f"Sources: {len(result.source_files)}  Rows: {result.total_rows}  "
                f"Duplicates dropped: {result.duplicate_rows_dropped}  Output: {out}")
-    _render_qa(result.qa, report, "warning")
+    _render_qa(result.qa, report, fail_on)
 
 
 @envmon.command("build-max-result-dataset")

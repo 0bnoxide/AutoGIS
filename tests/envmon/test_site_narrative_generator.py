@@ -76,6 +76,17 @@ def test_all_sampled_no_missing():
     assert "all" in section.text.lower() or "0" in section.text
 
 
+def test_blank_sample_id_not_reported_missing():
+    plan = [
+        {"SampleID": "S1", "LocationID": "MW-01"},
+        {"SampleID": "", "LocationID": "MW-99"},
+    ]
+    results = [{"SampleID": "S1"}]
+    section = build_not_sampled_section(plan, results)
+    assert "MW-99" not in section.text
+    assert "all" in section.text.lower() or "0" in section.text
+
+
 def test_generate_narrative_full_text(tmp_path):
     result = generate_site_narrative(
         "H281", "Q1-2026",

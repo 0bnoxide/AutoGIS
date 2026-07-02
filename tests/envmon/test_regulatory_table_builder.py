@@ -96,3 +96,16 @@ def test_missing_screening_level_no_crash(tmp_path):
     result = write_regulatory_workbook(_ROWS, specs, out)
     assert out.exists()
     assert result.exceedance_count == 0
+
+
+def test_zero_mcl_flags_exceedance(tmp_path):
+    rows = [
+        {"LocationID": "MW-01", "AnalyteName": "Benzene",
+         "ResultValue": "0.5", "ResultQualifier": "", "ReportedUnits": "ug/L",
+         "SampleDate": "2026-01-15"},
+    ]
+    sl = {"Benzene": 0.0}
+    specs = build_regulatory_table_specs(rows, group_map=_GROUPS, screening_levels=sl)
+    out = tmp_path / "reg_tables.xlsx"
+    result = write_regulatory_workbook(rows, specs, out, screening_levels=sl)
+    assert result.exceedance_count == 1

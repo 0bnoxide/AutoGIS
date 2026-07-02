@@ -149,6 +149,23 @@ def test_merge_event_results(tmp_path):
     assert out.exists(), "Expected merged output CSV was not created"
 
 
+def test_merge_event_results_exposes_fail_on(tmp_path):
+    """--fail-on is a recognized option (regression test for #82)."""
+    f1 = tmp_path / "Env_Results_20260115.csv"
+    _write_csv(f1, [_RESULT_ROWS[0]])
+    out = tmp_path / "merged.csv"
+
+    result = _run(
+        "envmon", "merge-event-results",
+        "--results", str(f1),
+        "--out", str(out),
+        "--fail-on", "warning",
+    )
+    assert result.exit_code == 0, (
+        f"merge-event-results exited {result.exit_code}:\n{result.output}"
+    )
+
+
 # ===========================================================================
 # 2. build-max-result-dataset
 # ===========================================================================

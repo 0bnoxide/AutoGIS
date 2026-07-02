@@ -110,8 +110,8 @@ def build_not_sampled_section(
     plan_rows: list,
     result_rows: list,
 ) -> NarrativeSection:
-    plan_ids = {r.get("SampleID", "") for r in plan_rows}
-    result_ids = {r.get("SampleID", "") for r in result_rows}
+    plan_ids = {r.get("SampleID", "") for r in plan_rows if r.get("SampleID", "").strip()}
+    result_ids = {r.get("SampleID", "") for r in result_rows if r.get("SampleID", "").strip()}
     missing_ids = sorted(plan_ids - result_ids)
 
     # Map SampleID → LocationID from plan
