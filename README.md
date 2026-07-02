@@ -210,6 +210,11 @@ BuildCADExportPackage (8.9), ExportContoursForCivil3D, ValidateSurveyDeliverable
 **Conditional / geostatistical (Phase 5):** 8 tools (kriging / EBK / surface modeling) — blocked on
 architecture review; see `docs/CONDITIONAL_TOOLS_REVIEW.md`
 
+**These two groups are a separate future development phase, not a backlog to pick from.**
+Do not start implementation on any tool listed above without an explicit phase-gate
+decision — the codebase is refined thoroughly first. See `CLAUDE.md` for the standing
+policy.
+
 </details>
 
 Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) ·
