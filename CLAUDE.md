@@ -57,12 +57,12 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
 | Path | Purpose |
 |------|---------|
 | `autogis/core/harvest/` | Attachment harvester — arcpy-free |
-| `autogis/core/envmon/` | Environmental monitoring tools (23 modules) |
+| `autogis/core/envmon/` | Environmental monitoring tools (85 modules) |
 | `autogis/core/common/` | Shared config, QA, logging, seen-index |
 | `autogis/adapters/` | CLI (`cli.py`), `.pyt` toolbox, toolbox_core seam |
 | `autogis/runtime/` | ArcGIS Pro session providers + capability guard |
 | `autogis/config/` | Site configs, parser profiles, screening levels, figure specs |
-| `tests/` | 151 arcpy-free tests; run with `python -m pytest -q` |
+| `tests/` | 1084 arcpy-free tests; run with `python -m pytest -q` (derive live: `--collect-only`) |
 
 ## Key invariants
 
