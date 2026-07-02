@@ -27,7 +27,7 @@ Arcade's `$feature.Field` syntax. Implementation: `autogis/core/envmon/
 python_label_generator.py`, no arcpy imports, `Runtime.CLOUD`.
 
 The field-naming convention that turns an analyte name into GDB field names
-(`Benzene` → `Env_Benzene_Value`/`_Units`/`_SL` + `LocationID`) was extracted out of
+(`Benzene` → `Env_Benzene_Value`/`_Units`/`_SL` + `Env_LocationID`) was extracted out of
 `arcade_label_generator.py` into a new shared module,
 `autogis/core/envmon/label_expression_common.py` (`LabelExpressionType`,
 `derive_label_fields`), and both generators now import it. The Arcade and Python

@@ -38,7 +38,7 @@ fields referenced via bracket tokens (`[FieldName]`), the format Pro's `'Python'
 label-class engine expects — instead of Arcade's `$feature.Field` syntax.
 
 The field-naming convention that turns an analyte name into GDB field names
-(`Benzene` → `Env_Benzene_Value`/`_Units`/`_SL` + `LocationID`) is extracted out of
+(`Benzene` → `Env_Benzene_Value`/`_Units`/`_SL` + `Env_LocationID`) is extracted out of
 `arcade_label_generator.py` into a new shared module, `label_expression_common.py`,
 and reused by both generators. This is a targeted refactor of existing code that
 directly serves this feature: the Arcade and Python variants describe fields on the
