@@ -8,6 +8,17 @@ unit-testable with neither ``arcgis`` nor ``arcpy`` present. Both the GUI
 Single validation source (MERGE_PLAN §2): construct AND validate the same
 ``HarvestConfig`` dataclass the CLI uses, including the url-XOR-item_id
 invariant — enforced here at build time, not deferred to ``layer_ref()``.
+
+Today this module covers only the harvester (``build_harvest_config`` /
+``run_harvest``); the ten envmon ``.pyt`` tools still marshal parameters
+inline in their own ``execute()`` bodies, which is fine while that logic
+stays a thin pass-through to a core function. When an envmon tool's
+``execute()`` grows beyond a pass-through (branching, multi-step
+orchestration, error handling that isn't just "call core, print QA") --
+e.g. ``FullPipeline``, ``toolbox.pyt`` -- move its marshalling into this
+module per the harvester's pattern, so it becomes unit-testable outside
+Pro instead of only discoverable by running the tool inside ArcGIS Pro.
+See issue #108 / the fable-architecture-review finding M2.
 """
 from autogis.core.harvest.models import HarvestConfig, AttachmentResult
 
