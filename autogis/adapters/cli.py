@@ -1327,8 +1327,12 @@ def optimize_callouts_cmd(site_config, figure_spec):
     """Tool 5.2: run callout placement optimizer (ArcGIS Pro)."""
     _guard("optimize-callouts")
     raise click.ClickException(
-        "optimize-callouts runs inside ArcGIS Pro only. "
-        "Use the OptimizeCalloutPlacement tool in the .pyt toolbox."
+        "optimize-callouts (Tool 5.2) is not implemented as a standalone "
+        "command -- there is no OptimizeCalloutPlacement .pyt tool either. "
+        "Its function was superseded by a --use-hull-collision flag design "
+        "on build-callouts (ADR-0020 + docs/superpowers/plans/"
+        "2026-06-27-optimize-callout-placement.md), which is itself not yet "
+        "wired into the CLI or .pyt. See ADR-0039."
     )
 
 
@@ -1350,8 +1354,12 @@ def manage_overrides_list_cmd(gdb, site, spec):
     """List all placement overrides for a site/figure spec."""
     _guard("manage-callout-overrides")
     raise click.ClickException(
-        "manage-callout-overrides runs inside ArcGIS Pro only. "
-        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
+        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
+        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
+        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
+        "read-one-full-override function needed for a correct 'unlock' "
+        "round-trip. See ADR-0039."
     )
 
 
@@ -1363,8 +1371,12 @@ def manage_overrides_clear_cmd(gdb, site, spec):
     """Delete all unlocked overrides for a site/figure spec."""
     _guard("manage-callout-overrides")
     raise click.ClickException(
-        "manage-callout-overrides runs inside ArcGIS Pro only. "
-        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
+        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
+        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
+        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
+        "read-one-full-override function needed for a correct 'unlock' "
+        "round-trip. See ADR-0039."
     )
 
 
@@ -1383,8 +1395,12 @@ def manage_overrides_lock_cmd(gdb, site, spec, location,
     """Lock a callout to a fixed position."""
     _guard("manage-callout-overrides")
     raise click.ClickException(
-        "manage-callout-overrides runs inside ArcGIS Pro only. "
-        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
+        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
+        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
+        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
+        "read-one-full-override function needed for a correct 'unlock' "
+        "round-trip. See ADR-0039."
     )
 
 
@@ -1397,8 +1413,12 @@ def manage_overrides_unlock_cmd(gdb, site, spec, location):
     """Remove the lock on a callout (override becomes a quadrant hint)."""
     _guard("manage-callout-overrides")
     raise click.ClickException(
-        "manage-callout-overrides runs inside ArcGIS Pro only. "
-        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
+        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
+        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
+        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
+        "read-one-full-override function needed for a correct 'unlock' "
+        "round-trip. See ADR-0039."
     )
 
 
