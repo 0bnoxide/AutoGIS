@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~92 | ~71 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~94 | ~73 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | ~1 | |
 | **Planned** (spec / plan written, not yet coded) | ~4 | roadmap tools — see *Planned* list below |
-| Not started (no spec or plan) | ~6 | excludes §11 AI tools + geostatistical Phase 5 |
+| Not started (no spec or plan) | ~4 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **95 `core/envmon/` modules** (96 `.py` files including `__init__.py`),
-**~97 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 100 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1287-test** arcpy-free
+The codebase now ships **97 `core/envmon/` + `core/agol/` modules**,
+**~99 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 102 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1314-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -92,6 +92,8 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | AuditAGOLItemDependencies | 6.9 | `agol audit-dependencies` |
 | PromoteAGOLDataBetweenStages | 6.10 | `agol promote` |
 | UpdateWellElevationsFromLevelLoop | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* |
+| UpdateAGOLWebMapFromFigureSpec | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) |
+| CreateHostedViewsForStakeholders | 6.11 | `agol create-views` |
 
 Post-roadmap extras (not counted in the 79-tool catalog):
 
@@ -198,8 +200,7 @@ still design-only.
 <details>
 <summary>Not started — no spec or implementation plan</summary>
 
-**AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2), UpdateAGOLWebMapFromFigureSpec (6.3),
-CreateHostedViewsForStakeholders (6.11)
+**AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2)
 
 **Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1)
 
