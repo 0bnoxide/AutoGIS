@@ -201,3 +201,26 @@ def test_written_json_python_expression_is_string(tmp_path):
     for entry in data:
         assert isinstance(entry["python_expression"], str)
         assert len(entry["python_expression"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# CLI wiring
+# ---------------------------------------------------------------------------
+
+def test_generate_python_labels_in_help():
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis as autogis_cli
+    result = CliRunner().invoke(autogis_cli, ["envmon", "--help"])
+    assert "generate-python-labels" in result.output
+
+
+def test_generate_python_labels_cli_writes_file(tmp_path):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis as autogis_cli
+    out = tmp_path / "labels.json"
+    result = CliRunner().invoke(
+        autogis_cli,
+        ["envmon", "generate-python-labels", "--analytes", "Benzene,PCE", "--out", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert out.exists()
