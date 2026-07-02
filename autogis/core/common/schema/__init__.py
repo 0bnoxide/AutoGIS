@@ -12,6 +12,7 @@ from .boring import (
     BoringLocation, LithologyInterval, BoringSample, WellConstruction,
     GroundwaterObservation, BoringPhoto, BoringComment,
 )
+from .attachments import AttachmentIndex
 from .survey import (
     SurveyPointRaw, SurveyPointQA, LevelLoopRun, LevelLoopObservation,
     ElevationHistory,
@@ -27,6 +28,7 @@ __all__ = [
     "EnvSample", "EnvAnalyticalResult", "EnvImportQA", "EnvWaterLevelEvent",
     "BoringLocation", "LithologyInterval", "BoringSample", "WellConstruction",
     "GroundwaterObservation", "BoringPhoto", "BoringComment",
+    "AttachmentIndex",
     "SurveyPointRaw", "SurveyPointQA", "LevelLoopRun", "LevelLoopObservation",
     "ElevationHistory",
     "DroneFlight", "DroneControlPoint", "DroneCheckpoint", "DroneProductRecord",

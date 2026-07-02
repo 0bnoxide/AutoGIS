@@ -2020,6 +2020,67 @@ def validate_boring_logs_cmd(input_dir, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("create-boring-log-db")
+@click.argument("db_path", metavar="DB", type=click.Path())
+@click.option("--overwrite", is_flag=True,
+              help="Replace the database if it already exists.")
+@click.option("--validate", "validate_only", is_flag=True,
+              help="Validate an existing database against the expected "
+                   "schema instead of creating one.")
+@qa_report_options
+def create_boring_log_db_cmd(db_path, overwrite, validate_only, report, fail_on):
+    """Tool 8.0a: create (or --validate) the normalized boring-log SQLite
+    database (headless).
+
+    One table per schema/boring.py dataclass — columns are derived from the
+    dataclass fields.
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.create_boring_log_database import (
+        create_boring_log_database, validate_boring_log_database)
+    qa = QACollector()
+    if validate_only:
+        validate_boring_log_database(Path(db_path), qa)
+    else:
+        try:
+            create_boring_log_database(Path(db_path), overwrite=overwrite, qa=qa)
+            click.echo(f"Created boring-log database: {db_path}")
+        except FileExistsError:
+            pass  # QA already carries the error; _render_qa exits 1.
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("index-field-attachments")
+@click.argument("manifest", metavar="MANIFEST",
+                type=click.Path(exists=True, dir_okay=False))
+@click.option("--db", "db_path", required=True, type=click.Path(),
+              help="SQLite database to write the AttachmentIndex table into.")
+@click.option("--related-table", default="",
+              help="Fallback source table name for manifest rows without one.")
+@click.option("--replace", is_flag=True,
+              help="Clear existing AttachmentIndex rows before inserting.")
+@qa_report_options
+def index_field_attachments_cmd(manifest, db_path, related_table, replace,
+                                report, fail_on):
+    """Tool 6.5: index a harvester manifest into AttachmentIndex (headless).
+
+    MANIFEST is the CSV or JSON manifest written by the attachment harvester;
+    this is the envmon-side half of SyncFieldAttachments (no AGOL call).
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.index_field_attachments import (
+        build_attachment_index, load_manifest, validate_attachment_index,
+        write_attachment_index)
+    qa = QACollector()
+    records = build_attachment_index(load_manifest(Path(manifest)),
+                                     related_table=related_table, qa=qa)
+    validate_attachment_index(records, qa)
+    if not qa.has_blocking(allow_warnings=True, allow_errors=False):
+        n = write_attachment_index(Path(db_path), records, replace=replace)
+        click.echo(f"Indexed {n} attachment(s) -> {db_path}")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("import-boring-logs")
 @click.argument("input_dir", metavar="INPUT_DIR",
                 type=click.Path(exists=True, file_okay=False))
