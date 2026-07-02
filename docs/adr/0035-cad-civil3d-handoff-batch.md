@@ -1,4 +1,4 @@
-# ADR-0034 — CAD/Civil 3D handoff batch (2026-07-02): BuildCADExportPackage,
+# ADR-0035 — CAD/Civil 3D handoff batch (2026-07-02): BuildCADExportPackage,
 ExportContoursForCivil3D
 
 **Status:** Accepted
