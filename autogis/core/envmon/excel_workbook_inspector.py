@@ -134,6 +134,14 @@ def inspect_workbook_structure(workbook_path: Path,
     sheets: Dict[str, SheetInspectionInfo] = {}
     for name in wb_v.sheetnames:
         ws, wsf = wb_v[name], wb_f[name]
+        if not hasattr(ws, "max_row"):
+            # Chartsheet (and any other non-data sheet type) — a saved chart
+            # tab has no cell grid to inspect.
+            qa.add(SEV_WARNING, "non_data_sheet_skipped",
+                   f"sheet '{name}' is a {type(ws).__name__}, not a data "
+                   f"worksheet (e.g. a saved chart) — skipped.",
+                   source_sheet=name, source_workbook=path.name)
+            continue
         max_row, max_col = ws.max_row, ws.max_column
         used_range = (f"A1:{get_column_letter(max_col)}{max_row}"
                       if max_col else "A1")

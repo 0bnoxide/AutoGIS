@@ -45,6 +45,37 @@ def test_propose_parser_profile_guesses_analyte_columns(workbook, qa):
         )
 
 
+def test_inspector_skips_chartsheet_with_warning(tmp_path, qa):
+    import openpyxl
+    from openpyxl.chart import LineChart, Reference
+    from autogis.core.common.qa import SEV_WARNING
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "GW Elev"
+    ws.append(["LocationID", "SampleDate", "Elevation"])
+    ws.append(["MW-1", "2026-01-01", 123.4])
+    # A bare create_chartsheet() with no chart attached doesn't round-trip
+    # through openpyxl's own reader — a real Excel-authored chart sheet
+    # (like the ones this bug was found against) always has a chart.
+    cs = wb.create_chartsheet(title="Chart1")
+    chart = LineChart()
+    chart.add_data(Reference(ws, min_col=3, min_row=1, max_row=2),
+                   titles_from_data=True)
+    cs.add_chart(chart)
+    path = tmp_path / "with_chartsheet.xlsx"
+    wb.save(path)
+
+    report = inspect_workbook_structure(path, qa)
+
+    assert set(report.sheets) == {"GW Elev"}
+    skip_record = next(r for r in qa.records
+                       if r.severity == SEV_WARNING and
+                       r.category == "non_data_sheet_skipped")
+    assert skip_record.source_sheet == "Chart1"
+    assert skip_record.source_workbook == "with_chartsheet.xlsx"
+
+
 # ---------------------------------------------------------------- rules
 def _row(loc, sid, dt, an, num, det=True, exc=False, dup=False,
          parent="", depth="", dtop=None):
