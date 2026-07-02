@@ -214,3 +214,69 @@ except (ImportError, AttributeError):
             parts.append(seg)
         parts.append(xy[-1:])
         return np.concatenate(parts, axis=0)
+
+
+# ---------------------------------------------------------------------------
+# concave_hull
+# ---------------------------------------------------------------------------
+# Background: npg_analysis.concave is a k-nearest-neighbor recursive concave
+# hull. It accepts np.ndarray, internally converts to list via np.unique().tolist(),
+# and returns np.ndarray (M, 2) — or a plain Python list when exactly 3 unique
+# points remain. Our wrapper normalises the return with np.array() and falls
+# back to convex_hull() on any runtime error (e.g., algorithm can't close hull
+# due to collinear points or knn0 quirk). The fallback produces a valid (if
+# conservative) boundary.
+try:
+    from autogis.core.common.npg.npg_analysis import concave as _concave_npg
+
+    def concave_hull(xy: np.ndarray, k: int = 3) -> np.ndarray:
+        """K-nearest-neighbor concave hull (Dan Patterson npg).
+
+        Falls back to convex_hull on any runtime failure — callers always get
+        a valid polygon regardless of point geometry.
+
+        Parameters
+        ----------
+        xy : ndarray, shape (N, 2)
+        k : int
+            Starting number of nearest neighbors for the concave algorithm.
+            npg enforces k >= 3 internally. Larger k → more convex result.
+
+        Returns
+        -------
+        ndarray, shape (M, 2) — OPEN ring (first vertex != last vertex).
+            Serializers must close the ring by appending vertices[0].
+
+        Notes
+        -----
+        npg knn0 quirk: knn0 slices [1:k+1] (designed for the case p in pnts),
+        but concave() removes cur_p from candidates before calling knn0, so the
+        actual nearest neighbor is skipped. Larger k compensates. For
+        environmental monitoring (3–30 wells) this is acceptable.
+        """
+        if len(xy) < 3:
+            return xy
+        try:
+            result = _concave_npg(xy, k)
+            arr = np.array(result)
+            # Strip closing duplicate if present (some edge paths append it).
+            if len(arr) > 1 and np.allclose(arr[0], arr[-1]):
+                arr = arr[:-1]
+            return arr
+        except Exception:
+            return convex_hull(xy)
+
+except (ImportError, AttributeError):
+    def concave_hull(xy: np.ndarray, k: int = 3) -> np.ndarray:
+        """concave_hull (npg_analysis not available): delegates to convex_hull.
+
+        Parameters
+        ----------
+        xy : ndarray, shape (N, 2)
+        k : int  (ignored — convex hull has no k parameter)
+
+        Returns
+        -------
+        ndarray, shape (M, 2) — OPEN ring.
+        """
+        return convex_hull(xy)

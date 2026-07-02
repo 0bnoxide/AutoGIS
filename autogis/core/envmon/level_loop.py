@@ -1,15 +1,20 @@
-"""Single-loop differential (height-of-instrument) leveling (Tool 8.1).
+"""Single-loop differential (height-of-instrument) leveling (Tool 8.1)
+plus the elevation-update push (Tool 8.2).
 
-Headless, arcpy-free. Computes adjusted elevations + misclosure and emits QA.
-Does NOT write ElevationHistory (that is Tool 8.2). See ADR-0026.
+Headless, arcpy-free except update_well_elevations() (# pragma: no cover).
+process_level_loop() computes adjusted elevations + misclosure and emits QA
+but does NOT write ElevationHistory — that gap is closed here by
+select_elevations_for_update() / update_well_elevations(). See ADR-0026.
 """
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Optional, Tuple
 
-from ..common.schema.survey import LevelLoopObservation, LevelLoopRun
+from ..common.schema.survey import (
+    ElevationHistory, LevelLoopObservation, LevelLoopRun)
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING, SEV_ERROR
 
 
@@ -193,3 +198,148 @@ def process_level_loop(
         adjusted=adjusted,
     )
     return run, out_rows
+
+
+@dataclass
+class ElevationUpdatePlan:
+    """Headless output of select_elevations_for_update() (Tool 8.2).
+
+    updates: point_id -> final (adjusted) elevation ready to push to wells.
+    skipped: point_ids seen in the run but absent from the known well_ids set.
+    blocked: True when the run's own closure result forbids promotion; see
+        block_reason ("not_adjusted" | "misclosure_exceeds_tolerance").
+    survey_date: carried from LevelLoopRun for the ElevationHistory record —
+        not part of the update decision itself, but update_well_elevations()
+        needs a survey_date and ElevationUpdatePlan is its only input, so it
+        rides along here (lazier than adding a second parameter/thread-through).
+    """
+    run_id: str
+    updates: dict[str, float] = field(default_factory=dict)
+    skipped: list[str] = field(default_factory=list)
+    blocked: bool = False
+    block_reason: str = ""
+    survey_date: Optional[date] = None
+
+
+def select_elevations_for_update(
+    run: LevelLoopRun,
+    observations: List[LevelLoopObservation],
+    well_ids: set[str],
+) -> ElevationUpdatePlan:
+    """Decide which points from a closed level-loop run may update wells (Tool 8.2).
+
+    Blocks (updates/skipped left empty) when the run itself isn't usable:
+    - run.adjusted is False: process_level_loop() never applied a correction,
+      either because the loop never closed onto the benchmark, or (edge case)
+      the raw misclosure was exactly zero -- see ADR-0026 / test_level_loop.py
+      test_perfect_closing_loop_zero_misclosure, which itself treats
+      run.adjusted as ambiguous in that case. This function blocks
+      conservatively either way (judgement call: a human should re-run/confirm
+      rather than have 8.2 silently promote a run the source tool didn't mark
+      adjusted).
+    - misclosure exceeds tolerance: process_level_loop() still distributes the
+      correction (adjusted=True) even when out of tolerance -- it only *logs*
+      a QA error. Tool 8.2 re-checks the same numbers and blocks the push
+      independently of that flag.
+
+    Otherwise: the last elevation recorded per point_id wins (a point can
+    appear as both a turning-point foresight and a later intermediate sight);
+    the benchmark itself is never eligible for a well update.
+    """
+    if not run.adjusted:
+        return ElevationUpdatePlan(run_id=run.run_id, blocked=True,
+                                    block_reason="not_adjusted",
+                                    survey_date=run.survey_date)
+    if (run.misclosure_ft is not None and run.closure_tolerance_ft is not None
+            and abs(run.misclosure_ft) > run.closure_tolerance_ft):
+        return ElevationUpdatePlan(run_id=run.run_id, blocked=True,
+                                    block_reason="misclosure_exceeds_tolerance",
+                                    survey_date=run.survey_date)
+
+    updates: dict[str, float] = {}
+    skipped: list[str] = []
+    for obs in observations:
+        if obs.point_id == run.benchmark_id or obs.elevation is None:
+            continue
+        if obs.point_id in well_ids:
+            updates[obs.point_id] = obs.elevation  # last write wins
+        elif obs.point_id not in skipped:
+            skipped.append(obs.point_id)
+
+    return ElevationUpdatePlan(run_id=run.run_id, updates=updates,
+                                skipped=skipped, survey_date=run.survey_date)
+
+
+def update_well_elevations(gdb_path: str, site_id: str,  # pragma: no cover
+                            plan: ElevationUpdatePlan) -> int:
+    """Push a closed level-loop run's elevations to wells (ArcGIS Pro) (Tool 8.2).
+
+    Mirrors write_rtk_elevations_to_wells() in survey_to_well_elevation.py
+    (Tool 8.5's sibling path): supersede prior ElevationHistory rows for each
+    LocationID/ElevationType, update MonitoringWells.TOC_ft, then insert new
+    ElevationHistory rows tagged SurveyMethod="DifferentialLevel". Vertical
+    datum defaults to "NAVD88" (judgement call: not modeled anywhere in the
+    LevelLoop* schema, so hardcoded the same as Tool 8.5's CLI default).
+    Returns the count of MonitoringWells rows updated.
+    """
+    if plan.blocked:
+        raise ValueError(f"ElevationUpdatePlan is blocked: {plan.block_reason}")
+
+    from pathlib import Path as _P
+
+    from ...runtime.sessions import arcpy_env as _arcpy
+    from .survey_to_well_elevation import sql_quote
+
+    elevation_type = "TOC"
+    vertical_datum = "NAVD88"
+
+    history_records = [
+        ElevationHistory(
+            location_id=loc_id, elevation_type=elevation_type, elevation=elev,
+            vertical_datum=vertical_datum, survey_date=plan.survey_date,
+            survey_method="DifferentialLevel", source_run_id=plan.run_id,
+            approved_for_use=False, superseded=False,
+        )
+        for loc_id, elev in plan.updates.items()
+    ]
+
+    _ax = _arcpy()
+    gdb = str(gdb_path)
+    wells_fc = str(_P(gdb) / "MonitoringWells")
+    elev_table = str(_P(gdb) / "ElevationHistory")
+    updated = 0
+
+    for loc_id, elev in plan.updates.items():
+        if _ax.Exists(elev_table):
+            where_prior = (
+                f"LocationID='{sql_quote(loc_id)}' AND "
+                f"ElevationType='{sql_quote(elevation_type)}' AND Superseded=0"
+            )
+            with _ax.da.UpdateCursor(elev_table, ["Superseded"], where_prior) as cur:
+                for _ in cur:
+                    cur.updateRow([1])
+
+        if _ax.Exists(wells_fc):
+            where_well = (f"SiteID='{sql_quote(site_id)}' AND "
+                          f"LocationID='{sql_quote(loc_id)}'")
+            with _ax.da.UpdateCursor(wells_fc, ["TOC_ft"], where_well) as cur:
+                for _ in cur:
+                    cur.updateRow([elev])
+                    updated += 1
+
+    if history_records and _ax.Exists(elev_table):
+        fields = [
+            "LocationID", "ElevationType", "Elevation_ft", "VerticalDatum",
+            "SurveyDate", "SurveyMethod", "SourceRunID", "ApprovedForUse",
+            "Superseded",
+        ]
+        with _ax.da.InsertCursor(elev_table, fields) as cur:
+            for rec in history_records:
+                cur.insertRow([
+                    rec.location_id, rec.elevation_type, rec.elevation,
+                    rec.vertical_datum, rec.survey_date, rec.survey_method,
+                    rec.source_run_id, int(rec.approved_for_use),
+                    int(rec.superseded),
+                ])
+
+    return updated
