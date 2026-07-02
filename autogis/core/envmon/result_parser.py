@@ -144,7 +144,10 @@ def parse_result_value(raw_value, screening_context: bool = False) -> ParsedResu
             p.is_nondetect = True
             p.parse_warning = "nondetect 'nd' without reporting limit"
         if upper == "NA":
-            p.parse_warning = "'NA' interpreted as NOT_ANALYZED; verify meaning"
+            p.parse_warning = (
+                "'NA' on a screening-level row interpreted as no criterion "
+                "established (not applicable)" if screening_context else
+                "'NA' interpreted as NOT_ANALYZED; verify meaning")
         return p
 
     m = _RE_NONDETECT.match(text)

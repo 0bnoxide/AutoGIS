@@ -1,35 +1,44 @@
 # ============================================================================
 # SCREENING LEVELS — H281 Glasgow
 # ============================================================================
-# Values are deliberately null. The pipeline's PRIMARY screening-level source
-# is the workbook's own RBSL row (parsed per sheet, footnotes stripped with a
-# QA record). This file is the SECONDARY source, used only when a sheet has
-# no screening row. Populate it from the governing regulatory tables
-# (e.g. MDEQ RBSLs / DEQ-7) with a citation in `source` — the importer will
-# never invent a number, and figures flag results with no screening level
-# rather than guessing.
+# The pipeline's PRIMARY screening-level source is the workbook's own RBSL
+# row (parsed per sheet, footnotes stripped with a QA record). This file is
+# the SECONDARY source, used only when a sheet has no screening row.
+# Populate it from the governing regulatory tables with a citation in
+# `source` — the importer will never invent a number, and figures flag
+# results with no screening level rather than guessing.
+#
+# GW VPH/EPH fractions below are populated from a real, cited regulatory
+# table: Montana DEQ Tier 1 Risk-Based Screening Levels (RBSL) for
+# groundwater (MDEQ, 2018 — Tier 1 Risk-Based Corrective Action Guidance for
+# Petroleum Releases, May 2018), verified against a real client workbook
+# carrying that same table. TPH/TEH stay `value: null` deliberately — Montana
+# sets no bulk criterion for those, only for their individual fractions; this
+# is a confirmed "not applicable," not an unsourced placeholder. Everything
+# else (metals, SOIL matrix, EDB/1,2-DCA) remains an unpopulated `_TODO`
+# stub — no source workbook has surfaced values for those yet.
 #
 # Structure: screening_levels.<MATRIX>.<canonical analyte> -> {value, units,
 # source}. Matrix keys must match Env_AnalyticalResults.Matrix (GW, SOIL).
 
 screening_levels:
   GW:
-    Benzene:            {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
-    Toluene:            {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
-    Ethylbenzene:       {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
-    Xylenes:            {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
-    Naphthalene:        {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
-    TPH:                {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
-    MTBE:               {value: null, units: ug/L, source: "_TODO MDEQ RBSL"}
-    C5-C8 Aliphatics:   {value: null, units: ug/L, source: "_TODO MDEQ VPH"}
-    C9-C12 Aliphatics:  {value: null, units: ug/L, source: "_TODO MDEQ VPH"}
-    C9-C10 Aromatics:   {value: null, units: ug/L, source: "_TODO MDEQ VPH"}
+    Benzene:            {value: 5,      units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    Toluene:            {value: 1000,   units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    Ethylbenzene:       {value: 700,    units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    Xylenes:            {value: 10000,  units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    Naphthalene:        {value: 100,    units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    TPH:                {value: null,   units: ug/L, source: "na — Montana DEQ Tier 1 RBSL Table sets no bulk TPH criterion; screened via individual VPH fraction totals (C5-C8/C9-C12 Aliphatics, C9-C10 Aromatics, below)"}
+    MTBE:               {value: 30,     units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    C5-C8 Aliphatics:   {value: 700,    units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    C9-C12 Aliphatics:  {value: 3000,   units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    C9-C10 Aromatics:   {value: 980,    units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
     EDB:                {value: null, units: ug/L, source: "_TODO"}
     1,2-DCA:            {value: null, units: ug/L, source: "_TODO"}
-    TEH:                {value: null, units: ug/L, source: "_TODO MDEQ EPH"}
-    C9-C18 Aliphatics:  {value: null, units: ug/L, source: "_TODO MDEQ EPH"}
-    C19-C36 Aliphatics: {value: null, units: ug/L, source: "_TODO MDEQ EPH"}
-    C11-C22 Aromatics:  {value: null, units: ug/L, source: "_TODO MDEQ EPH"}
+    TEH:                {value: null,   units: ug/L, source: "na — Montana DEQ Tier 1 RBSL Table sets no bulk TEH criterion; screened via individual EPH fraction totals (C9-C18/C19-C36 Aliphatics, C11-C22 Aromatics, below)"}
+    C9-C18 Aliphatics:  {value: 3000,   units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    C19-C36 Aliphatics: {value: 100000, units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
+    C11-C22 Aromatics:  {value: 1100,   units: ug/L, source: "Montana DEQ Tier 1 RBSL (2018) for groundwater — Tier 1 Risk-Based Corrective Action Guidance for Petroleum Releases, May 2018"}
     Arsenic:            {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
     Barium:             {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}
     Cadmium:            {value: null, units: ug/L, source: "_TODO MCL/DEQ-7"}

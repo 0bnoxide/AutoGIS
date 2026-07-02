@@ -107,6 +107,8 @@ is exactly the kind of bounded, testable work the night implementer is best at.
 - **Conditional/geostatistical (Phase 5):** 8 deferred tools per
   `ROADMAP_UPDATE_2026-06-25.md` (kriging/EBK/surface modeling) — blocked on
   architecture review.
+- **Both groups above are a separate future development phase, not a backlog to pick
+  from** — see `CLAUDE.md` for the standing phase-gate policy.
 
 ---
 
