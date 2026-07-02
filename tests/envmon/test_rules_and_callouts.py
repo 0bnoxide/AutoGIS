@@ -69,8 +69,11 @@ def test_inspector_skips_chartsheet_with_warning(tmp_path, qa):
     report = inspect_workbook_structure(path, qa)
 
     assert set(report.sheets) == {"GW Elev"}
-    assert any(r.severity == SEV_WARNING and
-               r.category == "non_data_sheet_skipped" for r in qa.records)
+    skip_record = next(r for r in qa.records
+                       if r.severity == SEV_WARNING and
+                       r.category == "non_data_sheet_skipped")
+    assert skip_record.source_sheet == "Chart1"
+    assert skip_record.source_workbook == "with_chartsheet.xlsx"
 
 
 # ---------------------------------------------------------------- rules
