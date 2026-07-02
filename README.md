@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~94 | ~73 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~95 | ~74 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
-| **Planned** (spec / plan written, not yet coded) | ~4 | roadmap tools — see *Planned* list below |
+| **Planned** (spec / plan written, not yet coded) | ~3 | roadmap tools — see *Planned* list below |
 | Not started (no spec or plan) | ~4 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
 The codebase now ships **97 `core/envmon/` + `core/agol/` modules**,
-**~99 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 102 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1314-test** arcpy-free
+**101 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 104 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1399-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -143,6 +143,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | BuildDashboardDataMart | 6.7 | `envmon build-dashboard-data-mart` |
 | BuildCADExportPackage | 8.9 | `envmon build-cad-package` (mapping/CRS logic only; arcpy Export-to-CAD call not yet wired — see issue #105) |
 | ExportContoursForCivil3D | 8.2 | `envmon export-civil3d` (PNEZD CSV + projection note headless; `--landxml` guarded, arcpy leg not yet wired — see issue #105) |
+| UpdateLayoutDynamicText | 5.8 | `envmon update-layout-text` (CLI-first per ADR-0039; wraps the shipped `layout_manager.update_layout_text`) |
 
 </details>
 
@@ -177,7 +178,6 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
 | GenerateSiteMapSeries | 5.6 | plan |
-| UpdateLayoutDynamicText | 5.8 | plan *(`layout_manager.py` exists but is not wired to any CLI command)* |
 
 **Field / Survey123 (§7)**
 

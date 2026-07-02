@@ -2391,6 +2391,42 @@ def update_well_elevations_cmd(run_csv, observations_csv, site_id, wells_csv, gd
                    f"{len(plan.updates)} ElevationHistory rows.")
 
 
+@envmon.command("update-layout-text")
+@click.option("--aprx", "aprx_path", required=True, type=click.Path(exists=True),
+              help="Path to the .aprx project file (edited in place).")
+@click.option("--layout", "layout_name", default=None,
+              help="Layout name inside the APRX (default: all layouts).")
+@click.option("--values", "values_path", required=True, type=click.Path(exists=True),
+              help="YAML values file: flat {ElementName: text} mapping or a "
+                   "list of {element_name, text} dicts.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Apply and report, but do not save the APRX.")
+@qa_report_options
+def update_layout_text_cmd(aprx_path, layout_name, values_path, dry_run,
+                           report, fail_on):
+    """Tool 5.8: update APRX layout text elements from a YAML values file
+    (ArcGIS Pro).
+
+    Runs layout_manager.update_layout_text — the same step the
+    report-figure-package pipeline uses — standalone against an arbitrary
+    APRX: sets named text elements, resolves {{placeholder}} tokens, and
+    raises a QA warning for any placeholder left unresolved.
+    """
+    _guard("update-layout-text")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.layout_manager import (
+        load_layout_text_yaml, update_layout_text)
+
+    values = load_layout_text_yaml(Path(values_path))
+    qa = QACollector()
+    update_layout_text(Path(aprx_path), layout_name, values, qa,
+                       dry_run=dry_run)
+    click.echo(f"Applied {len(values)} text value(s) to "
+               f"{layout_name or 'all layouts'} in {aprx_path}"
+               + ("  [dry-run: not saved]" if dry_run else ""))
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")

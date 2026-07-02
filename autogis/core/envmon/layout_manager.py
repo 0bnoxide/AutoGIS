@@ -148,16 +148,46 @@ def apply_symbology(aprx_path: Path, lyrx_map: Dict[str, Path],
     del aprx
 
 
+def load_layout_text_yaml(path: Path) -> Dict[str, str]:
+    """Load a Tool 5.8 values file into the ``text_values`` dict that
+    ``update_layout_text`` expects. Arcpy-free.
+
+    Accepted YAML shapes:
+    - flat mapping:  ``{ElementName: "new text", ...}``
+    - list of dicts: ``[{element_name: ..., text: ...}, ...]``
+    """
+    import yaml
+
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    if isinstance(raw, list):
+        try:
+            return {str(e["element_name"]): str(e["text"]) for e in raw}
+        except (KeyError, TypeError) as exc:
+            raise ValueError(
+                f"List-form values YAML {path} needs 'element_name' and "
+                f"'text' keys on every entry ({exc!r}).")
+    raise ValueError(
+        f"Unexpected YAML structure in {path}: expected a mapping "
+        f"{{ElementName: text}} or a list of {{element_name, text}} dicts, "
+        f"got {type(raw).__name__}.")
+
+
 def update_layout_text(
     aprx_path: Path,
     layout_name: Optional[str],
     text_values: Dict[str, str],
     qa: QACollector,
+    *,
+    dry_run: bool = False,
 ) -> None:
     """Set layout text elements by element name; then substitute any
     {{placeholder}} tokens in remaining text elements. Unresolved
     placeholders raise a QA warning (the figure should not ship with
-    template tokens visible)."""
+    template tokens visible). ``dry_run`` reports without saving the APRX."""
     arcpy = _arcpy()
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
     layouts = ([l for l in aprx.listLayouts() if l.name == layout_name]
@@ -165,7 +195,7 @@ def update_layout_text(
     if not layouts:
         qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
                         message=f"Layout {layout_name!r} not found in APRX."))
-        aprx.save(); del aprx
+        del aprx
         return
     for lay in layouts:
         for el in lay.listElements("TEXT_ELEMENT"):
@@ -184,7 +214,8 @@ def update_layout_text(
                     ))
                     return mt.group(0)
                 el.text = PLACEHOLDER_RE.sub(sub, el.text)
-    aprx.save()
+    if not dry_run:
+        aprx.save()
     del aprx
 
 

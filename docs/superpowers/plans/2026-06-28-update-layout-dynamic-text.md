@@ -1,5 +1,15 @@
 # UpdateLayoutDynamicText Implementation Plan
 
+> **SUPERSEDED (2026-07-02, ADR-0041) — do not execute this plan.** The
+> `layout_text_updater.py` module (Task 1) would duplicate
+> `autogis/core/envmon/layout_manager.py::update_layout_text()`, which
+> already shipped and is more capable (named elements *and*
+> `{{placeholder}}` resolution). Tool 5.8 was implemented as the
+> `envmon update-layout-text` CLI command calling that existing function,
+> plus a small YAML loader (`load_layout_text_yaml`, adapted from this
+> plan's `load_substitutions_from_yaml`) in `layout_manager.py`. Kept for
+> historical record only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
 **Goal:** Implement `UpdateLayoutDynamicText` — update text elements in an ArcGIS Pro APRX layout (title, date, site name, event ID, preparer) from a YAML values file, with arcpy-free substitution logic and arcpy-only APRX write.
