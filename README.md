@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~90 | ~69 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~92 | ~71 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | ~1 | |
 | **Planned** (spec / plan written, not yet coded) | ~4 | roadmap tools — see *Planned* list below |
-| Not started (no spec or plan) | ~8 | excludes §11 AI tools + geostatistical Phase 5 |
+| Not started (no spec or plan) | ~6 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **93 `core/envmon/` modules** (94 `.py` files including `__init__.py`),
-**~95 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 98 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1267-test** arcpy-free
+The codebase now ships **95 `core/envmon/` modules** (96 `.py` files including `__init__.py`),
+**~97 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 100 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1287-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -138,6 +138,8 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | ImportDroneProducts | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) |
 | ImportFieldBoringLogs | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) |
 | BuildDashboardDataMart | 6.7 | `envmon build-dashboard-data-mart` |
+| BuildCADExportPackage | 8.9 | `envmon build-cad-package` (mapping/CRS logic only; arcpy Export-to-CAD call not yet wired — see issue #105) |
+| ExportContoursForCivil3D | 8.2 | `envmon export-civil3d` (PNEZD CSV + projection note headless; `--landxml` guarded, arcpy leg not yet wired — see issue #105) |
 
 </details>
 
@@ -201,7 +203,7 @@ CreateHostedViewsForStakeholders (6.11)
 **Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1)
 
 **Survey / boring / drone / CAD (§8):** GenerateBoringLogPDFs (8.0c),
-BuildCADExportPackage (8.9), ExportContoursForCivil3D, ValidateSurveyDeliverable
+ValidateSurveyDeliverable
 
 **AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
 — all deferred pending LLM seam design
