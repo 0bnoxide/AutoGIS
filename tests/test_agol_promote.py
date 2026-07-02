@@ -197,3 +197,37 @@ def test_promote_missing_stage_map_entry_raises():
     with pytest.raises(KeyError):
         promote_layer(gis, layer="unknown-layer", stage_map=_STAGE_MAP,
                       from_stage="dev", to_stage="qa")
+
+
+def test_promote_copy_failure_after_truncate_writes_error_run_history(tmp_path):
+    # Target is truncated, then edit_features() raises -- the promotion must
+    # not crash uncrated: it should record an error status (surfacing the
+    # partial-truncate state) and return a result instead of propagating.
+    gis = MagicMock()
+    src_layer, dst_layer = MagicMock(), MagicMock()
+    src_layer.query.return_value.features = ["f1", "f2"]
+    dst_layer.edit_features.side_effect = RuntimeError("AGOL 500")
+    gis.content.get.side_effect = lambda iid: {
+        "dev-item": MagicMock(layers=[src_layer]),
+        "qa-item": MagicMock(layers=[dst_layer]),
+    }[iid]
+    fetch = _patched_fetch({"dev-item": _MATCHING_SCHEMA, "qa-item": _MATCHING_SCHEMA})
+    rh_path = tmp_path / "run_history.csv"
+    run_history = RunHistory(rh_path)
+
+    with patch("autogis.core.agol.promote.fetch_layer_schema", side_effect=fetch):
+        result = promote_layer(
+            gis, layer="wells", stage_map=_STAGE_MAP,
+            from_stage="dev", to_stage="qa", run_history=run_history,
+        )
+
+    dst_layer.manager.truncate.assert_called_once()
+    assert result.status == "copy-failed"
+    assert result.rows_copied == 0
+    assert any(r.category == "promotion_copy_failed" for r in result.qa.records)
+
+    records = run_history.query(tool_name="agol-promote", site_id="wells")
+    assert len(records) == 1
+    assert records[0].status == "error"
+    outputs = json.loads(records[0].outputs) if isinstance(records[0].outputs, str) else records[0].outputs
+    assert outputs["promotion_status"] == "copy-failed"

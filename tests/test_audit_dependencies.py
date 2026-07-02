@@ -97,7 +97,7 @@ def test_cycle_prevented_by_visited_set():
 
 
 def test_dependent_to_error_emits_warning_and_continues_for_siblings():
-    # ROOT depends on both a BAD item (dependent_upon raises) and a GOOD item
+    # ROOT depends on both a BAD item (dependent_to raises) and a GOOD item
     # that has its own downstream dependency. The BAD failure must not abort
     # the walk of the GOOD sibling.
     svc = _MockItem("SVC1", "Service A")

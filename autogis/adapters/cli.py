@@ -1721,7 +1721,17 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
     click.echo(f"tables_refreshed={result.tables_refreshed} "
                f"rows_pushed={result.rows_pushed} failures={result.failures}")
     if report:
-        _render_qa(result.qa, report, "warning")
+        p = Path(report)
+        if p.suffix == ".json":
+            result.qa.write_json_summary(p)
+        elif p.suffix == ".csv":
+            result.qa.write_csv(p)
+        else:
+            result.qa.write_markdown(p)
+        click.echo(f"Wrote report: {p}")
+    # Exit code is driven solely by result.failures (not a generic
+    # warning-level QA threshold) -- a benign WARNING should not fail this
+    # command when nothing actually failed to push.
     if result.failures:
         raise SystemExit(1)
 
@@ -3246,8 +3256,13 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
             click.echo(geojson)
 
         if gdb and not dry_run:
-            write_plume_draft_to_gdb(gdb, site_id, result)
-            click.echo(f"Written to {gdb}/Env_PlumeBoundary_Draft (ReviewStatus=DRAFT)")
+            written = write_plume_draft_to_gdb(gdb, site_id, result)
+            if written:
+                click.echo(f"Written to {gdb}/Env_PlumeBoundary_Draft (ReviewStatus=DRAFT)")
+            else:
+                click.echo(
+                    f"WARNING: {gdb}/Env_PlumeBoundary_Draft does not exist "
+                    "-- nothing written. Run the GDB schema tool first.")
 
     _render_qa(qa, report, fail_on)
 

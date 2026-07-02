@@ -41,6 +41,7 @@ _RUN_HISTORY_STATUS = {
     "promoted": "success",
     "blocked-schema": "error",
     "blocked-approval": "warning",
+    "copy-failed": "error",
 }
 
 
@@ -51,7 +52,7 @@ class PromotionResult:
     to_stage: str
     rows_copied: int
     approved_by: Optional[str]
-    status: str            # "promoted" | "blocked-schema" | "blocked-approval"
+    status: str            # "promoted" | "blocked-schema" | "blocked-approval" | "copy-failed"
     qa: QACollector
 
 
@@ -199,7 +200,18 @@ def promote_layer(
         _log_promotion(run_history, result, started_at)
         return result
 
-    rows_copied = _copy_layer_data(gis, src_id, dst_id)
+    try:
+        rows_copied = _copy_layer_data(gis, src_id, dst_id)
+    except Exception as exc:
+        qa.add(SEV_ERROR, "promotion_copy_failed",
+               f"{layer}: data copy {from_stage!r} -> {to_stage!r} failed after "
+               f"the target layer was truncated -- {to_stage!r} may now be "
+               f"partially or fully empty until this promotion is retried: {exc}")
+        result = PromotionResult(layer, from_stage, to_stage, 0, approved_by,
+                                  "copy-failed", qa)
+        _log_promotion(run_history, result, started_at)
+        return result
+
     qa.add(SEV_INFO, "promotion_succeeded",
            f"{layer}: promoted {rows_copied} row(s) {from_stage!r} -> {to_stage!r}")
     result = PromotionResult(layer, from_stage, to_stage, rows_copied, approved_by,

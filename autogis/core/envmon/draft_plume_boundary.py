@@ -271,11 +271,15 @@ def write_plume_draft_to_gdb(  # pragma: no cover
     gdb_path: str,
     site_id: str,
     result: DraftPlumeBoundaryResult,
-) -> None:
+) -> bool:
     """Write the draft plume polygon to Env_PlumeBoundary_Draft (ArcGIS Pro).
 
     ReviewStatus='DRAFT' matches the convention in groundwater_contours.py.
     Requires arcpy. Wrapped by the CLI --gdb flag behind _guard().
+
+    Returns True if the row was written, False if the target feature class
+    does not exist (e.g. schema tooling hasn't been run against this GDB
+    yet) — callers must not report success when this returns False.
     """
     import datetime
     import arcpy
@@ -283,7 +287,7 @@ def write_plume_draft_to_gdb(  # pragma: no cover
 
     fc = str(_P(gdb_path) / "Env_PlumeBoundary_Draft")
     if not arcpy.Exists(fc):
-        return
+        return False
 
     sr = arcpy.Describe(fc).spatialReference
     # Delete existing draft polygon for this site
@@ -317,3 +321,4 @@ def write_plume_draft_to_gdb(  # pragma: no cover
             note,
             polygon,
         ])
+    return True

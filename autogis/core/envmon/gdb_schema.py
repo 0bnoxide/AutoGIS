@@ -324,6 +324,10 @@ FEATURE_SCHEMAS = {
         ("SiteID", T, 32), ("EventDate", DT, None),
         ("PlacementMethod", T, 32), ("ReviewStatus", T, 16),
         ("Notes", T, 256)]),
+    "Env_PlumeBoundary_Draft": ("POLYGON", [
+        ("SiteID", T, 32), ("AnalyteFilter", T, 128), ("HullMethod", T, 16),
+        ("KNeighbors", L, None), ("NExceedancePoints", L, None),
+        ("ReviewStatus", T, 16), ("Notes", T, 256)]),
 }
 
 UNIQUE_KEYS = {
