@@ -90,6 +90,15 @@ def test_load_view_specs_missing_source_layer_raises():
         load_view_specs({"views": [{"name": "X"}]})
 
 
+def test_load_view_specs_non_dict_raises():
+    """An empty or malformed YAML file (None, list, string) must raise ValueError,
+    not AttributeError/TypeError -- the CLI relies on ValueError to produce a
+    clean click.UsageError instead of a traceback."""
+    for bad in (None, [], "not a mapping"):
+        with pytest.raises(ValueError):
+            load_view_specs(bad)
+
+
 def test_create_new_view_when_no_existing(mock_arcgis_modules):
     source = _item("MonitoringWells", ["SiteID", "WellID", "OwnerPhone"])
     gis = _gis(source)
@@ -203,7 +212,28 @@ def test_source_search_failure_emits_error(mock_arcgis_modules):
     gis = MagicMock()
     gis.content.search.side_effect = RuntimeError("network down")
     result = create_stakeholder_view(gis, _spec())
-    assert any(r.severity == SEV_ERROR and r.category == "view_source_missing"
+    assert any(r.severity == SEV_ERROR and r.category == "view_source_search_failed"
+               for r in result.qa.records)
+
+
+def test_existing_view_search_failure_aborts_without_creating(mock_arcgis_modules):
+    """A search failure on the existing-view lookup must not fall through to
+    create_view -- that would risk a duplicate view during an outage."""
+    source = _item("MonitoringWells", ["SiteID", "WellID", "OwnerPhone"])
+    gis = MagicMock()
+
+    def search(query, item_type=None):
+        if "MonitoringWells" in query:
+            return [source]
+        raise RuntimeError("network down")
+
+    gis.content.search.side_effect = search
+    flc_cls = mock_arcgis_modules["arcgis.features"].FeatureLayerCollection
+
+    result = create_stakeholder_view(gis, _spec())
+
+    flc_cls.fromitem.assert_not_called()
+    assert any(r.severity == SEV_ERROR and r.category == "view_existing_search_failed"
                for r in result.qa.records)
 
 

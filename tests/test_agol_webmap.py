@@ -86,6 +86,16 @@ def test_apply_spec_counts_only_changed_layers():
     assert missing == []
 
 
+def test_malformed_defquery_template_warns_not_raises():
+    """A stray '{' in a definition-query template raises ValueError from
+    str.format(), not just KeyError/IndexError -- must be caught, not crash."""
+    qa = QACollector()
+    spec = _spec(layer_definition_queries={"Env_CalloutBoxes": "SiteID = '{site_id'"})
+    new_json, updated, missing = apply_spec_to_webmap_json(_webmap(), spec, qa)
+    assert any(r.severity == SEV_WARNING and r.category == "defquery_render_failed"
+               for r in qa.records)
+
+
 def test_update_webmap_writes_item():
     gis, item = _gis(_webmap())
     result = update_webmap_from_spec(gis, webmap_item_id="abc123", figure_spec=_spec())
@@ -130,6 +140,17 @@ def test_missing_item_emits_error():
     assert any(r.severity == SEV_ERROR and r.category == "webmap_item_missing"
                for r in result.qa.records)
     assert result.layers_updated == 0
+
+
+def test_item_fetch_failure_is_distinct_from_missing():
+    """gis.content.get raising (auth/network) must not be conflated with a
+    clean "item not found" result -- the QA category and message differ."""
+    gis = MagicMock()
+    gis.content.get.side_effect = RuntimeError("network down")
+    result = update_webmap_from_spec(gis, webmap_item_id="abc123", figure_spec=_spec())
+    assert any(r.severity == SEV_ERROR and r.category == "webmap_item_fetch_failed"
+               for r in result.qa.records)
+    assert not any(r.category == "webmap_item_missing" for r in result.qa.records)
 
 
 def test_update_failure_emits_qa_error():

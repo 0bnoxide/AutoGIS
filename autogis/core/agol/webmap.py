@@ -67,7 +67,7 @@ def apply_spec_to_webmap_json(webmap_json: dict, figure_spec: dict, qa: QACollec
             continue
         try:
             rendered = template.format(**fmt)
-        except (KeyError, IndexError) as exc:
+        except (KeyError, IndexError, ValueError) as exc:
             qa.add(SEV_WARNING, "defquery_render_failed",
                    f"layer '{name}': could not render definition query template: {exc}")
             continue
@@ -92,8 +92,10 @@ def update_webmap_from_spec(gis, *, webmap_item_id: str, figure_spec: dict,
     qa = QACollector()
     try:
         item = gis.content.get(webmap_item_id)
-    except Exception:
-        item = None
+    except Exception as exc:
+        qa.add(SEV_ERROR, "webmap_item_fetch_failed",
+               f"fetch failed for web map item '{webmap_item_id}': {exc}")
+        return WebMapUpdateResult(item_id=webmap_item_id, qa=qa)
     if item is None:
         qa.add(SEV_ERROR, "webmap_item_missing",
                f"web map item not found: {webmap_item_id}")
