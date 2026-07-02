@@ -95,7 +95,7 @@ def normalize_matrix_table(
             if cfg and cfg.get("value") is not None:
                 sl_value = float(cfg["value"])
                 sl_source = cfg.get("source", "config")
-                sl_unit = cfg.get("unit", "")
+                sl_unit = cfg.get("units", "")
         if sl_parsed and sl_parsed.parse_warning and sl_cell is not None:
             qa.add(SEV_INFO, "screening_level_note", sl_parsed.parse_warning,
                    site_id=site_id, analyte_name=raw_name,
