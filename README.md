@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~90 | ~69 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~92 | ~71 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | ~1 | |
 | **Planned** (spec / plan written, not yet coded) | ~4 | roadmap tools — see *Planned* list below |
-| Not started (no spec or plan) | ~8 | excludes §11 AI tools + geostatistical Phase 5 |
+| Not started (no spec or plan) | ~6 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **93 `core/envmon/` modules** (94 `.py` files including `__init__.py`),
-**~95 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 98 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1267-test** arcpy-free
+The codebase now ships **95 `core/envmon/` modules** (96 `.py` files including `__init__.py`),
+**~97 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 100 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1287-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -66,6 +66,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | SelectSoilIntervalsForMapping | 4.8 | `envmon select-soil-intervals` |
 | BuildMaxResultMapDataset | 4.9 | `envmon build-max-result-dataset` |
 | GenerateArcadeLabelExpressions | 5.4 | `envmon generate-arcade-labels` |
+| GeneratePythonLabelExpressions | 5.4b | `envmon generate-python-labels` |
 | BuildAnalyticalKey | 5.5 | `envmon build-analytical-key` |
 | BuildReportFigurePackage | 5.7 | `envmon build-report-package` |
 | RegisterSourceDocuments | 2.5 | `envmon register-source-doc` |
@@ -138,6 +139,8 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | ImportDroneProducts | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) |
 | ImportFieldBoringLogs | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) |
 | BuildDashboardDataMart | 6.7 | `envmon build-dashboard-data-mart` |
+| BuildCADExportPackage | 8.9 | `envmon build-cad-package` (mapping/CRS logic only; arcpy Export-to-CAD call not yet wired — see issue #105) |
+| ExportContoursForCivil3D | 8.2 | `envmon export-civil3d` (PNEZD CSV + projection note headless; `--landxml` guarded, arcpy leg not yet wired — see issue #105) |
 
 </details>
 
@@ -201,13 +204,18 @@ CreateHostedViewsForStakeholders (6.11)
 **Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1)
 
 **Survey / boring / drone / CAD (§8):** GenerateBoringLogPDFs (8.0c),
-BuildCADExportPackage (8.9), ExportContoursForCivil3D, ValidateSurveyDeliverable
+ValidateSurveyDeliverable
 
 **AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
 — all deferred pending LLM seam design
 
 **Conditional / geostatistical (Phase 5):** 8 tools (kriging / EBK / surface modeling) — blocked on
 architecture review; see `docs/CONDITIONAL_TOOLS_REVIEW.md`
+
+**These two groups are a separate future development phase, not a backlog to pick from.**
+Do not start implementation on any tool listed above without an explicit phase-gate
+decision — the codebase is refined thoroughly first. See `CLAUDE.md` for the standing
+policy.
 
 </details>
 
@@ -288,6 +296,7 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon export-comparison-excel` | CLOUD | `core/envmon/export_comparison_excel.py` |
 | `autogis envmon build-max-result-dataset` | CLOUD | `core/envmon/max_result_dataset.py` |
 | `autogis envmon generate-arcade-labels` | CLOUD | `core/envmon/arcade_label_generator.py` |
+| `autogis envmon generate-python-labels` | CLOUD | `core/envmon/python_label_generator.py` |
 | `autogis envmon build-analytical-key` | CLOUD | `core/envmon/build_analytical_key.py` |
 | `autogis envmon build-report-package` | CLOUD | `core/envmon/report_figure_package.py` |
 | `autogis envmon register-source-doc` | CLOUD | `core/envmon/source_registry.py` |
@@ -460,6 +469,7 @@ autogis envmon generate-trend-charts --history-csv <history.csv> --out <charts.x
 autogis envmon select-soil-intervals --results-csv <soil.csv> --out <out.csv>
 autogis envmon build-analytical-key --analyte-dict <analytes.yaml> --screening-levels <levels.yaml> --matrix GW
 autogis envmon generate-arcade-labels --analytes "Benzene,PCE" --out <labels.json>
+autogis envmon generate-python-labels --analytes "Benzene,PCE" --out <labels.json>
 
 # Reporting extras
 autogis envmon build-report-appendix --results <results.csv> --out <out.xlsx>

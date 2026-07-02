@@ -42,6 +42,7 @@ TOOLS: dict[str, Runtime] = {
     "drone-checkpoint-qa": Runtime.CLOUD,  # tool 11.1
     "export-geojson": Runtime.CLOUD,  # tool 10.3
     "generate-arcade-labels": Runtime.CLOUD,  # tool 5.4
+    "generate-python-labels": Runtime.CLOUD,  # tool 5.4b
     "generate-event-changelog": Runtime.CLOUD,  # tool 9.3
     "export-lab-request": Runtime.CLOUD,  # tool 2.11 headless
     "generate-event-report": Runtime.CLOUD,  # tool 10.5
@@ -70,6 +71,8 @@ TOOLS: dict[str, Runtime] = {
     "well-inspection-report": Runtime.CLOUD,  # Markdown well inspection report, headless
     "update-well-elevations": Runtime.LOCAL,  # tool 8.2 GDB write (--gdb path)
     "draft-plume-boundary": Runtime.LOCAL,    # tool 4.5 GDB write (--gdb path)
+    "build-cad-package": Runtime.LOCAL,  # tool 8.9 Export-to-CAD — needs arcpy
+    "export-civil3d": Runtime.LOCAL,     # tool 8.2 LandXML/contour leg needs arcpy; PNEZD CSV is headless
 }
 
 
@@ -279,6 +282,11 @@ _REGISTRY_SEED = [
      "intake", "Create/validate the normalized boring-log SQLite database"),
     ("index-field-attachments", "SyncFieldAttachments", "6.5", "CLOUD", "stable",
      "agol", "Index a harvester manifest into the AttachmentIndex table"),
+    ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "planned",
+     "cartography", "Export GIS layers to a Civil 3D-ready CAD package (DWG/DXF) "
+     "-- mapping/validation logic done; arcpy Export-to-CAD call not yet wired, see issue #105"),
+    ("export-civil3d", "ExportContoursForCivil3D", "8.2", "LOCAL", "stable",
+     "cartography", "Export PNEZD point CSV + projection note (headless); contours/LandXML via Pro"),
 ]
 
 TOOL_REGISTRY: list = [
