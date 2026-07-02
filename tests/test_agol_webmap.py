@@ -86,6 +86,52 @@ def test_apply_spec_counts_only_changed_layers():
     assert missing == []
 
 
+def test_null_visible_hidden_layers_do_not_crash():
+    """visible_layers/hidden_layers present-but-null (YAML `key:` with no
+    value) must not raise TypeError iterating None, and apply no visibility
+    change (only layer_definition_queries, left at its default, still fires)."""
+    qa = QACollector()
+    spec = _spec(visible_layers=None, hidden_layers=None)
+    new_json, updated, missing = apply_spec_to_webmap_json(_webmap(), spec, qa)
+    by_title = {lyr["title"]: lyr for lyr in new_json["operationalLayers"]}
+    assert by_title["MonitoringWells"]["visibility"] is False  # unchanged
+    assert by_title["SoilBorings"]["visibility"] is True  # unchanged
+    assert missing == []
+
+
+def test_null_layer_definition_queries_does_not_crash():
+    """layer_definition_queries present-but-null must not raise iterating
+    None.items(), and apply no definition-query change (visibility from
+    visible_layers/hidden_layers, left at their defaults, still fires)."""
+    qa = QACollector()
+    spec = _spec(layer_definition_queries=None)
+    new_json, updated, missing = apply_spec_to_webmap_json(_webmap(), spec, qa)
+    by_title = {lyr["title"]: lyr for lyr in new_json["operationalLayers"]}
+    assert "layerDefinition" not in by_title["Env_CalloutBoxes"]
+    assert missing == []
+
+
+def test_null_operational_layers_does_not_crash():
+    """operationalLayers present-but-null in the web map JSON must not raise
+    TypeError; every spec-named layer is then reported missing."""
+    qa = QACollector()
+    new_json, updated, missing = apply_spec_to_webmap_json(
+        {"operationalLayers": None}, _spec(), qa)
+    assert updated == 0
+    assert set(missing) == {"MonitoringWells", "SoilBorings", "Env_CalloutBoxes"}
+
+
+def test_null_defquery_template_warns_not_raises():
+    """A present-but-null template value (YAML `Env_CalloutBoxes:` with no
+    value) has no .format -- must degrade to defquery_render_failed, not
+    crash with AttributeError."""
+    qa = QACollector()
+    spec = _spec(layer_definition_queries={"Env_CalloutBoxes": None})
+    new_json, updated, missing = apply_spec_to_webmap_json(_webmap(), spec, qa)
+    assert any(r.severity == SEV_WARNING and r.category == "defquery_render_failed"
+               for r in qa.records)
+
+
 def test_malformed_defquery_template_warns_not_raises():
     """A stray '{' in a definition-query template raises ValueError from
     str.format(), not just KeyError/IndexError -- must be caught, not crash."""

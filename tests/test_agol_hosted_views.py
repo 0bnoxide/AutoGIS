@@ -99,6 +99,22 @@ def test_load_view_specs_non_dict_raises():
             load_view_specs(bad)
 
 
+def test_load_view_specs_null_views_key_is_empty():
+    """views: with no value parses as YAML null, not omitted -- must not
+    raise iterating None, and must be treated as an empty list."""
+    assert load_view_specs({"views": None}) == []
+
+
+def test_load_view_specs_non_list_views_raises():
+    with pytest.raises(ValueError):
+        load_view_specs({"views": "not a list"})
+
+
+def test_load_view_specs_non_dict_entry_raises():
+    with pytest.raises(ValueError):
+        load_view_specs({"views": ["not a mapping"]})
+
+
 def test_create_new_view_when_no_existing(mock_arcgis_modules):
     source = _item("MonitoringWells", ["SiteID", "WellID", "OwnerPhone"])
     gis = _gis(source)
@@ -195,6 +211,25 @@ def test_create_failure_emits_qa_error(mock_arcgis_modules):
                for r in result.qa.records)
 
 
+def test_verification_readback_failure_is_blocking_not_silent_pass(mock_arcgis_modules):
+    """If the post-write read-back itself can't be read (unexpected AGOL
+    response shape), that must be treated as unverified/unsafe, not as a
+    silent pass -- never trust the create call, and a failed verification
+    is not proof of safety either."""
+    source = _item("MonitoringWells", ["SiteID", "WellID", "OwnerPhone"])
+    existing_view = _item("Client_View", ["SiteID", "WellID", "OwnerPhone"],
+                          visible={"OwnerPhone": False})
+    existing_view.layers[0].properties = {}  # missing "fields" -> KeyError on read-back
+    gis = _gis(source, existing_view)
+
+    result = create_stakeholder_view(gis, _spec())
+
+    assert any(r.severity == SEV_ERROR and r.category == "view_verification_failed"
+               for r in result.qa.records)
+    assert result.leaked_fields == []
+    assert result.exposed_fields == []
+
+
 def test_multi_layer_source_emits_unverified_warning(mock_arcgis_modules):
     source = _item("MonitoringWells", ["SiteID", "WellID", "OwnerPhone"])
     source.layers = [source.layers[0], MagicMock()]
@@ -244,4 +279,65 @@ def test_source_unreadable_fields_emits_error(mock_arcgis_modules):
     gis = _gis(source)
     result = create_stakeholder_view(gis, _spec())
     assert any(r.severity == SEV_ERROR and r.category == "view_source_unreadable"
+               for r in result.qa.records)
+
+
+def test_load_view_specs_string_field_list_raises():
+    """deny_fields: OwnerPhone (a bare string, not a list) becomes
+    set("OwnerPhone") -- a set of CHARACTERS -- so it denies nothing; a string
+    sensitive_fields likewise makes the leak check iterate characters and
+    silently pass. All three list-valued keys must be rejected at parse time,
+    including non-string items."""
+    for key in ("allow_fields", "deny_fields", "sensitive_fields"):
+        for bad in ("OwnerPhone", [123]):
+            with pytest.raises(ValueError):
+                load_view_specs({"views": [
+                    {"name": "X", "source_layer": "Y", key: bad}]})
+
+
+def test_source_properties_network_failure_emits_error(mock_arcgis_modules):
+    """.layers/.properties lazily fetch service metadata over the network --
+    a RuntimeError (auth/network), not just a shape error, must produce
+    view_source_unreadable instead of aborting the batch."""
+    source = MagicMock()
+    source.title = "MonitoringWells"
+    source.layers[0].properties.__getitem__.side_effect = RuntimeError("network down")
+    gis = _gis(source)
+    result = create_stakeholder_view(gis, _spec())
+    assert any(r.severity == SEV_ERROR and r.category == "view_source_unreadable"
+               for r in result.qa.records)
+
+
+def test_verification_readback_network_failure_is_blocking(mock_arcgis_modules):
+    """Same for the post-write read-back: a network failure mid-verification
+    must degrade to view_verification_failed (unverified, unsafe), not raise."""
+    source = _item("MonitoringWells", ["SiteID", "WellID", "OwnerPhone"])
+    existing_view = _item("Client_View", ["SiteID", "WellID", "OwnerPhone"],
+                          visible={"OwnerPhone": False})
+    existing_view.layers[0].properties = MagicMock()
+    existing_view.layers[0].properties.__getitem__.side_effect = RuntimeError("network down")
+    gis = _gis(source, existing_view)
+
+    result = create_stakeholder_view(gis, _spec())
+
+    assert any(r.severity == SEV_ERROR and r.category == "view_verification_failed"
+               for r in result.qa.records)
+    assert result.exposed_fields == []
+    assert result.leaked_fields == []
+
+
+def test_unknown_spec_field_names_warn(mock_arcgis_modules):
+    """A deny/sensitive field name absent from the source (typo or schema
+    drift) protects nothing -- must emit view_unknown_fields, not stay silent."""
+    source = _item("MonitoringWells", ["SiteID", "WellID", "OwnerPhone"])
+    existing_view = _item("Client_View", ["SiteID", "WellID", "OwnerPhone"],
+                          visible={"OwnerPhone": False})
+    gis = _gis(source, existing_view)
+    spec = _spec(allow_fields=None, deny_fields=["OwnerPhon"],
+                 sensitive_fields=["OwnerFax"])
+
+    result = create_stakeholder_view(gis, spec)
+
+    assert any(r.severity == SEV_WARNING and r.category == "view_unknown_fields"
+               and "OwnerPhon" in r.message and "OwnerFax" in r.message
                for r in result.qa.records)

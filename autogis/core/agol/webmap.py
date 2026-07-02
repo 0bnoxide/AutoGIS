@@ -30,7 +30,7 @@ def apply_spec_to_webmap_json(webmap_json: dict, figure_spec: dict, qa: QACollec
     FigureSpec carries no popup/label/symbology config.
     """
     new_json = copy.deepcopy(webmap_json)
-    layers = new_json.get("operationalLayers", [])
+    layers = new_json.get("operationalLayers") or []
     by_title = {(lyr.get("title") or "").lower(): lyr for lyr in layers}
 
     fmt = dict(site_id=figure_spec.get("site_id", ""), event_date=event_date,
@@ -40,7 +40,7 @@ def apply_spec_to_webmap_json(webmap_json: dict, figure_spec: dict, qa: QACollec
     changed = set()
     missing = set()
 
-    for name in figure_spec.get("visible_layers", []):
+    for name in figure_spec.get("visible_layers") or []:
         lyr = by_title.get(name.lower())
         if lyr is None:
             missing.add(name)
@@ -50,7 +50,7 @@ def apply_spec_to_webmap_json(webmap_json: dict, figure_spec: dict, qa: QACollec
             changed.add(name)
             qa.add(SEV_INFO, "webmap_change", f"layer '{name}': visibility -> True")
 
-    for name in figure_spec.get("hidden_layers", []):
+    for name in figure_spec.get("hidden_layers") or []:
         lyr = by_title.get(name.lower())
         if lyr is None:
             missing.add(name)
@@ -60,14 +60,16 @@ def apply_spec_to_webmap_json(webmap_json: dict, figure_spec: dict, qa: QACollec
             changed.add(name)
             qa.add(SEV_INFO, "webmap_change", f"layer '{name}': visibility -> False")
 
-    for name, template in figure_spec.get("layer_definition_queries", {}).items():
+    for name, template in (figure_spec.get("layer_definition_queries") or {}).items():
         lyr = by_title.get(name.lower())
         if lyr is None:
             missing.add(name)
             continue
         try:
             rendered = template.format(**fmt)
-        except (KeyError, IndexError, ValueError) as exc:
+        except (KeyError, IndexError, ValueError, AttributeError) as exc:
+            # AttributeError: a present-but-null template (YAML `Layer:` with
+            # no value) has no .format -- degrade, don't crash.
             qa.add(SEV_WARNING, "defquery_render_failed",
                    f"layer '{name}': could not render definition query template: {exc}")
             continue

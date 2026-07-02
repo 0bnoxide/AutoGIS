@@ -54,8 +54,15 @@ def load_view_specs(data: dict) -> List[ViewSpec]:
         raise ValueError(
             f"view spec file must be a YAML mapping with a 'views' key, "
             f"got {type(data).__name__}")
+    views = data.get("views") or []
+    if not isinstance(views, list):
+        raise ValueError(
+            f"view spec 'views' must be a list, got {type(views).__name__}")
+
     specs = []
-    for entry in data.get("views", []):
+    for entry in views:
+        if not isinstance(entry, dict):
+            raise ValueError(f"view spec entry must be a mapping, got {entry!r}")
         name = entry.get("name")
         source_layer = entry.get("source_layer")
         if not name or not source_layer:
@@ -64,6 +71,14 @@ def load_view_specs(data: dict) -> List[ViewSpec]:
         if entry.get("allow_fields") is not None and entry.get("deny_fields") is not None:
             raise ValueError(
                 f"view '{name}': allow_fields and deny_fields are mutually exclusive")
+        for key in ("allow_fields", "deny_fields", "sensitive_fields"):
+            val = entry.get(key)
+            if val is not None and not (isinstance(val, list)
+                                        and all(isinstance(f, str) for f in val)):
+                # A bare string here fails OPEN: set("OwnerPhone") is a set of
+                # characters, so deny/sensitive checks silently match nothing.
+                raise ValueError(
+                    f"view '{name}': {key} must be a list of field names, got {val!r}")
         specs.append(ViewSpec(
             name=name, source_layer=source_layer,
             allow_fields=entry.get("allow_fields"), deny_fields=entry.get("deny_fields"),
@@ -95,7 +110,9 @@ def create_stakeholder_view(gis, spec: ViewSpec) -> ViewResult:
 
     try:
         source_fields = [f["name"] for f in source.layers[0].properties["fields"]]
-    except (IndexError, KeyError, TypeError) as exc:
+    except Exception as exc:
+        # .layers / .properties lazily fetch service metadata -- network/auth
+        # failures raise here too, not just shape errors.
         qa.add(SEV_ERROR, "view_source_unreadable",
                f"could not read fields from source layer '{spec.source_layer}': {exc}")
         return ViewResult(name=spec.name, qa=qa)
@@ -109,6 +126,15 @@ def create_stakeholder_view(gis, spec: ViewSpec) -> ViewResult:
                f"does not filter or verify -- confirm they carry no sensitive data.")
 
     exposed_intent = resolve_fields(source_fields, spec)
+
+    known = set(source_fields)
+    unknown = sorted({f for f in ((spec.allow_fields or []) + (spec.deny_fields or [])
+                                  + spec.sensitive_fields) if f not in known})
+    if unknown:
+        qa.add(SEV_WARNING, "view_unknown_fields",
+               f"view '{spec.name}' names field(s) not present in source layer "
+               f"'{spec.source_layer}': {unknown} -- a mistyped deny/sensitive "
+               f"field silently protects nothing; fix the spec or confirm schema drift.")
 
     try:
         existing = _find_item(gis, spec.name)
@@ -145,8 +171,17 @@ def create_stakeholder_view(gis, spec: ViewSpec) -> ViewResult:
                f"definition update failed for view '{spec.name}': {exc}")
         return ViewResult(name=spec.name, created=created, qa=qa)
 
-    realized = [f["name"] for f in view_item.layers[0].properties["fields"]
-               if f.get("visible", True)]
+    try:
+        realized = [f["name"] for f in view_item.layers[0].properties["fields"]
+                   if f.get("visible", True)]
+    except Exception as exc:
+        # Same as the source read above: the read-back is a live fetch, so a
+        # network failure must degrade to "unverified", not abort the batch.
+        qa.add(SEV_ERROR, "view_verification_failed",
+               f"could not read back view '{spec.name}' to verify field exposure: {exc}; "
+               f"treat as unverified, do not assume it is safe to share")
+        return ViewResult(name=spec.name, created=created, qa=qa)
+
     leaked = [s for s in spec.sensitive_fields if s in realized]
     if leaked:
         qa.add(SEV_ERROR, "view_sensitive_leak",
