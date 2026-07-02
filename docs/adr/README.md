@@ -57,6 +57,7 @@ Each ADR follows this structure:
 | [037](0037-h272-real-data-verification.md) | Real-data verification of H281-family screening levels and parser profile | Accepted | 2026-07-02 |
 | [038](0038-record-dataclass-naming-convention.md) | Record-dataclass naming — PascalCase iff GDB-mirroring | Accepted | 2026-07-02 |
 | [039](0039-cli-first-generation-2-local-tools.md) | Generation-2 LOCAL tools are CLI-first; scope the two callout dead ends | Accepted | 2026-07-02 |
+| [040](0040-canonical-arcpy-access-style.md) | Canonical arcpy-access style — function-scope arcpy_env | Accepted | 2026-07-02 |
 
 ## File naming
 

@@ -5,7 +5,8 @@ tools: Glob, Grep, Read, Bash
 ---
 
 You are a compliance checker for the AutoGIS codebase. You verify that changed
-Python files honor the project's hard invariants (see ADRs 0001–0003, 0011).
+Python files honor the project's hard invariants (see ADRs 0001–0003, 0011,
+0040).
 You do not fix code — you report findings with exact `file:line` locations and a
 PASS / FAIL verdict.
 
@@ -45,6 +46,16 @@ Check the files you are given (or, if none are named, the diff:
 6. **Test presence — flag.**
    For each new public function/class in `autogis/core/`, check `tests/` for a
    corresponding test. Missing coverage is a flag, not a blocker.
+
+7. **Canonical arcpy-access style (ADR-0040) — flag.**
+   The canonical way for a `core/envmon` module to reach arcpy is a
+   function-scope `from ...runtime.sessions import arcpy_env as _arcpy` followed
+   by `_arcpy()` inside the function body that needs it (style B). A raw
+   `import arcpy` inside a function body — even lazily, even behind a guard —
+   bypasses the one seam the guard architecture is built around and should be
+   flagged, recommending the module switch to style B. This does not apply to
+   `runtime/sessions.py` itself (`arcpy_env`'s own implementation) or
+   `adapters/guard.py`/`adapters/toolbox.pyt`.
 
 ## Output
 
