@@ -49,14 +49,19 @@ def _encode(v):
 
 
 def insert_rows(conn, dc, rows) -> int:
-    """Insert dataclass instances (or dicts) into *dc*'s table. Returns count."""
+    """Batch-insert rows into *dc*'s table via a single ``executemany``.
+
+    Each row must provide ``to_row()`` (the schema dataclass convention) or
+    be dict-like (support ``dict(row)``) — a plain dataclass instance without
+    ``to_row()`` is not supported. Returns the row count.
+    """
     names = [f.name for f in fields(dc)]
     col_sql = ", ".join(f'"{n}"' for n in names)
     ph = ", ".join("?" for _ in names)
     sql = f'INSERT INTO "{dc.table_name}" ({col_sql}) VALUES ({ph})'
-    n = 0
+    params = []
     for r in rows:
         d = r.to_row() if hasattr(r, "to_row") else dict(r)
-        conn.execute(sql, [_encode(d.get(c)) for c in names])
-        n += 1
-    return n
+        params.append([_encode(d.get(c)) for c in names])
+    conn.executemany(sql, params)
+    return len(params)

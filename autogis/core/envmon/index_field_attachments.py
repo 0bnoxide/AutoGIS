@@ -63,15 +63,19 @@ def build_attachment_index(
     synced = synced or datetime.now()
     out: list[AttachmentIndex] = []
     skipped = 0
+    unjoinable = 0
     for row in rows:
         aid = _i(row.get("attachment_id"))
         if aid is None:
             skipped += 1
             continue
         name = row.get("original_name") or ""
+        row_related_table = row.get("source_table") or related_table
+        if not row_related_table:
+            unjoinable += 1
         out.append(AttachmentIndex(
             attachment_id=aid,
-            related_table=row.get("source_table") or related_table,
+            related_table=row_related_table,
             related_id=str(row.get("objectid") or ""),
             original_name=name,
             local_path=row.get("saved_path") or "",
@@ -85,6 +89,12 @@ def build_attachment_index(
         qa.add(SEV_WARNING, "manifest_rows_skipped",
                f"{skipped} manifest row(s) skipped: missing/invalid "
                f"attachment_id")
+    if unjoinable and qa is not None:
+        qa.add(SEV_WARNING, "attachment_related_table_missing",
+               f"{unjoinable} record(s) written with an empty related_table "
+               f"— the manifest row has no source_table and no "
+               f"--related-table override was given, so these attachments "
+               f"aren't joinable to any table yet.")
     return out
 
 
@@ -97,8 +107,9 @@ def validate_attachment_index(
             qa.add(SEV_ERROR, "downloaded_missing_path",
                    f"Attachment {r.attachment_id} ({r.original_name!r}) is "
                    f"marked downloaded but has no local path.")
-    # ponytail: no on-disk existence check — manifests may come from another
-    # machine; add a --check-files pass if stale-path detection is ever needed.
+    # Intentionally no on-disk existence check — manifests may come from a
+    # different machine than this one; add a --check-files pass if stale-path
+    # detection is ever needed.
     counts = Counter(r.attachment_type for r in records)
     by_type = ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
     qa.add(SEV_INFO, "index_summary",

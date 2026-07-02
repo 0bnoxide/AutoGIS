@@ -39,7 +39,7 @@ def create_boring_log_database(
     if p.exists():
         if not overwrite:
             qa.add(SEV_ERROR, "file_exists",
-                   f"{p} already exists. Use overwrite to replace it.")
+                   f"{p} already exists. Use --overwrite to replace it.")
             raise FileExistsError(f"{p} already exists.")
         p.unlink()
     if p.parent != Path("."):
