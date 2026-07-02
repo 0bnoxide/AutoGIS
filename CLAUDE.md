@@ -57,12 +57,12 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
 | Path | Purpose |
 |------|---------|
 | `autogis/core/harvest/` | Attachment harvester — arcpy-free |
-| `autogis/core/envmon/` | Environmental monitoring tools (23 modules) |
+| `autogis/core/envmon/` | Environmental monitoring tools (85 modules) |
 | `autogis/core/common/` | Shared config, QA, logging, seen-index |
 | `autogis/adapters/` | CLI (`cli.py`), `.pyt` toolbox, toolbox_core seam |
 | `autogis/runtime/` | ArcGIS Pro session providers + capability guard |
 | `autogis/config/` | Site configs, parser profiles, screening levels, figure specs |
-| `tests/` | 151 arcpy-free tests; run with `python -m pytest -q` |
+| `tests/` | 1084 arcpy-free tests; run with `python -m pytest -q` (derive live: `--collect-only`) |
 
 ## Key invariants
 
@@ -73,6 +73,21 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
   `core/harvest/models.py` for back-compat.
 - Screening levels and the H281 parser profile are pre-production stubs — do not
   remove DRAFT banners or `_TODO` markers until verified against real data.
+
+## Decision records
+
+Two separate records — easy to conflate, keep both:
+
+- **ADRs** (`docs/adr/NNNN-*.md`): the durable record of any architectural /
+  structural / invariant / **tool-batch** decision. Ship a batch or make a design
+  call → add an ADR (`/new-adr`; format in `docs/adr/README.md`). This is the
+  "regular" logging and it is **required** — it lapsed for the 2026-06-29/30
+  batches and had to be backfilled (ADR-0030/0031).
+- **Agent-decision logs** (`docs/adr/logs/YYYY-MM-DD-agent-decisions.md`): an audit
+  of the agent's *autonomous judgment calls* ("free will"). A **supplement** to
+  ADRs, **not** a substitute — logging a judgment call does not discharge the ADR,
+  and these logs live only in `docs/adr/logs/` (not a parallel path). See
+  `docs/adr/logs/README.md`.
 
 ## Worktrees & session coordination
 
