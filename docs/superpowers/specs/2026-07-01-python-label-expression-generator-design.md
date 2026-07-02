@@ -10,11 +10,21 @@
 ## Problem
 
 `autogis envmon generate-arcade-labels` (Tool 5.4) emits Arcade label expressions for
-ArcGIS Pro layers. Not every layer/consumer uses the Arcade expression engine — Pro
-layer label classes also support a `PYTHON3` expression engine (`expressionEngine`),
-and some existing/legacy layers are configured that way. There is no headless tool
-that emits the equivalent Python label-expression source, so today those have to be
-hand-written and can drift from the Arcade version and from the analyte dictionary.
+ArcGIS Pro layers. Not every layer/consumer uses the Arcade expression engine — a
+layer's label class also supports a `'Python'` expression engine
+(`labelClass.expressionEngine = 'Python'` via arcpy's CIM access), and some
+existing/legacy layers are configured that way. There is no headless tool that emits
+the equivalent Python label-expression source, so today those have to be hand-written
+and can drift from the Arcade version and from the analyte dictionary.
+
+Verified against Esri's documented Python label-expression format (`doc.esri.com`
+"Specify text for labels" examples and the `LabelClass` arcpy reference — see Sources
+below): a Python label expression is a `def FindLabel([Field1], [Field2], ...):`
+function; fields are referenced as bracket tokens `[FieldName]` both in the parameter
+list and, after assigning to a local variable (`S = [FieldName]`), in the body; the
+function returns the label string. `expressionEngine` is set to the literal string
+`'Python'` (not `'PYTHON3'` — Pro has no separate Python-2-era engine string despite
+running under Python 3).
 
 ---
 
@@ -24,7 +34,7 @@ hand-written and can drift from the Arcade version and from the analyte dictiona
 `generate-arcade-labels` feature-for-feature (same 4 expression categories, same
 `--analytes`/`--field-prefix`/`--out`/`--report` options) but emits Esri's Python
 label-expression syntax — a `def FindLabel([Field], ...): ...` function body with
-fields referenced via bracket tokens (`[FieldName]`), the format Pro's `PYTHON3`
+fields referenced via bracket tokens (`[FieldName]`), the format Pro's `'Python'`
 label-class engine expects — instead of Arcade's `$feature.Field` syntax.
 
 The field-naming convention that turns an analyte name into GDB field names
@@ -50,11 +60,11 @@ verb per output artifact (see `run-history-report` / `run-history` as a preceden
 sibling commands sharing a roadmap ID with a letter suffix).
 
 **Rejected: no engine metadata in the output.** Each Python label entry additionally
-carries `"expression_engine": "PYTHON3"` (not present in the Arcade tool's output,
+carries `"expression_engine": "Python"` (not present in the Arcade tool's output,
 which doesn't need it — Arcade is the default engine). Whoever applies this JSON to a
 layer needs to know which `labelClass.expressionEngine` value to set; without this
 field that value would have to be hardcoded externally as "this file is always
-PYTHON3", duplicating information the generator already knows.
+Python", duplicating information the generator already knows.
 
 This stays arcpy-free (ADR-0002) and runs in CI/cloud (`Runtime.CLOUD`).
 
@@ -128,7 +138,7 @@ def generate_python_labels(analytes: list[str], *, field_prefix: str = "") -> li
     """One PythonLabelSpec per analyte per expression type (mirrors generate_arcade_labels)."""
 
 def write_label_expressions(specs: list[PythonLabelSpec], out_path: Path) -> None:
-    """Serialise to JSON. Each entry adds "expression_engine": "PYTHON3" versus the
+    """Serialise to JSON. Each entry adds "expression_engine": "Python" versus the
     Arcade tool's output, and uses the key "python_expression" instead of
     "arcade_expression"."""
 ```
@@ -146,7 +156,7 @@ autogis envmon generate-python-labels \
 ```
 
 Headless (`Runtime.CLOUD`). Output JSON is pasted into a Pro layer's label class after
-setting `expressionEngine` to `PYTHON3`.
+setting `expressionEngine` to `'Python'`.
 
 ---
 
@@ -161,7 +171,7 @@ setting `expressionEngine` to `PYTHON3`.
 3. `generate_python_labels` returns ≥1 `PythonLabelSpec` per analyte per type, empty
    list for empty analytes.
 4. `write_label_expressions` produces parseable JSON with `python_expression` and
-   `expression_engine: "PYTHON3"` on every entry.
+   `expression_engine: "Python"` on every entry.
 5. CLI `--help` lists `generate-python-labels`.
 6. Cross-check: for the same analyte + field_prefix, `derive_label_fields` (used by
    both generators) produces identical `value_field`/`units_field`/`sl_field`/
