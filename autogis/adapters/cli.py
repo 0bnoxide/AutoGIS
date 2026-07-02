@@ -1774,6 +1774,11 @@ def promote_cmd(profile, stage_map_path, layer, from_stage, to_stage,
     from autogis.core.agol.promote import promote_layer
     from autogis.core.common.run_history import RunHistory
 
+    if approved_by and not approve:
+        raise click.UsageError(
+            "--approved-by requires --approve (both gate a qa->prod promotion; "
+            "--approved-by alone is silently ignored otherwise).")
+
     gis = agol_from_profile(profile)
     stage_map = yaml.safe_load(Path(stage_map_path).read_text(encoding="utf-8"))
     result = promote_layer(

@@ -44,7 +44,11 @@ def _walk(gis, source, records, depth, max_depth, visited, qa):
         return
     visited.add(source.id)
     try:
-        dep_info = source.dependent_upon()
+        # dependent_to() lists items that reference `source` (the reverse of
+        # dependent_upon(), which lists what `source` itself depends on). The
+        # tool's job is decommission safety -- "what breaks if I delete this"
+        # -- so it must walk the reverse direction.
+        dep_info = source.dependent_to()
         dep_list = dep_info.get("list") or [] if isinstance(dep_info, dict) else []
     except Exception as exc:
         qa.add(SEV_WARNING, "dependency_walk_error",
@@ -56,6 +60,9 @@ def _walk(gis, source, records, depth, max_depth, visited, qa):
             continue
         dep_item = gis.content.get(dep_id)
         if dep_item is None:
+            qa.add(SEV_WARNING, "dependent_item_missing",
+                   f"Item {source.id} is referenced by {dep_id!r}, which no "
+                   f"longer resolves in AGOL (deleted?) -- dependency not recorded.")
             continue
         records.append(DependencyRecord(
             source_item_id=source.id,

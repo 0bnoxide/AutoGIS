@@ -11,13 +11,13 @@ class _MockItem:
         self.type = item_type
         self._deps = deps or []
 
-    def dependent_upon(self):
+    def dependent_to(self):
         return {"list": [{"id": d.id} for d in self._deps]}
 
 
 class _RaisingItem(_MockItem):
-    """Mock item whose dependent_upon() always raises (simulates AGOL API error)."""
-    def dependent_upon(self):
+    """Mock item whose dependent_to() always raises (simulates AGOL API error)."""
+    def dependent_to(self):
         raise RuntimeError("AGOL API error")
 
 
@@ -96,7 +96,7 @@ def test_cycle_prevented_by_visited_set():
     assert {r.dependent_item_id for r in records} == {"A", "B"}
 
 
-def test_dependent_upon_error_emits_warning_and_continues_for_siblings():
+def test_dependent_to_error_emits_warning_and_continues_for_siblings():
     # ROOT depends on both a BAD item (dependent_upon raises) and a GOOD item
     # that has its own downstream dependency. The BAD failure must not abort
     # the walk of the GOOD sibling.
@@ -113,3 +113,18 @@ def test_dependent_upon_error_emits_warning_and_continues_for_siblings():
     assert any(r.severity == "WARNING" for r in qa.records)
     dependent_ids = {r.dependent_item_id for r in records}
     assert dependent_ids == {"BAD", "GOOD", "SVC1"}
+
+
+def test_deleted_dependent_item_emits_warning_not_silent_drop():
+    # ROOT is referenced by an item id that no longer resolves (deleted item).
+    # This must surface as a warning, not vanish silently.
+    root = _MockItem("ROOT", "Root")
+    root._deps = [_MockItem("GONE", "Gone")]  # id present in dep list, not in gis
+    gis = _gis(root)  # note: "GONE" intentionally absent from the fake GIS
+    qa = QACollector()
+
+    records = audit_item_dependencies(gis, "ROOT", qa=qa, max_depth=2)
+
+    assert records == []
+    assert any(r.category == "dependent_item_missing" for r in qa.records)
+    assert any(r.severity == "WARNING" for r in qa.records)
