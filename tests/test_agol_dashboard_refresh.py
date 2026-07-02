@@ -15,9 +15,11 @@ def _fake_layer(fields=None):
     return layer
 
 
-def _fake_gis(layers_by_id):
+def _fake_gis(layers_by_id, as_table=False):
     """layers_by_id: item_id -> fake layer, or an Exception instance to raise
-    when that item is fetched (simulates a hosted-layer failure)."""
+    when that item is fetched (simulates a hosted-layer failure). Dash_* are
+    non-spatial, so real hosted items expose them via ``.tables``, not
+    ``.layers`` -- ``as_table=True`` doubles as that item shape."""
     gis = MagicMock()
 
     def _get(item_id):
@@ -25,7 +27,8 @@ def _fake_gis(layers_by_id):
         if isinstance(target, Exception):
             raise target
         item = MagicMock()
-        item.layers = [target]
+        item.layers = [] if as_table else [target]
+        item.tables = [target] if as_table else []
         return item
 
     gis.content.get.side_effect = _get
@@ -148,6 +151,21 @@ def test_dry_run_schema_mismatch_is_a_failure_and_writes_nothing():
     layer.edit_features.assert_not_called()
     assert any(r.severity == "ERROR" and r.category == "refresh_dry_run_schema_mismatch"
                for r in result.qa.records)
+
+
+def test_resolves_non_spatial_dash_table_via_item_tables():
+    """Dash_* are non-spatial (no SHAPE column) -- a real hosted item for one
+    exposes it under item.tables, not item.layers. Must not IndexError."""
+    layer = _fake_layer(["SiteID"])
+    gis = _fake_gis({"item-1": layer}, as_table=True)
+    mart = {"Dash_SiteStatus": [{"SiteID": "S1"}]}
+    layer_map = {"Dash_SiteStatus": "item-1"}
+
+    result = refresh_dashboard_data(gis, mart, layer_map)
+
+    assert result.failures == []
+    assert result.tables_refreshed == 1
+    layer.manager.truncate.assert_called_once()
 
 
 def test_empty_rows_still_truncates_but_skips_append_call():

@@ -57,7 +57,13 @@ def refresh_dashboard_data(
                           f"no hosted layer mapped for '{table}', skipping")
             continue
         try:
-            layer = gis.content.get(layer_id).layers[0]
+            item = gis.content.get(layer_id)
+            # Dash_* rows are non-spatial (no SHAPE column -- see
+            # dashboard_data_mart.py's InsertCursor with no geometry), so a
+            # hosted item for one is exposed under `.tables`, not `.layers`,
+            # in the arcgis API. Resolve whichever is populated.
+            subs = list(item.layers or []) + list(item.tables or [])
+            layer = subs[0]
 
             if dry_run:
                 known = _field_names(layer)
