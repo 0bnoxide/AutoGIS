@@ -66,6 +66,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | SelectSoilIntervalsForMapping | 4.8 | `envmon select-soil-intervals` |
 | BuildMaxResultMapDataset | 4.9 | `envmon build-max-result-dataset` |
 | GenerateArcadeLabelExpressions | 5.4 | `envmon generate-arcade-labels` |
+| GeneratePythonLabelExpressions | 5.4b | `envmon generate-python-labels` |
 | BuildAnalyticalKey | 5.5 | `envmon build-analytical-key` |
 | BuildReportFigurePackage | 5.7 | `envmon build-report-package` |
 | RegisterSourceDocuments | 2.5 | `envmon register-source-doc` |
@@ -288,6 +289,7 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon export-comparison-excel` | CLOUD | `core/envmon/export_comparison_excel.py` |
 | `autogis envmon build-max-result-dataset` | CLOUD | `core/envmon/max_result_dataset.py` |
 | `autogis envmon generate-arcade-labels` | CLOUD | `core/envmon/arcade_label_generator.py` |
+| `autogis envmon generate-python-labels` | CLOUD | `core/envmon/python_label_generator.py` |
 | `autogis envmon build-analytical-key` | CLOUD | `core/envmon/build_analytical_key.py` |
 | `autogis envmon build-report-package` | CLOUD | `core/envmon/report_figure_package.py` |
 | `autogis envmon register-source-doc` | CLOUD | `core/envmon/source_registry.py` |
@@ -460,6 +462,7 @@ autogis envmon generate-trend-charts --history-csv <history.csv> --out <charts.x
 autogis envmon select-soil-intervals --results-csv <soil.csv> --out <out.csv>
 autogis envmon build-analytical-key --analyte-dict <analytes.yaml> --screening-levels <levels.yaml> --matrix GW
 autogis envmon generate-arcade-labels --analytes "Benzene,PCE" --out <labels.json>
+autogis envmon generate-python-labels --analytes "Benzene,PCE" --out <labels.json>
 
 # Reporting extras
 autogis envmon build-report-appendix --results <results.csv> --out <out.xlsx>
