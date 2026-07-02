@@ -1,8 +1,27 @@
 """Tests for python_label_generator module (Tool 5.4b)."""
+import re
+
 from autogis.core.envmon.python_label_generator import (
     build_result_label_expression,
     build_exceedance_callout_expression,
 )
+
+
+def _call_find_label(expr: str, **field_values):
+    """Actually execute a generated Python label expression, the way Esri's
+    'Python' label-expression engine does: each bracketed [FieldName] token is a
+    stand-in for that field's runtime value. Strip the brackets to get a valid
+    Python identifier, exec the resulting function, and call it positionally with
+    the given field values in the order they first appear (matching FindLabel's
+    declared parameter order) -- proving the generated source actually runs, not
+    just that it contains the right substrings.
+    """
+    ordered_params = list(dict.fromkeys(re.findall(r'\[(\w+)\]', expr)))
+    src = re.sub(r'\[(\w+)\]', r'\1', expr)
+    namespace: dict = {}
+    exec(src, namespace)
+    args = [field_values[name] for name in ordered_params]
+    return namespace["FindLabel"](*args)
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +57,27 @@ def test_result_expression_is_string():
     expr = build_result_label_expression("ResultValue", "ReportedUnits")
     assert isinstance(expr, str)
     assert len(expr) > 0
+
+
+def test_result_expression_executes_for_clean_numeric():
+    expr = build_result_label_expression("ResultValue", "ReportedUnits")
+    result = _call_find_label(expr, ResultValue="1234.5", ReportedUnits="ug/L")
+    assert result == "1,234.50 ug/L"
+
+
+def test_result_expression_executes_for_nd():
+    expr = build_result_label_expression("ResultValue", "ReportedUnits")
+    result = _call_find_label(expr, ResultValue="ND", ReportedUnits="ug/L")
+    assert result == "ND"
+
+
+def test_result_expression_does_not_raise_for_qualified_value():
+    """Real result fields commonly carry qualifiers (e.g. '0.5 J', '<0.5').
+    float() would raise ValueError on these -- FindLabel must not propagate that,
+    or Pro silently drops the label for that feature."""
+    expr = build_result_label_expression("ResultValue", "ReportedUnits")
+    result = _call_find_label(expr, ResultValue="0.5 J", ReportedUnits="ug/L")
+    assert result == "0.5 J ug/L"
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +118,36 @@ def test_exceedance_expression_is_string():
     )
     assert isinstance(expr, str)
     assert len(expr) > 0
+
+
+def test_exceedance_expression_executes_when_exceeding():
+    expr = build_exceedance_callout_expression("ResultValue", "ScreeningLevel", "ReportedUnits")
+    result = _call_find_label(expr, ResultValue="10", ScreeningLevel="5", ReportedUnits="ug/L")
+    assert result == "10.00 ug/L**"
+
+
+def test_exceedance_expression_executes_when_not_exceeding():
+    expr = build_exceedance_callout_expression("ResultValue", "ScreeningLevel", "ReportedUnits")
+    result = _call_find_label(expr, ResultValue="3", ScreeningLevel="5", ReportedUnits="ug/L")
+    assert result == "3.00 ug/L"
+
+
+def test_exceedance_expression_does_not_raise_for_missing_sl():
+    expr = build_exceedance_callout_expression("ResultValue", "ScreeningLevel", "ReportedUnits")
+    result = _call_find_label(expr, ResultValue="10", ScreeningLevel="", ReportedUnits="ug/L")
+    assert result == "10.00 ug/L"
+
+
+def test_exceedance_expression_does_not_raise_for_qualified_value():
+    expr = build_exceedance_callout_expression("ResultValue", "ScreeningLevel", "ReportedUnits")
+    result = _call_find_label(expr, ResultValue="0.5 J", ScreeningLevel="5", ReportedUnits="ug/L")
+    assert result == "0.5 J ug/L"
+
+
+def test_exceedance_expression_does_not_raise_for_qualified_sl():
+    expr = build_exceedance_callout_expression("ResultValue", "ScreeningLevel", "ReportedUnits")
+    result = _call_find_label(expr, ResultValue="10", ScreeningLevel="TR", ReportedUnits="ug/L")
+    assert result == "10.00 ug/L"
 
 
 # ---------------------------------------------------------------------------

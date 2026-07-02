@@ -47,19 +47,31 @@ def build_result_label_expression(
 ) -> str:
     """Return Esri Python label-expression source for a result value with units.
 
+    Arcade's Text()/Number() never raise on non-numeric input (Number() yields NaN
+    instead) — a Python FindLabel that lets float() raise on a qualified value like
+    "0.5 J" or "<0.5" would instead leave that feature unlabeled in Pro. The
+    try/except mirrors Arcade's leniency: fall back to the raw value if it isn't
+    cleanly numeric, instead of crashing FindLabel.
+
     Example output (Python label-expression code, run via Pro's 'Python' engine):
         def FindLabel ( [ResultValue], [ReportedUnits] ):
             v = [ResultValue]
             if v is None or v == "" or v == "ND":
                 return "ND"
-            return "{:,.2f} {}".format(float(v), [ReportedUnits])
+            try:
+                return "{:,.2f} {}".format(float(v), [ReportedUnits])
+            except (TypeError, ValueError):
+                return "{} {}".format(v, [ReportedUnits])
     """
     return (
         f'def FindLabel ( [{value_field}], [{units_field}] ):\n'
         f'    v = [{value_field}]\n'
         f'    if v is None or v == "" or v == "{nd_text}":\n'
         f'        return "{nd_text}"\n'
-        f'    return "{{:,.2f}} {{}}".format(float(v), [{units_field}])'
+        f'    try:\n'
+        f'        return "{{:,.2f}} {{}}".format(float(v), [{units_field}])\n'
+        f'    except (TypeError, ValueError):\n'
+        f'        return "{{}} {{}}".format(v, [{units_field}])'
     )
 
 
@@ -74,14 +86,26 @@ def build_exceedance_callout_expression(
     """Return Esri Python label-expression source that appends '**' when the result
     exceeds the screening level.
 
+    Same non-throwing rationale as build_result_label_expression: Arcade's Number()
+    never raises (it yields NaN), so this falls back to the raw value if it isn't
+    cleanly numeric rather than letting float() crash FindLabel and blank the label.
+    A non-numeric/missing screening level just disables the exceedance check.
+
     Example output (Python label-expression code):
         def FindLabel ( [ResultValue], [ScreeningLevel], [ReportedUnits] ):
             v = [ResultValue]
             sl = [ScreeningLevel]
             if v is None or v == "" or v == "ND":
                 return "ND"
-            num = float(v)
-            if sl not in (None, "") and num > float(sl):
+            try:
+                num = float(v)
+            except (TypeError, ValueError):
+                return "{} {}".format(v, [ReportedUnits])
+            try:
+                exceeds = sl not in (None, "") and num > float(sl)
+            except (TypeError, ValueError):
+                exceeds = False
+            if exceeds:
                 return "{:,.2f} {}**".format(num, [ReportedUnits])
             return "{:,.2f} {}".format(num, [ReportedUnits])
     """
@@ -91,8 +115,15 @@ def build_exceedance_callout_expression(
         f'    sl = [{sl_field}]\n'
         f'    if v is None or v == "" or v == "{nd_text}":\n'
         f'        return "{nd_text}"\n'
-        f'    num = float(v)\n'
-        f'    if sl not in (None, "") and num > float(sl):\n'
+        f'    try:\n'
+        f'        num = float(v)\n'
+        f'    except (TypeError, ValueError):\n'
+        f'        return "{{}} {{}}".format(v, [{units_field}])\n'
+        f'    try:\n'
+        f'        exceeds = sl not in (None, "") and num > float(sl)\n'
+        f'    except (TypeError, ValueError):\n'
+        f'        exceeds = False\n'
+        f'    if exceeds:\n'
         f'        return "{{:,.2f}} {{}}{exceed_suffix}".format(num, [{units_field}])\n'
         f'    return "{{:,.2f}} {{}}".format(num, [{units_field}])'
     )
