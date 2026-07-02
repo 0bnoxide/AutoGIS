@@ -1,0 +1,40 @@
+"""The arcpy-free boundary, enforced mechanically.
+
+Key invariant (CLAUDE.md / ADR-0002): every module under ``autogis/`` must
+import with neither ``arcpy`` nor ``arcgis`` present. Before this test the
+invariant was only enforced incidentally — a new module with a top-level
+``import arcpy`` would pass CI as long as no other test happened to import it.
+
+Works in both environments: headless (import fails loudly) and inside an
+ArcGIS Pro env (the module would import, but the sys.modules assertion
+catches the eager arcpy/arcgis import).
+"""
+import ast
+import importlib
+import pkgutil
+import sys
+from pathlib import Path
+
+import autogis
+
+
+def test_every_autogis_module_imports_headless():
+    for name in ("arcpy", "arcgis"):
+        sys.modules.pop(name, None)
+    failed = []
+    for mod in pkgutil.walk_packages(autogis.__path__, prefix="autogis."):
+        try:
+            importlib.import_module(mod.name)
+        except Exception as exc:  # noqa: BLE001 - report every failure at once
+            failed.append(f"{mod.name}: {exc!r}")
+    assert not failed, "not importable without arcpy/arcgis:\n" + "\n".join(failed)
+    eager = [n for n in ("arcpy", "arcgis") if n in sys.modules]
+    assert not eager, f"importing autogis eagerly pulled in: {eager}"
+
+
+def test_pyt_toolbox_parses():
+    # toolbox.pyt imports arcpy at top level (by design, ADR-0006) so it can
+    # never be imported headless — but a syntax error in it must not wait for
+    # an ArcGIS Pro session to be discovered.
+    src = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
+    ast.parse(src.read_text(encoding="utf-8"), filename=str(src))
