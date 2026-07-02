@@ -281,8 +281,9 @@ _REGISTRY_SEED = [
      "intake", "Create/validate the normalized boring-log SQLite database"),
     ("index-field-attachments", "SyncFieldAttachments", "6.5", "CLOUD", "stable",
      "agol", "Index a harvester manifest into the AttachmentIndex table"),
-    ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "stable",
-     "cartography", "Export GIS layers to a Civil 3D-ready CAD package (DWG/DXF)"),
+    ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "planned",
+     "cartography", "Export GIS layers to a Civil 3D-ready CAD package (DWG/DXF) "
+     "-- mapping/validation logic done; arcpy Export-to-CAD call not yet wired, see issue #105"),
     ("export-civil3d", "ExportContoursForCivil3D", "8.2", "LOCAL", "stable",
      "cartography", "Export PNEZD point CSV + projection note (headless); contours/LandXML via Pro"),
 ]
