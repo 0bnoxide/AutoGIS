@@ -110,7 +110,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | DraftParserProfileFromWorkbook | `envmon draft-parser-profile` |
 | RTKControlCheckReport | `envmon rtk-control-check` |
 | GeneratePortfolioMetrics | `envmon portfolio-metrics` |
-| EvaluateGWModels | `envmon evaluate-gw-models` |
+| EvaluateGroundwaterSurfaceModels | `envmon evaluate-gw-models` |
 | ExportSurveyToCADGIS | `envmon export-survey-cad` |
 | GenerateWellInspectionReports | `envmon well-inspection-report` |
 
