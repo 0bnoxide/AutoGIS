@@ -7,6 +7,12 @@ One concept unifies two idempotency mechanisms across the suite:
 
 Both call sites can route their "have I processed this already?" decision
 through a ``SeenIndex`` so the policy lives in one place.
+
+Not currently wired into either call site: the harvester's
+skip_existing/incremental paths use ``manifest.py``/``state.py`` instead, and
+no envmon module imports this. Future-use abstraction, not dead code -- keep
+it until one of the two call sites is migrated to it, or it is deliberately
+removed.
 """
 from __future__ import annotations
 
