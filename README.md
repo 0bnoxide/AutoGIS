@@ -149,7 +149,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 
 | Tool | Roadmap # | What exists | What's missing |
 |------|-----------|-------------|----------------|
-| Dashboard consuming tools (6.11) | — | `schema/dashboard.py` (10 dataclasses), `dashboard_data_mart.py` (6.7), RefreshMonitoringDashboardData (6.4), PublishDashboardFromSpec (6.8), PromoteAGOLDataBetweenStages (6.10) — all shipped | CreateHostedViewsForStakeholders |
+| Dashboard consuming tools (6.11) | — | `dashboard_data_mart.py` (6.7), RefreshMonitoringDashboardData (6.4), PublishDashboardFromSpec (6.8), PromoteAGOLDataBetweenStages (6.10) — all shipped | CreateHostedViewsForStakeholders |
 
 Note: BuildGroundwaterElevationEvent (4.1), BuildAnalyticalExceedanceEvent (4.4), and
 UpdateWellElevationsFromLevelLoop (8.2) have all shipped (see *Fully implemented* above).
@@ -604,7 +604,7 @@ autogis/
 |------|---------|
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
-| `core/common/schema/` | 6 modules (attachments, boring, dashboard, drone, envmon, survey) exporting ~31 typed dataclasses |
+| `core/common/schema/` | 5 modules (attachments, boring, drone, envmon, survey) exporting ~21 typed dataclasses |
 | `core/envmon/` | 93 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
