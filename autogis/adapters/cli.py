@@ -1869,6 +1869,49 @@ def promote_cmd(profile, stage_map_path, layer, from_stage, to_stage,
         raise SystemExit(1)
 
 
+@agol.command("update-webmap")
+@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@click.option("--webmap-item", "webmap_item_id", required=True, help="Web map item ID")
+@click.option("--figure-spec", "figure_spec_path", required=True,
+              type=click.Path(exists=True), help="Figure spec YAML (canonical FigureSpec)")
+@click.option("--event-date", default="", help="Value for {event_date} in definition-query templates")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show the JSON changes without writing the web map")
+@click.option("--report", default=None, type=click.Path())
+def update_webmap_cmd(profile, webmap_item_id, figure_spec_path, event_date, dry_run, report):
+    """Tool 6.3: push a figure spec's display config into an AGOL web map."""
+    from autogis.core.agol.webmap import update_webmap_from_spec
+    from autogis.core.common.config import FigureSpec
+    spec = FigureSpec.load(Path(figure_spec_path))
+    gis = agol_from_profile(profile)
+    result = update_webmap_from_spec(gis, webmap_item_id=webmap_item_id,
+                                     figure_spec=spec.data, event_date=event_date,
+                                     dry_run=dry_run)
+    _render_qa(result.qa, report, "error")
+
+
+@agol.command("create-views")
+@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@click.option("--view-spec", "view_spec_path", required=True, type=click.Path(exists=True),
+              help="YAML: views: [{name, source_layer, allow_fields|deny_fields, "
+                   "definition_query, sensitive_fields}]")
+@click.option("--report", default=None, type=click.Path())
+def create_views_cmd(profile, view_spec_path, report):
+    """Tool 6.11: create/update audience-specific hosted views (sensitive-field leak is blocking)."""
+    from autogis.core.agol.hosted_views import create_stakeholder_view, load_view_specs
+    from autogis.core.common.qa import QACollector
+    data = yaml.safe_load(Path(view_spec_path).read_text(encoding="utf-8"))
+    try:
+        specs = load_view_specs(data)
+    except ValueError as exc:
+        raise click.UsageError(str(exc))
+    gis = agol_from_profile(profile)
+    combined = QACollector()
+    for spec in specs:
+        combined.extend(create_stakeholder_view(gis, spec).qa.records)
+    _render_qa(combined, report, "error")
+
+
 @envmon.command("validate-rtk-survey")
 @click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
 @click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
