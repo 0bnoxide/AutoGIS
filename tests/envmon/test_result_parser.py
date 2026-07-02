@@ -66,6 +66,17 @@ def test_na_ambiguity_is_flagged():
     assert "verify" in p.parse_warning.lower() or "NA" in p.parse_warning
 
 
+def test_na_on_screening_row_reads_as_no_criterion():
+    """A real Montana DEQ RBSL table uses 'na' for bulk TPH/TEH (no criterion
+    set, screened via fractions instead) -- the same 'NA' token means
+    something different on a screening-level row than on a data row, so the
+    message must not claim NOT_ANALYZED there."""
+    p = parse_result_value("na", screening_context=True)
+    assert p.is_not_analyzed  # status code itself is unchanged
+    assert "not applicable" in p.parse_warning.lower()
+    assert "not_analyzed" not in p.parse_warning.lower()
+
+
 @pytest.mark.parametrize("raw,want", [
     (datetime(2026, 4, 15), date(2026, 4, 15)),
     (date(2026, 4, 15), date(2026, 4, 15)),
@@ -129,3 +140,20 @@ def test_evaluate_screening_unknown_unit_falls_through():
 def test_evaluate_screening_none_units_falls_through():
     assert evaluate_screening(_det(5.0), 3.0) is True
     assert evaluate_screening(_det(1.0), 3.0) is False
+
+
+def test_normalize_analyte_name_collapses_embedded_newline():
+    """Regression for a real wrapped Excel header cell (confirmed against a
+    real client workbook's analyte header row): the cell's own text contains
+    a literal embedded newline, e.g. 'C11-C22\\nAromatics', not just visual
+    column-width wrapping. normalize_analyte_name must still resolve it."""
+    from pathlib import Path
+
+    import autogis
+    from autogis.core.common.config import load_analyte_dictionary
+    from autogis.core.envmon.result_parser import normalize_analyte_name
+
+    adict = load_analyte_dictionary(
+        Path(autogis.__file__).resolve().parent / "config" / "analytes"
+        / "analyte_dictionary.yaml")
+    assert normalize_analyte_name("C11-C22\nAromatics", adict) == "C11-C22 Aromatics"

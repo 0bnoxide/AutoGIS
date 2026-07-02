@@ -615,16 +615,33 @@ autogis/
 
 Read before relying on this suite in production.
 
-**H281 parser profile is an unverified DRAFT.**
+**H281 parser profile is an unverified DRAFT — but the layout family it assumes is now
+real-world cross-checked.**
 `autogis/config/parser_profiles/H281_Glasgow_DataTables.yaml` was built from the written spec
-only; the real workbook was not available. It ships with a DRAFT banner and `_TODO` markers.
-Tool 1 + human review is mandatory before the first import — compare every row/column anchor
-against the Tool 1 report, fix the `_TODO`s, and clear the DRAFT banner before importing real data.
+only; the real Glasgow workbook still hasn't been seen, so it still ships with a DRAFT banner
+and `_TODO` markers. Its row-anchor guesses were corrected against a real, structurally-similar
+workbook from a different site (Holiday Stationstore #272 / Circle K Store 2746272, Havre, MT)
+via Tool 1 plus targeted verification — see that profile's banner for what changed and what's
+still an unverified guess. Two fully anchor-verified sibling profiles now exist for that real
+site: `H272_Havre_GW_Elevation.yaml` (verified *and* dispatchable — `GW_WATER_LEVEL_ONLY` is
+already wired) and `H272_Havre_GW_Analytical.yaml` (anchors verified against the real workbook,
+but not yet dispatchable — no `data_type` currently handles a GW-analytical-only sheet; see
+that profile's banner for the concrete gap and what's needed to close it). Tool 1 + human
+review is still mandatory before the first import of the actual Glasgow workbook — compare
+every row/column anchor against the Tool 1 report, fix the remaining `_TODO`s, and clear the
+DRAFT banner only once that specific file has been checked.
 
-**Screening levels ship null.**
-Files under `autogis/config/screening_levels/` contain placeholder null values and `_TODO`
-source citations. Populate them before production. No regulatory number is invented in code;
-screening comparison stays tri-state (NULL = not evaluable) until the levels are filled.
+**Screening levels are partially populated.**
+`autogis/config/screening_levels/screening_levels.yaml`'s GW section now carries real,
+cited values for the 12 VPH/EPH fraction analytes (Benzene, Toluene, Ethylbenzene, Xylenes,
+MTBE, Naphthalene, and the C5-C8/C9-C12/C9-C10/C9-C18/C19-C36/C11-C22 fractions) — sourced
+from Montana DEQ's Tier 1 Risk-Based Screening Levels (RBSL) for groundwater (MDEQ, 2018),
+verified against a real client workbook carrying that same table. TPH and TEH stay `value:
+null` deliberately — Montana sets no bulk criterion for those, only for the fractions above,
+so `null` there means "not applicable," not "not yet sourced." Everything else (metals, all
+SOIL-matrix entries, EDB, 1,2-DCA) is still an unpopulated `_TODO` stub — no source workbook
+has surfaced values for those yet. No regulatory number is invented in code; screening
+comparison stays tri-state (NULL = not evaluable) until each remaining level is filled.
 
 **`average_parent_and_duplicate` is statistically dubious with nondetects.**
 It exists because the spec demands it. Every averaged value is flagged with a QA WARNING — keep
