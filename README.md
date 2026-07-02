@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~81 | ~60 numbered roadmap tools + 21 headless post-roadmap tools |
-| Foundation laid (partial code, not fully wired) | ~3 | |
+| Fully implemented (CLI command + core module + tests) | ~83 | ~62 numbered roadmap tools + 21 headless post-roadmap tools |
+| Foundation laid (partial code, not fully wired) | ~1 | |
 | **Planned** (spec / plan written, not yet coded) | ~7 | roadmap tools — see *Planned* list below |
 | Not started (no spec or plan) | ~12 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **90 `core/envmon/` modules** (91 `.py` files including `__init__.py`),
-**~86 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 89 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1136-test** arcpy-free
+The codebase now ships **92 `core/envmon/` modules** (93 `.py` files including `__init__.py`),
+**~88 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 91 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1160-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -75,6 +75,8 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | RegisterDroneFlight | 8.6 | `envmon register-drone-flight` *(HYBRID — GDB write path is LOCAL)* |
 | ImportDroneProducts | 8.8 | `envmon validate-drone-products` (headless QA half; the GDB-writing half is LOCAL — see below) |
 | ImportFieldBoringLogs | 8.0b | `envmon validate-boring-logs` (headless QA half; the GDB-writing half is LOCAL — see below) |
+| CreateBoringLogDatabase | 8.0a | `envmon create-boring-log-db` |
+| SyncFieldAttachments | 6.5 | `envmon index-field-attachments` (envmon-side index; the AGOL download half is the shipped attachment harvester) |
 | CreateSamplingEventPlan | 7.2 | `envmon create-sampling-plan` |
 | ReconcileFieldAndLabData | 7.3 | `envmon reconcile-field-lab` |
 | BuildMonitoringReportAppendix | 9.2 | `envmon build-report-appendix` |
@@ -137,8 +139,6 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 
 | Tool | Roadmap # | What exists | What's missing |
 |------|-----------|-------------|----------------|
-| CreateBoringLogDatabase | 8.0a | `schema/boring.py` (7 dataclasses) + upgrade-schema tables | Standalone create/validate tool |
-| SyncFieldAttachments | 6.5 | Attachment harvester (separate domain) | Envmon-side attachment index table wiring |
 | Dashboard consuming tools (6.8–6.11) | — | `schema/dashboard.py` (10 dataclasses), `dashboard_data_mart.py` (6.7, shipped) | Every consuming tool |
 
 Note: BuildGroundwaterElevationEvent (4.1) and BuildAnalyticalExceedanceEvent (4.4) have
@@ -237,7 +237,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (90 modules), and `autogis.core.agol` (publishing) sit on top of common
+  (92 modules), and `autogis.core.agol` (publishing) sit on top of common
 - **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
   (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
   core functions — the two interfaces cannot drift
@@ -326,6 +326,8 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon validate-field-completeness` | CLOUD | `core/envmon/field_completeness_validator.py` |
 | `autogis envmon validate-drone-products` | CLOUD | `core/envmon/import_drone_products.py` (QA-only half; GDB write is LOCAL) |
 | `autogis envmon validate-boring-logs` | CLOUD | `core/envmon/import_boring_logs.py` (QA-only half; GDB write is LOCAL) |
+| `autogis envmon create-boring-log-db` | CLOUD | `core/envmon/create_boring_log_database.py` |
+| `autogis envmon index-field-attachments` | CLOUD | `core/envmon/index_field_attachments.py` |
 | `autogis envmon survey-to-well-elevation --wells-csv` | HYBRID | `core/envmon/survey_to_well_elevation.py` (`--gdb` write path is LOCAL) |
 | `autogis envmon register-drone-flight --dry-run` | HYBRID | `core/envmon/register_drone_flight.py` (GDB write path is LOCAL) |
 | `autogis envmon rtk-control-check` | CLOUD | `core/envmon/rtk_control_check.py` |
@@ -392,7 +394,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1136 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1160 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -452,6 +454,8 @@ autogis envmon survey-to-well-elevation <rtk.csv> --site <id> --wells-csv <wells
 autogis envmon register-drone-flight <flight.yaml> --gdb <gdb> --dry-run                    # headless
 autogis envmon validate-boring-logs <input_dir>
 autogis envmon validate-drone-products --manifest <products.csv> --flight-id <id>
+autogis envmon create-boring-log-db <boring.sqlite>                # --validate to check an existing DB
+autogis envmon index-field-attachments <manifest.csv> --db <envmon.sqlite>
 
 # Batch intake & planning
 autogis envmon draft-parser-profile <workbook.xlsx> --output <profile.yaml>
@@ -583,7 +587,7 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 90 modules
+│   ├── envmon/          # Environmental monitoring — 92 modules
 │   └── agol/            # AGOL publishing
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
@@ -595,7 +599,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1136 arcpy-free tests
+└── tests/               # 1160 arcpy-free tests
 ```
 
 ### Key modules
@@ -604,8 +608,8 @@ autogis/
 |------|---------|
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
-| `core/common/schema/` | 5 modules (boring, dashboard, drone, envmon, survey) exporting ~30 typed dataclasses |
-| `core/envmon/` | 90 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/common/schema/` | 6 modules (attachments, boring, dashboard, drone, envmon, survey) exporting ~31 typed dataclasses |
+| `core/envmon/` | 92 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
@@ -655,7 +659,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1136 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1160 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash

@@ -57,6 +57,8 @@ TOOLS: dict[str, Runtime] = {
     "register-source-doc": Runtime.CLOUD,      # tool 2.5 headless registry
     "validate-boring-logs": Runtime.CLOUD,     # tool 8.0b headless validate
     "import-boring-logs": Runtime.LOCAL,       # tool 8.0b GDB write
+    "create-boring-log-db": Runtime.CLOUD,     # tool 8.0a headless SQLite scaffold
+    "index-field-attachments": Runtime.CLOUD,  # tool 6.5 envmon-side index, headless
     "register-drone-flight": Runtime.LOCAL,    # tool 8.6 GDB write
     "validate-drone-products": Runtime.CLOUD,  # tool 8.8 headless validate
     "import-drone-products": Runtime.LOCAL,    # tool 8.8 GDB write
@@ -267,6 +269,10 @@ _REGISTRY_SEED = [
      "Export RTK survey points to feature-code-mapped CSV/GeoJSON layers"),
     ("well-inspection-report", "GenerateWellInspectionReports", "", "CLOUD", "stable",
      "reporting", "Generate Markdown well inspection reports + site summary"),
+    ("create-boring-log-db", "CreateBoringLogDatabase", "8.0a", "CLOUD", "stable",
+     "intake", "Create/validate the normalized boring-log SQLite database"),
+    ("index-field-attachments", "SyncFieldAttachments", "6.5", "CLOUD", "stable",
+     "agol", "Index a harvester manifest into the AttachmentIndex table"),
 ]
 
 TOOL_REGISTRY: list = [

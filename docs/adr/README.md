@@ -51,6 +51,7 @@ Each ADR follows this structure:
 | [030](0030-autonomous-headless-batches-2026-06-29.md) | Autonomous headless tool batches (2026-06-29) — PRs #81/#84/#88 | Accepted | 2026-06-29 |
 | [031](0031-autonomous-headless-batches-2026-06-30.md) | Autonomous headless tool batches (2026-06-30) — PRs #92/#93/#95/#96 | Accepted | 2026-06-30 |
 | [032](0032-headless-tools-batch-2026-07-01.md) | Headless tools batch — RTK control check, portfolio metrics, GW model cross-validation, survey CAD/GIS export, well inspection reports | Accepted | 2026-07-01 |
+| [033](0033-boring-log-db-and-attachment-index.md) | Foundation-completion batch — CreateBoringLogDatabase (8.0a) + SyncFieldAttachments envmon-side attachment index (6.5) | Accepted | 2026-07-01 |
 
 ## File naming
 
