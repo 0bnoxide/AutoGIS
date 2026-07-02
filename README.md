@@ -22,7 +22,7 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 The codebase now ships **97 `core/envmon/` + 9 `core/agol/` modules (106 total)**,
 **100 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 103 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1376-test** arcpy-free
+`manage-callout-overrides` subcommands are counted individually), and a **1388-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -391,7 +391,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1376 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1388 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -597,7 +597,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1376 arcpy-free tests
+└── tests/               # 1388 arcpy-free tests
 ```
 
 ### Key modules
@@ -674,7 +674,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1376 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1388 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash
