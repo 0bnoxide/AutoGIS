@@ -124,3 +124,77 @@ def _build_well_id_expression(analyte_field: str) -> str:
         f'def FindLabel ( [{analyte_field}] ):\n'
         f'    return [{analyte_field}]'
     )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def generate_python_labels(
+    analytes: list[str],
+    *,
+    field_prefix: str = "",
+) -> list[PythonLabelSpec]:
+    """Generate one PythonLabelSpec per analyte per expression type.
+
+    Mirrors arcade_label_generator.generate_arcade_labels() field-for-field —
+    see that function's docstring for parameter semantics.
+
+    Args:
+        analytes: List of canonical analyte names (e.g. ["Benzene", "PCE"]).
+        field_prefix: Optional prefix for field names (e.g. "Env_").
+
+    Returns:
+        List of PythonLabelSpec objects (may be empty when analytes is empty).
+    """
+    if not analytes:
+        return []
+
+    specs: list[PythonLabelSpec] = []
+
+    for analyte in analytes:
+        fields = derive_label_fields(analyte, field_prefix)
+
+        specs.append(PythonLabelSpec(
+            layer_name=f"{fields.layer_base}_Result",
+            expression_type=LabelExpressionType.RESULT_WITH_UNITS,
+            analyte_field=fields.id_field,
+            value_field=fields.value_field,
+            units_field=fields.units_field,
+            sl_field=None,
+            expression=build_result_label_expression(fields.value_field, fields.units_field),
+        ))
+
+        specs.append(PythonLabelSpec(
+            layer_name=f"{fields.layer_base}_Exceedance",
+            expression_type=LabelExpressionType.EXCEEDANCE_CALLOUT,
+            analyte_field=fields.id_field,
+            value_field=fields.value_field,
+            units_field=fields.units_field,
+            sl_field=fields.sl_field,
+            expression=build_exceedance_callout_expression(
+                fields.value_field, fields.sl_field, fields.units_field
+            ),
+        ))
+
+        specs.append(PythonLabelSpec(
+            layer_name=f"{fields.layer_base}_ND",
+            expression_type=LabelExpressionType.ND_CALLOUT,
+            analyte_field=fields.id_field,
+            value_field=fields.value_field,
+            units_field=fields.units_field,
+            sl_field=None,
+            expression=_build_nd_callout_expression(fields.value_field, fields.units_field),
+        ))
+
+        specs.append(PythonLabelSpec(
+            layer_name=f"{fields.layer_base}_WellID",
+            expression_type=LabelExpressionType.WELL_ID_ONLY,
+            analyte_field=fields.id_field,
+            value_field=fields.value_field,
+            units_field=fields.units_field,
+            sl_field=None,
+            expression=_build_well_id_expression(fields.id_field),
+        ))
+
+    return specs
