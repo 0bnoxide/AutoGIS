@@ -45,6 +45,35 @@ def test_validate_parser_profile_bad_column_ref():
     assert (SEV_ERROR, "bad_column_ref") in _cats(records)
 
 
+def test_validate_parser_profile_flags_draft_profile_id():
+    """#78: draft-parser-profile output must surface as an active QA
+    finding, not just a silent _TODO marker a reviewer could miss."""
+    data = {"profile_id": "DRAFT", "sheets": []}
+    records = cv.validate_parser_profile(data)
+    assert (SEV_WARNING, "draft_profile") in _cats(records)
+
+
+def test_validate_parser_profile_reviewed_profile_not_flagged():
+    data = {"profile_id": "H281_Reviewed_v2", "sheets": []}
+    records = cv.validate_parser_profile(data)
+    assert "draft_profile" not in {r.category for r in records}
+
+
+def test_validate_figure_spec_flags_draft_note():
+    """#78: a figure spec's DraftNote convention (e.g. draft contour maps)
+    must surface as an active QA finding."""
+    data = {k: "x" for k in cv._FIGURE_MIN}
+    data["DraftNote"] = "CONTOURS ARE DRAFT -- PROFESSIONAL REVIEW REQUIRED"
+    records = cv.validate_figure_spec(data)
+    assert (SEV_WARNING, "draft_figure_spec") in _cats(records)
+
+
+def test_validate_figure_spec_without_draft_note_not_flagged():
+    data = {k: "x" for k in cv._FIGURE_MIN}
+    records = cv.validate_figure_spec(data)
+    assert "draft_figure_spec" not in {r.category for r in records}
+
+
 def test_validate_screening_levels_entry_missing_units():
     data = {"GW": {"Benzene": {"value": 5.0}}}  # no units
     records = cv.validate_screening_levels(data)
