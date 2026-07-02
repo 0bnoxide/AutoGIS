@@ -79,6 +79,27 @@ def test_build_index_skips_bad_attachment_id_with_warning():
                r.category == "manifest_rows_skipped" for r in qa.records)
 
 
+def test_build_index_warns_on_unjoinable_related_table():
+    qa = QACollector()
+    recs = build_attachment_index(
+        [{"attachment_id": "9", "objectid": "3", "original_name": "y.png"}],
+        qa=qa)
+    assert recs[0].related_table == ""
+    assert any(r.severity == SEV_WARNING and
+               r.category == "attachment_related_table_missing"
+               for r in qa.records)
+
+
+def test_build_index_no_warning_when_related_table_supplied():
+    qa = QACollector()
+    recs = build_attachment_index(
+        [{"attachment_id": "9", "objectid": "3", "original_name": "y.png"}],
+        related_table="FieldForms", qa=qa)
+    assert recs[0].related_table == "FieldForms"
+    assert not any(r.category == "attachment_related_table_missing"
+                   for r in qa.records)
+
+
 def test_validate_flags_downloaded_without_path(tmp_path):
     _, json_path = _manifest(tmp_path)
     recs = build_attachment_index(load_manifest(json_path))
