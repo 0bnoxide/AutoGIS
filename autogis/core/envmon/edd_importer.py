@@ -6,11 +6,11 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from autogis.core.common.config import screening_for
-from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING
-from autogis.core.envmon.edd_profile import LabEDDProfile
-from autogis.core.envmon.gdb_schema import SampleRecord, AnalyticalResultRecord
-from autogis.core.envmon.result_parser import (
+from ..common.config import screening_for
+from ..common.qa import QACollector, SEV_ERROR, SEV_WARNING
+from .edd_profile import LabEDDProfile
+from .gdb_schema import SampleRecord, AnalyticalResultRecord
+from .result_parser import (
     apply_qualifiers, classify_display, evaluate_screening,
     normalize_analyte_name, parse_excel_date, parse_result_value,
 )

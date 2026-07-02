@@ -22,7 +22,10 @@ def qa_report_options(func):
     func = click.option(
         "--fail-on", type=click.Choice(["error", "warning"]), default="error",
     )(func)
-    func = click.option("--report", default=None, type=click.Path())(func)
+    func = click.option(
+        "--report", default=None, type=click.Path(),
+        help="Write QA report to PATH (.md/.json/.csv by extension).",
+    )(func)
     return func
 
 
@@ -1327,8 +1330,12 @@ def optimize_callouts_cmd(site_config, figure_spec):
     """Tool 5.2: run callout placement optimizer (ArcGIS Pro)."""
     _guard("optimize-callouts")
     raise click.ClickException(
-        "optimize-callouts runs inside ArcGIS Pro only. "
-        "Use the OptimizeCalloutPlacement tool in the .pyt toolbox."
+        "optimize-callouts (Tool 5.2) is not implemented as a standalone "
+        "command -- there is no OptimizeCalloutPlacement .pyt tool either. "
+        "Its function was superseded by a --use-hull-collision flag design "
+        "on build-callouts (ADR-0020 + docs/superpowers/plans/"
+        "2026-06-27-optimize-callout-placement.md), which is itself not yet "
+        "wired into the CLI or .pyt. See ADR-0039."
     )
 
 
@@ -1350,8 +1357,12 @@ def manage_overrides_list_cmd(gdb, site, spec):
     """List all placement overrides for a site/figure spec."""
     _guard("manage-callout-overrides")
     raise click.ClickException(
-        "manage-callout-overrides runs inside ArcGIS Pro only. "
-        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
+        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
+        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
+        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
+        "read-one-full-override function needed for a correct 'unlock' "
+        "round-trip. See ADR-0039."
     )
 
 
@@ -1363,8 +1374,12 @@ def manage_overrides_clear_cmd(gdb, site, spec):
     """Delete all unlocked overrides for a site/figure spec."""
     _guard("manage-callout-overrides")
     raise click.ClickException(
-        "manage-callout-overrides runs inside ArcGIS Pro only. "
-        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
+        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
+        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
+        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
+        "read-one-full-override function needed for a correct 'unlock' "
+        "round-trip. See ADR-0039."
     )
 
 
@@ -1383,8 +1398,12 @@ def manage_overrides_lock_cmd(gdb, site, spec, location,
     """Lock a callout to a fixed position."""
     _guard("manage-callout-overrides")
     raise click.ClickException(
-        "manage-callout-overrides runs inside ArcGIS Pro only. "
-        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
+        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
+        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
+        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
+        "read-one-full-override function needed for a correct 'unlock' "
+        "round-trip. See ADR-0039."
     )
 
 
@@ -1397,8 +1416,12 @@ def manage_overrides_unlock_cmd(gdb, site, spec, location):
     """Remove the lock on a callout (override becomes a quadrant hint)."""
     _guard("manage-callout-overrides")
     raise click.ClickException(
-        "manage-callout-overrides runs inside ArcGIS Pro only. "
-        "Use the ManageCalloutPlacementOverrides tool in the .pyt toolbox."
+        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
+        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
+        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
+        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
+        "read-one-full-override function needed for a correct 'unlock' "
+        "round-trip. See ADR-0039."
     )
 
 
@@ -1894,6 +1917,11 @@ def create_views_cmd(profile, view_spec_path, report):
 @click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
 @click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
 @click.option("--report", default=None, type=click.Path())
+# Deliberately NOT @qa_report_options: this command's --fail-on defaults to
+# "warning" (not the shared contract's "error") because RTK precision
+# warnings are routinely expected and shouldn't fail a pipeline by default.
+# Exempted by name in tests/test_capabilities.py's QA-contract consistency
+# test -- don't "fix" this default without updating that test too.
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="warning")
 def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, report, fail_on):
     """Validate an RTK survey CSV for precision and fix-type QA (headless)."""
@@ -2460,9 +2488,9 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
 @click.option("--out", required=True, type=click.Path())
 @click.option("--manifest", "manifest_path", default=None, type=click.Path())
 @click.option("--no-dedup", is_flag=True, default=False)
-@click.option("--report", default=None, type=click.Path())
+@qa_report_options
 def merge_event_results_cmd(result_paths, results_dir, event_labels,
-                             out, manifest_path, no_dedup, report):
+                             out, manifest_path, no_dedup, report, fail_on):
     """Merge multiple event result CSVs into one long-format file (headless)."""
     from autogis.core.envmon.event_results_merger import merge_event_results
 
@@ -2479,7 +2507,7 @@ def merge_event_results_cmd(result_paths, results_dir, event_labels,
     )
     click.echo(f"Sources: {len(result.source_files)}  Rows: {result.total_rows}  "
                f"Duplicates dropped: {result.duplicate_rows_dropped}  Output: {out}")
-    _render_qa(result.qa, report, "warning")
+    _render_qa(result.qa, report, fail_on)
 
 
 @envmon.command("build-max-result-dataset")

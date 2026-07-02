@@ -116,7 +116,8 @@ def build_compliance_summary(
         screening = sl.get(analyte)
         exceedances = [
             r for r in qual_detected
-            if screening and (_parse_float(r.get("ResultValue", "")) or 0) > screening
+            if screening is not None
+            and (_parse_float(r.get("ResultValue", "")) or 0) > screening
         ]
         ever_exceeded = len(exceedances) > 0
         if ever_exceeded:

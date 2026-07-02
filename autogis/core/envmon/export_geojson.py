@@ -11,8 +11,8 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
-from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
+from .gdb_schema import AnalyticalResultRecord
 
 
 def load_well_coords(path: Path) -> Dict[str, Tuple[float, float]]:

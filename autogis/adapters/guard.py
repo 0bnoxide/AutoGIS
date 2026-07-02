@@ -26,5 +26,7 @@ def _arcpy_present() -> bool:
 def require_runtime(name: str) -> None:
     if requires_arcpy(name) and not _arcpy_present():
         raise RuntimeUnavailable(
-            f"Tool '{name}' needs arcpy (ArcGIS Pro). Run it in the .pyt "
-            f"toolbox inside Pro, or install into a cloned arcgispro-py3 env.")
+            f"Tool '{name}' needs arcpy (ArcGIS Pro). Run this CLI command "
+            f"inside a cloned arcgispro-py3 env, or use the equivalent tool "
+            f"in the .pyt toolbox inside Pro if one exists for it (not "
+            f"every LOCAL tool has a .pyt entry -- see ADR-0006/0039).")

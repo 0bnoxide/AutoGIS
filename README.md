@@ -57,7 +57,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | ExportGeoJSONResults | — | `envmon export-geojson` |
 | ValidateScheduleYAML | — | `envmon validate-schedule` |
 | RunHistoryReport / Query | 10.1 | `envmon run-history-report` / `envmon run-history` |
-| WriteRunHistory | 10.5 | internal (`core/common/run_history.py`, used by the readiness gate) |
+| WriteRunHistory | 10.5 | not implemented -- `RunHistory.write()` exists (`core/common/run_history.py`) but has no production caller; `run_history.csv` is user-populated today (see ADR-0017 status update, issue #104) |
 | PublishEnvironmentalLayersToAGOL | 6.1 | `agol publish-layer` |
 | BuildGroundwaterElevationEvent | 4.1 | `envmon build-gwe-event` |
 | EstimateGWFlowDirection | 4.3 | `envmon estimate-gw-flow-direction` (DRAFT) |
@@ -154,8 +154,9 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | UpdateLayoutDynamicText | 5.8 | `core/envmon/layout_manager.py` | not wired to any CLI command |
 
 Note: BuildGroundwaterElevationEvent (4.1), BuildAnalyticalExceedanceEvent (4.4),
-UpdateWellElevationsFromLevelLoop (8.2), and CreateHostedViewsForStakeholders (6.11) have all
-shipped (see *Fully implemented* above).
+UpdateWellElevationsFromLevelLoop (8.2), and CreateHostedViewsForStakeholders (6.11,
+the last of the Dashboard-consuming-tools group) have all shipped (see *Fully
+implemented* above).
 
 </details>
 
@@ -605,7 +606,7 @@ autogis/
 |------|---------|
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
-| `core/common/schema/` | 6 modules (attachments, boring, dashboard, drone, envmon, survey) exporting ~31 typed dataclasses |
+| `core/common/schema/` | 5 modules (attachments, boring, drone, envmon, survey) exporting ~21 typed dataclasses |
 | `core/envmon/` | 97 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |

@@ -9,9 +9,6 @@ from autogis.core.common.schema import (
     SurveyPointRaw, SurveyPointQA, LevelLoopRun, LevelLoopObservation,
     ElevationHistory,
     DroneFlight, DroneControlPoint, DroneCheckpoint, DroneProductRecord,
-    DashSiteStatus, DashEventStatus, DashWellStatus, DashCurrentExceedances,
-    DashGWLevelSummary, DashAnalyticalSummary, DashFieldQA, DashLabQA,
-    DashOpenIssues, DashReportReadiness,
 )
 
 
@@ -127,19 +124,6 @@ def test_drone_checkpoint_table_name():
 
 def test_drone_product_record_table_name():
     assert DroneProductRecord.table_name == "DroneProductRegistry"
-
-
-def test_all_dash_table_names():
-    assert DashSiteStatus.table_name == "Dash_SiteStatus"
-    assert DashEventStatus.table_name == "Dash_EventStatus"
-    assert DashWellStatus.table_name == "Dash_WellStatus"
-    assert DashCurrentExceedances.table_name == "Dash_CurrentExceedances"
-    assert DashGWLevelSummary.table_name == "Dash_GWLevelSummary"
-    assert DashAnalyticalSummary.table_name == "Dash_AnalyticalSummary"
-    assert DashFieldQA.table_name == "Dash_FieldQA"
-    assert DashLabQA.table_name == "Dash_LabQA"
-    assert DashOpenIssues.table_name == "Dash_OpenIssues"
-    assert DashReportReadiness.table_name == "Dash_ReportReadiness"
 
 
 def test_to_row_returns_all_fields():

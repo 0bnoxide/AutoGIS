@@ -25,8 +25,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
-from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
+from .gdb_schema import AnalyticalResultRecord
 
 
 @dataclasses.dataclass
