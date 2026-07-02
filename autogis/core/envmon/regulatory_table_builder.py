@@ -128,8 +128,10 @@ def write_regulatory_workbook(
                     else:
                         try:
                             val = float(val_str)
-                            mcl = sl.get(analyte) or spec.screening_levels.get(analyte)
-                            if mcl and val > mcl:
+                            mcl = sl.get(analyte)
+                            if mcl is None:
+                                mcl = spec.screening_levels.get(analyte)
+                            if mcl is not None and val > mcl:
                                 cell.value = f"{val}{exceed_marker}"
                                 cell.fill = _FILL_EXCEED
                                 total_exceedances += 1

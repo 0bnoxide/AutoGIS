@@ -7,35 +7,14 @@ this module is the pure, arcpy-free query + rendering layer.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import List, Optional
 
-from ...runtime.capabilities import TOOL_REGISTRY
-
-
-@dataclass
-class ToolEntry:
-    command: str
-    name: str
-    roadmap_id: str
-    runtime: str            # CLOUD | LOCAL | DRAFT
-    status: str             # stable | draft | planned
-    domain: str
-    description: str
-    plan_path: str = ""
+from ...runtime.capabilities import TOOL_REGISTRY, ToolCapability as ToolEntry
 
 
 def get_all_tools() -> List[ToolEntry]:
     """Return all registered tool entries (sorted by domain then command)."""
-    entries = [
-        ToolEntry(
-            command=c.command, name=c.name, roadmap_id=c.roadmap_id,
-            runtime=c.runtime, status=c.status, domain=c.domain,
-            description=c.description, plan_path=c.plan_path,
-        )
-        for c in TOOL_REGISTRY
-    ]
-    return sorted(entries, key=lambda t: (t.domain, t.command))
+    return sorted(TOOL_REGISTRY, key=lambda t: (t.domain, t.command))
 
 
 def filter_tools(

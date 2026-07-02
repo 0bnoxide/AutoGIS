@@ -177,7 +177,8 @@ def generate_arcade_labels(
             expression=_build_nd_callout_expression(value_field, units_field),
         ))
 
-        # 4. WELL_ID_ONLY (shared across all analytes; one per analyte pass)
+        # 4. WELL_ID_ONLY (well-ID-only label; emitted per analyte since each
+        # analyte gets its own layer, though the expression logic is identical)
         specs.append(ArcadeLabelSpec(
             layer_name=f"{layer_base}_WellID",
             expression_type=LabelExpressionType.WELL_ID_ONLY,

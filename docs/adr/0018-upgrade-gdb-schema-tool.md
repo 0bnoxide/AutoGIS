@@ -51,7 +51,7 @@ The motivation for keeping `create_or_update_gdb_schema()` untouched: it is call
 
 ### 4. All 27 new tables in a single version bump (v1 → v2)
 
-All schemas are already fully defined in `schema/boring.py`, `schema/survey.py`, `schema/drone.py`, and `schema/dashboard.py`. Adding them in one pass avoids noise from multiple partial-version bumps. No tool can write to a new table until the tool itself is built, so adding tables early has no operational downside.
+All schemas are already fully defined in `schema/boring.py`, `schema/survey.py`, and `schema/drone.py` (a fourth module, `schema/dashboard.py`, was removed 2026-07-02 as orphaned dead code -- see ADR-0014's status update and issue #120). Adding them in one pass avoids noise from multiple partial-version bumps. No tool can write to a new table until the tool itself is built, so adding tables early has no operational downside.
 
 ### 5. Table-by-table output
 

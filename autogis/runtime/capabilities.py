@@ -287,6 +287,23 @@ _REGISTRY_SEED = [
      "-- mapping/validation logic done; arcpy Export-to-CAD call not yet wired, see issue #105"),
     ("export-civil3d", "ExportContoursForCivil3D", "8.2", "LOCAL", "stable",
      "cartography", "Export PNEZD point CSV + projection note (headless); contours/LandXML via Pro"),
+    ("draft-parser-profile", "DraftParserProfile", "2.1", "CLOUD", "stable",
+     "admin", "Inspect a workbook and write a draft parser profile YAML"),
+    ("batch-import-workbooks", "BatchImportWorkbooks", "2.2", "CLOUD", "stable",
+     "intake", "Batch-import multiple EDD workbooks from a manifest CSV"),
+    ("migrate-legacy-data", "MigrateLegacyData", "2.4", "CLOUD", "stable",
+     "intake", "Convert wide-format legacy CSV to long-format result records"),
+    ("generate-arcade-labels", "GenerateArcadeLabels", "5.4", "CLOUD", "stable",
+     "cartography", "Generate Arcade label expressions for ArcGIS Pro layers"),
+    ("generate-python-labels", "GeneratePythonLabels", "5.4b", "CLOUD", "stable",
+     "cartography", "Generate Python label expressions for ArcGIS Pro layers"),
+    ("create-sampling-plan", "CreateSamplingPlan", "7.2", "CLOUD", "stable",
+     "field", "Generate planned sample list and bottle count for an event"),
+    ("reconcile-field-lab", "ReconcileFieldLab", "7.3", "CLOUD", "stable",
+     "qa", "Compare field records to lab results, flag mismatches"),
+    ("generate-event-changelog", "GenerateEventChangelog", "9.3", "CLOUD",
+     "stable", "reporting",
+     "Generate structured changelog from two monitoring event CSVs"),
 ]
 
 TOOL_REGISTRY: list = [

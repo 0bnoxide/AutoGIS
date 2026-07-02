@@ -1,8 +1,17 @@
 # ADR-014: Domain-split dataclass schema package for envmon tables
 
-**Status:** Accepted
+**Status:** Accepted (dashboard.py removed — see below)
 
 **Date:** 2026-06-25
+
+## Status update (2026-07-02)
+
+`schema/dashboard.py`'s 10 `Dash*` dataclasses were removed as orphaned dead
+code (issue #120): zero importers anywhere in the repo, and the already-shipped
+`BuildDashboardDataMart` (§6.7, `dashboard_data_mart.py`) never imported them
+either — it defines its own inline row structures instead. The package is now
+five domain modules, not six; everything else in this ADR (the `table_name`/
+`to_row()` contract, the four remaining domains) stands.
 
 ## Context
 

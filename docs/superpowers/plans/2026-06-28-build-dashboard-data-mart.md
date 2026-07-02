@@ -1,5 +1,13 @@
 # BuildDashboardDataMart Implementation Plan
 
+> **Deviation note (2026-07-02):** the shipped `dashboard_data_mart.py` does NOT
+> import from `schema/dashboard.py` as this plan specifies below -- it defines
+> its own inline row structures instead. `schema/dashboard.py`'s `Dash_*`
+> dataclasses were later found to have zero importers anywhere (including this
+> tool) and were removed as dead code; see ADR-0014's status update and issue
+> #120. This plan is kept as a historical record of original intent, not
+> current architecture.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement `BuildDashboardDataMart` (roadmap 6.7) — flatten raw analytical, water-level, and QA records into the 10 `Dash_*` dataclasses defined in `autogis/core/common/schema/dashboard.py`, serialize to JSON for headless use, and provide an arcpy GDB write seam for LOCAL production.

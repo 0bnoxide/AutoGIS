@@ -87,6 +87,14 @@ def validate_site(data: dict) -> List[QARecord]:
 def validate_parser_profile(data: dict) -> List[QARecord]:
     out: List[QARecord] = []
     _require(data, ["profile_id", "sheets"], "parser profile", out)
+    profile_id = data.get("profile_id")
+    if isinstance(profile_id, str) and "DRAFT" in profile_id.upper():
+        out.append(_rec(SEV_WARNING, "draft_profile",
+                        f"parser profile {profile_id!r} is marked DRAFT -- "
+                        f"row/column anchors are unverified against real "
+                        f"workbook data (ADR-0011 pre-production gate)",
+                        action="review every sheet's anchors against real "
+                               "workbook data before production use"))
     for sd in data.get("sheets", []) or []:
         name = sd.get("sheet_name", "?")
         dt = sd.get("data_type")
@@ -131,6 +139,21 @@ def _validate_filename_pattern(pattern: str, context: str) -> List[QARecord]:
 def validate_figure_spec(data: dict) -> List[QARecord]:
     out: List[QARecord] = []
     _require(data, FIGURE_REQUIRED, "figure spec", out)
+    spec_id = data.get("figure_spec_id")
+    title = data.get("figure_title")
+    draft_note = data.get("DraftNote")
+    is_draft = (
+        (isinstance(spec_id, str) and "DRAFT" in spec_id.upper())
+        or (isinstance(title, str) and "DRAFT" in title.upper())
+        or draft_note is not None
+    )
+    if is_draft:
+        note = f" ({draft_note})" if draft_note else ""
+        out.append(_rec(SEV_WARNING, "draft_figure_spec",
+                        f"figure spec {spec_id!r} is marked DRAFT{note} -- "
+                        f"professional review required before production use",
+                        action="review the flagged output against a "
+                               "professional standard before delivery"))
     matrix = data.get("matrix")
     if matrix is not None and matrix not in KNOWN_MATRICES:
         out.append(_rec(SEV_ERROR, "bad_matrix",

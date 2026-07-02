@@ -82,6 +82,18 @@ def test_max_ratio():
     assert mw01.max_ratio == pytest.approx(9.0 / 5.0)
 
 
+def test_zero_screening_level_flags_exceedance():
+    rows = [
+        {"LocationID": "MW-04", "AnalyteName": "Lead", "ResultValue": "0.5",
+         "ResultQualifier": "", "ReportedUnits": "ug/L", "SampleDate": "2026-01-15"},
+    ]
+    result = build_compliance_summary(rows, screening_levels={"Lead": 0.0})
+    mw04 = next(r for r in result.records
+                if r.location_id == "MW-04" and r.analyte_name == "Lead")
+    assert mw04.ever_exceeded is True
+    assert mw04.exceedance_count == 1
+
+
 def test_write_workbook(tmp_path):
     result = build_compliance_summary(_ROWS, screening_levels=_SL)
     out = tmp_path / "compliance.xlsx"
