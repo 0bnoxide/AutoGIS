@@ -375,6 +375,48 @@ def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("portfolio-metrics")
+@click.option("--run-history", required=True, type=click.Path(),
+              help="run_history.csv path (need not exist; treated as empty if absent).")
+@click.option("--required-tool", "required_tools", multiple=True,
+              help="Tool name that must have succeeded per site (repeatable).")
+@click.option("--site", "site_ids", multiple=True,
+              help="Restrict to this site ID (repeatable). Default: every site "
+                   "found in the run history.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Optional CSV path for the per-site rollup.")
+@qa_report_options
+def portfolio_metrics_cmd(run_history, required_tools, site_ids, output,
+                          report, fail_on):
+    """Roll up per-site report readiness across a multi-site run history."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.common.run_history import RunHistory
+    from autogis.core.envmon.portfolio_metrics import (
+        build_portfolio_metrics,
+        write_portfolio_csv,
+    )
+
+    history = RunHistory(Path(run_history))
+    qa = QACollector()
+    statuses = build_portfolio_metrics(
+        history, list(required_tools),
+        site_ids=list(site_ids) or None,
+        qa=qa,
+    )
+
+    n_ready = sum(1 for s in statuses if s.ready)
+    click.echo(f"Sites: {len(statuses)}  Ready: {n_ready}  Not ready: {len(statuses) - n_ready}")
+    for s in statuses:
+        click.echo(f"  {s.site_id}: {'READY' if s.ready else 'NOT READY'}"
+                   + (f" (missing: {s.missing_tools})" if s.missing_tools else ""))
+
+    if output:
+        write_portfolio_csv(statuses, Path(output))
+        click.echo(f"Results written: {output}")
+
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("compare-events")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
@@ -824,6 +866,51 @@ def drone_checkpoint_qa_cmd(
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("rtk-control-check")
+@click.option("--control-points", "control_csv", required=True,
+              type=click.Path(exists=True),
+              help="Control-check CSV (control_id, published_x/y/z, surveyed_x/y/z).")
+@click.option("--horizontal-tolerance-ft", type=float, default=0.05, show_default=True,
+              help="Max allowed horizontal distance per point, in feet.")
+@click.option("--vertical-tolerance-ft", type=float, default=0.10, show_default=True,
+              help="Max allowed vertical distance per point, in feet.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Optional CSV path for per-point results.")
+@qa_report_options
+def rtk_control_check_cmd(
+    control_csv, horizontal_tolerance_ft, vertical_tolerance_ft, output,
+    report, fail_on,
+):
+    """Compare RTK-surveyed control shots to published benchmarks (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.rtk_control_check import (
+        evaluate_control_check,
+        read_control_check_csv,
+        write_results_csv,
+    )
+
+    points = read_control_check_csv(Path(control_csv))
+    qa = QACollector()
+    summary = evaluate_control_check(
+        points,
+        horizontal_tolerance_ft=horizontal_tolerance_ft,
+        vertical_tolerance_ft=vertical_tolerance_ft,
+        qa=qa,
+    )
+
+    click.echo(f"Control points: {summary.n_points}")
+    click.echo(f"Pass: {summary.n_pass}  Fail: {summary.n_fail}")
+    click.echo(f"RMSE horizontal: {summary.rmse_horizontal:.4f} ft  "
+               f"RMSE vertical: {summary.rmse_vertical:.4f} ft")
+    click.echo(f"Overall: {'PASS' if summary.overall_pass else 'FAIL'}")
+
+    if output:
+        write_results_csv(summary, Path(output))
+        click.echo(f"Results written: {output}")
+
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("export-geojson")
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV of AnalyticalResultRecord rows (e.g. apply-screening output).")
@@ -1014,6 +1101,33 @@ def generate_event_report_cmd(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding="utf-8")
     click.echo(f"Written: {out}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("well-inspection-report")
+@click.option("--wells-csv", required=True, type=click.Path(exists=True),
+              help="Wells CSV; must include a WellID column.")
+@click.option("--site", "site_id", required=True, help="Site ID.")
+@click.option("--output-dir", required=True, type=click.Path(),
+              help="Directory to write one Markdown file per well + SiteSummary.md.")
+@click.option("--maintenance-log-csv", default=None, type=click.Path(),
+              help="Optional maintenance log CSV (WellID, InspectionDate, "
+                   "Condition, Notes). Absent file -> no inspection history.")
+@qa_report_options
+def well_inspection_report_cmd(wells_csv, site_id, output_dir,
+                               maintenance_log_csv, report, fail_on):
+    """Generate Markdown well inspection reports + a site summary (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.well_inspection_report import build_well_inspection_reports
+
+    qa = QACollector()
+    written = build_well_inspection_reports(
+        Path(wells_csv), Path(output_dir),
+        site_id=site_id,
+        maintenance_log_csv=Path(maintenance_log_csv) if maintenance_log_csv else None,
+        qa=qa,
+    )
+    click.echo(f"Written {len(written)} Markdown file(s) to {output_dir}")
     _render_qa(qa, report, fail_on)
 
 
@@ -1471,6 +1585,42 @@ def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, report, fa
     from autogis.core.envmon.validate_rtk_survey import validate_rtk_points
     points = parse_rtk_csv(Path(csv_path))
     qa = validate_rtk_points(points, hrms_threshold, vrms_threshold)
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("export-survey-cad")
+@click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
+@click.option("--feature-code-map", "map_path", required=True, type=click.Path(exists=True),
+              help="YAML feature-code -> layer-name mapping "
+                   "(e.g. {MW: MonitoringWells, GCP: DroneControlPoints}).")
+@click.option("--output-dir", required=True, type=click.Path(),
+              help="Directory to write one CSV (+ manifest.json) per layer.")
+@click.option("--geojson/--no-geojson", default=False,
+              help="Also write a GeoJSON FeatureCollection per layer.")
+@qa_report_options
+def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, report, fail_on):
+    """Export RTK survey points to feature-code-mapped CSV/GeoJSON layers (headless).
+
+    CSV/GeoJSON only — DWG/DXF/LandXML CAD export is out of scope for this tool.
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
+    from autogis.core.envmon.export_survey_cad import (
+        export_survey_to_cad_gis,
+        load_feature_code_map,
+    )
+
+    points = parse_rtk_csv(Path(csv_path))
+    feature_code_map = load_feature_code_map(Path(map_path))
+    qa = QACollector()
+    manifest = export_survey_to_cad_gis(
+        points, feature_code_map, Path(output_dir),
+        write_geojson=geojson, qa=qa,
+    )
+
+    for entry in manifest:
+        click.echo(f"  {entry.layer_name}: {entry.point_count} point(s) -> {entry.output_path}")
+
     _render_qa(qa, report, fail_on)
 
 
@@ -2068,6 +2218,40 @@ def estimate_gw_flow_direction_cmd(wells_csv, site_id, event_date, run_id,
             w.writeheader()
             w.writerow(d)
         click.echo(f"Result written: {output}")
+
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("evaluate-gw-models")
+@click.option("--observations", "observations_csv", required=True,
+              type=click.Path(exists=True),
+              help="Wide CSV: well_id, observed_ft, one column per model.")
+@click.option("--tolerance-ft", type=float, default=0.5, show_default=True,
+              help="Absolute error threshold for the percent-within-tolerance stat.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Optional CSV path for per-model ranked results.")
+@qa_report_options
+def evaluate_gw_models_cmd(observations_csv, tolerance_ft, output, report, fail_on):
+    """Cross-validate interpolation model predictions against observed values."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.evaluate_gw_models import (
+        evaluate_gw_models,
+        read_gw_model_csv,
+        write_model_stats_csv,
+    )
+
+    observations = read_gw_model_csv(Path(observations_csv))
+    qa = QACollector()
+    stats = evaluate_gw_models(observations, tolerance_ft=tolerance_ft, qa=qa)
+
+    for s in stats:
+        click.echo(f"  #{s.rank} {s.model_name}: RMSE={s.rmse:.4f} ft  "
+                   f"MAE={s.mae:.4f} ft  bias={s.mean_error:+.4f} ft  "
+                   f"{s.pct_within_tolerance:.1f}% within {tolerance_ft} ft")
+
+    if output:
+        write_model_stats_csv(stats, Path(output))
+        click.echo(f"Results written: {output}")
 
     _render_qa(qa, report, fail_on)
 

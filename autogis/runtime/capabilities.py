@@ -61,6 +61,11 @@ TOOLS: dict[str, Runtime] = {
     "validate-drone-products": Runtime.CLOUD,  # tool 8.8 headless validate
     "import-drone-products": Runtime.LOCAL,    # tool 8.8 GDB write
     "survey-to-well-elevation": Runtime.LOCAL,  # tool 8.5 GDB write (--gdb path)
+    "rtk-control-check": Runtime.CLOUD,  # RTK control-network check, headless
+    "portfolio-metrics": Runtime.CLOUD,  # cross-site readiness rollup, headless
+    "evaluate-gw-models": Runtime.CLOUD,  # model prediction cross-validation, headless
+    "export-survey-cad": Runtime.CLOUD,  # feature-code CSV/GeoJSON export, headless
+    "well-inspection-report": Runtime.CLOUD,  # Markdown well inspection report, headless
 }
 
 
@@ -252,6 +257,16 @@ _REGISTRY_SEED = [
      "intake", "Import a boring-log CSV package into the GDB"),
     ("survey-to-well-elevation", "SurveyToWellElevationUpdate", "8.5", "LOCAL",
      "stable", "field", "Push QA-passed RTK elevations to MonitoringWells.TOC_ft"),
+    ("rtk-control-check", "RTKControlCheckReport", "", "CLOUD", "stable", "field",
+     "Compare RTK-surveyed control shots to published benchmarks"),
+    ("portfolio-metrics", "GeneratePortfolioMetrics", "", "CLOUD", "stable", "admin",
+     "Roll up per-site report readiness across a multi-site run history"),
+    ("evaluate-gw-models", "EvaluateGroundwaterSurfaceModels", "", "CLOUD", "stable",
+     "analysis", "Cross-validate interpolation model predictions against observed values"),
+    ("export-survey-cad", "ExportSurveyToCADGIS", "", "CLOUD", "stable", "field",
+     "Export RTK survey points to feature-code-mapped CSV/GeoJSON layers"),
+    ("well-inspection-report", "GenerateWellInspectionReports", "", "CLOUD", "stable",
+     "reporting", "Generate Markdown well inspection reports + site summary"),
 ]
 
 TOOL_REGISTRY: list = [
