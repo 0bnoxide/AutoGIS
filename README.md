@@ -15,7 +15,7 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | Status | Count | Notes |
 |--------|------:|-------|
 | Fully implemented (CLI command + core module + tests) | ~94 | ~73 numbered roadmap tools + 21 headless post-roadmap tools |
-| Foundation laid (partial code, not fully wired) | ~1 | |
+| Foundation laid (partial code, not fully wired) | 0 | |
 | **Planned** (spec / plan written, not yet coded) | ~4 | roadmap tools — see *Planned* list below |
 | Not started (no spec or plan) | ~4 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
@@ -151,10 +151,12 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 
 | Tool | Roadmap # | What exists | What's missing |
 |------|-----------|-------------|----------------|
-| Dashboard consuming tools (6.11) | — | `dashboard_data_mart.py` (6.7), RefreshMonitoringDashboardData (6.4), PublishDashboardFromSpec (6.8), PromoteAGOLDataBetweenStages (6.10) — all shipped | CreateHostedViewsForStakeholders |
+| *(none currently)* | | | |
 
-Note: BuildGroundwaterElevationEvent (4.1), BuildAnalyticalExceedanceEvent (4.4), and
-UpdateWellElevationsFromLevelLoop (8.2) have all shipped (see *Fully implemented* above).
+Note: BuildGroundwaterElevationEvent (4.1), BuildAnalyticalExceedanceEvent (4.4),
+UpdateWellElevationsFromLevelLoop (8.2), and CreateHostedViewsForStakeholders (6.11,
+the last of the Dashboard-consuming-tools group) have all shipped (see *Fully
+implemented* above).
 
 </details>
 
