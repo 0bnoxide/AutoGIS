@@ -53,6 +53,17 @@ def test_highest_detections_exceedance_mentioned():
     assert "exceed" in section.text.lower() or "MCL" in section.text
 
 
+def test_highest_detections_zero_mcl_flags_exceedance():
+    rows = [
+        {"location_id": "MW-06", "analyte_name": "Lead",
+         "max_result_value": "0.5", "max_sample_date": "2026-06-15",
+         "reported_units": "ug/L", "exceedance_ratio": "2.0", "has_exceedance": "True"},
+    ]
+    section = build_highest_detections_section(rows, top_n=1,
+                                               screening_levels={"Lead": 0.0})
+    assert "exceed" in section.text.lower() or "MCL" in section.text
+
+
 def test_exceedance_change_new():
     section = build_exceedance_change_section(_CHANGE_LOG)
     assert "MW-04" in section.text

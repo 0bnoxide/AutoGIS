@@ -166,6 +166,41 @@ def test_merge_event_results_exposes_fail_on(tmp_path):
     )
 
 
+def test_merge_event_results_fail_on_is_not_hardcoded(tmp_path, monkeypatch):
+    """Regression test for #82's root cause: merge-event-results used to
+    hardcode _render_qa(..., "warning") regardless of --fail-on. Assert the
+    CLI-supplied value is what actually reaches _render_qa, not a literal.
+    Deliberately passes "error" (NOT the old hardcoded "warning") so the
+    assertion actually discriminates a reintroduced hardcode from a real
+    pass-through -- a test using "warning" here would pass either way.
+
+    (event_results_merger.py has no SEV_WARNING code path reachable via the
+    CLI's own options, so a fail_on-changes-the-exit-code test isn't possible
+    here -- this asserts the argument is threaded through instead.)"""
+    import autogis.adapters.cli as cli_module
+
+    f1 = tmp_path / "Env_Results_20260115.csv"
+    _write_csv(f1, [_RESULT_ROWS[0]])
+    out = tmp_path / "merged.csv"
+
+    captured = {}
+    real_render_qa = cli_module._render_qa
+
+    def spy_render_qa(qa, report, fail_on):
+        captured["fail_on"] = fail_on
+        return real_render_qa(qa, report, fail_on)
+
+    monkeypatch.setattr(cli_module, "_render_qa", spy_render_qa)
+
+    _run(
+        "envmon", "merge-event-results",
+        "--results", str(f1),
+        "--out", str(out),
+        "--fail-on", "error",
+    )
+    assert captured.get("fail_on") == "error"
+
+
 # ===========================================================================
 # 2. build-max-result-dataset
 # ===========================================================================

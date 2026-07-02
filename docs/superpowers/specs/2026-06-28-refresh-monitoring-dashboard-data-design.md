@@ -1,5 +1,11 @@
 # RefreshMonitoringDashboardData Design
 
+> **Deviation note (2026-07-02):** the shipped `dashboard_refresh.py` does NOT
+> reference `schema/dashboard.py` as this spec assumes below. `schema/dashboard.py`'s
+> `Dash_*` dataclasses were later found to have zero importers anywhere and were
+> removed as dead code; see ADR-0014's status update and issue #120. Kept as a
+> historical record of original intent, not current architecture.
+
 **Date:** 2026-06-28
 **Status:** Approved
 **Tool:** RefreshMonitoringDashboardData (Tool 6.4)

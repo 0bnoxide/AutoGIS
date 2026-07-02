@@ -63,7 +63,7 @@ def build_highest_detections_section(
         ratio_str = r.get("exceedance_ratio", "")
         ratio = _parse_float(ratio_str)
         mcl = sl.get(analyte)
-        if ratio and ratio >= 1.0 and mcl:
+        if ratio and ratio >= 1.0 and mcl is not None:
             exceed_clause = (f", which exceeded the MCL of {mcl} {units} "
                              f"({ratio:.1f}×)")
         else:
