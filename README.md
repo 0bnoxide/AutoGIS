@@ -9,24 +9,24 @@ GUI, and the importable core itself).
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-06-30**. The
+Status against the 79-tool environmental monitoring roadmap, as of **2026-07-02**. The
 Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~76 | ~60 numbered roadmap tools + 16 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~81 | ~60 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | ~3 | |
 | **Planned** (spec / plan written, not yet coded) | ~7 | roadmap tools — see *Planned* list below |
 | Not started (no spec or plan) | ~12 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **85 `core/envmon/` modules** (86 `.py` files including `__init__.py`),
-**~81 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 84 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1084-test** arcpy-free
+The codebase now ships **90 `core/envmon/` modules** (91 `.py` files including `__init__.py`),
+**~86 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 89 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1136-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
-2026-06-30, PRs #81/#84/#88/#92/#93/#95/#96).
+2026-07-01, PRs #81/#84/#88/#92/#93/#95/#96/#102).
 
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
@@ -99,6 +99,11 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | ValidateFieldDataCompleteness | `envmon validate-field-completeness` |
 | ExportComparisonExcel | `envmon export-comparison-excel` |
 | DraftParserProfileFromWorkbook | `envmon draft-parser-profile` |
+| RTKControlCheckReport | `envmon rtk-control-check` |
+| GeneratePortfolioMetrics | `envmon portfolio-metrics` |
+| EvaluateGWModels | `envmon evaluate-gw-models` |
+| ExportSurveyToCADGIS | `envmon export-survey-cad` |
+| GenerateWellInspectionReports | `envmon well-inspection-report` |
 
 </details>
 
@@ -232,7 +237,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (85 modules), and `autogis.core.agol` (publishing) sit on top of common
+  (90 modules), and `autogis.core.agol` (publishing) sit on top of common
 - **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
   (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
   core functions — the two interfaces cannot drift
@@ -323,6 +328,11 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon validate-boring-logs` | CLOUD | `core/envmon/import_boring_logs.py` (QA-only half; GDB write is LOCAL) |
 | `autogis envmon survey-to-well-elevation --wells-csv` | HYBRID | `core/envmon/survey_to_well_elevation.py` (`--gdb` write path is LOCAL) |
 | `autogis envmon register-drone-flight --dry-run` | HYBRID | `core/envmon/register_drone_flight.py` (GDB write path is LOCAL) |
+| `autogis envmon rtk-control-check` | CLOUD | `core/envmon/rtk_control_check.py` |
+| `autogis envmon portfolio-metrics` | CLOUD | `core/envmon/portfolio_metrics.py` |
+| `autogis envmon evaluate-gw-models` | CLOUD | `core/envmon/evaluate_gw_models.py` |
+| `autogis envmon export-survey-cad` | CLOUD | `core/envmon/export_survey_cad.py` |
+| `autogis envmon well-inspection-report` | CLOUD | `core/envmon/well_inspection_report.py` |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
@@ -382,7 +392,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1084 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1136 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -427,11 +437,16 @@ autogis envmon generate-event-report --site <id> --event <id> --output <report.m
 autogis envmon export-geojson --results-csv <results.csv> --coords-csv <coords.csv> --output <out.geojson>
 autogis envmon export-report-format-summary-tables --results-csv <results.csv> --output <out.xlsx>
 autogis envmon run-history --run-history <run_history.csv> --format table
+autogis envmon portfolio-metrics --run-history <run_history.csv> --required-tool import-edd --required-tool validate-units
+autogis envmon evaluate-gw-models --observations <predictions.csv> --tolerance-ft 0.5
 
 # Field & survey
 autogis envmon build-survey-form --site <site.yaml> --analytes <analytes.yaml> --event <event.yaml> --out <form.xlsx>
 autogis envmon validate-rtk-survey <points.csv>
 autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
+autogis envmon rtk-control-check --control-points <control.csv> --horizontal-tolerance-ft 0.05 --vertical-tolerance-ft 0.10
+autogis envmon export-survey-cad <points.csv> --feature-code-map <map.yaml> --output-dir <out>
+autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --maintenance-log-csv <log.csv>
 autogis envmon reconcile-survey123-lab --survey <s123.csv> --edd <lab.csv> --edd-profile <profile.yaml> --site <id>
 autogis envmon survey-to-well-elevation <rtk.csv> --site <id> --wells-csv <wells.csv>       # headless
 autogis envmon register-drone-flight <flight.yaml> --gdb <gdb> --dry-run                    # headless
@@ -568,7 +583,7 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 85 modules
+│   ├── envmon/          # Environmental monitoring — 90 modules
 │   └── agol/            # AGOL publishing
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
@@ -580,7 +595,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1084 arcpy-free tests
+└── tests/               # 1136 arcpy-free tests
 ```
 
 ### Key modules
@@ -590,7 +605,7 @@ autogis/
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
 | `core/common/schema/` | 5 modules (boring, dashboard, drone, envmon, survey) exporting ~30 typed dataclasses |
-| `core/envmon/` | 85 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/envmon/` | 90 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
@@ -640,7 +655,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1084 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1136 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash
