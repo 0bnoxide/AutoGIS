@@ -15,14 +15,14 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | Status | Count | Notes |
 |--------|------:|-------|
 | Fully implemented (CLI command + core module + tests) | ~94 | ~73 numbered roadmap tools + 21 headless post-roadmap tools |
-| Foundation laid (partial code, not fully wired) | 0 | |
-| **Planned** (spec / plan written, not yet coded) | ~4 | roadmap tools — see *Planned* list below |
+| Foundation laid (partial code, not fully wired) | ~1 | |
+| **Planned** (spec / plan written, not yet coded) | ~3 | roadmap tools — see *Planned* list below |
 | Not started (no spec or plan) | ~3 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **97 `core/envmon/` + `core/agol/` modules**,
-**~99 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 102 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1314-test** arcpy-free
+The codebase now ships **97 `core/envmon/` + 9 `core/agol/` modules (106 total)**,
+**100 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 103 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1388-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -151,7 +151,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 
 | Tool | Roadmap # | What exists | What's missing |
 |------|-----------|-------------|----------------|
-| *(none currently)* | | | |
+| UpdateLayoutDynamicText | 5.8 | `core/envmon/layout_manager.py` | not wired to any CLI command |
 
 Note: BuildGroundwaterElevationEvent (4.1), BuildAnalyticalExceedanceEvent (4.4),
 UpdateWellElevationsFromLevelLoop (8.2), and CreateHostedViewsForStakeholders (6.11,
@@ -177,7 +177,6 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
 | GenerateSiteMapSeries | 5.6 | plan |
-| UpdateLayoutDynamicText | 5.8 | plan *(`layout_manager.py` exists but is not wired to any CLI command)* |
 
 **Field / Survey123 (§7)**
 
@@ -237,7 +236,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (93 modules), and `autogis.core.agol` (publishing) sit on top of common
+  (97 modules), and `autogis.core.agol` (publishing, 9 modules) sit on top of common
 - **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
   (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
   core functions — the two interfaces cannot drift
@@ -395,7 +394,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1267 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1388 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -589,7 +588,7 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 93 modules
+│   ├── envmon/          # Environmental monitoring — 97 modules
 │   └── agol/            # AGOL publishing
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
@@ -601,7 +600,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1267 arcpy-free tests
+└── tests/               # 1388 arcpy-free tests
 ```
 
 ### Key modules
@@ -611,7 +610,7 @@ autogis/
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
 | `core/common/schema/` | 5 modules (attachments, boring, drone, envmon, survey) exporting ~21 typed dataclasses |
-| `core/envmon/` | 93 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/envmon/` | 97 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
@@ -678,7 +677,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1267 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1388 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash
