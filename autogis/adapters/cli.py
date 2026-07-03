@@ -2164,6 +2164,49 @@ def create_boring_log_db_cmd(db_path, overwrite, validate_only, report, fail_on)
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("gen-boring-logs")
+@click.option("--db", "db_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Boring-log SQLite database (from create-boring-log-db).")
+@click.option("--out-dir", "out_dir", required=True,
+              type=click.Path(file_okay=False),
+              help="Directory for the per-boring .md files, appendix, "
+                   "photo log and sample-summary CSV.")
+@click.option("--borings", default="",
+              help="Comma-separated boring IDs (default: all).")
+@qa_report_options
+def gen_boring_logs_cmd(db_path, out_dir, borings, report, fail_on):
+    """Tool 8.0c: assemble boring-log Markdown documents from the boring
+    database (headless).
+
+    Writes one .md per boring plus a combined appendix, photo log and
+    sample-summary CSV. PDF conversion is an explicit downstream step.
+    """
+    from autogis.core.common.qa import QACollector, SEV_ERROR
+    from autogis.core.envmon.boring_log_report import (
+        build_boring_log, read_boring_records, write_outputs)
+    from autogis.core.envmon.create_boring_log_database import (
+        validate_boring_log_database)
+    qa = QACollector()
+    validate_boring_log_database(Path(db_path), qa)
+    if qa.has_blocking():
+        _render_qa(qa, report, fail_on)
+        return
+    ids = [b.strip() for b in borings.split(",") if b.strip()] or None
+    bundles = read_boring_records(Path(db_path), boring_ids=ids, qa=qa)
+    if not bundles:
+        qa.add(SEV_ERROR, "no_borings",
+               f"No matching borings found in {db_path}.")
+        _render_qa(qa, report, fail_on)
+        return
+    docs = [build_boring_log(bid, qa=qa, **bundle)
+            for bid, bundle in bundles.items()]
+    paths = write_outputs(docs, Path(out_dir))
+    click.echo(f"Wrote {len(paths)} file(s) for {len(docs)} boring(s) "
+               f"-> {out_dir}")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("index-field-attachments")
 @click.argument("manifest", metavar="MANIFEST",
                 type=click.Path(exists=True, dir_okay=False))

@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~95 | ~74 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~96 | ~75 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
 | **Planned** (spec / plan written, not yet coded) | ~3 | roadmap tools — see *Planned* list below |
-| Not started (no spec or plan) | ~3 | excludes §11 AI tools + geostatistical Phase 5 |
+| Not started (no spec or plan) | ~2 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **97 `core/envmon/` + 9 `core/agol/` modules (106 total)**,
-**101 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 104 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1399-test** arcpy-free
+The codebase now ships **98 `core/envmon/` + 9 `core/agol/` modules (107 total)**,
+**102 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 105 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1412-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -77,6 +77,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | ImportDroneProducts | 8.8 | `envmon validate-drone-products` (headless QA half; the GDB-writing half is LOCAL — see below) |
 | ImportFieldBoringLogs | 8.0b | `envmon validate-boring-logs` (headless QA half; the GDB-writing half is LOCAL — see below) |
 | CreateBoringLogDatabase | 8.0a | `envmon create-boring-log-db` |
+| GenerateBoringLogPDFs | 8.0c | `envmon gen-boring-logs` (Markdown/CSV assembly; PDF conversion is a downstream step) |
 | SyncFieldAttachments | 6.5 | `envmon index-field-attachments` (envmon-side index; the AGOL download half is the shipped attachment harvester) |
 | CreateSamplingEventPlan | 7.2 | `envmon create-sampling-plan` |
 | ReconcileFieldAndLabData | 7.3 | `envmon reconcile-field-lab` |
@@ -205,8 +206,6 @@ still design-only.
 **AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2)
 
 **Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1)
-
-**Survey / boring / drone / CAD (§8):** GenerateBoringLogPDFs (8.0c)
 
 ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 `ValidateRTKSurvey` (8.4) — see
