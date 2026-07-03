@@ -152,6 +152,98 @@ class TestBatchImportWorkbooks:
         rows = list(csv.DictReader((out_dir / "batch_manifest.csv").open(encoding="utf-8")))
         assert rows[0]["Status"] == "SKIP"
 
+    # --- --edd-dir alternate input mode (BatchEDDImport fold, ADR-0048) ---
+
+    def test_edd_dir_mode_imports_directory(self, tmp_path):
+        """Directory of EDD CSVs + one shared profile/site imports every file."""
+        prof_path = tmp_path / "profile.yaml"
+        self._make_edd_profile(prof_path)
+        edd_dir = tmp_path / "edds"
+        edd_dir.mkdir()
+        self._make_edd_csv(edd_dir / "a.csv")
+        self._make_edd_csv(edd_dir / "b.csv")
+        out_dir = tmp_path / "out"
+
+        r = _run("envmon", "batch-import-workbooks",
+                 "--edd-dir", str(edd_dir),
+                 "--profile", str(prof_path),
+                 "--site", "SITE-A",
+                 "--output-dir", str(out_dir))
+        assert r.exit_code == 0, r.output
+        rows = list(csv.DictReader((out_dir / "batch_manifest.csv").open(encoding="utf-8")))
+        assert len(rows) == 2
+        assert all(row["Status"] == "OK" for row in rows)
+        assert all(row["SiteID"] == "SITE-A" for row in rows)
+        samples = list(csv.DictReader((out_dir / "sample_records.csv").open(encoding="utf-8")))
+        assert len(samples) == 2
+
+    def test_edd_dir_per_file_failure_does_not_abort(self, tmp_path):
+        """One unreadable file is marked ERROR; the rest still import."""
+        prof_path = tmp_path / "profile.yaml"
+        self._make_edd_profile(prof_path)
+        edd_dir = tmp_path / "edds"
+        edd_dir.mkdir()
+        self._make_edd_csv(edd_dir / "good.csv")
+        (edd_dir / "bad.csv").write_bytes(b"\xff\xfe\x00\x00not utf-8\xff")
+        out_dir = tmp_path / "out"
+
+        r = _run("envmon", "batch-import-workbooks",
+                 "--edd-dir", str(edd_dir),
+                 "--profile", str(prof_path),
+                 "--site", "SITE-A",
+                 "--output-dir", str(out_dir))
+        assert r.exit_code == 1  # SEV_ERROR recorded -> fail-on=error default
+        rows = list(csv.DictReader((out_dir / "batch_manifest.csv").open(encoding="utf-8")))
+        statuses = {Path(row["WorkbookPath"]).name: row["Status"] for row in rows}
+        assert statuses == {"good.csv": "OK", "bad.csv": "ERROR"}
+        samples = list(csv.DictReader((out_dir / "sample_records.csv").open(encoding="utf-8")))
+        assert len(samples) == 1  # good.csv still imported
+
+    def test_manifest_and_edd_dir_mutually_exclusive(self, tmp_path):
+        prof_path = tmp_path / "profile.yaml"
+        self._make_edd_profile(prof_path)
+        wb_path = tmp_path / "lab_edd.csv"
+        self._make_edd_csv(wb_path)
+        manifest_path = tmp_path / "manifest.csv"
+        _write_csv(manifest_path, [{"workbook_path": str(wb_path),
+                                    "profile_path": str(prof_path),
+                                    "site_id": "SITE-A"}])
+        r = _run("envmon", "batch-import-workbooks",
+                 "--manifest", str(manifest_path),
+                 "--edd-dir", str(tmp_path),
+                 "--profile", str(prof_path),
+                 "--site", "SITE-A",
+                 "--output-dir", str(tmp_path / "out"))
+        assert r.exit_code == 2  # UsageError: both input modes supplied
+
+    def test_input_mode_required(self, tmp_path):
+        r = _run("envmon", "batch-import-workbooks",
+                 "--output-dir", str(tmp_path / "out"))
+        assert r.exit_code == 2  # UsageError: neither --manifest nor --edd-dir
+
+    def test_edd_dir_no_matching_files_errors(self, tmp_path):
+        prof_path = tmp_path / "profile.yaml"
+        self._make_edd_profile(prof_path)
+        edd_dir = tmp_path / "empty"
+        edd_dir.mkdir()
+        r = _run("envmon", "batch-import-workbooks",
+                 "--edd-dir", str(edd_dir),
+                 "--profile", str(prof_path),
+                 "--site", "SITE-A",
+                 "--output-dir", str(tmp_path / "out"))
+        assert r.exit_code == 1  # ClickException: nothing matched
+
+    def test_manifest_rows_from_dir_xlsx_fallback(self, tmp_path):
+        """Default pattern *.csv falls back to *.xlsx; explicit pattern doesn't."""
+        from autogis.core.envmon.batch_workbook_importer import manifest_rows_from_dir
+        (tmp_path / "a.xlsx").write_bytes(b"")
+        rows = manifest_rows_from_dir(tmp_path, Path("p.yaml"), "SITE-A")
+        assert [Path(r["workbook_path"]).name for r in rows] == ["a.xlsx"]
+        assert rows[0] == {"workbook_path": str(tmp_path / "a.xlsx"),
+                           "profile_path": "p.yaml", "site_id": "SITE-A"}
+        assert manifest_rows_from_dir(tmp_path, Path("p.yaml"), "SITE-A",
+                                      pattern="*.csv") == []
+
 
 # ---------------------------------------------------------------------------
 # 3. migrate-legacy-data (Tool 2.4)

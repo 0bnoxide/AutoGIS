@@ -3626,8 +3626,21 @@ def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
 
 
 @envmon.command("batch-import-workbooks")
-@click.option("--manifest", required=True, type=click.Path(exists=True),
-              help="CSV with columns: workbook_path, profile_path, site_id.")
+@click.option("--manifest", default=None, type=click.Path(exists=True),
+              help="CSV with columns: workbook_path, profile_path, site_id. "
+                   "Mutually exclusive with --edd-dir.")
+@click.option("--edd-dir", default=None,
+              type=click.Path(exists=True, file_okay=False),
+              help="Directory of EDD files to import with one shared "
+                   "--profile/--site. Mutually exclusive with --manifest.")
+@click.option("--profile", default=None, type=click.Path(exists=True),
+              help="LabEDD profile YAML/JSON applied to every file "
+                   "(--edd-dir mode only).")
+@click.option("--site", default=None,
+              help="Site ID applied to every file (--edd-dir mode only).")
+@click.option("--pattern", default=None,
+              help="Glob for --edd-dir (default *.csv, falling back to "
+                   "*.xlsx if no CSV matches).")
 @click.option("--output-dir", required=True, type=click.Path(),
               help="Directory to write sample_records.csv, result_records.csv, "
                    "and batch_manifest.csv.")
@@ -3640,17 +3653,35 @@ def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]),
               default="error")
-def batch_import_workbooks_cmd(manifest, output_dir, analytes, screening,
+def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
+                               output_dir, analytes, screening,
                                event_date, report, fail_on):
-    """Tool 2.2: batch-import multiple EDD workbooks from a manifest CSV (headless)."""
+    """Tool 2.2: batch-import EDD workbooks from a manifest CSV or a directory (headless)."""
     import yaml as _yaml
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import write_records_csv
     from autogis.core.envmon.batch_workbook_importer import (
-        read_manifest_csv, run_batch_import, BatchManifestRow)
+        read_manifest_csv, manifest_rows_from_dir, run_batch_import,
+        BatchManifestRow)
 
-    manifest_rows = read_manifest_csv(Path(manifest))
+    if (manifest is None) == (edd_dir is None):
+        raise click.UsageError(
+            "Provide exactly one input mode: --manifest OR --edd-dir.")
+    if manifest and (profile or site or pattern):
+        raise click.UsageError(
+            "--profile/--site/--pattern apply only with --edd-dir.")
+    if edd_dir:
+        if not (profile and site):
+            raise click.UsageError("--edd-dir requires --profile and --site.")
+        manifest_rows = manifest_rows_from_dir(
+            Path(edd_dir), Path(profile), site, pattern)
+        if not manifest_rows:
+            raise click.ClickException(
+                "No EDD files matching %s in %s"
+                % (pattern or "*.csv (or *.xlsx)", edd_dir))
+    else:
+        manifest_rows = read_manifest_csv(Path(manifest))
     analyte_dict = _yaml.safe_load(Path(analytes).read_text(encoding="utf-8")) \
         if analytes else {}
     screening_lvls = _yaml.safe_load(Path(screening).read_text(encoding="utf-8")) \
