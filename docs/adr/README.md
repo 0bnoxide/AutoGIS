@@ -62,6 +62,7 @@ Each ADR follows this structure:
 | [041](0041-update-layout-text-cli-reuses-layout-manager.md) | UpdateLayoutDynamicText (5.8) — CLI wrapper over shipped layout_manager, no new module | Accepted | 2026-07-02 |
 | [042](0042-gen-boring-logs-headless-markdown-assembly.md) | GenerateBoringLogPDFs (8.0c) — headless Markdown assembly; report module owns the read side 8.0a never shipped | Accepted | 2026-07-02 |
 | [043](0043-build-fieldmaps-cli-first-gdb-provisioning.md) | BuildFieldMapsMonitoringProject (7.1) — CLI-first plan/provision split; 7.1b field names over the spec's prose | Accepted | 2026-07-02 |
+| [044](0044-sync-agol-layer-attribute-sync-cli-first.md) | SyncAGOLFeatureLayerToGDB (6.2) — attribute-only sync; attachments stay with the harvester | Accepted | 2026-07-03 |
 
 ## File naming
 

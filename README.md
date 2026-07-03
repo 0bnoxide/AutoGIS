@@ -9,20 +9,20 @@ GUI, and the importable core itself).
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-07-02**. The
+Status against the 79-tool environmental monitoring roadmap, as of **2026-07-03**. The
 Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~97 | ~76 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~98 | ~77 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
 | **Planned** (spec / plan written, not yet coded) | ~3 | roadmap tools — see *Planned* list below |
-| Not started (no spec or plan) | ~1 | excludes §11 AI tools + geostatistical Phase 5 |
+| Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **99 `core/envmon/` + 9 `core/agol/` modules (108 total)**,
-**103 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 106 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1427-test** arcpy-free
+The codebase now ships **99 `core/envmon/` + 10 `core/agol/` modules (109 total)**,
+**104 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 107 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1445-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -95,6 +95,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | UpdateWellElevationsFromLevelLoop | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* |
 | UpdateAGOLWebMapFromFigureSpec | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) |
 | CreateHostedViewsForStakeholders | 6.11 | `agol create-views` |
+| SyncAGOLFeatureLayerToGDB | 6.2 | `agol sync-to-gdb` *(HYBRID — `--gdb` upsert path is LOCAL; attribute sync only — attachments stay with `autogis harvest` + `envmon index-field-attachments`)* |
 
 Post-roadmap extras (not counted in the 79-tool catalog):
 
@@ -204,7 +205,9 @@ still design-only.
 <details>
 <summary>Not started — no spec or implementation plan</summary>
 
-**AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2)
+**No roadmap tools remain here** outside the two phase-gated groups below —
+SyncAGOLFeatureLayerToGDB (6.2), the last one, shipped 2026-07-03 (`agol sync-to-gdb`,
+ADR-0044).
 
 ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 `ValidateRTKSurvey` (8.4) — see
@@ -393,7 +396,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1427 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1445 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -599,7 +602,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1388 arcpy-free tests
+└── tests/               # 1445 arcpy-free tests
 ```
 
 ### Key modules
@@ -676,7 +679,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1388 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1445 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash

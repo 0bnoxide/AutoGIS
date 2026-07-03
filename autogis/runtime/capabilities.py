@@ -76,6 +76,7 @@ TOOLS: dict[str, Runtime] = {
     "export-civil3d": Runtime.LOCAL,     # tool 8.2 LandXML/contour leg needs arcpy; PNEZD CSV is headless
     "update-layout-text": Runtime.LOCAL,  # tool 5.8 APRX layout edit — needs arcpy
     "build-fieldmaps": Runtime.LOCAL,  # tool 7.1 GDB layer/field provisioning — needs arcpy
+    "sync-to-gdb": Runtime.LOCAL,  # tool 6.2 GDB upsert (--gdb path); agol group
 }
 
 
