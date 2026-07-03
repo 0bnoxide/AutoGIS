@@ -1602,6 +1602,62 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     click.echo(f"XLSForm written to {out_path}")
 
 
+@envmon.command("build-fieldmaps")
+@click.option("--site-config", "site_path", required=True,
+              type=click.Path(exists=True), help="Site config YAML.")
+@click.option("--event-config", "event_path", default=None,
+              type=click.Path(exists=True),
+              help="Optional event config YAML; its analyte_groups add one "
+                   "Status_<group> field per group on SampleStatus.")
+@click.option("--gdb", "gdb_path", default=None, type=click.Path(),
+              help="Target file GDB to create/refresh the layers in "
+                   "(ArcGIS Pro). Omit with --dry-run for a headless preview.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Print the layer/field plan without touching a GDB "
+                   "(headless).")
+@qa_report_options
+def build_fieldmaps_cmd(site_path, event_path, gdb_path, dry_run, report,
+                        fail_on):
+    """Tool 7.1: create/refresh the Field Maps monitoring layers for field
+    crews (ArcGIS Pro).
+
+    Derives the six canonical layers (monitoring wells, sample status,
+    water levels, access notes, photo points, issue flags) with the
+    editable field schema RouteSurvey123Submission (7.1b) expects, then
+    provisions them in --gdb. Publish the GDB to Field Maps with
+    `agol publish-layer` (6.1).
+    """
+    import yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.fieldmaps_plan import (
+        plan_fieldmaps_project, provision_fieldmaps_layers)
+
+    if not gdb_path and not dry_run:
+        raise click.UsageError(
+            "Provide --gdb (ArcGIS Pro) or --dry-run for a headless "
+            "plan preview.")
+
+    cfg = yaml.safe_load(open(site_path, encoding="utf-8")) or {}
+    if event_path:
+        cfg.update(yaml.safe_load(open(event_path, encoding="utf-8")) or {})
+    plans = plan_fieldmaps_project(cfg)
+    for p in plans:
+        click.echo(f"{p.name} ({p.geometry}): "
+                   + ", ".join(f.name for f in p.fields))
+    if dry_run:
+        click.echo("[dry-run: no GDB touched]")
+        return
+
+    _guard("build-fieldmaps")
+    qa = QACollector()
+    srs = str(cfg.get("coordinate_system") or "")
+    n = provision_fieldmaps_layers(
+        Path(gdb_path), plans, qa,
+        spatial_reference=srs if srs and not srs.startswith("_TODO") else None)
+    click.echo(f"Provisioned {n} layer(s) in {gdb_path}")
+    _render_qa(qa, report, fail_on)
+
+
 @autogis.group()
 def agol():
     """AGOL / cloud tools."""

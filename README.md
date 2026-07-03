@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~96 | ~75 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~97 | ~76 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
 | **Planned** (spec / plan written, not yet coded) | ~3 | roadmap tools — see *Planned* list below |
-| Not started (no spec or plan) | ~2 | excludes §11 AI tools + geostatistical Phase 5 |
+| Not started (no spec or plan) | ~1 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **98 `core/envmon/` + 9 `core/agol/` modules (107 total)**,
-**102 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 105 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1412-test** arcpy-free
+The codebase now ships **99 `core/envmon/` + 9 `core/agol/` modules (108 total)**,
+**103 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 106 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1427-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -145,6 +145,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | BuildCADExportPackage | 8.9 | `envmon build-cad-package` (mapping/CRS logic only; arcpy Export-to-CAD call not yet wired — see issue #105) |
 | ExportContoursForCivil3D | 8.2 | `envmon export-civil3d` (PNEZD CSV + projection note headless; `--landxml` guarded, arcpy leg not yet wired — see issue #105) |
 | UpdateLayoutDynamicText | 5.8 | `envmon update-layout-text` (CLI-first per ADR-0039; wraps the shipped `layout_manager.update_layout_text`) |
+| BuildFieldMapsMonitoringProject | 7.1 | `envmon build-fieldmaps` (CLI-first per ADR-0039; plan is arcpy-free + headless via `--dry-run`, GDB provisioning needs arcpy; publish via `agol publish-layer`) |
 
 </details>
 
@@ -204,8 +205,6 @@ still design-only.
 <summary>Not started — no spec or implementation plan</summary>
 
 **AGOL / cloud (§6):** SyncAGOLFeatureLayerToGDB (6.2)
-
-**Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1)
 
 ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 `ValidateRTKSurvey` (8.4) — see
@@ -394,7 +393,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1388 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1427 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---

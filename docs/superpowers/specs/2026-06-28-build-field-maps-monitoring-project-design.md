@@ -6,6 +6,8 @@
 **Priority:** MEDIUM — provisions the layers/fields field crews collect against
 **Runtime:** LOCAL (arcpy) — routes through the `.pyt` toolbox (ADR-0006)
 
+> **2026-07-02 — partially superseded as built (ADR-0043):** the Architecture section's ".pyt toolbox is the UI, CLI guards-and-redirects" predates ADR-0039; the tool shipped CLI-first (`envmon build-fieldmaps` executes directly, lazy arcpy, no `.pyt` entry). The editable field names were corrected to the shipped 7.1b collection names (`SamplingDate`/`SampledBy`/`DepthToWater_ft`, plus `COCNumber`/`Matrix`) instead of this spec's `SampleDate`/`Sampler`/`DTW`.
+
 ---
 
 ## Problem

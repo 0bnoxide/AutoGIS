@@ -75,6 +75,7 @@ TOOLS: dict[str, Runtime] = {
     "build-cad-package": Runtime.LOCAL,  # tool 8.9 Export-to-CAD — needs arcpy
     "export-civil3d": Runtime.LOCAL,     # tool 8.2 LandXML/contour leg needs arcpy; PNEZD CSV is headless
     "update-layout-text": Runtime.LOCAL,  # tool 5.8 APRX layout edit — needs arcpy
+    "build-fieldmaps": Runtime.LOCAL,  # tool 7.1 GDB layer/field provisioning — needs arcpy
 }
 
 
@@ -310,6 +311,9 @@ _REGISTRY_SEED = [
      "Generate structured changelog from two monitoring event CSVs"),
     ("update-layout-text", "UpdateLayoutDynamicText", "5.8", "LOCAL", "stable",
      "cartography", "Update APRX layout text elements from a YAML values file"),
+    ("build-fieldmaps", "BuildFieldMapsMonitoringProject", "7.1", "LOCAL",
+     "stable", "field",
+     "Create/refresh Field Maps monitoring layers + editable field schema"),
 ]
 
 TOOL_REGISTRY: list = [
