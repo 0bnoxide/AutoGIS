@@ -1968,6 +1968,111 @@ def create_views_cmd(profile, view_spec_path, report):
     _render_qa(combined, report, "error")
 
 
+@agol.command("sync-to-gdb")
+@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@click.option("--layer-url", default=None,
+              help="Full AGOL FeatureLayer REST URL.")
+@click.option("--item-id", default=None,
+              help="AGOL item ID (use with --layer-index when item has multiple layers).")
+@click.option("--layer-index", type=int, default=0, show_default=True,
+              help="Layer index within the item (0-based).")
+@click.option("--where", default=None,
+              help="SQL where clause filtering the hosted layer.")
+@click.option("--since", default=None,
+              help="ISO date YYYY-MM-DD — only records with EditDate after this "
+                   "(hosted layer needs editor tracking).")
+@click.option("--key-field", default="GlobalID", show_default=True,
+              help="Field matching hosted records to local rows.")
+@click.option("--fields", default=None,
+              help="Comma-separated fields to sync (default: all non-system fields).")
+@click.option("--out-csv", default=None, type=click.Path(),
+              help="Headless: write fetched edit records to CSV. "
+                   "Mutually exclusive with --gdb.")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="File geodatabase: upsert records into --table (ArcGIS Pro). "
+                   "Mutually exclusive with --out-csv.")
+@click.option("--table", default=None,
+              help="Target table/feature class name in the GDB (required with --gdb).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show the upsert plan without writing to the GDB (use with --gdb).")
+@qa_report_options
+def sync_to_gdb_cmd(profile, layer_url, item_id, layer_index, where, since,
+                    key_field, fields, out_csv, gdb, table, dry_run,
+                    report, fail_on):
+    """Tool 6.2: download hosted feature layer edits into the local FGDB (HYBRID).
+
+    Headless path (--out-csv): fetch attribute records via the arcgis REST API
+    and dump them to CSV — no arcpy. LOCAL path (--gdb --table): guard for
+    arcpy, read existing keys from the target table, and (unless --dry-run)
+    upsert the fetched records. Attribute sync only — photo attachments are
+    `autogis harvest` + `envmon index-field-attachments` (Tool 6.5).
+    """
+    import csv as _csv
+    from datetime import date as _date
+
+    from autogis.core.agol import sync_layer
+    from autogis.core.common.qa import QACollector
+
+    if gdb and out_csv:
+        raise click.UsageError("--gdb and --out-csv are mutually exclusive.")
+    if not gdb and not out_csv:
+        raise click.UsageError(
+            "Provide --out-csv (headless dump) or --gdb (ArcGIS Pro upsert).")
+    if gdb and not table:
+        raise click.UsageError("--gdb requires --table.")
+    if not layer_url and not item_id:
+        raise click.UsageError("Provide --layer-url or --item-id.")
+    if gdb:
+        _guard("sync-to-gdb")
+
+    since_d = _date.fromisoformat(since) if since else None
+    eff_where = sync_layer.edits_where_clause(where, since_d)
+
+    gis = agol_from_profile(profile)
+    records = sync_layer.fetch_layer_edits(
+        gis, layer_url=layer_url, item_id=item_id, layer_index=layer_index,
+        where=eff_where)
+    click.echo(f"Fetched {len(records)} record(s)  where: {eff_where}")
+
+    qa = QACollector()
+    field_list = ([f.strip() for f in fields.split(",") if f.strip()]
+                  if fields else None)
+
+    if out_csv:
+        # Headless deliverable: the keyed, field-filtered edit records.
+        # Planning against local rows needs the GDB, so upsert is --gdb-only.
+        plan = sync_layer.plan_sync(records, set(), key_field=key_field,
+                                    fields=field_list, qa=qa)
+        rows = list(plan.updates.values()) + plan.inserts
+        with open(out_csv, "w", newline="", encoding="utf-8") as fh:
+            w = _csv.DictWriter(fh, fieldnames=plan.field_names,
+                                extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        click.echo(f"Wrote {len(rows)} record(s) to {out_csv}")
+    else:
+        from autogis.runtime.sessions import arcpy_env as _arcpy
+        _ax = _arcpy()
+        target = str(Path(gdb) / table)
+        if not _ax.Exists(target):
+            raise click.ClickException(f"Target table not found: {target}")
+        existing = set()
+        with _ax.da.SearchCursor(target, [key_field]) as cur:
+            for row in cur:
+                if row[0] is not None:
+                    existing.add(str(row[0]))
+        plan = sync_layer.plan_sync(records, existing, key_field=key_field,
+                                    fields=field_list, qa=qa)
+        click.echo(f"Plan: {len(plan.updates)} update(s), {len(plan.inserts)} "
+                   f"insert(s), {plan.skipped_no_key} skipped (no {key_field}).")
+        if not dry_run:
+            updated, inserted = sync_layer.write_sync_to_gdb(gdb, table, plan)
+            click.echo(f"Wrote {updated} update(s) + {inserted} insert(s) "
+                       f"to {target}.")
+
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("validate-rtk-survey")
 @click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
 @click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
