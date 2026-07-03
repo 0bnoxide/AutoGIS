@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~99 | ~78 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~100 | ~79 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
-| **Planned** (spec / plan written, not yet coded) | ~2 | roadmap tools — see *Planned* list below |
+| **Planned** (spec / plan written, not yet coded) | ~1 | roadmap tools — see *Planned* list below |
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **101 `core/envmon/` + 10 `core/agol/` modules (111 total)**,
-**105 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 108 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1479-test** arcpy-free
+The codebase now ships **102 `core/envmon/` + 10 `core/agol/` modules (112 total)**,
+**106 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 109 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1500-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -82,6 +82,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | SyncFieldAttachments | 6.5 | `envmon index-field-attachments` (envmon-side index; the AGOL download half is the shipped attachment harvester) |
 | CreateSamplingEventPlan | 7.2 | `envmon create-sampling-plan` |
 | ReconcileFieldAndLabData | 7.3 | `envmon reconcile-field-lab` |
+| GenerateWellInspectionPhotoReport | 7.4 | `envmon generate-inspection-report` (photo embedding needs Pillow — `pip install "autogis[report]"`) |
 | BuildMonitoringReportAppendix | 9.2 | `envmon build-report-appendix` |
 | GenerateEventChangeLog | 9.3 | `envmon generate-event-changelog` |
 | IngestReviewerMapComments | 9.4 | `envmon ingest-reviewer-comments` |
@@ -176,12 +177,6 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 | Tool | Roadmap # | Artifact |
 |------|-----------|---------|
 | GenerateSiteMapSeries | 5.6 | plan |
-
-**Field / Survey123 (§7)**
-
-| Tool | Roadmap # | Artifact |
-|------|-----------|---------|
-| GenerateWellInspectionPhotoReport | 7.4 | spec + plan |
 
 **Post-roadmap / infrastructure** (not counted in the 79-tool catalog)
 
@@ -332,6 +327,7 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon evaluate-gw-models` | CLOUD | `core/envmon/evaluate_gw_models.py` |
 | `autogis envmon export-survey-cad` | CLOUD | `core/envmon/export_survey_cad.py` |
 | `autogis envmon well-inspection-report` | CLOUD | `core/envmon/well_inspection_report.py` |
+| `autogis envmon generate-inspection-report` | CLOUD | `core/envmon/well_inspection_photo_report.py` (photo embedding needs Pillow) |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
@@ -391,7 +387,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1445 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1500 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -446,6 +442,7 @@ autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
 autogis envmon rtk-control-check --control-points <control.csv> --horizontal-tolerance-ft 0.05 --vertical-tolerance-ft 0.10
 autogis envmon export-survey-cad <points.csv> --feature-code-map <map.yaml> --output-dir <out>
 autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --maintenance-log-csv <log.csv>
+autogis envmon generate-inspection-report --inspections <inspections.csv> --manifest <manifest.csv> --harvest-dir <dir> --site <id> --out <report.xlsx>
 autogis envmon reconcile-survey123-lab --survey <s123.csv> --edd <lab.csv> --edd-profile <profile.yaml> --site <id>
 autogis envmon survey-to-well-elevation <rtk.csv> --site <id> --wells-csv <wells.csv>       # headless
 autogis envmon register-drone-flight <flight.yaml> --gdb <gdb> --dry-run                    # headless
@@ -597,7 +594,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1445 arcpy-free tests
+└── tests/               # 1500 arcpy-free tests
 ```
 
 ### Key modules
@@ -674,7 +671,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1445 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1500 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash

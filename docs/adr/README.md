@@ -64,6 +64,7 @@ Each ADR follows this structure:
 | [043](0043-build-fieldmaps-cli-first-gdb-provisioning.md) | BuildFieldMapsMonitoringProject (7.1) — CLI-first plan/provision split; 7.1b field names over the spec's prose | Accepted | 2026-07-02 |
 | [044](0044-sync-agol-layer-attribute-sync-cli-first.md) | SyncAGOLFeatureLayerToGDB (6.2) — attribute-only sync; attachments stay with the harvester | Accepted | 2026-07-03 |
 | [045](0045-create-sampling-event-headless-planner.md) | CreateSurvey123SamplingEvent (2.7) — headless pre-field planner; plan's SampleID format over the spec's | Accepted | 2026-07-03 |
+| [046](0046-well-inspection-photo-report-headless-xlsx.md) | GenerateWellInspectionPhotoReport (7.4) — headless XLSX from the harvest manifest; Pillow as a `report` extra | Accepted | 2026-07-03 |
 
 ## File naming
 

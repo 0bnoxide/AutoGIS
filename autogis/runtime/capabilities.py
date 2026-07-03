@@ -77,6 +77,7 @@ TOOLS: dict[str, Runtime] = {
     "update-layout-text": Runtime.LOCAL,  # tool 5.8 APRX layout edit — needs arcpy
     "build-fieldmaps": Runtime.LOCAL,  # tool 7.1 GDB layer/field provisioning — needs arcpy
     "sync-to-gdb": Runtime.LOCAL,  # tool 6.2 GDB upsert (--gdb path); agol group
+    "generate-inspection-report": Runtime.CLOUD,  # tool 7.4 headless photo workbook (openpyxl + Pillow)
 }
 
 
@@ -319,6 +320,10 @@ _REGISTRY_SEED = [
      "stable", "field",
      "Generate a pre-field sampling event plan workbook (expected samples, "
      "crew, COC draft)"),
+    ("generate-inspection-report", "GenerateWellInspectionPhotoReport", "7.4",
+     "CLOUD", "stable", "reporting",
+     "Per-well inspection photo workbook (XLSX) from harvested attachments "
+     "+ an inspection CSV (photo embedding needs Pillow)"),
 ]
 
 TOOL_REGISTRY: list = [

@@ -2418,6 +2418,57 @@ def gen_boring_logs_cmd(db_path, out_dir, borings, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("generate-inspection-report")
+@click.option("--inspections", "inspections_csv", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Inspection metadata CSV (WellID, InspectionDate, "
+                   "Inspector, Condition, Notes; optional GPS_Lat, GPS_Lon, "
+                   "DepthToWaterFt).")
+@click.option("--manifest", "manifest_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Harvester manifest.csv/.json written by "
+                   "'autogis harvest'.")
+@click.option("--harvest-dir", required=True,
+              type=click.Path(exists=True, file_okay=False),
+              help="Root directory of the harvested attachment tree "
+                   "(photos grouped {harvest_dir}/{well_id}/...).")
+@click.option("--site", "site_id", required=True, help="Site ID.")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output .xlsx path.")
+@click.option("--photo-width", type=int, default=300, show_default=True,
+              help="Embedded photo box width (px).")
+@click.option("--photo-height", type=int, default=225, show_default=True,
+              help="Embedded photo box height (px).")
+@qa_report_options
+def generate_inspection_report_cmd(inspections_csv, manifest_path,
+                                   harvest_dir, site_id, out_path,
+                                   photo_width, photo_height, report,
+                                   fail_on):
+    """Tool 7.4: per-well inspection photo workbook from harvested
+    attachments + an inspection CSV (headless).
+
+    Embedding photos requires Pillow: pip install "autogis[report]".
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.index_field_attachments import load_manifest
+    from autogis.core.envmon.well_inspection_photo_report import (
+        load_inspection_records, match_photos_to_wells, write_photo_report)
+    qa = QACollector()
+    records = load_inspection_records(Path(inspections_csv), qa=qa)
+    photo_map = match_photos_to_wells(
+        load_manifest(Path(manifest_path)), Path(harvest_dir), qa=qa)
+    try:
+        result = write_photo_report(
+            records, photo_map, Path(out_path), site_id=site_id,
+            photo_width_px=photo_width, photo_height_px=photo_height, qa=qa)
+    except ImportError as exc:  # missing Pillow -> clean error, no traceback
+        raise click.ClickException(str(exc))
+    click.echo(f"Wrote {result.workbook_path}: {result.well_count} well(s), "
+               f"{result.photos_embedded} photo(s) embedded, "
+               f"{result.photos_missing} missing")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("index-field-attachments")
 @click.argument("manifest", metavar="MANIFEST",
                 type=click.Path(exists=True, dir_okay=False))
