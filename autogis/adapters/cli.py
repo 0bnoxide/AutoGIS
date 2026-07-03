@@ -1602,6 +1602,56 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     click.echo(f"XLSForm written to {out_path}")
 
 
+@envmon.command("create-sampling-event")
+@click.option("--site", "site_path", required=True, type=click.Path(exists=True),
+              help="Path to site config YAML or JSON.")
+@click.option("--event", "event_path", required=True, type=click.Path(exists=True),
+              help="Path to event config YAML or JSON.")
+@click.option("--analytes", "analytes_path", required=True,
+              type=click.Path(exists=True),
+              help="Path to analyte dictionary YAML or JSON.")
+@click.option("--out-dir", "out_dir", required=True, type=click.Path(),
+              help="Output directory for the sampling plan workbook.")
+def create_sampling_event_cmd(site_path, event_path, analytes_path, out_dir):
+    """Tool 2.7: generate pre-field sampling event plan (headless).
+
+    Reads a well list + event metadata + analyte dict and writes a
+    three-sheet planning workbook: expected samples, crew assignment,
+    and COC draft.
+    """
+    import uuid
+    from autogis.core.common.config import (
+        SiteConfig, load_analyte_dictionary, ConfigError)
+    from autogis.core.envmon.create_sampling_event import (
+        build_sampling_event_plan, load_event_config)
+    from autogis.core.envmon.sampling_event_writer import (
+        write_sampling_event_workbook)
+
+    try:
+        site_cfg = SiteConfig.load(Path(site_path))
+        event_cfg = load_event_config(Path(event_path))
+        analyte_dict = load_analyte_dictionary(Path(analytes_path))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+
+    try:
+        plan = build_sampling_event_plan(
+            site_cfg.data, event_cfg, analyte_dict,
+            run_id=str(uuid.uuid4()),
+        )
+    except (ValueError, KeyError) as exc:
+        raise click.ClickException(str(exc))
+
+    out = Path(out_dir) / f"{plan.site_id}_{plan.event_name}_sampling_plan.xlsx"
+    write_sampling_event_workbook(plan, out)
+    click.echo(f"Sampling plan written: {out}")
+    click.echo(f"  {len(plan.expected_samples)} expected sample rows "
+               f"({sum(1 for r in plan.expected_samples if r.sample_type == 'Regular')} primary, "
+               f"{sum(1 for r in plan.expected_samples if r.sample_type == 'Field Duplicate')} field dups)")
+    click.echo(f"  {len(plan.crew_assignments)} wells assigned across "
+               f"{len({r.assigned_to for r in plan.crew_assignments})} crew member(s)")
+
+
 @envmon.command("build-fieldmaps")
 @click.option("--site-config", "site_path", required=True,
               type=click.Path(exists=True), help="Site config YAML.")
