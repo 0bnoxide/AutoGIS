@@ -1,5 +1,16 @@
 # GenerateSiteMapSeries Implementation Plan
 
+> **SUPERSEDED (2026-07-03) — do not implement this plan.** It builds around
+> ArcGIS Pro's Map Series / Data Driven Pages (`arcpy.mp.MapSeries`), which
+> iterates pages within one layout and cannot span the multi-site/multi-event
+> matrix that roadmap Tool 5.6 requires. The shipped implementation follows
+> the design spec instead
+> (`docs/superpowers/specs/2026-06-28-generate-site-map-series-design.md`;
+> resolution recorded in
+> `docs/superpowers/specs/2026-07-03-planned-roadmap-batch-brief.md` §3 and
+> ADR-0047): arcpy-free planner `core/envmon/map_series_plan.py` + CLI
+> `envmon gen-map-series` reusing the ExportFigures chain.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans.
 
 **Goal:** Implement `GenerateSiteMapSeries` — iterate pages of an ArcGIS Pro map series layout, filter by page name, export each page to PDF/PNG, and optionally combine all exported PDFs into a single document.

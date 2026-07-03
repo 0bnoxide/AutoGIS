@@ -16,13 +16,13 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 |--------|------:|-------|
 | Fully implemented (CLI command + core module + tests) | ~100 | ~79 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
-| **Planned** (spec / plan written, not yet coded) | ~1 | roadmap tools — see *Planned* list below |
+| **Planned** (spec / plan written, not yet coded) | 0 | post-roadmap BatchEDDImport plan only — see *Planned* list below |
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **102 `core/envmon/` + 10 `core/agol/` modules (112 total)**,
-**106 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 109 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1500-test** arcpy-free
+The codebase now ships **103 `core/envmon/` + 10 `core/agol/` modules (113 total)**,
+**107 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 110 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1516-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -149,6 +149,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | ExportContoursForCivil3D | 8.2 | `envmon export-civil3d` (PNEZD CSV + projection note headless; `--landxml` guarded, arcpy leg not yet wired — see issue #105) |
 | UpdateLayoutDynamicText | 5.8 | `envmon update-layout-text` (CLI-first per ADR-0039; wraps the shipped `layout_manager.update_layout_text`) |
 | BuildFieldMapsMonitoringProject | 7.1 | `envmon build-fieldmaps` (CLI-first per ADR-0039; plan is arcpy-free + headless via `--dry-run`, GDB provisioning needs arcpy; publish via `agol publish-layer`) |
+| GenerateSiteMapSeries | 5.6 | `envmon gen-map-series` (CLI-first per ADR-0039; planner + `--dry-run` are arcpy-free; export loop replays the ExportFigures chain) |
 
 </details>
 
@@ -171,12 +172,6 @@ all shipped (see *Fully implemented* above).
 
 Specs live in [`docs/superpowers/specs/`](docs/superpowers/specs/);
 plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
-
-**Cartography (§5)**
-
-| Tool | Roadmap # | Artifact |
-|------|-----------|---------|
-| GenerateSiteMapSeries | 5.6 | plan |
 
 **Post-roadmap / infrastructure** (not counted in the 79-tool catalog)
 
@@ -387,7 +382,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1500 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1516 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -594,7 +589,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1500 arcpy-free tests
+└── tests/               # 1516 arcpy-free tests
 ```
 
 ### Key modules
@@ -671,7 +666,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1500 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1516 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash

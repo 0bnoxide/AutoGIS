@@ -2732,6 +2732,130 @@ def update_layout_text_cmd(aprx_path, layout_name, values_path, dry_run,
     _render_qa(qa, report, fail_on)
 
 
+def _ids_arg(value: str) -> list:
+    """--sites/--events accept a comma-separated list or a path to a text
+    file with one ID per line (blank lines and # comments ignored). Order
+    is preserved (unlike _read_id_list's set) — it drives job ordering."""
+    p = Path(value)
+    if p.is_file():
+        return [ln.strip() for ln in
+                p.read_text(encoding="utf-8").splitlines()
+                if ln.strip() and not ln.strip().startswith("#")]
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
+@envmon.command("gen-map-series")
+@click.option("--sites", required=True,
+              help="Comma-separated site IDs, or path to a text file "
+                   "(one per line).")
+@click.option("--events", required=True,
+              help="Comma-separated event IDs/dates, or path to a text file "
+                   "(one per line).")
+@click.option("--specs", "specs_dir", required=True,
+              type=click.Path(exists=True, file_okay=False),
+              help="Folder of figure-spec YAMLs (each loaded via FigureSpec).")
+@click.option("--mode", type=click.Choice(["per_site", "per_map_type",
+                                           "combined_appendix", "historical"]),
+              default="per_site", show_default=True,
+              help="Packet mode — grouping/naming selector over the same "
+                   "site x event x spec matrix.")
+@click.option("--format", "out_format", type=click.Choice(["pdf", "png"]),
+              default="pdf", show_default=True)
+@click.option("--out-dir", default=None, type=click.Path(),
+              help="Export folder (required unless --dry-run).")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="File geodatabase to repath layers to and register exports "
+                   "in (required unless --dry-run).")
+@click.option("--dpi", type=int, default=300, show_default=True)
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Print the planned job list without touching arcpy.")
+@qa_report_options
+def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
+                       gdb, dpi, dry_run, report, fail_on):
+    """Tool 5.6: batch figure-packet exporter across sites/events (ArcGIS Pro).
+
+    Headless path (--dry-run): expand the site x event x figure-spec matrix
+    via plan_map_series() and print the ordered job list — no arcpy. LOCAL
+    path: guard for arcpy, then replay the proven ExportFigures chain per job
+    (repath data sources, apply definition queries, export layouts, register
+    exports in Env_FigureRegistry).
+    """
+    from autogis.core.common.config import FigureSpec
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.map_series_plan import plan_map_series
+
+    spec_files = sorted(Path(specs_dir).glob("*.y*ml"))
+    if not spec_files:
+        raise click.UsageError(
+            f"No figure-spec YAMLs (*.yaml/*.yml) found in {specs_dir}.")
+    specs = {}
+    for f in spec_files:
+        s = FigureSpec.load(f)
+        specs[s.figure_spec_id] = s
+
+    jobs = plan_map_series(_ids_arg(sites), _ids_arg(events),
+                           list(specs), mode=mode, out_format=out_format)
+    click.echo(f"Planned {len(jobs)} map job(s)  mode={mode}  "
+               f"format={out_format}")
+    for j in jobs:
+        click.echo(f"  {j.out_name}  (site={j.site_id} event={j.event} "
+                   f"spec={j.figure_spec})")
+    if dry_run:
+        return
+    if not gdb or not out_dir:
+        raise click.UsageError("--gdb and --out-dir are required to export "
+                               "(or use --dry-run to preview the plan).")
+    _guard("gen-map-series")
+    from autogis.core.envmon.export_figures import (
+        export_layouts, register_exports)
+    from autogis.core.envmon.layout_manager import (
+        apply_figure_definition_queries, copy_template_aprx,
+        update_aprx_data_sources)
+
+    qa = QACollector()
+    gdb_path = Path(gdb)
+    export_dir = Path(out_dir)
+    written_all = []
+    for job in jobs:
+        spec = specs[job.figure_spec]
+        template = Path(spec.get("template_aprx")
+                        or spec.get("aprx_template") or "")
+        if not template.is_absolute():
+            template = spec.path.parent / template
+        stem = Path(job.out_name).stem
+        work = copy_template_aprx(template, export_dir / "_working", stem)
+        update_aprx_data_sources(work, gdb_path, qa)
+        lq = spec.get("layer_definition_queries", {})
+        if lq:
+            apply_figure_definition_queries(
+                work, job.site_id, job.event, job.figure_spec,
+                spec.get("map_type", "GW_ANALYTICAL"), lq, qa)
+        written = export_layouts(
+            work, export_dir, "{stem}", {"stem": stem}, qa,
+            layout_names=spec.get("layouts"),
+            formats=[job.out_format.upper()], dpi=dpi,
+            required_layers=spec.get("required_layers", []))
+        register_exports(gdb_path, written, job.site_id, job.event,
+                         job.figure_spec, qa)
+        for w in written:
+            click.echo(f"Exported {w}")
+        written_all.extend(written)
+
+    if mode == "combined_appendix" and out_format == "pdf" and written_all:
+        # ponytail: cross-APRX combine — same PDFDocumentCreate primitive
+        # export_layouts uses for its single-APRX combine_pdf.
+        from autogis.runtime.sessions import arcpy_env as _arcpy
+        arcpy = _arcpy()
+        combined = export_dir / "Appendix_Combined.pdf"
+        pdoc = arcpy.mp.PDFDocumentCreate(str(combined))
+        for p in written_all:
+            pdoc.appendPages(str(p))
+        pdoc.saveAndClose()
+        click.echo(f"Combined appendix written: {combined} "
+                   f"({len(written_all)} figures)")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("reconcile-survey123-lab")
 @click.option("--survey", "survey_csv", required=True, type=click.Path(exists=True),
               help="Survey123 export CSV.")

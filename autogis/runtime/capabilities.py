@@ -78,6 +78,7 @@ TOOLS: dict[str, Runtime] = {
     "build-fieldmaps": Runtime.LOCAL,  # tool 7.1 GDB layer/field provisioning — needs arcpy
     "sync-to-gdb": Runtime.LOCAL,  # tool 6.2 GDB upsert (--gdb path); agol group
     "generate-inspection-report": Runtime.CLOUD,  # tool 7.4 headless photo workbook (openpyxl + Pillow)
+    "gen-map-series": Runtime.LOCAL,  # tool 5.6 batch figure-packet export — needs arcpy
 }
 
 
@@ -324,6 +325,10 @@ _REGISTRY_SEED = [
      "CLOUD", "stable", "reporting",
      "Per-well inspection photo workbook (XLSX) from harvested attachments "
      "+ an inspection CSV (photo embedding needs Pillow)"),
+    ("gen-map-series", "GenerateSiteMapSeries", "5.6", "LOCAL", "stable",
+     "cartography",
+     "Batch figure-packet exporter across sites/events (plan headless via "
+     "--dry-run)"),
 ]
 
 TOOL_REGISTRY: list = [
