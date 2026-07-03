@@ -14,15 +14,15 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~98 | ~77 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~99 | ~78 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
-| **Planned** (spec / plan written, not yet coded) | ~3 | roadmap tools — see *Planned* list below |
+| **Planned** (spec / plan written, not yet coded) | ~2 | roadmap tools — see *Planned* list below |
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **99 `core/envmon/` + 10 `core/agol/` modules (109 total)**,
-**104 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 107 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1445-test** arcpy-free
+The codebase now ships **101 `core/envmon/` + 10 `core/agol/` modules (111 total)**,
+**105 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 108 if the 4
+`manage-callout-overrides` subcommands are counted individually), and a **1479-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -72,6 +72,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | RegisterSourceDocuments | 2.5 | `envmon register-source-doc` |
 | BatchImportEnvironmentalWorkbooks | 2.2 | `envmon batch-import-workbooks` |
 | MigrateLegacyMonitoringData | 2.4 | `envmon migrate-legacy-data` |
+| CreateSurvey123SamplingEvent | 2.7 | `envmon create-sampling-event` |
 | SurveyToWellElevationUpdate | 8.5 | `envmon survey-to-well-elevation` *(HYBRID — `--gdb` write path is LOCAL)* |
 | RegisterDroneFlight | 8.6 | `envmon register-drone-flight` *(HYBRID — GDB write path is LOCAL)* |
 | ImportDroneProducts | 8.8 | `envmon validate-drone-products` (headless QA half; the GDB-writing half is LOCAL — see below) |
@@ -169,12 +170,6 @@ all shipped (see *Fully implemented* above).
 
 Specs live in [`docs/superpowers/specs/`](docs/superpowers/specs/);
 plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
-
-**Data intake (§2)**
-
-| Tool | Roadmap # | Artifact |
-|------|-----------|---------|
-| CreateSurvey123SamplingEvent | 2.7 | spec + plan |
 
 **Cartography (§5)**
 
