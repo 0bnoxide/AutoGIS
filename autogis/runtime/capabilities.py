@@ -73,6 +73,7 @@ TOOLS: dict[str, Runtime] = {
     "draft-plume-boundary": Runtime.LOCAL,    # tool 4.5 GDB write (--gdb path)
     "build-cad-package": Runtime.LOCAL,  # tool 8.9 Export-to-CAD — needs arcpy
     "export-civil3d": Runtime.LOCAL,     # tool 8.2 LandXML/contour leg needs arcpy; PNEZD CSV is headless
+    "update-layout-text": Runtime.LOCAL,  # tool 5.8 APRX layout edit — needs arcpy
 }
 
 
@@ -304,6 +305,8 @@ _REGISTRY_SEED = [
     ("generate-event-changelog", "GenerateEventChangelog", "9.3", "CLOUD",
      "stable", "reporting",
      "Generate structured changelog from two monitoring event CSVs"),
+    ("update-layout-text", "UpdateLayoutDynamicText", "5.8", "LOCAL", "stable",
+     "cartography", "Update APRX layout text elements from a YAML values file"),
 ]
 
 TOOL_REGISTRY: list = [

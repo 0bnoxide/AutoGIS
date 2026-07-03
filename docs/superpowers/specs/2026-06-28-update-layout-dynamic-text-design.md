@@ -1,7 +1,15 @@
 # UpdateLayoutDynamicText Design
 
+> **SUPERSEDED (2026-07-02, ADR-0041).** Do NOT build the `layout_text.py`
+> module this spec proposes — the core logic already shipped as
+> `autogis/core/envmon/layout_manager.py::update_layout_text()` (named
+> elements + `{{placeholder}}` resolution with QA warnings), and Tool 5.8 is
+> now the `envmon update-layout-text` CLI command calling it directly
+> (CLI-first per ADR-0039; this spec's guard-and-redirect Architecture
+> section predates that ADR). Kept for historical record only.
+
 **Date:** 2026-06-28
-**Status:** Approved
+**Status:** Superseded — see ADR-0041
 **Tool:** UpdateLayoutDynamicText (Tool 5.8)
 **Priority:** MEDIUM — keeps figure title blocks consistent across a packet
 **Runtime:** LOCAL (arcpy) — routes through the `.pyt` toolbox (ADR-0006)
