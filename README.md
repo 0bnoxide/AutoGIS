@@ -17,7 +17,7 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | Fully implemented (CLI command + core module + tests) | ~94 | ~73 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | ~1 | |
 | **Planned** (spec / plan written, not yet coded) | ~3 | roadmap tools — see *Planned* list below |
-| Not started (no spec or plan) | ~4 | excludes §11 AI tools + geostatistical Phase 5 |
+| Not started (no spec or plan) | ~3 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
 The codebase now ships **97 `core/envmon/` + 9 `core/agol/` modules (106 total)**,
@@ -205,8 +205,11 @@ still design-only.
 
 **Field / Survey123 (§7):** BuildFieldMapsMonitoringProject (7.1)
 
-**Survey / boring / drone / CAD (§8):** GenerateBoringLogPDFs (8.0c),
-ValidateSurveyDeliverable
+**Survey / boring / drone / CAD (§8):** GenerateBoringLogPDFs (8.0c)
+
+ValidateSurveyDeliverable needs no new code: it was folded into the shipped
+`ValidateRTKSurvey` (8.4) — see
+[`docs/superpowers/specs/2026-06-28-roadmap-duplicate-tools-fold-decision.md`](docs/superpowers/specs/2026-06-28-roadmap-duplicate-tools-fold-decision.md).
 
 **AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
 — all deferred pending LLM seam design
