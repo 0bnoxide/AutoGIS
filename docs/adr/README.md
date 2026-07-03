@@ -66,6 +66,7 @@ Each ADR follows this structure:
 | [045](0045-create-sampling-event-headless-planner.md) | CreateSurvey123SamplingEvent (2.7) — headless pre-field planner; plan's SampleID format over the spec's | Accepted | 2026-07-03 |
 | [046](0046-well-inspection-photo-report-headless-xlsx.md) | GenerateWellInspectionPhotoReport (7.4) — headless XLSX from the harvest manifest; Pillow as a `report` extra | Accepted | 2026-07-03 |
 | [047](0047-gen-map-series-cli-first-export-reuse.md) | GenerateSiteMapSeries (5.6) — CLI-first batch figure-packet exporter; arcpy-free planner + ExportFigures-chain reuse | Accepted | 2026-07-03 |
+| [048](0048-fold-batch-edd-import-into-batch-import-workbooks.md) | BatchEDDImport — folded into batch-import-workbooks (2.2) as an `--edd-dir` mode instead of a new tool | Accepted | 2026-07-03 |
 
 ## File naming
 
