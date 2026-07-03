@@ -315,6 +315,10 @@ _REGISTRY_SEED = [
     ("build-fieldmaps", "BuildFieldMapsMonitoringProject", "7.1", "LOCAL",
      "stable", "field",
      "Create/refresh Field Maps monitoring layers + editable field schema"),
+    ("create-sampling-event", "CreateSurvey123SamplingEvent", "2.7", "CLOUD",
+     "stable", "field",
+     "Generate a pre-field sampling event plan workbook (expected samples, "
+     "crew, COC draft)"),
 ]
 
 TOOL_REGISTRY: list = [
