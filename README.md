@@ -16,13 +16,13 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 |--------|------:|-------|
 | Fully implemented (CLI command + core module + tests) | ~100 | ~79 numbered roadmap tools + 21 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
-| **Planned** (spec / plan written, not yet coded) | 0 | post-roadmap BatchEDDImport plan only — see *Planned* list below |
+| **Planned** (spec / plan written, not yet coded) | 0 | BatchEDDImport folded into Tool 2.2 `batch-import-workbooks` — see ADR-0048 |
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
 The codebase now ships **103 `core/envmon/` + 10 `core/agol/` modules (113 total)**,
 **107 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 110 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1516-test** arcpy-free
+`manage-callout-overrides` subcommands are counted individually), and a **1522-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -175,9 +175,10 @@ plans in [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
 **Post-roadmap / infrastructure** (not counted in the 79-tool catalog)
 
-| Tool | Artifact |
-|------|---------|
-| BatchEDDImport (HYBRID) | plan |
+BatchEDDImport is no longer a separate planned tool — it was **folded into
+Tool 2.2 `batch-import-workbooks`** (2026-07-03): the existing command gained
+an alternate `--edd-dir`/`--profile`/`--site`/`--pattern` input mode instead
+of a new module/command (ADR-0048; the 2026-06-28 plan is superseded).
 
 Note: SessionCoordinationTier1 has shipped (`.claude/coordination/coord_cli.py`,
 `hook_check.py`, `registry.py` — see the *Worktrees & session coordination* section of
@@ -382,7 +383,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1516 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1522 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -589,7 +590,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1516 arcpy-free tests
+└── tests/               # 1522 arcpy-free tests
 ```
 
 ### Key modules
@@ -666,7 +667,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1516 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1522 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash

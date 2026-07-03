@@ -49,6 +49,28 @@ def read_manifest_csv(path: Path) -> list[dict]:
     return rows
 
 
+def manifest_rows_from_dir(
+    edd_dir: Path,
+    profile_path: Path,
+    site_id: str,
+    pattern: Optional[str] = None,
+) -> list[dict]:
+    """Synthesize manifest rows from a directory of EDD files.
+
+    Alternate input mode for Tool 2.2 (the BatchEDDImport fold, ADR-0048):
+    every file matching ``pattern`` shares one profile and site. Default
+    pattern ``*.csv``; if nothing matches, falls back to ``*.xlsx``. An
+    explicit pattern is used as-is with no fallback.
+    """
+    edd_dir = Path(edd_dir)
+    files = sorted(f for f in edd_dir.glob(pattern or "*.csv") if f.is_file())
+    if not files and pattern is None:
+        files = sorted(f for f in edd_dir.glob("*.xlsx") if f.is_file())
+    return [{"workbook_path": str(f), "profile_path": str(profile_path),
+             "site_id": site_id}
+            for f in files]
+
+
 def run_batch_import(
     manifest_rows: list[dict],
     *,

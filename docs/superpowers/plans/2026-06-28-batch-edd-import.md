@@ -1,5 +1,16 @@
 # BatchEDDImport (HYBRID) — Implementation Plan
 
+> **SUPERSEDED (2026-07-03) — do not implement this plan.** The user folded
+> BatchEDDImport into the already-shipped Tool 2.2 `batch-import-workbooks`
+> instead of building a new tool: the existing command gained an alternate
+> `--edd-dir`/`--profile`/`--site`/`--pattern` input mode
+> (`manifest_rows_from_dir()` in `core/envmon/batch_workbook_importer.py`).
+> No `batch_edd.py`, no `BatchImportSummary`, no `batch-import-edd` command.
+> Resolution recorded in
+> `docs/superpowers/specs/2026-07-03-planned-roadmap-batch-brief.md` §4 and
+> ADR-0048. (This plan was also independently stale: its central reused
+> function `run_edd_import_csv` never existed.)
+
 **Goal:** Add `envmon batch-import-edd` CLI command that processes a directory of EDD
 files (CSV/XLSX matching a pattern), running the headless EDD import on each and
 aggregating results into a single summary. Enables bulk import of lab deliverables
