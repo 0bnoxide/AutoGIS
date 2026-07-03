@@ -67,6 +67,7 @@ Each ADR follows this structure:
 | [046](0046-well-inspection-photo-report-headless-xlsx.md) | GenerateWellInspectionPhotoReport (7.4) — headless XLSX from the harvest manifest; Pillow as a `report` extra | Accepted | 2026-07-03 |
 | [047](0047-gen-map-series-cli-first-export-reuse.md) | GenerateSiteMapSeries (5.6) — CLI-first batch figure-packet exporter; arcpy-free planner + ExportFigures-chain reuse | Accepted | 2026-07-03 |
 | [048](0048-fold-batch-edd-import-into-batch-import-workbooks.md) | BatchEDDImport — folded into batch-import-workbooks (2.2) as an `--edd-dir` mode instead of a new tool | Accepted | 2026-07-03 |
+| [049](0049-headerless-rtk-survey-format-detection.md) | Headerless RTK survey CSV format detection — sniff, guess-with-confidence-gate, retain GNSS metadata end-to-end | Accepted | 2026-07-03 |
 
 ## File naming
 

@@ -84,3 +84,23 @@ def test_validate_rtk_survey_in_help():
     from autogis.adapters.cli import autogis
     result = CliRunner().invoke(autogis, ["envmon", "--help"])
     assert "validate-rtk-survey" in result.output
+
+
+def test_validate_rtk_survey_format_flag_and_guessed_order_in_report(tmp_path):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+
+    csv_path = tmp_path / "headerless.csv"
+    csv_path.write_text(
+        "1,558281.5482,2206038.3110,3224.0823,PT-1\n"
+        "2,558300.1200,2206050.4400,3225.1000,PT-2\n",
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "report.md"
+    result = CliRunner().invoke(autogis, [
+        "envmon", "validate-rtk-survey", str(csv_path),
+        "--format", "auto", "--fail-on", "error",
+        "--report", str(report_path),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "guessed_coord_order" in report_path.read_text(encoding="utf-8")

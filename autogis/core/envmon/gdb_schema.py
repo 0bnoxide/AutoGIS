@@ -165,6 +165,7 @@ TABLE_SCHEMAS = {
         ("PointID", T, 64), ("Northing", D, None), ("Easting", D, None),
         ("Elevation_ft", D, None), ("FeatureCode", T, 32),
         ("Description", T, 256), ("HRMS_ft", D, None), ("VRMS_ft", D, None),
+        ("PDOP", D, None), ("Satellites", L, None),
         ("FixType", T, 32), ("CorrectionSource", T, 64),
         ("OccupationTime_s", D, None), ("RodHeight_ft", D, None),
         ("CollectedAt", T, 32), ("Operator", T, 64)],

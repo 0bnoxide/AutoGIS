@@ -14,8 +14,9 @@ def validate_rtk_points(
     points: list[RTKPoint],
     hrms_threshold_ft: float = 0.03,
     vrms_threshold_ft: float = 0.05,
+    qa: QACollector | None = None,
 ) -> QACollector:
-    qa = QACollector()
+    qa = qa or QACollector()
 
     if not points:
         qa.add(QARecord(SEV_INFO, "validation_complete",
