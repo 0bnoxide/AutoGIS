@@ -31,125 +31,125 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
 
-| Tool | Roadmap # | CLI command |
-|------|-----------|-------------|
-| InspectWorkbook | 1 | `envmon inspect` |
-| CreateWorkbookParserProfile (draft reader) | 9 | `envmon parser-profile` |
-| FigureSpecTemplate | 10 | `envmon figure-spec` |
-| ValidateEnvConfig | 10.2 | `envmon validate-config` |
-| ManageAnalyteDictionary | 3.3 | `envmon manage-analyte-dict` |
-| ManageScreeningLevels | 3.x | `envmon manage-screening-levels` |
-| ReconcileSampleLocations | 3.2 | `envmon reconcile-locations` *(HYBRID)* |
-| ValidateAndConvertUnits | 3.5 | `envmon validate-units` |
-| EvaluateDuplicateRPD | 3.6 | `envmon evaluate-rpd-qa` / `envmon evaluate-rpd` |
-| ApplyScreeningLevels | 3.x | `envmon apply-screening` |
-| CompareMonitoringEvents | 4.7 | `envmon compare-events` |
-| IdentifyMonitoringDataGaps | 4.10 | `envmon identify-data-gaps` |
-| CompareScheduleVsActual | — | `envmon compare-schedule-vs-actual` |
-| ProcessLevelLoop | 8.1 | `envmon process-level-loop` |
-| ValidateRTKSurvey | 8.4 | `envmon validate-rtk-survey` |
-| DroneGCPCheckpointQA | 8.7 | `envmon drone-checkpoint-qa` |
-| ReconcileSurvey123AndLabResults | 2.6 | `envmon reconcile-survey123-lab` |
-| BuildSurvey123XLSFormFromConfig | 7.1a | `envmon build-survey-form` |
-| EvaluateReportReadiness | 9.0b | `envmon evaluate-readiness` |
-| ExportAnalyticalSummaryTables | 9.1 | `envmon export-report-format-summary-tables` / `envmon export-summary` |
-| GenerateMonitoringEventReport | — | `envmon generate-event-report` |
-| ExportGeoJSONResults | — | `envmon export-geojson` |
-| ValidateScheduleYAML | — | `envmon validate-schedule` |
-| RunHistoryReport / Query | 10.1 | `envmon run-history-report` / `envmon run-history` |
-| WriteRunHistory | 10.5 | not implemented -- `RunHistory.write()` exists (`core/common/run_history.py`) but has no production caller; `run_history.csv` is user-populated today (see ADR-0017 status update, issue #104) |
-| PublishEnvironmentalLayersToAGOL | 6.1 | `agol publish-layer` |
-| BuildGroundwaterElevationEvent | 4.1 | `envmon build-gwe-event` |
-| EstimateGWFlowDirection | 4.3 | `envmon estimate-gw-flow-direction` (DRAFT) |
-| BuildAnalyticalExceedanceEvent | 4.4 | `envmon build-exceedance-event` |
-| GenerateWellTrendCharts | 4.6 | `envmon generate-trend-charts` |
-| SelectSoilIntervalsForMapping | 4.8 | `envmon select-soil-intervals` |
-| BuildMaxResultMapDataset | 4.9 | `envmon build-max-result-dataset` |
-| GenerateArcadeLabelExpressions | 5.4 | `envmon generate-arcade-labels` |
-| GeneratePythonLabelExpressions | 5.4b | `envmon generate-python-labels` |
-| BuildAnalyticalKey | 5.5 | `envmon build-analytical-key` |
-| BuildReportFigurePackage | 5.7 | `envmon build-report-package` |
-| RegisterSourceDocuments | 2.5 | `envmon register-source-doc` |
-| BatchImportEnvironmentalWorkbooks | 2.2 | `envmon batch-import-workbooks` |
-| MigrateLegacyMonitoringData | 2.4 | `envmon migrate-legacy-data` |
-| CreateSurvey123SamplingEvent | 2.7 | `envmon create-sampling-event` |
-| SurveyToWellElevationUpdate | 8.5 | `envmon survey-to-well-elevation` *(HYBRID — `--gdb` write path is LOCAL)* |
-| RegisterDroneFlight | 8.6 | `envmon register-drone-flight` *(HYBRID — GDB write path is LOCAL)* |
-| ImportDroneProducts | 8.8 | `envmon validate-drone-products` (headless QA half; the GDB-writing half is LOCAL — see below) |
-| ImportFieldBoringLogs | 8.0b | `envmon validate-boring-logs` (headless QA half; the GDB-writing half is LOCAL — see below) |
-| CreateBoringLogDatabase | 8.0a | `envmon create-boring-log-db` |
-| GenerateBoringLogPDFs | 8.0c | `envmon gen-boring-logs` (Markdown/CSV assembly; PDF conversion is a downstream step) |
-| SyncFieldAttachments | 6.5 | `envmon index-field-attachments` (envmon-side index; the AGOL download half is the shipped attachment harvester) |
-| CreateSamplingEventPlan | 7.2 | `envmon create-sampling-plan` |
-| ReconcileFieldAndLabData | 7.3 | `envmon reconcile-field-lab` |
-| GenerateWellInspectionPhotoReport | 7.4 | `envmon generate-inspection-report` (photo embedding needs Pillow — `pip install "autogis[report]"`) |
-| BuildMonitoringReportAppendix | 9.2 | `envmon build-report-appendix` |
-| GenerateEventChangeLog | 9.3 | `envmon generate-event-changelog` |
-| IngestReviewerMapComments | 9.4 | `envmon ingest-reviewer-comments` |
-| GenerateSyntheticEnvWorkbook | 10.6 | `envmon gen-synthetic-workbook` |
-| RunEnvJobQueue | 10.4 | `envmon generate-job-queue` |
-| GenerateDraftPlumeBoundary | 4.5 | `envmon draft-plume-boundary` *(HYBRID — `--gdb` write path is LOCAL; DRAFT output)* |
-| RefreshMonitoringDashboardData | 6.4 | `agol refresh-dashboard` |
-| AuditAGOLSchemaAgainstLocalConfig | 6.6 | `agol audit-schema` |
-| PublishDashboardFromSpec | 6.8 | `agol publish-dashboard` |
-| AuditAGOLItemDependencies | 6.9 | `agol audit-dependencies` |
-| PromoteAGOLDataBetweenStages | 6.10 | `agol promote` |
-| UpdateWellElevationsFromLevelLoop | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* |
-| UpdateAGOLWebMapFromFigureSpec | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) |
-| CreateHostedViewsForStakeholders | 6.11 | `agol create-views` |
-| SyncAGOLFeatureLayerToGDB | 6.2 | `agol sync-to-gdb` *(HYBRID — `--gdb` upsert path is LOCAL; attribute sync only — attachments stay with `autogis harvest` + `envmon index-field-attachments`)* |
+| Tool | Roadmap # | CLI command | What it does |
+|------|-----------|-------------|--------------|
+| [InspectWorkbook](autogis/core/envmon/excel_workbook_inspector.py) | 1 | `envmon inspect` | Tool 1: inspect an Excel workbook's structure (headless) |
+| [CreateWorkbookParserProfile (draft reader)](autogis/core/envmon/excel_profile_reader.py) | 9 | `envmon parser-profile` | Tool 9: load a parser profile and open it against a workbook (headless) |
+| [FigureSpecTemplate](autogis/core/common/config.py) | 10 | `envmon figure-spec` | Tool 10: load and validate a figure spec (headless) |
+| [ValidateEnvConfig](autogis/core/envmon/validate_config.py) | 10.2 | `envmon validate-config` | Tool: validate a per-site config bundle (headless) |
+| [ManageAnalyteDictionary](autogis/core/envmon/manage_analyte_dict.py) | 3.3 | `envmon manage-analyte-dict` | Tool: validate / inspect the analyte dictionary (read-only, headless) |
+| [ManageScreeningLevels](autogis/core/envmon/manage_screening_levels.py) | 3.x | `envmon manage-screening-levels` | Validate and inspect the screening levels YAML (headless) |
+| [ReconcileSampleLocations](autogis/core/envmon/reconcile_locations.py) | 3.2 | `envmon reconcile-locations` *(HYBRID)* | Tool: pre-flight check that workbook location IDs match the well layer |
+| [ValidateAndConvertUnits](autogis/core/envmon/validate_units.py) | 3.5 | `envmon validate-units` | Tool: validate analyte/screening units for convertibility (headless) |
+| [EvaluateDuplicateRPD](autogis/core/envmon/evaluate_rpd_qa.py) | 3.6 | `envmon evaluate-rpd-qa` / `envmon evaluate-rpd` | Tool: compute RPD for EDD duplicate samples and emit QA records |
+| [ApplyScreeningLevels](autogis/core/envmon/apply_screening.py) | 3.x | `envmon apply-screening` | Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless) |
+| [CompareMonitoringEvents](autogis/core/envmon/compare_events.py) | 4.7 | `envmon compare-events` | Tool 4.7: compare current vs previous monitoring event per location/analyte |
+| [IdentifyMonitoringDataGaps](autogis/core/envmon/data_gaps.py) | 4.10 | `envmon identify-data-gaps` | Tool 4.10: report missing wells/analytes vs an expected schedule |
+| [CompareScheduleVsActual](autogis/core/envmon/schedule_vs_actual.py) | — | `envmon compare-schedule-vs-actual` | Compare scheduled monitoring wells/analytes vs actual results (headless) |
+| [ProcessLevelLoop](autogis/core/envmon/level_loop.py) | 8.1 | `envmon process-level-loop` | Tool 8.1: differential leveling — adjusted elevations + misclosure QA |
+| [ValidateRTKSurvey](autogis/core/envmon/validate_rtk_survey.py) | 8.4 | `envmon validate-rtk-survey` | Validate an RTK survey CSV for precision and fix-type QA (headless) |
+| [DroneGCPCheckpointQA](autogis/core/envmon/drone_checkpoint_qa.py) | 8.7 | `envmon drone-checkpoint-qa` | Tool 11.1: evaluate GCP checkpoint accuracy (headless) |
+| [ReconcileSurvey123AndLabResults](autogis/core/envmon/reconcile_survey123_lab.py) | 2.6 | `envmon reconcile-survey123-lab` | Pre-production: reconcile Survey123 field submissions vs lab EDD (headless) |
+| [BuildSurvey123XLSFormFromConfig](autogis/core/envmon/survey123_form_builder.py) | 7.1a | `envmon build-survey-form` | Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config |
+| [EvaluateReportReadiness](autogis/core/envmon/evaluate_readiness.py) | 9.0b | `envmon evaluate-readiness` | Tool: report-readiness gate — checks required tools ran successfully |
+| [ExportAnalyticalSummaryTables](autogis/core/envmon/export_summary_tables.py) | 9.1 | `envmon export-report-format-summary-tables` / `envmon export-summary` | Tool: export Env_AnalyticalResults to formatted report-appendix tables |
+| [GenerateMonitoringEventReport](autogis/core/envmon/generate_event_report.py) | — | `envmon generate-event-report` | Tool 10.5: assemble Markdown monitoring event report from CSV tool outputs |
+| [ExportGeoJSONResults](autogis/core/envmon/export_geojson.py) | — | `envmon export-geojson` | Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless) |
+| [ValidateScheduleYAML](autogis/core/envmon/validate_schedule.py) | — | `envmon validate-schedule` | Tool 10.2: validate monitoring schedule YAML structure and analyte names |
+| [RunHistoryReport / Query](autogis/core/envmon/history_report.py) | 10.1 | `envmon run-history-report` / `envmon run-history` | Tool 10.1: per-location per-analyte history summary across events |
+| WriteRunHistory | 10.5 | not implemented -- `RunHistory.write()` exists (`core/common/run_history.py`) but has no production caller; `run_history.csv` is user-populated today (see ADR-0017 status update, issue #104) | — |
+| [PublishEnvironmentalLayersToAGOL](autogis/core/agol/publish.py) | 6.1 | `agol publish-layer` | Publish or overwrite a hosted AGOL feature service |
+| [BuildGroundwaterElevationEvent](autogis/core/envmon/build_gwe_event.py) | 4.1 | `envmon build-gwe-event` | Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags |
+| [EstimateGWFlowDirection](autogis/core/envmon/estimate_gw_flow_direction.py) | 4.3 | `envmon estimate-gw-flow-direction` (DRAFT) | Tool 4.3: estimate GW flow direction and gradient (DRAFT) from well GWEs |
+| [BuildAnalyticalExceedanceEvent](autogis/core/envmon/build_exceedance_event.py) | 4.4 | `envmon build-exceedance-event` | Build exceedance event dataset with ratio/tier enrichment (headless) |
+| [GenerateWellTrendCharts](autogis/core/envmon/well_trend_charts.py) | 4.6 | `envmon generate-trend-charts` | Tool 4.6: generate Excel trend-chart workbook from a history CSV (headless) |
+| [SelectSoilIntervalsForMapping](autogis/core/envmon/soil_interval_selector.py) | 4.8 | `envmon select-soil-intervals` | Assign display tiers to soil sample intervals and write a mapping CSV (headless) |
+| [BuildMaxResultMapDataset](autogis/core/envmon/max_result_dataset.py) | 4.9 | `envmon build-max-result-dataset` | Build max-detected dataset across all events (headless) |
+| [GenerateArcadeLabelExpressions](autogis/core/envmon/arcade_label_generator.py) | 5.4 | `envmon generate-arcade-labels` | Tool 5.4: generate Arcade label expressions for ArcGIS Pro layers (headless) |
+| [GeneratePythonLabelExpressions](autogis/core/envmon/python_label_generator.py) | 5.4b | `envmon generate-python-labels` | Tool 5.4b: generate Python label expressions for ArcGIS Pro layers (headless) |
+| [BuildAnalyticalKey](autogis/core/envmon/build_analytical_key.py) | 5.5 | `envmon build-analytical-key` | Tool 5.5: build the analytical key/legend table (analyte, units, screening, NE) |
+| [BuildReportFigurePackage](autogis/core/envmon/report_figure_package.py) | 5.7 | `envmon build-report-package` | Assemble deliverable folder from YAML spec (headless) |
+| [RegisterSourceDocuments](autogis/core/envmon/source_registry.py) | 2.5 | `envmon register-source-doc` | Tool 2.5: register a source document in the append-only registry (headless) |
+| [BatchImportEnvironmentalWorkbooks](autogis/core/envmon/batch_workbook_importer.py) | 2.2 | `envmon batch-import-workbooks` | Tool 2.2: batch-import EDD workbooks from a manifest CSV or a directory (headless) |
+| [MigrateLegacyMonitoringData](autogis/core/envmon/legacy_migrator.py) | 2.4 | `envmon migrate-legacy-data` | Tool 2.4: convert wide-format legacy CSV to long-format result records (headless) |
+| [CreateSurvey123SamplingEvent](autogis/core/envmon/create_sampling_event.py) | 2.7 | `envmon create-sampling-event` | Tool 2.7: generate pre-field sampling event plan (headless) |
+| [SurveyToWellElevationUpdate](autogis/core/envmon/survey_to_well_elevation.py) | 8.5 | `envmon survey-to-well-elevation` *(HYBRID — `--gdb` write path is LOCAL)* | Tool 8.5: push QA-passed RTK survey elevations to MonitoringWells.TOC_ft |
+| [RegisterDroneFlight](autogis/core/envmon/register_drone_flight.py) | 8.6 | `envmon register-drone-flight` *(HYBRID — GDB write path is LOCAL)* | Tool 8.6: register a drone flight from an inventory YAML (ArcGIS Pro) |
+| [ImportDroneProducts](autogis/core/envmon/import_drone_products.py) | 8.8 | `envmon validate-drone-products` (headless QA half; the GDB-writing half is LOCAL — see below) | Tool 8.8: validate a drone product manifest CSV (headless) |
+| [ImportFieldBoringLogs](autogis/core/envmon/import_boring_logs.py) | 8.0b | `envmon validate-boring-logs` (headless QA half; the GDB-writing half is LOCAL — see below) | Tool 8.0b: validate a boring-log CSV package (headless) |
+| [CreateBoringLogDatabase](autogis/core/envmon/create_boring_log_database.py) | 8.0a | `envmon create-boring-log-db` | Tool 8.0a: create (or --validate) the normalized boring-log SQLite database (headless) |
+| [GenerateBoringLogPDFs](autogis/core/envmon/boring_log_report.py) | 8.0c | `envmon gen-boring-logs` (Markdown/CSV assembly; PDF conversion is a downstream step) | Tool 8.0c: assemble boring-log Markdown documents from the boring database (headless) |
+| [SyncFieldAttachments](autogis/core/envmon/index_field_attachments.py) | 6.5 | `envmon index-field-attachments` (envmon-side index; the AGOL download half is the shipped attachment harvester) | Tool 6.5: index a harvester manifest into AttachmentIndex (headless) |
+| [CreateSamplingEventPlan](autogis/core/envmon/sampling_plan.py) | 7.2 | `envmon create-sampling-plan` | Tool 7.2: generate planned sample list and bottle count for an event (headless) |
+| [ReconcileFieldAndLabData](autogis/core/envmon/field_lab_reconciler.py) | 7.3 | `envmon reconcile-field-lab` | Tool 7.3: compare field records to lab results, flag mismatches (headless) |
+| [GenerateWellInspectionPhotoReport](autogis/core/envmon/well_inspection_photo_report.py) | 7.4 | `envmon generate-inspection-report` (photo embedding needs Pillow — `pip install "autogis[report]"`) | Tool 7.4: per-well inspection photo workbook from harvested attachments + an inspection CSV (headless) |
+| [BuildMonitoringReportAppendix](autogis/core/envmon/report_appendix_builder.py) | 9.2 | `envmon build-report-appendix` | Build multi-sheet Excel analytical-data appendix (headless) |
+| [GenerateEventChangeLog](autogis/core/envmon/event_changelog.py) | 9.3 | `envmon generate-event-changelog` | Tool 9.3: Generate structured changelog from two monitoring event CSVs |
+| [IngestReviewerMapComments](autogis/core/envmon/ingest_reviewer_comments.py) | 9.4 | `envmon ingest-reviewer-comments` | Tool 9.4: ingest reviewer map comments/redlines into a tracked table |
+| [GenerateSyntheticEnvWorkbook](autogis/core/envmon/synthetic_workbook.py) | 10.6 | `envmon gen-synthetic-workbook` | Tool 10.6: write a seeded synthetic environmental workbook for parser hardening |
+| [RunEnvJobQueue](autogis/core/envmon/job_queue.py) | 10.4 | `envmon generate-job-queue` | Tool 10.4: generate an ordered job-queue JSON from a manifest YAML (headless) |
+| [GenerateDraftPlumeBoundary](autogis/core/envmon/draft_plume_boundary.py) | 4.5 | `envmon draft-plume-boundary` *(HYBRID — `--gdb` write path is LOCAL; DRAFT output)* | Tool 4.5: draft plume-extent polygon (convex/concave hull) from exceedance points |
+| [RefreshMonitoringDashboardData](autogis/core/agol/dashboard_refresh.py) | 6.4 | `agol refresh-dashboard` | Tool 6.4: push local Dash_* data-mart tables to hosted AGOL layers (HYBRID) |
+| [AuditAGOLSchemaAgainstLocalConfig](autogis/core/agol/audit_schema.py) | 6.6 | `agol audit-schema` | Tool 6.6: compare a hosted AGOL feature layer schema against a local spec (HYBRID) |
+| [PublishDashboardFromSpec](autogis/core/agol/dashboard_publish.py) | 6.8 | `agol publish-dashboard` | Tool 6.8: compile a YAML dashboard spec and create-or-update the AGOL Dashboard item |
+| [AuditAGOLItemDependencies](autogis/core/agol/audit_dependencies.py) | 6.9 | `agol audit-dependencies` | Tool 6.9: find items that reference/depend on an AGOL item (HYBRID) |
+| [PromoteAGOLDataBetweenStages](autogis/core/agol/promote.py) | 6.10 | `agol promote` | Tool 6.10: promote an AGOL layer's data between DEV/QA/PROD stages |
+| [UpdateWellElevationsFromLevelLoop](autogis/core/envmon/level_loop.py) | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* | Tool 8.2: push a closed level-loop run's elevations to MonitoringWells.TOC_ft |
+| [UpdateAGOLWebMapFromFigureSpec](autogis/core/agol/webmap.py) | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) | Tool 6.3: push a figure spec's display config into an AGOL web map |
+| [CreateHostedViewsForStakeholders](autogis/core/agol/hosted_views.py) | 6.11 | `agol create-views` | Tool 6.11: create/update audience-specific hosted views (sensitive-field leak is blocking) |
+| [SyncAGOLFeatureLayerToGDB](autogis/core/agol/sync_layer.py) | 6.2 | `agol sync-to-gdb` *(HYBRID — `--gdb` upsert path is LOCAL; attribute sync only — attachments stay with `autogis harvest` + `envmon index-field-attachments`)* | Tool 6.2: download hosted feature layer edits into the local FGDB (HYBRID) |
 
 Post-roadmap extras (not counted in the 79-tool catalog):
 
-| Tool | CLI command |
-|------|-------------|
-| GWLevelSummary | `envmon gw-level-summary` |
-| BuildComplianceSummaryTable | `envmon build-compliance-table` |
-| ExportEnvDataToGeoPackage | `envmon export-geopackage` |
-| ExportLabAnalyticalRequest | `envmon export-lab-request` |
-| GenerateQCSampleSummary | `envmon generate-qc-summary` |
-| GenerateRegulatorySubmissionTables | `envmon generate-reg-tables` |
-| GenerateSiteNarrative | `envmon generate-site-narrative` |
-| ListAvailableEnvTools | `envmon list-tools` |
-| MergeEventResults | `envmon merge-event-results` |
-| ValidateFieldDataCompleteness | `envmon validate-field-completeness` |
-| ExportComparisonExcel | `envmon export-comparison-excel` |
-| DraftParserProfileFromWorkbook | `envmon draft-parser-profile` |
-| RTKControlCheckReport | `envmon rtk-control-check` |
-| GeneratePortfolioMetrics | `envmon portfolio-metrics` |
-| EvaluateGroundwaterSurfaceModels | `envmon evaluate-gw-models` |
-| ExportSurveyToCADGIS | `envmon export-survey-cad` |
-| GenerateWellInspectionReports | `envmon well-inspection-report` |
+| Tool | CLI command | What it does |
+|------|-------------|--------------|
+| [GWLevelSummary](autogis/core/envmon/gw_level_summary.py) | `envmon gw-level-summary` | Tool 5.1: per-well GW level/DTW/trend summary from elevation history |
+| [BuildComplianceSummaryTable](autogis/core/envmon/compliance_summary.py) | `envmon build-compliance-table` | Build cross-event compliance summary matrix + detail workbook (headless) |
+| [ExportEnvDataToGeoPackage](autogis/core/envmon/geopackage_exporter.py) | `envmon export-geopackage` | Export envmon data to OGC GeoPackage (stdlib sqlite3, headless) |
+| [ExportLabAnalyticalRequest](autogis/core/envmon/lab_request_exporter.py) | `envmon export-lab-request` | Generate lab analytical request workbook from sampling event plan (headless) |
+| [GenerateQCSampleSummary](autogis/core/envmon/qc_sample_summary.py) | `envmon generate-qc-summary` | Generate QC data summary workbook (blanks, spikes, duplicates) (headless) |
+| [GenerateRegulatorySubmissionTables](autogis/core/envmon/regulatory_table_builder.py) | `envmon generate-reg-tables` | Build regulatory submission pivot table workbook (headless, openpyxl) |
+| [GenerateSiteNarrative](autogis/core/envmon/site_narrative_generator.py) | `envmon generate-site-narrative` | Generate template-driven site monitoring narrative (headless) |
+| [ListAvailableEnvTools](autogis/core/envmon/tool_registry.py) | `envmon list-tools` | List available envmon tools with capability metadata (headless) |
+| [MergeEventResults](autogis/core/envmon/event_results_merger.py) | `envmon merge-event-results` | Merge multiple event result CSVs into one long-format file (headless) |
+| [ValidateFieldDataCompleteness](autogis/core/envmon/field_completeness_validator.py) | `envmon validate-field-completeness` | Compare sampling plan vs. lab results for completeness (headless) |
+| [ExportComparisonExcel](autogis/core/envmon/export_comparison_excel.py) | `envmon export-comparison-excel` | Tool 4.8: export comparison results to a formatted Excel workbook (headless) |
+| [DraftParserProfileFromWorkbook](autogis/core/envmon/excel_workbook_inspector.py) | `envmon draft-parser-profile` | Tool 2.1: inspect a workbook and write a draft parser profile YAML (headless) |
+| [RTKControlCheckReport](autogis/core/envmon/rtk_control_check.py) | `envmon rtk-control-check` | Compare RTK-surveyed control shots to published benchmarks (headless) |
+| [GeneratePortfolioMetrics](autogis/core/envmon/portfolio_metrics.py) | `envmon portfolio-metrics` | Roll up per-site report readiness across a multi-site run history |
+| [EvaluateGroundwaterSurfaceModels](autogis/core/envmon/evaluate_gw_models.py) | `envmon evaluate-gw-models` | Cross-validate interpolation model predictions against observed values |
+| [ExportSurveyToCADGIS](autogis/core/envmon/export_survey_cad.py) | `envmon export-survey-cad` | Export RTK survey points to feature-code-mapped CSV/GeoJSON layers (headless) |
+| [GenerateWellInspectionReports](autogis/core/envmon/well_inspection_report.py) | `envmon well-inspection-report` | Generate Markdown well inspection reports + a site summary (headless) |
 
 </details>
 
 <details>
 <summary>Fully implemented — ArcGIS Pro (LOCAL)</summary>
 
-| Tool | Roadmap # | CLI command (arcpy-guarded; primary UI is the `.pyt`) |
-|------|-----------|--------------------------------------------------------|
-| ImportLabEDD | 2.3 | `envmon import-edd` |
-| ImportToGDB | 2/3 | `envmon import-gdb` |
-| BuildCurrentEvent | 4 | `envmon build-event` |
-| BuildAnalyticalCallouts | 5.1 | `envmon build-callouts` |
-| OptimizeCalloutPlacement | 5.2 | `envmon optimize-callouts` |
-| ManageCalloutPlacementOverrides | 5.3 | `envmon manage-callout-overrides` |
-| GenerateDraftGWContours | 4.2 | `envmon gw-contours` |
-| ExportFigures | 6 | `envmon export-figures` |
-| FullPipeline | 7 | `envmon full-pipeline` |
-| ValidateEnvironmentalDatabase | 3.1 | `envmon validate-db` |
-| UpgradeEnvMonitoringGDBSchema | 10.3 | `envmon upgrade-schema` |
-| ExportEventDatabaseSnapshot | 9.0a | `envmon export-snapshot` |
-| ImportRTKSurveyPoints | 8.3 | `envmon import-rtk-survey` |
-| RouteSurvey123Submission | 7.1b | `envmon route-survey123` |
-| ImportDroneProducts | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) |
-| ImportFieldBoringLogs | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) |
-| BuildDashboardDataMart | 6.7 | `envmon build-dashboard-data-mart` |
-| BuildCADExportPackage | 8.9 | `envmon build-cad-package` (mapping/CRS logic only; arcpy Export-to-CAD call not yet wired — see issue #105) |
-| ExportContoursForCivil3D | 8.2 | `envmon export-civil3d` (PNEZD CSV + projection note headless; `--landxml` guarded, arcpy leg not yet wired — see issue #105) |
-| UpdateLayoutDynamicText | 5.8 | `envmon update-layout-text` (CLI-first per ADR-0039; wraps the shipped `layout_manager.update_layout_text`) |
-| BuildFieldMapsMonitoringProject | 7.1 | `envmon build-fieldmaps` (CLI-first per ADR-0039; plan is arcpy-free + headless via `--dry-run`, GDB provisioning needs arcpy; publish via `agol publish-layer`) |
-| GenerateSiteMapSeries | 5.6 | `envmon gen-map-series` (CLI-first per ADR-0039; planner + `--dry-run` are arcpy-free; export loop replays the ExportFigures chain) |
+| Tool | Roadmap # | CLI command (arcpy-guarded; primary UI is the `.pyt`) | What it does |
+|------|-----------|--------------------------------------------------------|--------------|
+| [ImportLabEDD](autogis/core/envmon/edd_importer.py) | 2.3 | `envmon import-edd` | Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro) |
+| [ImportToGDB](autogis/core/envmon/import_to_gdb.py) | 2/3 | `envmon import-gdb` | Tool 2: import a workbook into the file geodatabase (ArcGIS Pro) |
+| [BuildCurrentEvent](autogis/core/envmon/build_current_event.py) | 4 | `envmon build-event` | Tool 3: build the current-event feature data (ArcGIS Pro) |
+| [BuildAnalyticalCallouts](autogis/core/envmon/build_figure_dataset.py) | 5.1 | `envmon build-callouts` | Tool 4: generate callout feature classes (ArcGIS Pro) |
+| [OptimizeCalloutPlacement](autogis/core/envmon/callout_collision.py) | 5.2 | `envmon optimize-callouts` | Tool 5.2: run callout placement optimizer (ArcGIS Pro) |
+| [ManageCalloutPlacementOverrides](autogis/core/envmon/manage_callout_overrides.py) | 5.3 | `envmon manage-callout-overrides` | — |
+| [GenerateDraftGWContours](autogis/core/envmon/groundwater_contours.py) | 4.2 | `envmon gw-contours` | Tool 5: build groundwater contours (ArcGIS Pro) |
+| [ExportFigures](autogis/core/envmon/export_figures.py) | 6 | `envmon export-figures` | Tool 6: export figure layouts (ArcGIS Pro) |
+| [FullPipeline](autogis/core/envmon/import_to_gdb.py) | 7 | `envmon full-pipeline` | Tool 7: run the full import-to-figures pipeline (ArcGIS Pro) |
+| [ValidateEnvironmentalDatabase](autogis/core/envmon/validate_database.py) | 3.1 | `envmon validate-db` | Tool 8: validate the GDB schema and cross-table integrity (ArcGIS Pro) |
+| [UpgradeEnvMonitoringGDBSchema](autogis/core/envmon/upgrade_schema.py) | 10.3 | `envmon upgrade-schema` | Upgrade a file GDB to the current envmon schema version (ArcGIS Pro) |
+| [ExportEventDatabaseSnapshot](autogis/core/envmon/export_snapshot.py) | 9.0a | `envmon export-snapshot` | Freeze a GDB snapshot for a reporting event (ArcGIS Pro) |
+| [ImportRTKSurveyPoints](autogis/core/envmon/import_rtk_survey.py) | 8.3 | `envmon import-rtk-survey` | Import RTK survey CSV into SurveyPoints_Raw/QA (ArcGIS Pro) |
+| [RouteSurvey123Submission](autogis/core/envmon/normalize_survey123.py) | 7.1b | `envmon route-survey123` | Route Survey123 field submissions into the GDB (ArcGIS Pro) |
+| [ImportDroneProducts](autogis/core/envmon/import_drone_products.py) | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) | Tool 8.8: import drone deliverables to raster catalog + GCP table (ArcGIS Pro) |
+| [ImportFieldBoringLogs](autogis/core/envmon/import_boring_logs.py) | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) | Tool 8.0b: import a boring-log CSV package into the GDB (ArcGIS Pro) |
+| [BuildDashboardDataMart](autogis/core/envmon/dashboard_data_mart.py) | 6.7 | `envmon build-dashboard-data-mart` | Tool 6.7: truncate + repopulate the Dash_* mart tables (ArcGIS Pro) |
+| [BuildCADExportPackage](autogis/core/envmon/cad_layer_map.py) | 8.9 | `envmon build-cad-package` (mapping/CRS logic only; arcpy Export-to-CAD call not yet wired — see issue #105) | Tool 8.9: export GIS layers to a CAD package (ArcGIS Pro) |
+| [ExportContoursForCivil3D](autogis/core/envmon/civil3d_points.py) | 8.2 | `envmon export-civil3d` (PNEZD CSV + projection note headless; `--landxml` guarded, arcpy leg not yet wired — see issue #105) | Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless); --landxml routes to the .pyt toolbox |
+| [UpdateLayoutDynamicText](autogis/core/envmon/layout_manager.py) | 5.8 | `envmon update-layout-text` (CLI-first per ADR-0039; wraps the shipped `layout_manager.update_layout_text`) | Tool 5.8: update APRX layout text elements from a YAML values file (ArcGIS Pro) |
+| [BuildFieldMapsMonitoringProject](autogis/core/envmon/fieldmaps_plan.py) | 7.1 | `envmon build-fieldmaps` (CLI-first per ADR-0039; plan is arcpy-free + headless via `--dry-run`, GDB provisioning needs arcpy; publish via `agol publish-layer`) | Tool 7.1: create/refresh the Field Maps monitoring layers for field crews (ArcGIS Pro) |
+| [GenerateSiteMapSeries](autogis/core/envmon/map_series_plan.py) | 5.6 | `envmon gen-map-series` (CLI-first per ADR-0039; planner + `--dry-run` are arcpy-free; export loop replays the ExportFigures chain) | Tool 5.6: batch figure-packet exporter across sites/events (ArcGIS Pro) |
 
 </details>
 
