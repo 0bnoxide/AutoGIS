@@ -82,6 +82,14 @@ def test_survey_point_raw_table_name():
     assert SurveyPointRaw.table_name == "SurveyPoints_Raw"
 
 
+def test_survey_point_raw_has_pdop_and_satellites():
+    p = SurveyPointRaw(point_id="MW-01", northing=1.0, easting=2.0,
+                       elevation=3.0, pdop=1.2, satellites=22)
+    row = p.to_row()
+    assert row["pdop"] == 1.2
+    assert row["satellites"] == 22
+
+
 def test_survey_point_qa_table_name():
     assert SurveyPointQA.table_name == "SurveyPoints_QA"
 

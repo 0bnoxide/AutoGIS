@@ -2127,6 +2127,14 @@ def sync_to_gdb_cmd(profile, layer_url, item_id, layer_index, where, since,
 @click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
 @click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
 @click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
+@click.option("--format", "coord_format", type=click.Choice(["auto", "pnezd", "penzd"]),
+              default="auto", show_default=True,
+              help="Coordinate column order for headerless input.")
+@click.option("--extra-columns", default=None,
+              help="Comma-separated field names for columns 6+ of a headerless file, "
+                   "overriding the built-in 11-column layout. Vocabulary: hrms_ft, "
+                   "vrms_ft, pdop, satellites, fix_type, collected_at, operator, "
+                   "feature_code.")
 @click.option("--report", default=None, type=click.Path())
 # Deliberately NOT @qa_report_options: this command's --fail-on defaults to
 # "warning" (not the shared contract's "error") because RTK precision
@@ -2134,12 +2142,20 @@ def sync_to_gdb_cmd(profile, layer_url, item_id, layer_index, where, since,
 # Exempted by name in tests/test_capabilities.py's QA-contract consistency
 # test -- don't "fix" this default without updating that test too.
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="warning")
-def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, report, fail_on):
+def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, coord_format,
+                           extra_columns, report, fail_on):
     """Validate an RTK survey CSV for precision and fix-type QA (headless)."""
+    from autogis.core.common.qa import QACollector
     from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
     from autogis.core.envmon.validate_rtk_survey import validate_rtk_points
-    points = parse_rtk_csv(Path(csv_path))
-    qa = validate_rtk_points(points, hrms_threshold, vrms_threshold)
+    extra = [c.strip() for c in extra_columns.split(",")] if extra_columns else None
+    qa = QACollector()
+    try:
+        points = parse_rtk_csv(Path(csv_path), coord_format=coord_format,
+                               extra_columns=extra, qa=qa)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    validate_rtk_points(points, hrms_threshold, vrms_threshold, qa=qa)
     _render_qa(qa, report, fail_on)
 
 
@@ -2186,13 +2202,31 @@ def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, report, fail_
 @click.option("--batch-id", default=None)
 @click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
 @click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
-def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms_threshold):
+@click.option("--format", "coord_format", type=click.Choice(["auto", "pnezd", "penzd"]),
+              default="auto", show_default=True,
+              help="Coordinate column order for headerless input.")
+@click.option("--extra-columns", default=None,
+              help="Comma-separated field names for columns 6+ of a headerless file, "
+                   "overriding the built-in 11-column layout. Vocabulary: hrms_ft, "
+                   "vrms_ft, pdop, satellites, fix_type, collected_at, operator, "
+                   "feature_code.")
+def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms_threshold,
+                         coord_format, extra_columns):
     """Import RTK survey CSV into SurveyPoints_Raw/QA (ArcGIS Pro)."""
     import uuid
     _guard("import-rtk-survey")
+    from autogis.core.common.qa import QACollector
     from autogis.core.envmon.import_rtk_survey import parse_rtk_csv, import_rtk_survey, assign_qa_flags
     bid = batch_id or f"RTK-{uuid.uuid4().hex[:8].upper()}"
-    points = parse_rtk_csv(Path(csv_path))
+    extra = [c.strip() for c in extra_columns.split(",")] if extra_columns else None
+    qa = QACollector()
+    try:
+        points = parse_rtk_csv(Path(csv_path), coord_format=coord_format,
+                               extra_columns=extra, qa=qa)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    for rec in qa.records:
+        click.echo(f"[{rec.severity}] {rec.category}: {rec.message}")
     import_rtk_survey(gdb, site_id, bid, points, hrms_threshold, vrms_threshold)
     passes = sum(1 for p in points if not assign_qa_flags(p, hrms_threshold, vrms_threshold))
     click.echo(f"Imported {len(points)} points: {passes} QA pass, {len(points)-passes} QA fail.")

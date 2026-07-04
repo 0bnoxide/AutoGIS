@@ -17,6 +17,8 @@ class SurveyPointRaw:
     description: str = ""
     hrms: Optional[float] = None
     vrms: Optional[float] = None
+    pdop: Optional[float] = None
+    satellites: Optional[int] = None
     fix_type: str = ""
     correction_source: str = ""
     occupation_time_s: Optional[float] = None
