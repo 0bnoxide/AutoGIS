@@ -57,7 +57,7 @@ def run(config_path, where, out, incremental, *, harvest_fn=None):
 
 
 # --------------------------------------------------------------------------
-# Run-history recording at the CLI adapter seam (ADR-0053; corrects the
+# Run-history recording at the CLI adapter seam (ADR-0054; corrects the
 # "result callback" wording in ADR-0050 item 6 -- a result_callback fires
 # only on clean returns and would miss every exception exit).
 # Command.invoke runs *after* argument parsing (so --help and bad-argument

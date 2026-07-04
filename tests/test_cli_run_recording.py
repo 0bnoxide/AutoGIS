@@ -1,4 +1,4 @@
-"""Tests for CLI-seam run-history recording (ADR-0053).
+"""Tests for CLI-seam run-history recording (ADR-0054).
 
 Every leaf command reached through the ``autogis`` root group is a
 RecordingCommand (via the Group.command_class / group_class cascade), so a

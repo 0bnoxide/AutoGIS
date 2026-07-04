@@ -1,4 +1,4 @@
-# ADR-0053: CLI-seam run recording via RecordingCommand/RecordingGroup, not a result callback
+# ADR-0054: CLI-seam run recording via RecordingCommand/RecordingGroup, not a result callback
 
 **Status:** Accepted
 
