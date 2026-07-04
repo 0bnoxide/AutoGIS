@@ -161,6 +161,11 @@ appendix). The user answered all six questions directly in conversation on
 - `docs/candidates/boring-survey-drone-level-automation-roadmap.md` §3 —
   prior GUI planning (framework comparison, "Project Automation Hub"
   concept) that decisions 3 and 4 draw on directly.
+- [ADR-0053: CLI-seam run recording via RecordingCommand/RecordingGroup](0053-cli-seam-run-recording-recording-command.md)
+  — implements item 6 and corrects its mechanism wording: a plain result
+  callback fires only on clean returns; the shipped hook wraps
+  `Command.invoke` so exception exits (guard failures, QA FAIL SystemExit,
+  crashes) are recorded too.
 
 ## Issues/PRs
 
