@@ -262,6 +262,11 @@ def run_step(step: Step, job_dir: str | Path, *,
     job_dir = Path(job_dir)
     job_dir.mkdir(parents=True, exist_ok=True)
     qa_csv = job_dir / "qa.csv"
+    # A reused job_dir (retry-in-place) can leave a prior step's qa.csv on
+    # disk. If the child dies before writing a fresh report (or never
+    # declares --report at all), decide() would otherwise read the stale
+    # file and misattribute the verdict to the wrong run.
+    qa_csv.unlink(missing_ok=True)
     argv = build_argv(command, step.values, python=python,
                       report_path=qa_csv, fail_on=step.fail_on)
     proc = subprocess.run(argv, capture_output=True, encoding="utf-8",

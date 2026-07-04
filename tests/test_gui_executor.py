@@ -199,3 +199,29 @@ def test_run_step_end_to_end_with_stub(tmp_path, monkeypatch):
     assert res.decision is Decision.PAUSE_FOR_REVIEW
     assert res.qa_rows and res.qa_rows[0]["severity"] == "WARNING"
     assert "stub stdout" in res.stdout
+
+
+def test_run_step_ignores_stale_qa_csv_from_reused_job_dir(tmp_path, monkeypatch):
+    """A prior step's qa.csv left in a reused job_dir must not leak into
+    this step's verdict (a job_dir isn't guaranteed fresh on retry)."""
+    import autogis.adapters.gui.executor as ex
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    stale = job_dir / "qa.csv"
+    stale.write_text(
+        "run_id,severity,category,message\nold,ERROR,stale,should not surface\n",
+        encoding="utf-8")
+
+    stub = tmp_path / "stub.py"
+    stub.write_text(STUB, encoding="utf-8")
+
+    def stub_argv(path, values, *, python=None, report_path=None, fail_on=None):
+        # Exits clean and writes NO report -- e.g. a command without
+        # --report, or one that crashed before ever calling _render_qa.
+        return [sys.executable, str(stub), "0"]
+
+    monkeypatch.setattr(ex, "build_argv", stub_argv)
+    res = ex.run_step(Step(command=("envmon", "inspect")), job_dir=job_dir)
+    assert res.decision is Decision.CONTINUE
+    assert res.qa_rows == ()
+    assert "stale" not in res.reason
