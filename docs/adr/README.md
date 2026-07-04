@@ -69,7 +69,7 @@ Each ADR follows this structure:
 | [048](0048-fold-batch-edd-import-into-batch-import-workbooks.md) | BatchEDDImport — folded into batch-import-workbooks (2.2) as an `--edd-dir` mode instead of a new tool | Accepted | 2026-07-03 |
 | [049](0049-headerless-rtk-survey-format-detection.md) | Headerless RTK survey CSV format detection — sniff, guess-with-confidence-gate, retain GNSS metadata end-to-end | Accepted | 2026-07-03 |
 | [050](0050-unified-gui-adapter-direction.md) | Unified GUI — standalone PySide6 adapter (new adapter, not a fork), v1 includes workflow wiring, CLI-seam run-history with concurrency-safe writes | Accepted | 2026-07-04 |
-| [051](0051-gui-introspection-layer.md) | GUI introspection layer — Click-tree walk to form-field descriptors; hardcoded 5-pair xor table, no constraint DSL | Accepted | 2026-07-04 |
+| [052](0052-gui-introspection-layer.md) | GUI introspection layer — Click-tree walk to form-field descriptors; hardcoded 5-pair xor table, no constraint DSL | Accepted | 2026-07-04 |
 
 ## File naming
 

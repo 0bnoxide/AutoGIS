@@ -1,4 +1,4 @@
-# ADR-0051: GUI introspection layer — Click-tree walk to form descriptors, hardcoded 5-pair xor table, no constraint DSL
+# ADR-0052: GUI introspection layer — Click-tree walk to form descriptors, hardcoded 5-pair xor table, no constraint DSL
 
 **Status:** Accepted
 
