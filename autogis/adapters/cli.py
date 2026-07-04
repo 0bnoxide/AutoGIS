@@ -1129,7 +1129,7 @@ def generate_event_report_cmd(
     results_csv, comparison_csv, history_csv, gaps_csv, rpd_qa_csv,
     report, fail_on,
 ):
-    """Tool 10.5: assemble Markdown monitoring event report from CSV tool outputs."""
+    """Assemble a Markdown monitoring event report from CSV tool outputs (post-roadmap extra; not a numbered roadmap tool)."""
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.generate_event_report import generate_event_report
 

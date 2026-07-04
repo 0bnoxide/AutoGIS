@@ -53,11 +53,11 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | [BuildSurvey123XLSFormFromConfig](autogis/core/envmon/survey123_form_builder.py) | 7.1a | `envmon build-survey-form` | Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config |
 | [EvaluateReportReadiness](autogis/core/envmon/evaluate_readiness.py) | 9.0b | `envmon evaluate-readiness` | Tool: report-readiness gate — checks required tools ran successfully |
 | [ExportAnalyticalSummaryTables](autogis/core/envmon/export_summary_tables.py) | 9.1 | `envmon export-report-format-summary-tables` / `envmon export-summary` | Tool: export Env_AnalyticalResults to formatted report-appendix tables |
-| [GenerateMonitoringEventReport](autogis/core/envmon/generate_event_report.py) | — | `envmon generate-event-report` | Tool 10.5: assemble Markdown monitoring event report from CSV tool outputs |
+| [GenerateMonitoringEventReport](autogis/core/envmon/generate_event_report.py) | — | `envmon generate-event-report` | Assemble a Markdown monitoring event report from CSV tool outputs (post-roadmap extra) |
 | [ExportGeoJSONResults](autogis/core/envmon/export_geojson.py) | — | `envmon export-geojson` | Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless) |
 | [ValidateScheduleYAML](autogis/core/envmon/validate_schedule.py) | — | `envmon validate-schedule` | Tool 10.2: validate monitoring schedule YAML structure and analyte names |
 | [RunHistoryReport / Query](autogis/core/envmon/history_report.py) | 10.1 | `envmon run-history-report` / `envmon run-history` | Tool 10.1: per-location per-analyte history summary across events |
-| WriteRunHistory | 10.5 | not implemented -- `RunHistory.write()` exists (`core/common/run_history.py`) but has no production caller; `run_history.csv` is user-populated today (see ADR-0017 status update, issue #104) | — |
+| WriteRunHistory | 10.5 | partially wired -- `RunHistory.write()` (`core/common/run_history.py`) has exactly one production caller (`agol promote`, via `core/agol/promote.py`); no other command writes yet, so `evaluate-readiness`/`envmon run-history` stay near-empty for everything else (see ADR-0017 status update, issue #147) | — |
 | [PublishEnvironmentalLayersToAGOL](autogis/core/agol/publish.py) | 6.1 | `agol publish-layer` | Publish or overwrite a hosted AGOL feature service |
 | [BuildGroundwaterElevationEvent](autogis/core/envmon/build_gwe_event.py) | 4.1 | `envmon build-gwe-event` | Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags |
 | [EstimateGWFlowDirection](autogis/core/envmon/estimate_gw_flow_direction.py) | 4.3 | `envmon estimate-gw-flow-direction` (DRAFT) | Tool 4.3: estimate GW flow direction and gradient (DRAFT) from well GWEs |

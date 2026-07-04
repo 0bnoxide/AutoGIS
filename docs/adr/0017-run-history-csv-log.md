@@ -13,6 +13,16 @@ log unless the user hand-authors `run_history.csv`. `job_queue.py` and
 `dashboard_data_mart.py` — the other two consumers this ADR names — don't reference
 `RunHistory` at all.
 
+**Update (2026-07-04, issue #147):** the "zero production callers" claim above is
+now stale. `agol promote` (shipped the same evening in PR #118) added
+`_log_promotion()` (`core/agol/promote.py`), which does call
+`run_history.write(RunRecord(...))` — a real, deliberate per-command wiring
+decision, consistent with the "defer to per-command wiring" call made below. It's
+the *only* command wired so far, so `evaluate-readiness`/`envmon run-history` are
+still structurally near-empty for every other command. See issue #147 for the
+open question of which commands get wired next (or whether to revisit the generic
+CLI-seam hook now that ADR-0050 §5/§6 has scoped a GUI's run-history needs).
+
 A generic write-side hook (e.g. a click `result_callback` wrapping every `envmon`
 command) was considered and rejected: it would fire under every `CliRunner` test in
 the suite (stray-file writes / failures in read-only test dirs unless explicitly
