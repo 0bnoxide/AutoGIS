@@ -191,6 +191,19 @@ def test_extra_columns_count_mismatch_raises_not_silently_drops(tmp_path):
         parse_rtk_csv(p, extra_columns=["hrms_ft"])
 
 
+def test_non_numeric_coordinate_row_raises_with_row_context(tmp_path):
+    # Row 2 has the correct column count but a non-numeric coordinate cell
+    # (a plausible transcription error). Must name the row, not just
+    # surface Python's bare "could not convert string to float" message.
+    content = (
+        "1,558281.5482,2206038.3110,3224.0823,PT-1\n"
+        "2,N/A,2206050.4400,3225.1000,PT-2\n"
+    )
+    p = _write(tmp_path, "badnum.csv", content)
+    with pytest.raises(ValueError, match=r"row 2"):
+        parse_rtk_csv(p)
+
+
 def test_ragged_row_raises_clear_error_not_indexerror(tmp_path):
     # Row 2 is missing its trailing description column -- a realistic
     # field-data typo (dropped trailing comma). Must not crash with a raw

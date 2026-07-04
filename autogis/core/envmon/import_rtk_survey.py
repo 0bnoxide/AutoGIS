@@ -95,6 +95,15 @@ def _to_int(v: str) -> Optional[int]:
     return None if f is None else int(f)
 
 
+def _parse_required_float(raw: str, row_num: int, label: str) -> float:
+    try:
+        return float(raw)
+    except ValueError:
+        raise ValueError(
+            f"row {row_num}: {label} value {raw!r} is not a valid number."
+        )
+
+
 def _is_headerless(first_row: list[str]) -> bool:
     """Columns 2-4 (idx 1-3) hold Coord1/Coord2/Elevation in every recognized
     headerless layout; if all three parse as floats, row 1 is data, not a header."""
@@ -215,8 +224,8 @@ def _parse_headerless_csv(
             f"--extra-columns to declare a custom layout."
         )
 
-    coord1_vals = [float(r[1]) for r in rows]
-    coord2_vals = [float(r[2]) for r in rows]
+    coord1_vals = [_parse_required_float(r[1], i, "Coord1") for i, r in enumerate(rows, start=1)]
+    coord2_vals = [_parse_required_float(r[2], i, "Coord2") for i, r in enumerate(rows, start=1)]
     northing_vals, easting_vals, warning = _resolve_coord_order(coord1_vals, coord2_vals, fmt)
     if warning and qa is not None:
         qa.add(SEV_WARNING, "guessed_coord_order", warning)
@@ -239,7 +248,7 @@ def _parse_headerless_csv(
             point_id=r[0].strip(),
             northing=northing_vals[idx],
             easting=easting_vals[idx],
-            elevation_ft=float(r[3]),
+            elevation_ft=_parse_required_float(r[3], idx + 1, "Elevation"),
             description=r[4].strip() if len(r) > 4 else "",
             **kwargs,
         ))
