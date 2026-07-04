@@ -172,6 +172,16 @@ def _parse_headerless_csv(
         return []
     width = len(rows[0])
 
+    ragged = [(i, len(r)) for i, r in enumerate(rows, start=1) if len(r) != width]
+    if ragged:
+        i, n = ragged[0]
+        raise ValueError(
+            f"ragged headerless CSV: row {i} has {n} column(s), expected "
+            f"{width} (based on row 1) — {len(ragged)} row(s) disagree on "
+            f"column count. Fix the file; headerless parsing assumes a "
+            f"uniform column count for every row."
+        )
+
     if extra_columns is not None:
         unknown = [c for c in extra_columns if c not in _EXTRA_COLUMN_VOCAB]
         if unknown:
@@ -185,6 +195,13 @@ def _parse_headerless_csv(
                        "--extra-columns given on a 5-column file; there were "
                        "no extra columns to map.")
             extra_fields: list[str] = []
+        elif len(extra_columns) != width - 5:
+            raise ValueError(
+                f"--extra-columns names {len(extra_columns)} field(s) but "
+                f"the file has {width - 5} column(s) beyond the base 5 "
+                f"(columns 6-{width}) — count must match exactly, or data "
+                f"would be silently dropped or misaligned."
+            )
         else:
             extra_fields = list(extra_columns)
     elif width == 11:

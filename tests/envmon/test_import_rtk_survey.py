@@ -182,6 +182,28 @@ def test_extra_columns_override_non_11col(tmp_path):
     assert points[0].vrms_ft == pytest.approx(0.03)
 
 
+def test_extra_columns_count_mismatch_raises_not_silently_drops(tmp_path):
+    # File has 2 trailing columns (0.02, 0.03); naming only 1 must not
+    # silently discard the other -- it must error.
+    content = "1,558281.55,2206038.31,3224.08,PT-1,0.02,0.03\n"
+    p = _write(tmp_path, "custom7.csv", content)
+    with pytest.raises(ValueError, match="count must match"):
+        parse_rtk_csv(p, extra_columns=["hrms_ft"])
+
+
+def test_ragged_row_raises_clear_error_not_indexerror(tmp_path):
+    # Row 2 is missing its trailing description column -- a realistic
+    # field-data typo (dropped trailing comma). Must not crash with a raw
+    # IndexError; must raise a clear, catchable ValueError instead.
+    content = (
+        "1,558281.5482,2206038.3110,3224.0823,PT-1\n"
+        "2,558300.1200,2206050.4400\n"
+    )
+    p = _write(tmp_path, "ragged.csv", content)
+    with pytest.raises(ValueError, match="ragged"):
+        parse_rtk_csv(p)
+
+
 def test_extra_columns_unrecognized_field_raises(tmp_path):
     content = "1,558281.55,2206038.31,3224.08,PT-1,0.02\n"
     p = _write(tmp_path, "custom6.csv", content)
@@ -218,3 +240,11 @@ def test_headered_csv_ignores_format_and_extra_columns_with_warning(tmp_path):
 def test_broadwater_real_fixture_12_points():
     points = parse_rtk_csv(_BROADWATER_PATH)
     assert len(points) == 12
+    # Count alone doesn't catch a Northing/Easting swap -- assert the actual
+    # confirmed-real values for row 1 (MW-5R), the exact regression this
+    # feature exists to prevent.
+    mw5r = points[0]
+    assert mw5r.point_id == "1"
+    assert mw5r.description == "MW-5R"
+    assert mw5r.easting == pytest.approx(558281.5482)
+    assert mw5r.northing == pytest.approx(2206038.3110)
