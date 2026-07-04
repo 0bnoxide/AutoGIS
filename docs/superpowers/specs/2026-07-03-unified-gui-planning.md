@@ -1,8 +1,18 @@
 # Unified GUI — architecture overview & planning brainstorm
 
-**Status:** early planning, no code. **Date:** 2026-07-03. **Revision:** v2,
-after a full adversarial Fable review (appended below) found 4 HIGH-severity
-issues in v1 — all corrected here.
+**Status:** direction decided (2026-07-04), no code yet. **Date:** 2026-07-03.
+**Revision:** v2, after a full adversarial Fable review (appended below)
+found 4 HIGH-severity issues in v1 — all corrected here.
+
+**All 6 open questions in §2.7 were answered by the user on 2026-07-04 —
+see [ADR-0050](../../adr/0050-unified-gui-adapter-direction.md) for the
+decisions and their rationale.** Short version: standalone PySide6 app,
+added as a new adapter in this repo (not a fork, not a separate repo);
+audience is existing Pro users only; v1 scope includes both the tool
+launcher and the workflow/pipeline builder together; concurrent multi-analyst
+use is real and must be handled in v1; run-history writes hook at the CLI
+seam with concurrency-safe writes. The brainstorm below is kept as the
+reasoning trail — read ADR-0050 first for the actual decisions.
 
 AutoGIS just closed its entire ~79-tool roadmap (README's "Planned" and "Not
 started" sections are both empty as of this doc). This opens a new chapter:
