@@ -4,15 +4,64 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+try:
+    import msvcrt
+except ImportError:  # non-Windows: module stays importable, lock is a no-op
+    msvcrt = None
+
 log = logging.getLogger(__name__)
 
 _DATETIME_FMT = "%Y-%m-%dT%H:%M:%S"
 _NONE_SENTINEL = "__None__"
+
+# ponytail: 1 GiB sentinel offset -- revisit if run_history.csv ever
+# approaches this size.
+_LOCK_OFFSET = 1 << 30
+
+
+@contextmanager
+def _sentinel_lock(fh):
+    """Hold a mandatory OS byte-range lock on one sentinel byte past EOF.
+
+    Windows byte-range locks are OS-enforced (including over SMB shares --
+    the shared-project-drive deployment scenario) and auto-released if the
+    process dies, unlike a sidecar lockfile, which would leak and need
+    stale-lock heuristics. Locking a byte at _LOCK_OFFSET -- far past any
+    plausible file size -- rather than a real data byte means a process that
+    ignores this convention degrades to the old unlocked behavior instead of
+    hitting ERROR_LOCK_VIOLATION mid-read. See ADR-0051.
+
+    Seeks happen on the raw fd, bypassing Python's buffering, so enter this
+    only while the wrapper's buffer is clean (immediately after open), and
+    flush() before the block exits on the write path. LK_LOCK retries
+    internally for ~10 s then raises OSError; callers treat that like any
+    other I/O failure.
+    """
+    if msvcrt is None:
+        yield
+        return
+    fd = fh.fileno()
+
+    def _at_sentinel(op: int) -> None:
+        pos = os.lseek(fd, 0, os.SEEK_CUR)
+        os.lseek(fd, _LOCK_OFFSET, os.SEEK_SET)
+        try:
+            msvcrt.locking(fd, op, 1)
+        finally:
+            os.lseek(fd, pos, os.SEEK_SET)
+
+    _at_sentinel(msvcrt.LK_LOCK)
+    try:
+        yield
+    finally:
+        _at_sentinel(msvcrt.LK_UNLCK)
 
 
 class RunHistoryError(Exception):
@@ -88,13 +137,35 @@ class RunHistory:
 
     def write(self, record: RunRecord) -> None:
         try:
+            # Encode *before* opening/locking: if this raises (e.g. an
+            # unserializable value in record.inputs/outputs), nothing has
+            # been written yet, so there's no staged header left to flush
+            # outside the lock on the exception unwind (see the finally
+            # below for why that ordering matters).
+            row = _encode(record)
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            exists = self._path.exists()
-            with self._path.open("a", newline="", encoding="utf-8") as fh:
-                writer = csv.DictWriter(fh, fieldnames=_FIELDS)
-                if not exists:
-                    writer.writeheader()
-                writer.writerow(_encode(record))
+            with self._path.open("a+", newline="", encoding="utf-8") as fh:
+                with _sentinel_lock(fh):
+                    writer = csv.DictWriter(fh, fieldnames=_FIELDS)
+                    try:
+                        # Size check *under the lock* is atomic w.r.t. other
+                        # lockers -- the old Path.exists() check before open
+                        # was a check-then-act race that let two concurrent
+                        # first-writers both emit a header row, corrupting
+                        # the file for every later reader.
+                        if os.fstat(fh.fileno()).st_size == 0:
+                            writer.writeheader()
+                        writer.writerow(row)
+                    finally:
+                        # Must flush while still holding the lock -- a
+                        # buffered header/row left unflushed here would
+                        # otherwise hit disk on fh.close() *after* the lock
+                        # is released (the inner `with` exits, and only then
+                        # the outer `with` closes/flushes fh), letting a
+                        # concurrent writer's clean write land in between
+                        # and reopening the exact duplicate-header race this
+                        # lock exists to close.
+                        fh.flush()
         except Exception as exc:
             log.warning("RunHistory.write failed (best-effort): %s", exc)
         finally:
@@ -111,8 +182,11 @@ class RunHistory:
             self._cache = []
             return self._cache
         try:
-            with self._path.open(newline="", encoding="utf-8") as fh:
-                self._cache = [_decode(row) for row in csv.DictReader(fh)]
+            # "r+" (not "r") because msvcrt.locking requires a handle opened
+            # for writing, even though we only read here.
+            with self._path.open("r+", newline="", encoding="utf-8") as fh:
+                with _sentinel_lock(fh):
+                    self._cache = [_decode(row) for row in csv.DictReader(fh)]
         except Exception as exc:
             raise RunHistoryError(
                 f"Cannot read run history at {self._path}: {exc}"
