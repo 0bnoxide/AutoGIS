@@ -137,19 +137,35 @@ class RunHistory:
 
     def write(self, record: RunRecord) -> None:
         try:
+            # Encode *before* opening/locking: if this raises (e.g. an
+            # unserializable value in record.inputs/outputs), nothing has
+            # been written yet, so there's no staged header left to flush
+            # outside the lock on the exception unwind (see the finally
+            # below for why that ordering matters).
+            row = _encode(record)
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with self._path.open("a+", newline="", encoding="utf-8") as fh:
                 with _sentinel_lock(fh):
                     writer = csv.DictWriter(fh, fieldnames=_FIELDS)
-                    # Size check *under the lock* is atomic w.r.t. other
-                    # lockers -- the old Path.exists() check before open was
-                    # a check-then-act race that let two concurrent
-                    # first-writers both emit a header row, corrupting the
-                    # file for every later reader.
-                    if os.fstat(fh.fileno()).st_size == 0:
-                        writer.writeheader()
-                    writer.writerow(_encode(record))
-                    fh.flush()
+                    try:
+                        # Size check *under the lock* is atomic w.r.t. other
+                        # lockers -- the old Path.exists() check before open
+                        # was a check-then-act race that let two concurrent
+                        # first-writers both emit a header row, corrupting
+                        # the file for every later reader.
+                        if os.fstat(fh.fileno()).st_size == 0:
+                            writer.writeheader()
+                        writer.writerow(row)
+                    finally:
+                        # Must flush while still holding the lock -- a
+                        # buffered header/row left unflushed here would
+                        # otherwise hit disk on fh.close() *after* the lock
+                        # is released (the inner `with` exits, and only then
+                        # the outer `with` closes/flushes fh), letting a
+                        # concurrent writer's clean write land in between
+                        # and reopening the exact duplicate-header race this
+                        # lock exists to close.
+                        fh.flush()
         except Exception as exc:
             log.warning("RunHistory.write failed (best-effort): %s", exc)
         finally:
