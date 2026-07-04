@@ -4,7 +4,7 @@ Walks the ``autogis`` Click command tree (root group in
 ``autogis/adapters/cli.py``) and produces, for every leaf command, a
 :class:`CommandForm` holding plain-data :class:`FormField` descriptors a GUI
 can render a form from. Depends on ``click`` only — no GUI toolkit, no arcpy
-(ADR-0051; the toolkit arrives in a later task per ADR-0050).
+(ADR-0052; the toolkit arrives in a later task per ADR-0050).
 
 Path picker direction (``FormField.is_path_output``) is a *hint*, not ground
 truth: ``click.Path(exists=True)`` params are inputs (open picker), bare
@@ -31,7 +31,7 @@ import click
 __all__ = ["FormField", "CommandForm", "XOR_PAIRS", "introspect_cli"]
 
 
-# ponytail: 5 hardcoded pairs, deliberately not a constraint DSL (ADR-0051).
+# ponytail: 5 hardcoded pairs, deliberately not a constraint DSL (ADR-0052).
 # These are every pairwise either/or enforced inside a command *body* on main
 # as of 2026-07-04 — body-level ``raise UsageError`` checks are invisible to
 # click parameter introspection, hence this table. The planning pass counted

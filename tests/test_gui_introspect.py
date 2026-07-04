@@ -1,4 +1,4 @@
-"""GUI introspection layer (ADR-0051): every leaf command must map to a
+"""GUI introspection layer (ADR-0052): every leaf command must map to a
 form-field list without errors, and the hardcoded XOR_PAIRS table must
 resolve to real parameter names (drift guard against option renames)."""
 
