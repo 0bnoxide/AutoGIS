@@ -118,9 +118,17 @@ Two separate records — easy to conflate, keep both:
   it + your files via the coordination framework below. **This rule applies to
   subagents too:** the hook fires for every tool call regardless of caller, so it
   is enforced even for built-in agents — but state it explicitly in any subagent
-  prompt you write. One-off override: `AUTOGIS_COORD_FORCE=1`. The SessionStart
-  hook also fast-forward-pulls a clean `main` so every session (and the worktrees
-  that branch from HEAD) starts current.
+  prompt you write. One-off override: `AUTOGIS_COORD_FORCE=1` — must be exported
+  into the process environment *before* the session/hook launches (e.g. set in
+  the shell that starts Claude Code). An inline per-command prefix like
+  `AUTOGIS_COORD_FORCE=1 git commit ...` cannot reach the hook — `hook_check.py`
+  runs as its own process and reads its own `os.environ`, not the command's. For
+  pinned-cwd subagents (which can't export env before launch), use
+  `python .claude/coordination/coord_cli.py whoami|release-mine|resync` instead
+  — these resolve the session id via `--session` / `$AUTOGIS_SESSION_ID` / a
+  cwd-claim fallback, not the FORCE bypass. The SessionStart hook also
+  fast-forward-pulls a clean `main` so every session (and the worktrees that
+  branch from HEAD) starts current.
 - **Worktrees live under `.claude/worktrees/`** (gitignored), not the
   `superpowers:using-git-worktrees` default `.worktrees/`. Prefer the native
   `EnterWorktree` tool (Step 1a); if you ever fall back to `git worktree add`,

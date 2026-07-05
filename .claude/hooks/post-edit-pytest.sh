@@ -15,7 +15,10 @@ case "$fp" in
   *) exit 0 ;;
 esac
 
-cd "${CLAUDE_PROJECT_DIR:-.}"
+cwd=$(printf '%s' "$payload" \
+  | python -c "import sys,json;print(json.load(sys.stdin).get('cwd',''))" \
+  2>/dev/null || true)
+cd "${cwd:-${CLAUDE_PROJECT_DIR:-.}}" || exit 0   # stale/removed cwd: skip, don't abort
 out=$(python -m pytest -q --tb=short 2>&1 || true)
 
 # Surface only on failure/error (pytest summary: "1 failed, 86 passed").

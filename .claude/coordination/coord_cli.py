@@ -4,6 +4,16 @@ Usage:
   python coord_cli.py list
   python coord_cli.py claim --session SID --kind branch|worktree|file_glob --value V
   python coord_cli.py release --session SID [--kind K] [--value V]
+  python coord_cli.py whoami [--session SID]
+  python coord_cli.py release-mine [--session SID]
+  python coord_cli.py resync [--session SID]
+
+whoami/release-mine/resync resolve the session id via resolve_sid(): explicit
+--session wins, then $AUTOGIS_SESSION_ID (set by session-start.sh), then a
+cwd->claim fallback that only works from an already-claimed worktree in
+steady state. resync in particular needs --session or the env var — it is run
+immediately after EnterWorktree, before the new worktree has a claim, so the
+cwd fallback cannot resolve it.
 """
 from __future__ import annotations
 
@@ -12,9 +22,31 @@ import json
 import os
 import sys
 
+_UNRESOLVED = ("could not resolve session id "
+              "(set AUTOGIS_SESSION_ID or pass --session)")
 
-def run(argv, reg_path):
+
+def resolve_sid(reg_path, cwd, env, explicit=None):
+    if explicit:
+        return explicit                          # caller knows its sid
+    sid = env.get("AUTOGIS_SESSION_ID")
+    if sid:
+        return sid                               # set by session-start.sh (3a)
+    # Last-resort fallback: the live `worktree` claim whose value == abspath(cwd).
+    # Unique to one session ONLY in a steady-state, already-claimed worktree.
     import registry
+    root = os.path.abspath(cwd)
+    matches = [c["session_id"] for c in registry.list_claims(reg_path)
+               if c.get("kind") == "worktree"
+               and c.get("session_id")
+               and registry.samepath(c.get("value", ""), root)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def run(argv, reg_path, cwd=None, env=None, branch_func=None):
+    import registry
+    cwd = os.getcwd() if cwd is None else cwd
+    env = os.environ if env is None else env
     ap = argparse.ArgumentParser(prog="coord")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
@@ -27,6 +59,9 @@ def run(argv, reg_path):
     pr.add_argument("--session", required=True)
     pr.add_argument("--kind")
     pr.add_argument("--value")
+    sub.add_parser("whoami").add_argument("--session")
+    sub.add_parser("release-mine").add_argument("--session")
+    sub.add_parser("resync").add_argument("--session")
     args = ap.parse_args(argv)
 
     if args.cmd == "list":
@@ -42,6 +77,40 @@ def run(argv, reg_path):
         n = registry.release(reg_path, args.session, args.kind, args.value)
         print("released %d" % n)
         return 0
+
+    if args.cmd == "whoami":
+        sid = resolve_sid(reg_path, cwd, env, args.session)
+        if not sid:
+            print(_UNRESOLVED, file=sys.stderr)
+            return 1
+        print(sid)
+        return 0
+
+    if args.cmd == "release-mine":
+        sid = resolve_sid(reg_path, cwd, env, args.session)
+        if not sid:
+            print(_UNRESOLVED, file=sys.stderr)
+            return 1
+        n = registry.release(reg_path, sid)
+        print("released %d" % n)
+        return 0
+
+    if args.cmd == "resync":
+        sid = resolve_sid(reg_path, cwd, env, args.session)
+        if not sid:
+            print(_UNRESOLVED, file=sys.stderr)
+            return 1
+        registry.release(reg_path, sid)
+        import session_start
+        bf = branch_func or session_start._git_branch
+        branch = bf(cwd)
+        if branch:
+            registry.claim(reg_path, sid, "branch", branch)
+        registry.claim(reg_path, sid, "worktree", os.path.abspath(cwd))
+        print("resynced %s -> branch=%s worktree=%s"
+              % (sid, branch or "(detached)", os.path.abspath(cwd)))
+        return 0
+
     return 1
 
 
