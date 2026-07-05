@@ -1,4 +1,4 @@
-"""Workflow runner state machine (ADR-00XX): advance/pause/resume/cancel.
+"""Workflow runner state machine (ADR-0055): advance/pause/resume/cancel.
 
 `run_step` itself (subprocess assembly, QA-signal decisions) is already
 covered by test_gui_executor.py -- this suite monkeypatches it with canned
@@ -202,4 +202,54 @@ def test_real_background_thread_cancel(tmp_path, monkeypatch):
 
     assert r.status is RunState.CANCELLED
     with pytest.raises(RuntimeError, match="cancelled"):
+        r.advance()
+
+
+def test_run_step_exception_leaves_halted_not_wedged_in_running(tmp_path, monkeypatch):
+    """A run_step crash (TimeoutExpired, a LOCAL step missing local_python,
+    an unknown command/param ValueError, ...) must not leave the runner
+    permanently RUNNING: nothing could ever advance/cancel/resume it out."""
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: (_ for _ in ()).throw(ValueError("boom")))
+    wf = Workflow("crash", (Step(command=("a",)), Step(command=("b",))))
+    r = WorkflowRunner(wf, tmp_path)
+
+    with pytest.raises(ValueError, match="boom"):
+        r.advance()
+    assert r.status is RunState.HALTED
+    assert r.results == ()  # the crashed step produced no StepResult
+    with pytest.raises(RuntimeError, match="halted"):
+        r.advance()
+
+
+def test_run_step_exception_while_cancel_requested_yields_cancelled(tmp_path, monkeypatch):
+    holder = {}
+
+    def fake_run_step(step, job_dir, **kw):
+        holder["r"].cancel()  # recorded, since state is RUNNING mid-call
+        raise ValueError("boom")
+
+    monkeypatch.setattr(runner_mod, "run_step", fake_run_step)
+    wf = Workflow("crash-cancel", (Step(command=("a",)),))
+    r = WorkflowRunner(wf, tmp_path)
+    holder["r"] = r
+
+    with pytest.raises(ValueError, match="boom"):
+        r.advance()
+    assert r.status is RunState.CANCELLED
+
+
+def test_pause_on_last_step_resumes_to_done_not_index_error(tmp_path):
+    """PAUSE_FOR_REVIEW on the final step (a trailing checkpoint) leaves
+    _index == len(steps); resume() must land on DONE, not PENDING, or the
+    next advance() indexes past the end of workflow.steps."""
+    wf = Workflow("trailing-checkpoint",
+                 (Step(message="review before finishing"),))
+    r = WorkflowRunner(wf, tmp_path)
+    r.advance()
+    assert r.status is RunState.PAUSED
+    r.resume()
+    assert r.status is RunState.DONE
+    with pytest.raises(RuntimeError, match="done"):
         r.advance()

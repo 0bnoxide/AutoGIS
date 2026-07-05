@@ -116,12 +116,18 @@ class WorkflowRunner:
 
     def resume(self) -> None:
         """Clear a PAUSE_FOR_REVIEW checkpoint so the next ``advance()``
-        runs the following step. Only valid from PAUSED."""
+        runs the following step. Only valid from PAUSED. A pause on the
+        *last* step (a trailing checkpoint, or a warning-pause on the final
+        command) has nothing left to advance to, so it resumes straight to
+        DONE rather than PENDING -- otherwise the next ``advance()`` would
+        index past the end of ``workflow.steps``."""
         with self._lock:
             if self._state is not RunState.PAUSED:
                 raise RuntimeError(
                     f"resume() requires state PAUSED, not {self._state.value}")
-            self._state = RunState.PENDING
+            self._state = (RunState.DONE
+                           if self._index >= len(self.workflow.steps)
+                           else RunState.PENDING)
 
     def advance(self) -> StepResult:
         """Run exactly one step (one child process) and return its result.
@@ -145,8 +151,20 @@ class WorkflowRunner:
 
         step = self.workflow.steps[index]
         job_dir = self._job_root / f"step_{index:02d}"
-        result = run_step(step, job_dir, local_python=self._local_python,
-                          timeout=self._timeout)
+        try:
+            result = run_step(step, job_dir, local_python=self._local_python,
+                              timeout=self._timeout)
+        except BaseException:
+            # run_step can raise (subprocess.TimeoutExpired -- ADR-0053
+            # explicitly says this propagates to the caller; ValueError for
+            # a LOCAL step missing local_python or an unknown command/param;
+            # OSError for a bad local_python path). No StepResult exists to
+            # record, but the runner MUST leave RUNNING or every later call
+            # (advance/cancel/resume) sees a step "in flight" forever.
+            with self._lock:
+                self._state = (RunState.CANCELLED if self._cancel_requested
+                               else RunState.HALTED)
+            raise
 
         with self._lock:
             self._results.append(result)
