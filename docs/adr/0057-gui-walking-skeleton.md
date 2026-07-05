@@ -88,6 +88,37 @@ than assumed:
    environment attempted real native platform initialization and (before
    decision 4's fix) manifested the QThread crash as an apparent hang.
 
+7. **Fable's bug-check pass (this project's standing pre-merge gate) found
+   two further real bugs in the first draft, both fixed:**
+   - **Choice fields ignored `FormField.default` and could not express
+     "unset."** A `QComboBox` always sits on its first item unless told
+     otherwise; the first draft never selected a default, so an untouched
+     form silently ran a command with whatever choice happened to be listed
+     first — differing from Click's real default (e.g.
+     `validate-rtk-survey --fail-on`: default `warning`, would have run as
+     `error`) — and for an optional choice field with no default at all
+     (e.g. `list-tools --runtime-filter`), forced a value the CLI would
+     otherwise treat as unfiltered, making that mode unreachable from the
+     GUI entirely. Fixed: a leading blank item, pre-selected unless
+     `field.default` is set (blank maps to omitted via `forms.py`'s
+     existing empty-string handling).
+   - **Closing the window while a step's subprocess was in flight crashed
+     the process** (`0xC0000409`, reproduced 3/3): decision 4's `.wait()`
+     join only runs once `_on_result`/`_on_failure` fires, which never
+     happens if the event loop tears down first — the exact crash class
+     decision 4 addresses, just via a path decision 4 didn't cover. Fixed
+     with a `closeEvent` override that refuses the close (rather than
+     blocking indefinitely on a subprocess this code cannot force-kill,
+     per ADR-0055's documented cancellation limitation) while a worker is
+     running, and a defense-in-depth re-entrancy guard in `_on_run` itself
+     (a second call while a step is in flight is now a no-op instead of
+     overwriting `self._worker` out from under the first).
+   - Nits also addressed: `click` was unpinned in `pyproject.toml` despite
+     this PR introducing the repo's first call to a Click >= 8.0-only API
+     (`to_info_dict`) — pinned to `click>=8.0`; each run's `tempfile.mkdtemp`
+     job directory was never cleaned up — now removed in `_join_worker`
+     once its `StepResult` has been captured.
+
 ## Consequences
 
 ### Positive

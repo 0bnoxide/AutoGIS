@@ -17,6 +17,7 @@ bridge, chosen now that there is an actual window to build it against.
 """
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -76,6 +77,7 @@ class MainWindow(QMainWindow):
         self._forms = {f.label: f for f in _headless_forms()}
         self._field_widgets: dict[str, QWidget] = {}
         self._worker: _StepWorker | None = None
+        self._job_root: Path | None = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -124,7 +126,16 @@ class MainWindow(QMainWindow):
                 widget.setChecked(bool(field.default))
             elif field.kind == "choice":
                 widget = QComboBox()
+                # A leading blank item: an untouched combo box otherwise
+                # always sits on item 0, silently running the command with
+                # a value that can differ from Click's own default (or, for
+                # an optional field with no default, forcing a choice the
+                # command would otherwise treat as unset) -- blank maps to
+                # omitted via forms.py's own empty-string handling.
+                widget.addItem("")
                 widget.addItems(field.choices or ())
+                if field.default is not None:
+                    widget.setCurrentText(str(field.default))
             else:
                 widget = QLineEdit()
                 if field.default is not None:
@@ -147,6 +158,8 @@ class MainWindow(QMainWindow):
         return values
 
     def _on_run(self) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            return  # defense in depth: the Run button is already disabled
         form = self._current_form()
         if form is None:
             return
@@ -160,9 +173,9 @@ class MainWindow(QMainWindow):
         self._output.clear()
         self._run_button.setEnabled(False)
 
-        job_root = Path(tempfile.mkdtemp(prefix="autogis-gui-"))
+        self._job_root = Path(tempfile.mkdtemp(prefix="autogis-gui-"))
         workflow = Workflow(form.label, (step,))
-        runner = WorkflowRunner(workflow, job_root)
+        runner = WorkflowRunner(workflow, self._job_root)
         self._worker = _StepWorker(runner)
         self._worker.finished_result.connect(self._on_result)
         self._worker.failed.connect(self._on_failure)
@@ -184,6 +197,25 @@ class MainWindow(QMainWindow):
         # guaranteed to land before a test/caller moves on and drops the
         # last reference).
         self._worker.wait()
+        if self._job_root is not None:
+            shutil.rmtree(self._job_root, ignore_errors=True)
+            self._job_root = None
+
+    def closeEvent(self, event) -> None:
+        # Closing while a step's subprocess is in flight would destroy the
+        # still-running _StepWorker underneath it -- the same undefined-
+        # behavior crash class _join_worker exists to prevent, but that
+        # guard only runs once the worker's own signal is delivered, which
+        # never happens if the event loop is already tearing down. Refuse
+        # the close instead of blocking indefinitely for a subprocess this
+        # code cannot force-kill (ADR-0055's documented limitation).
+        if self._worker is not None and self._worker.isRunning():
+            self._status.setText(
+                "A step is still running -- please wait for it to finish "
+                "before closing.")
+            event.ignore()
+            return
+        event.accept()
 
     def _on_result(self, result: StepResult) -> None:
         self._join_worker()

@@ -66,8 +66,6 @@ def test_window_constructs_and_populates_command_list(qapp):
 def test_selecting_command_rebuilds_form(qapp):
     win = MainWindow()
     labels = sorted(win._forms)
-    two_field_counts = {len(win._forms[l].fields) for l in labels[:5]}
-    assert len(two_field_counts) >= 1  # sanity: forms actually have fields
     for label in labels[:3]:
         win._command_box.setCurrentText(label)
         assert win._form_layout.rowCount() == len(win._forms[label].fields)
@@ -132,3 +130,78 @@ def test_run_failure_path_reenables_button_and_shows_message(qapp, monkeypatch):
     _pump_until(lambda: win._run_button.isEnabled())
     assert win._status.text() == "Failed to run"
     assert "boom" in win._output.toPlainText()
+
+
+def test_choice_field_preselects_click_default(qapp):
+    """A QComboBox always sits on item 0 unless told otherwise -- an
+    untouched form must run with Click's real default (e.g. 'warning'),
+    not silently substitute whatever choice happens to be listed first."""
+    win = MainWindow()
+    form = win._forms["envmon validate-rtk-survey"]
+    win._command_box.setCurrentText(form.label)
+    widget = win._field_widgets["fail_on"]
+    assert widget.currentText() == "warning"  # the real Click default
+
+
+def test_optional_choice_field_with_no_default_starts_blank(qapp):
+    """An optional choice field with no Click default (e.g. list-tools'
+    --runtime-filter) must be left unset, not forced onto its first choice
+    -- forcing it would make the unfiltered command unreachable from the
+    GUI entirely."""
+    win = MainWindow()
+    form = win._forms["envmon list-tools"]
+    win._command_box.setCurrentText(form.label)
+    widget = win._field_widgets["runtime_filter"]
+    assert widget.currentText() == ""
+    assert win._raw_values()["runtime_filter"] == ""
+
+
+def test_close_while_step_running_is_refused(qapp, monkeypatch):
+    release = threading.Event()
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: (release.wait(timeout=5),
+                                     StepResult(Decision.CONTINUE, "ok",
+                                               exit_code=0))[1])
+    win = MainWindow()
+    form = next(iter(win._forms.values()))
+    _fill_required_fields(win, form)
+    win._on_run()
+    QTest.qWait(50)  # let the worker thread actually start and block
+
+    assert not win.close()  # closeEvent must ignore -> close() returns False
+    assert "still running" in win._status.text()
+
+    release.set()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert win.close()  # idle now -- close succeeds
+
+
+def test_close_while_idle_succeeds(qapp):
+    win = MainWindow()
+    assert win.close()
+
+
+def test_on_run_ignores_reentrant_call_while_step_in_flight(qapp, monkeypatch):
+    """A second _on_run() while a step is already in flight must not
+    replace self._worker out from under the first (programmatic misuse
+    the disabled Run button doesn't guard against by itself)."""
+    release = threading.Event()
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: (release.wait(timeout=5),
+                                     StepResult(Decision.CONTINUE, "ok",
+                                               exit_code=0))[1])
+    win = MainWindow()
+    form = next(iter(win._forms.values()))
+    _fill_required_fields(win, form)
+
+    win._on_run()
+    QTest.qWait(50)
+    first_worker = win._worker
+    win._on_run()  # ignored: a step is already running
+    assert win._worker is first_worker
+
+    release.set()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert "CONTINUE" in win._status.text()
