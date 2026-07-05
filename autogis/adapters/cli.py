@@ -1,4 +1,8 @@
 import dataclasses
+import json
+import os
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -52,7 +56,95 @@ def run(config_path, where, out, incremental, *, harvest_fn=None):
     return summary
 
 
-@click.group()
+# --------------------------------------------------------------------------
+# Run-history recording at the CLI adapter seam (ADR-0054; corrects the
+# "result callback" wording in ADR-0050 item 6 -- a result_callback fires
+# only on clean returns and would miss every exception exit).
+# Command.invoke runs *after* argument parsing (so --help and bad-argument
+# UsageErrors never produce records) but wraps execution, catching every
+# exit path: guard ClickExceptions, _render_qa's SystemExit(1), Abort,
+# KeyboardInterrupt, and unhandled crashes. It covers every caller --
+# console script, CliRunner tests, GUI subprocess launches.
+# --------------------------------------------------------------------------
+_QA_COUNTS_META_KEY = "autogis.qa_counts"
+# ponytail: one-entry skip-list -- `agol promote` self-logs a richer record
+# (rows_copied etc.) via promote.py's _log_promotion; generalize only when a
+# second self-logging command exists.
+_SELF_LOGGING_COMMANDS = {"promote"}
+
+
+def _classify_exit(exc):
+    """Map an exit path to a RunRecord status; None means write no record."""
+    if exc is None:
+        return "success"
+    if isinstance(exc, click.exceptions.Exit):
+        return "success" if not exc.exit_code else "error"
+    if isinstance(exc, click.UsageError):
+        return None  # parse-time failure, not a run
+    if isinstance(exc, (KeyboardInterrupt, click.Abort)):
+        return "cancelled"
+    if isinstance(exc, SystemExit):
+        return "success" if not exc.code else "error"
+    return "error"
+
+
+class RecordingCommand(click.Command):
+    """Leaf command that best-effort writes a RunRecord for every run."""
+
+    def invoke(self, ctx):
+        started = datetime.now()
+        try:
+            rv = super().invoke(ctx)
+        except BaseException as exc:
+            self._record(ctx, started, exc)
+            raise
+        self._record(ctx, started, None)
+        return rv
+
+    def _record(self, ctx, started, exc):
+        try:
+            dest = os.environ.get("AUTOGIS_RUN_HISTORY", "")
+            if dest.lower() == "off":
+                return
+            if ctx.info_name in _SELF_LOGGING_COMMANDS:
+                return
+            status = _classify_exit(exc)
+            if status is None:
+                return
+            from autogis.core.common.run_history import RunHistory, RunRecord
+
+            counts = ctx.meta.get(_QA_COUNTS_META_KEY, {})
+            RunHistory(Path(dest) if dest else Path.cwd() / "run_history.csv").write(
+                RunRecord(
+                    run_id=str(uuid.uuid4()),
+                    tool_name=ctx.info_name or self.name or "",
+                    site_id=str(ctx.params.get("site_id") or ""),
+                    event_id=(str(ctx.params["event_id"])
+                              if ctx.params.get("event_id") else None),
+                    started_at=started,
+                    finished_at=datetime.now(),
+                    status=status,
+                    # run_history._encode json.dumps()es inputs with no
+                    # default=; one unserializable param (Path, date) would
+                    # silently drop the whole record, so sanitize first.
+                    inputs=json.loads(json.dumps(ctx.params, default=str)),
+                    outputs={},
+                    qa_count_error=counts.get("ERROR", 0),
+                    qa_count_warning=counts.get("WARNING", 0),
+                    qa_count_info=counts.get("INFO", 0),
+                    message="" if exc is None else f"{type(exc).__name__}: {exc}",
+                ))
+        except Exception:
+            # Observability must never break or alter the CLI itself.
+            pass
+
+
+class RecordingGroup(click.Group):
+    command_class = RecordingCommand
+    group_class = type  # self-propagating: @group.group() subgroups record too
+
+
+@click.group(cls=RecordingGroup)
 def autogis():
     """AutoGIS suite — harvest + envmon tools."""
 
@@ -1258,6 +1350,9 @@ def run_history_cmd(history_path, site_id, tool_name, status, since, limit, fmt)
 
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None:
+        ctx.meta[_QA_COUNTS_META_KEY] = dict(qa.counts_by_severity())
     for rec in sorted(qa.records,
                       key=lambda r: {"CRITICAL": 0, "ERROR": 1, "WARNING": 2,
                                      "INFO": 3}.get(r.severity, 4)):

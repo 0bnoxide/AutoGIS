@@ -69,6 +69,10 @@ Each ADR follows this structure:
 | [048](0048-fold-batch-edd-import-into-batch-import-workbooks.md) | BatchEDDImport — folded into batch-import-workbooks (2.2) as an `--edd-dir` mode instead of a new tool | Accepted | 2026-07-03 |
 | [049](0049-headerless-rtk-survey-format-detection.md) | Headerless RTK survey CSV format detection — sniff, guess-with-confidence-gate, retain GNSS metadata end-to-end | Accepted | 2026-07-03 |
 | [050](0050-unified-gui-adapter-direction.md) | Unified GUI — standalone PySide6 adapter (new adapter, not a fork), v1 includes workflow wiring, CLI-seam run-history with concurrency-safe writes | Accepted | 2026-07-04 |
+| [051](0051-run-history-msvcrt-sentinel-lock.md) | Run-history concurrency-safe writes — msvcrt sentinel-byte lock past EOF; header decided by size-under-lock | Accepted | 2026-07-04 |
+| [052](0052-gui-introspection-layer.md) | GUI introspection layer — Click-tree walk to form-field descriptors; hardcoded 5-pair xor table, no constraint DSL | Accepted | 2026-07-04 |
+| [053](0053-gui-executor-qa-signal.md) | GUI executor QA signal — exit code + injected qa.csv gate HALT/PAUSE/CONTINUE; JSON summary status and stdout rejected as gating inputs | Accepted | 2026-07-04 |
+| [054](0054-cli-seam-run-recording-recording-command.md) | CLI-seam run recording via RecordingCommand/RecordingGroup, not a result callback | Accepted | 2026-07-04 |
 
 ## File naming
 
