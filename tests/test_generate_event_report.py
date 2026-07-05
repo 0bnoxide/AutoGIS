@@ -1,4 +1,4 @@
-"""Tests for generate_event_report (Tool 10.5)."""
+"""Tests for generate_event_report (post-roadmap extra; not a numbered roadmap tool)."""
 from datetime import date
 from pathlib import Path
 

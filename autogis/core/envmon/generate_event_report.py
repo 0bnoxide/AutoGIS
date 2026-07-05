@@ -1,4 +1,8 @@
-"""Generate Markdown monitoring event report from CSV tool outputs (Tool 10.5).
+"""Generate Markdown monitoring event report from CSV tool outputs.
+
+Post-roadmap extra tool — not a numbered roadmap tool. (Previously mislabeled
+"Tool 10.5" in this docstring and elsewhere; roadmap 10.5 is actually the
+unrelated "Run History Dashboard Table" / WriteRunHistory — see issue #104.)
 
 Assembles a single .md review document from the outputs of:
   - import-edd / normalize-results (results CSV)
