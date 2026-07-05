@@ -17,6 +17,14 @@ DEFAULT_TTL_SEC = 1800
 _LOCK_STALE_SEC = 30
 
 
+def _norm(p):
+    return os.path.normcase(os.path.normpath(str(p)))
+
+
+def samepath(a, b):
+    return _norm(a) == _norm(b)
+
+
 def repo_root(cwd=None):
     """Resolve the canonical repository root (the MAIN working tree), even when
     called from inside a linked git worktree.
@@ -240,3 +248,17 @@ def file_conflicts(path, session_id, file_path, now=None):
                 file_path, c.get("value", "")):
             out.append(c)
     return out
+
+
+def tree_sharers(path, session_id, root, now=None):
+    """Live `worktree` claims by *another identified* session whose value == root.
+
+    Empty/missing session_id (orphan claims) are ignored: they cannot
+    meaningfully be 'another session' and would otherwise make the hard guard
+    false-block.
+    """
+    r = _norm(root)
+    return [c for c in list_claims(path, now=now)
+            if c.get("session_id") and c.get("session_id") != session_id
+            and c.get("kind") == "worktree"
+            and _norm(c.get("value", "")) == r]

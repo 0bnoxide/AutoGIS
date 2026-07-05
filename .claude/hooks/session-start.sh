@@ -58,11 +58,21 @@ fi
 
 # --- keep headroom runtime artifacts OUT of the repo ---
 mkdir -p "$HOME/.headroom"
+payload=$(cat)                                   # SessionStart payload on stdin
+sid=$(printf '%s' "$payload" \
+  | python -c "import sys,json;print(json.load(sys.stdin).get('session_id',''))" \
+  2>/dev/null || true)
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   {
     echo "export HEADROOM_MEMORY_DB_PATH=\"$HOME/.headroom/memory.db\""
     echo "export HEADROOM_LOG_FILE=\"$HOME/.headroom/proxy.log\""
   } >> "$CLAUDE_ENV_FILE"
+  # Idempotent: append only if absent, so resume/compact re-fires don't
+  # accumulate duplicate export lines.
+  if [ -n "$sid" ] && ! grep -q '^export AUTOGIS_SESSION_ID=' "$CLAUDE_ENV_FILE" 2>/dev/null
+  then
+    echo "export AUTOGIS_SESSION_ID=$sid" >> "$CLAUDE_ENV_FILE"
+  fi
 fi
 
 # --- pre-warm the kompress-base model so the first compression isn't a cold

@@ -167,6 +167,33 @@ def test_claims_path_resolves_to_main_root_from_worktree(tmp_path, monkeypatch):
     assert got.endswith(os.path.join(".claude", "coordination", "claims.json"))
 
 
+# --- tree_sharers (concurrent-main-tree nudge primitive) --------------------
+
+def test_tree_sharers_excludes_own_session(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "worktree", "/main/root")
+    registry.claim(p, "s2", "worktree", "/main/root")
+    registry.claim(p, "s3", "worktree", "/other/root")
+    sharers = registry.tree_sharers(p, "s1", "/main/root")
+    assert [c["session_id"] for c in sharers] == ["s2"]
+
+
+def test_tree_sharers_empty_when_alone(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "worktree", "/main/root")
+    assert registry.tree_sharers(p, "s1", "/main/root") == []
+
+
+def test_tree_sharers_ignores_orphan_claims(tmp_path):
+    p = tmp_path / "c.json"
+    data = registry.load_registry(p)
+    data["claims"].append({"kind": "worktree", "value": "/main/root",
+                           "heartbeat_at": registry._iso(registry._now()),
+                           "ttl_sec": 1800})  # no session_id
+    registry.save_registry(p, data)
+    assert registry.tree_sharers(p, "s1", "/main/root") == []
+
+
 def test_claims_path_falls_back_to_cwd_outside_git(tmp_path):
     """Outside any git repo and with no CLAUDE_PROJECT_DIR, resolution must not
     raise — it falls back to the given cwd (fail-soft, never bricks the hook)."""

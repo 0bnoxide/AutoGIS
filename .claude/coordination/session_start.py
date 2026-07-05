@@ -53,21 +53,45 @@ _POLICY = (
     "framework (see CLAUDE.md > Worktrees & session coordination). This applies "
     "to subagents too — the hook enforces it for every tool call regardless of "
     "who makes it, so pass this rule along when you dispatch one. Override for a "
-    "one-off: AUTOGIS_COORD_FORCE=1."
+    "one-off: AUTOGIS_COORD_FORCE=1, exported before the session/hook launches "
+    "(an inline per-command prefix cannot reach the hook process). Pinned-cwd "
+    "subagents: use 'coord_cli.py whoami|release-mine|resync' instead."
 )
 
 
+def additional_context(payload, reg_path):
+    """The SessionStart additionalContext: the standing policy, plus a one-time
+    nudge to isolate into a worktree when another live session already shares
+    this main working tree (the gotcha-#1 contention condition)."""
+    import registry
+    sid = payload.get("session_id", "")
+    cwd = payload.get("cwd") or os.getcwd()
+    sharers = registry.tree_sharers(reg_path, sid, registry.repo_root(cwd)) \
+        if sid else []
+    if not sharers:
+        return _POLICY
+    nudge = (
+        "[coord] %d other session(s) share this main working tree. Concurrent "
+        "checkouts here will move your HEAD. Isolate now: EnterWorktree, then "
+        "run 'python .claude/coordination/coord_cli.py resync'."
+        % len(sharers))
+    return _POLICY + "\n\n" + nudge
+
+
 def main():
+    context = _POLICY
     try:
         payload = json.load(sys.stdin)
-        claim_session(payload, _reg_path(payload))
+        reg_path = _reg_path(payload)
+        claim_session(payload, reg_path)
+        context = additional_context(payload, reg_path)
     except Exception:
         pass
-    # State the read-only-main policy as session context (main session only;
-    # subagents are covered by the hook itself).
+    # State the read-only-main policy (+ nudge, if contended) as session
+    # context (main session only; subagents are covered by the hook itself).
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "SessionStart",
-        "additionalContext": _POLICY}}))
+        "additionalContext": context}}))
     sys.exit(0)
 
 

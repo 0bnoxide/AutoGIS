@@ -1,7 +1,16 @@
 # Concurrent-Session Coordination Remediation — Design
 
 **Date:** 2026-06-30
-**Status:** Design gate — pending approval; implementation follows once approved
+**Status:** Partially implemented 2026-07-05 (issue #135) — fixes #1a (nudge),
+#2 (worktree-scoped pytest), and #3 (`resolve_sid`/`whoami`/`release-mine`/
+`resync`) are shipped and tested (`tests/coordination/`). The **hard guard**
+(#1b, in `hook_check.py`) is deliberately NOT built: issue #136 found that
+resolving branch/tree identity from payload `cwd` (this design's approach)
+breaks for pinned-cwd subagents the same way the FORCE-override escape hatch
+does — building #1b as specced here would add a hard deny with a broken
+bypass for exactly that session type. #1b needs a redesign together with
+#136, resolving identity from the target path or the claim itself, not
+payload `cwd`. Tracked as a follow-up, not silently dropped.
 **Scope chosen by user:** Full bundle **+ hard guard**
 **Source:** Hand-off "Operational gotchas" + memory
 `worktree-isolation-parallel-sessions.md`. All root causes empirically verified
