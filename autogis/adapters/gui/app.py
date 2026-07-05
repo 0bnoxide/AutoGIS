@@ -215,6 +215,15 @@ class MainWindow(QMainWindow):
                 "before closing.")
             event.ignore()
             return
+        if self._worker is not None:
+            # isRunning() can flip False a moment before the OS thread has
+            # truly settled (Qt marks it not-running slightly ahead of the
+            # tail end of thread teardown). Harmless on its own, but if
+            # _join_worker's queued handler never got to run first (e.g. the
+            # window is closing right in that gap), its job-dir cleanup
+            # wouldn't either -- wait() here is an instant no-op if already
+            # joined, so this just guarantees the cleanup always happens.
+            self._join_worker()
         event.accept()
 
     def _on_result(self, result: StepResult) -> None:
