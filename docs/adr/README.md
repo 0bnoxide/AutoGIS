@@ -73,6 +73,7 @@ Each ADR follows this structure:
 | [052](0052-gui-introspection-layer.md) | GUI introspection layer — Click-tree walk to form-field descriptors; hardcoded 5-pair xor table, no constraint DSL | Accepted | 2026-07-04 |
 | [053](0053-gui-executor-qa-signal.md) | GUI executor QA signal — exit code + injected qa.csv gate HALT/PAUSE/CONTINUE; JSON summary status and stdout rejected as gating inputs | Accepted | 2026-07-04 |
 | [054](0054-cli-seam-run-recording-recording-command.md) | CLI-seam run recording via RecordingCommand/RecordingGroup, not a result callback | Accepted | 2026-07-04 |
+| [055](0055-gui-workflow-runner-thread-boundary.md) | GUI workflow runner — single-flight advance/pause/resume/cancel; Qt thread-boundary punted to the widget-layer task | Accepted | 2026-07-05 |
 
 ## File naming
 
