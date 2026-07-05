@@ -74,6 +74,7 @@ Each ADR follows this structure:
 | [053](0053-gui-executor-qa-signal.md) | GUI executor QA signal — exit code + injected qa.csv gate HALT/PAUSE/CONTINUE; JSON summary status and stdout rejected as gating inputs | Accepted | 2026-07-04 |
 | [054](0054-cli-seam-run-recording-recording-command.md) | CLI-seam run recording via RecordingCommand/RecordingGroup, not a result callback | Accepted | 2026-07-04 |
 | [055](0055-gui-workflow-runner-thread-boundary.md) | GUI workflow runner — single-flight advance/pause/resume/cancel; Qt thread-boundary punted to the widget-layer task | Accepted | 2026-07-05 |
+| [056](0056-gui-form-step-adapter.md) | GUI form-values -> Step adapter — reuses XOR_PAIRS metadata; conditional/type validation left to the child command | Accepted | 2026-07-05 |
 
 ## File naming
 
