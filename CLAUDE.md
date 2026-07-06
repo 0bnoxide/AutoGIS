@@ -83,9 +83,14 @@ explicitly re-opening that group first:
 - **AI-assisted (§11):** `AIDraftParserProfile`, `AIExplainQAReport`,
   `AIDraftFigureSpec`, `AIMapReviewChecklist` — deferred pending LLM seam design
   (`docs/superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md`).
-- **Conditional / geostatistical (Phase 5):** ~8 tools (kriging / EBK / surface
+- **Conditional / geostatistical (Phase 5):** 3 tools — RunFieldToGroundwaterModelPipeline,
+  BuildGroundwaterSurfaceModel, BuildAnalyticalConcentrationSurface (kriging / EBK / surface
   modeling) — blocked on architecture review (`docs/CONDITIONAL_TOOLS_REVIEW.md`,
-  `docs/superpowers/specs/2026-06-28-geostatistical-conditional-tools-design.md`).
+  `docs/superpowers/specs/2026-06-28-geostatistical-conditional-tools-design.md`). The
+  other 6 tools originally reviewed there (SurveyToWellElevationUpdate,
+  GenerateRegulatoryTables, EvaluateGroundwaterSurfaceModels, DEMConditioningPipeline,
+  CompareDroneSurfaces, GenerateSubsurfaceProfileFromBorings) have shipped — see
+  issue #167 and the batch's ADR.
 
 These are a **separate future development phase**: the codebase gets refined
 thoroughly first, before either group is even considered. Other roadmap batches have
