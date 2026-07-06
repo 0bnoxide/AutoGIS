@@ -82,11 +82,13 @@ def _first_existing(d):
 
 
 def _git_cmd_dir(cmd):
-    """Effective directory a git write runs in, parsed from a Bash command: a
-    `git -C <path>` argument, or a leading `cd <path>` carried across &&/;/
-    newline segments, else '' (caller falls back to cwd). Only sequential
-    separators carry the cd. Best-effort — subshells, $vars, and command
-    substitution are not parsed and fall through to cwd."""
+    """Effective directory the git *write* runs in, parsed from a Bash command:
+    the write's `git -C <path>` argument, or a leading `cd <path>` carried across
+    &&/;/newline segments, else '' (caller falls back to cwd). A *read* git
+    (log/diff/...) does not count — its `-C` must not leak to the write, and its
+    presence must not stop the scan (matches _is_git_write, which keys on the
+    write subcommand too). Only sequential separators carry the cd. Best-effort —
+    subshells, $vars, and command substitution fall through to cwd."""
     cur = ""
     for seg in re.split(r"&&|;|\n", cmd):
         try:
@@ -100,15 +102,22 @@ def _git_cmd_dir(cmd):
             continue
         if "git" in toks:
             i = toks.index("git") + 1
+            dashC = ""
+            sub = ""
             while i < len(toks):
                 t = toks[i]
                 if t == "-C" and i + 1 < len(toks):
-                    return toks[i + 1]           # -C overrides the carried cd
+                    dashC = toks[i + 1]          # this invocation's -C
+                    i += 2
+                    continue
                 if t.startswith("-"):            # skip option (+ arg), same rule
                     i += 2 if t in _GLOBAL_OPTS_WITH_ARG else 1  # as _git_subcommands
                     continue
-                break                            # reached the subcommand
-            return cur
+                sub = t                          # first non-option token = subcmd
+                break
+            if sub in _GIT_WRITE_SUBCMDS:
+                return dashC or cur              # only the WRITE's dir counts
+            # read git — its -C doesn't count; keep scanning later segments
     return cur
 
 

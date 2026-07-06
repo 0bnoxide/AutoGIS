@@ -1,4 +1,9 @@
 import json
+import shutil
+import subprocess
+
+import pytest
+
 import registry
 import hook_check
 
@@ -221,6 +226,21 @@ def test_git_cmd_dir_parses_paths():
     assert f("cd a && cd b && git commit") == "b"          # last cd wins
     assert f("cd /foo && ls && git -C /bar commit") == "/bar"  # -C overrides cd
     assert f("git -c user.name=x -C /wt commit") == "/wt"  # -C after arg-taking opt
+    assert f("git -C /wt log && git commit") == ""  # read git's -C must not leak
+    assert f("git -C /a diff && cd /b && git commit") == "/b"  # write's cd wins
+
+
+def test_bash_read_git_dashC_before_commit_resolves_cwd_not_read(tmp_path):
+    # `git -C <wt> log && git commit` — the READ git's -C must NOT resolve the
+    # write. The commit runs in cwd (main here) → still denied, no false-allow.
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    p = tmp_path / "c.json"
+    cmd = "git -C %s log && git commit -m x" % wt.as_posix()
+    bf = lambda d: "feat/x" if d.replace("\\", "/").endswith("/wt") else "main"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}, cwd="/repo"),
+                            p, branch_func=bf)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 # --- soft contention warn (option C): warn, never deny -----------------------
@@ -301,3 +321,24 @@ def test_in_main_tree_false_for_linked_worktree(monkeypatch):
     monkeypatch.setattr(hook_check, "_rev_parse",
                         lambda cwd, *a: "/repo/.git/worktrees/wt\n/repo/.git\n")
     assert hook_check._in_main_tree("/repo/.claude/worktrees/wt") is False
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+def test_in_main_tree_real_git_repo_and_worktree(tmp_path):
+    # Regression guard for the subdir git-dir/common-dir format the injected
+    # tests can't reach (git prints one absolute, one relative). Real repo +
+    # linked worktree, no mocks.
+    main = tmp_path / "main"
+    main.mkdir()
+    run = lambda *a, cwd=main: subprocess.run(
+        ["git", *a], cwd=str(cwd), check=True, capture_output=True)
+    run("init", "-b", "main")
+    run("-c", "user.email=t@t", "-c", "user.name=t",
+        "commit", "--allow-empty", "-m", "init")
+    sub = main / "pkg"
+    sub.mkdir()
+    wt = tmp_path / "wt"
+    run("worktree", "add", "-b", "feat", str(wt))
+    assert hook_check._in_main_tree(str(main)) is True
+    assert hook_check._in_main_tree(str(sub)) is True     # subdir — the regression
+    assert hook_check._in_main_tree(str(wt)) is False     # linked worktree
