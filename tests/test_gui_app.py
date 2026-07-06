@@ -21,11 +21,123 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
 
+import autogis.adapters.gui.app as app_mod
 import autogis.adapters.gui.runner as runner_mod
-from autogis.adapters.gui.app import MainWindow, _headless_forms
+from autogis.adapters.gui.app import MainWindow, _dialog_kind, _headless_forms
 from autogis.adapters.gui.executor import Decision, StepResult
+from autogis.adapters.gui.introspect import FormField
+
+
+def _path_field(**kw):
+    base = dict(name="p", label="P", kind="path", required=False, default=None)
+    base.update(kw)
+    return FormField(**base)
+
+
+def test_dialog_kind_folder_for_dir_output_for_save_open_for_input():
+    # a directory-only param opens a folder picker even if also output-shaped
+    assert _dialog_kind(_path_field(is_dir=True, is_path_output=True)) == "dir"
+    # a bare click.Path() output -> save picker
+    assert _dialog_kind(_path_field(is_path_output=True)) == "save"
+    # an existing-input path -> open picker
+    assert _dialog_kind(_path_field(is_path_output=False)) == "open"
+
+
+def test_browse_uses_dialog_kind_and_populates_field(qapp, monkeypatch):
+    seen = {}
+
+    def fake_pick(kind, parent, title, start):
+        seen["kind"] = kind
+        seen["start"] = start
+        return "C:/picked/path"
+
+    monkeypatch.setattr(app_mod, "_pick_path", fake_pick)
+    win = MainWindow()
+    line = QLineEdit()
+    line.setText("prev")
+    win._browse(_path_field(is_dir=True), line)
+    assert seen["kind"] == "dir"          # decided by _dialog_kind
+    assert seen["start"] == "prev"        # seeds the dialog from current text
+    assert line.text() == "C:/picked/path"
+
+
+def test_browse_cancel_leaves_field_untouched(qapp, monkeypatch):
+    monkeypatch.setattr(app_mod, "_pick_path", lambda *a, **k: "")
+    win = MainWindow()
+    line = QLineEdit()
+    line.setText("orig")
+    win._browse(_path_field(is_path_output=True), line)
+    assert line.text() == "orig"          # cancelled dialog must not clear it
+
+
+def test_path_fields_render_a_browse_button_each(qapp):
+    win = MainWindow()
+    form = win._forms["envmon reconcile-locations"]  # has site_config + report
+    win._command_box.setCurrentText(form.label)
+    n_path = sum(1 for f in form.fields if f.kind == "path")
+    assert n_path >= 2
+    browse = [b for b in win.findChildren(QPushButton)
+              if b.text().startswith("Browse")]
+    assert len(browse) == n_path
+
+
+def test_each_browse_button_fills_its_own_field(qapp, monkeypatch):
+    # echo the dialog title (which embeds the field label) back as the picked
+    # path, so each field's text reveals which field its button targeted
+    monkeypatch.setattr(app_mod, "_pick_path",
+                       lambda kind, parent, title, start: title)
+    win = MainWindow()
+    form = win._forms["envmon reconcile-locations"]
+    win._command_box.setCurrentText(form.label)
+    for b in win.findChildren(QPushButton):
+        if b.text().startswith("Browse"):
+            b.click()
+    for f in form.fields:
+        if f.kind == "path":
+            assert win._field_widgets[f.name].text() == f"Select {f.label}"
+
+
+def test_browse_buttons_do_not_accumulate_across_command_switches(qapp):
+    """removeRow must delete a path field's nested QLineEdit+Browse layout on
+    every rebuild -- otherwise ghost Browse buttons pile up across command
+    switches (the widget-lifecycle failure mode this window has hit before).
+    Revisit each command to force repeated rebuilds; the live Browse count
+    must always equal the current command's path-field count, never grow."""
+    win = MainWindow()
+    path_heavy = max(win._forms.values(),
+                    key=lambda f: sum(1 for x in f.fields if x.kind == "path"))
+    labels = sorted(win._forms)[:5] + [path_heavy.label]
+    for label in labels * 2:
+        win._command_box.setCurrentText(label)
+        QTest.qWait(5)
+        n_path = sum(1 for f in win._forms[label].fields if f.kind == "path")
+        browse = [b for b in win.findChildren(QPushButton)
+                 if b.text().startswith("Browse")]
+        assert len(browse) == n_path, (label, len(browse), n_path)
+
+
+def test_command_help_text_is_shown_and_updates_on_switch(qapp):
+    win = MainWindow()
+    with_help = [f for f in win._forms.values() if f.help_text]
+    a, b = with_help[0], next(f for f in with_help if f.help_text != with_help[0].help_text)
+    win._command_box.setCurrentText(a.label)
+    assert win._help_label.text() == a.help_text
+    win._command_box.setCurrentText(b.label)
+    assert win._help_label.text() == b.help_text
+
+
+def test_help_label_clears_when_switching_to_command_without_help(qapp):
+    """'harvest' is the one headless command with no help text. Selecting it
+    after a command that has help must EMPTY the label, not leave the prior
+    command's help stale -- pins _rebuild_form's `or ""` clear behavior."""
+    win = MainWindow()
+    with_help = next(f for f in win._forms.values() if f.help_text)
+    win._command_box.setCurrentText(with_help.label)
+    assert win._help_label.text()  # precondition: label shows something
+    win._command_box.setCurrentText("harvest")
+    assert win._help_label.text() == ""
 
 
 @pytest.fixture(scope="module")

@@ -78,6 +78,7 @@ Each ADR follows this structure:
 | [057](0057-gui-walking-skeleton.md) | GUI walking skeleton — first PySide6 code (optional `gui` extra), QThread bridge, fixed a UNSET-sentinel leak + a QThread lifecycle crash | Accepted | 2026-07-05 |
 | [058](0058-coord-hook-target-resolution.md) | Coord hook resolves branch/tree from the write target (not payload cwd); soft contention warn instead of a hard deny | Accepted | 2026-07-05 |
 | [059](0059-gui-qa-results-table.md) | GUI QA-results table — renders the executor's already-parsed `qa_rows` as a worst-severity-first, drop-empty-columns, color-coded table (stdout pane kept) | Accepted | 2026-07-06 |
+| [060](0060-gui-window-polish-browse-help.md) | GUI window polish — Browse buttons for path fields (folder picker for dir-only params via new `is_dir`), command help text shown; dropped unreachable-greying (nothing to grey) | Accepted | 2026-07-06 |
 
 ## File naming
 
