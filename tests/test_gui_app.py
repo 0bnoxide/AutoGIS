@@ -453,3 +453,94 @@ def test_clear_empties_steps_and_disables_run_workflow(qapp):
     win._on_clear_steps()
     assert win._steps == [] and win._step_list.count() == 0
     assert not win._run_wf_button.isEnabled()
+
+
+# --- workflow builder: running (Task 3, ADR-0061) ----------------------------
+
+def _script_run_step(monkeypatch, results):
+    """Make run_step return `results` in order across successive calls; the
+    returned dict's ["n"] counts how many steps actually ran."""
+    it = iter(results)
+    calls = {"n": 0}
+
+    def fake(step, job_dir, **kw):
+        calls["n"] += 1
+        return next(it)
+
+    monkeypatch.setattr(runner_mod, "run_step", fake)
+    return calls
+
+
+def test_two_step_workflow_runs_both_to_done(qapp, monkeypatch):
+    calls = _script_run_step(monkeypatch, [
+        StepResult(Decision.CONTINUE, "ok", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._runner is None)
+    assert calls["n"] == 2
+    assert "complete" in win._status.text().lower()
+    assert win._step_list.item(0).text().startswith("✓")
+    assert win._step_list.item(1).text().startswith("✓")
+    assert win._add_button.isEnabled()          # authoring re-enabled
+
+
+def test_halt_stops_before_later_steps(qapp, monkeypatch):
+    calls = _script_run_step(monkeypatch, [
+        StepResult(Decision.HALT, "QA FAIL", exit_code=1),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])  # must never run
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._runner is None)
+    assert calls["n"] == 1                       # second step never ran
+    assert "HALTED at step 1" in win._status.text()
+    assert win._step_list.item(0).text().startswith("✗")
+
+
+def test_pause_on_warning_then_resume_runs_next(qapp, monkeypatch):
+    calls = _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv", pause=True)
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    assert "PAUSED" in win._status.text()
+    assert calls["n"] == 1                       # paused before step 2
+    assert not win._add_button.isEnabled()       # authoring stays locked
+    win._on_resume()
+    _pump_until(lambda: win._runner is None)
+    assert calls["n"] == 2
+    assert "complete" in win._status.text().lower()
+
+
+def test_pause_on_last_step_resume_completes(qapp, monkeypatch):
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", pause=True)   # single, pauses
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    win._on_resume()                              # nothing left -> straight to DONE
+    _pump_until(lambda: win._runner is None)
+    assert "complete" in win._status.text().lower()
+
+
+def test_cancel_when_paused_ends_run(qapp, monkeypatch):
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv", pause=True)
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    win._on_cancel()
+    _pump_until(lambda: win._runner is None)
+    assert "Cancelled" in win._status.text()
+    assert win._add_button.isEnabled()           # authoring re-enabled after cancel

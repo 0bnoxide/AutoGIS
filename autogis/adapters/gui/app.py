@@ -163,11 +163,14 @@ class MainWindow(QMainWindow):
         self._up_button.clicked.connect(lambda: self._move_step(-1))
         self._down_button = QPushButton("↓")
         self._down_button.clicked.connect(lambda: self._move_step(1))
-        self._run_wf_button = QPushButton("Run workflow")   # wired in Task 3
+        self._run_wf_button = QPushButton("Run workflow")
+        self._run_wf_button.clicked.connect(self._on_run_workflow)
         self._clear_button = QPushButton("Clear")
         self._clear_button.clicked.connect(self._on_clear_steps)
-        self._cancel_button = QPushButton("Cancel")         # wired in Task 3
-        self._resume_button = QPushButton("Resume")         # wired in Task 3
+        self._cancel_button = QPushButton("Cancel")
+        self._cancel_button.clicked.connect(self._on_cancel)
+        self._resume_button = QPushButton("Resume")
+        self._resume_button.clicked.connect(self._on_resume)
         for _b in (self._remove_button, self._up_button, self._down_button,
                    self._run_wf_button, self._clear_button,
                    self._cancel_button, self._resume_button):
@@ -373,6 +376,42 @@ class MainWindow(QMainWindow):
         self._step_list.clear()
         self._refresh_step_controls()
 
+    def _on_run_workflow(self) -> None:
+        if self._runner is not None or not self._steps:
+            return
+        self._run_is_workflow = True
+        for i in range(self._step_list.count()):   # clear any prior-run glyphs
+            item = self._step_list.item(i)
+            item.setText(item.text().lstrip("✓⏸✗ "))
+        self._cancel_button.setEnabled(True)
+        self._resume_button.setEnabled(False)
+        self._start_run(tuple(self._steps), "gui-workflow")
+
+    def _on_cancel(self) -> None:
+        if self._runner is None:
+            return
+        self._runner.cancel()
+        self._cancel_button.setEnabled(False)
+        self._resume_button.setEnabled(False)
+        if self._runner.status is not RunState.RUNNING:
+            # Cancel took effect immediately (idle/paused, no in-flight step):
+            # no _on_result will fire to finish the run, so finish it here.
+            self._status.setText("Cancelled")
+            self._finish_run()
+
+    def _on_resume(self) -> None:
+        if self._runner is None or self._runner.status is not RunState.PAUSED:
+            return
+        self._runner.resume()
+        self._resume_button.setEnabled(False)
+        if self._runner.status is RunState.DONE:
+            # Pause was on the LAST step -> resume() goes straight to DONE
+            # (runner.resume docstring); nothing left to advance to.
+            self._status.setText("Workflow complete")
+            self._finish_run()
+        else:
+            self._advance()
+
     def _join_worker(self) -> None:
         # Thread-join ONLY (job-dir cleanup moved to _finish_run). A
         # multi-step workflow shares one job dir across its steps, so cleanup
@@ -397,6 +436,8 @@ class MainWindow(QMainWindow):
         None) -- used by the terminal branches and by ``closeEvent``."""
         self._runner = None
         self._set_authoring_enabled(True)
+        self._cancel_button.setEnabled(False)
+        self._resume_button.setEnabled(False)
         if self._job_root is not None:
             shutil.rmtree(self._job_root, ignore_errors=True)
             self._job_root = None
@@ -473,6 +514,11 @@ class MainWindow(QMainWindow):
             text += ["", "-- stderr --", result.stderr]
         self._output.setPlainText("\n".join(text))
         self._show_qa(result.qa_rows)
+        if self._run_is_workflow and index < self._step_list.count():
+            glyph = {Decision.CONTINUE: "✓", Decision.HALT: "✗",
+                     Decision.PAUSE_FOR_REVIEW: "⏸"}[result.decision]
+            item = self._step_list.item(index)
+            item.setText(f"{glyph} {item.text().lstrip('✓⏸✗ ')}")
 
     def _terminal_message(self, state: RunState, index: int,
                           result: StepResult) -> str:
@@ -493,7 +539,7 @@ class MainWindow(QMainWindow):
             if self._run_is_workflow:
                 self._status.setText(
                     f"PAUSED after step {index + 1} -- Resume or Cancel")
-                # Task 3 enables the Resume button here.
+                self._resume_button.setEnabled(True)
         else:                                   # DONE / HALTED / CANCELLED
             if self._run_is_workflow:
                 self._status.setText(
