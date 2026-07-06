@@ -1,11 +1,13 @@
-"""PySide6 walking skeleton for the unified GUI adapter (ADR-0057).
+"""PySide6 window for the unified GUI adapter (ADR-0057, ADR-0062).
 
-One window: pick a headless command from ``introspect_cli()``, fill its
-form, run it, see the result. Exercises the full toolkit-free chain built
-so far (``introspect`` -> ``forms`` -> ``runner`` -> ``executor``) through a
-real Qt event loop for the first time. Deliberately scoped to headless
-(non-arcpy) commands only, so this first slice never needs a
-``local_python`` (arcgispro-py3 clone) settings UI -- that is a later slice.
+Pick a headless command from ``introspect_cli()``, fill its form, and either
+run it (single **Run**) or add it to a multi-step **workflow** the
+``WorkflowRunner`` drives end to end -- per-step QA, pause-on-warning, HALT,
+and Cancel (the workflow builder, ADR-0062). A single Run is just a 1-step
+workflow through the same advance-until-terminal loop. Exercises the full
+toolkit-free chain (``introspect`` -> ``forms`` -> ``runner`` -> ``executor``)
+through a real Qt event loop. Headless (non-arcpy) commands only -- LOCAL
+tools need a ``local_python`` (arcgispro-py3 clone) picker, a later slice.
 
 Threading: ``WorkflowRunner.advance()`` blocks for the length of one child
 process. ``_StepWorker`` (a ``QThread``) runs it off the UI thread and
@@ -141,7 +143,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self._run_button)
         outer.addLayout(row)
 
-        # --- workflow builder (v1, ADR-0061) -----------------------------
+        # --- workflow builder (v1, ADR-0062) -----------------------------
         # The same command + form above configures each step; Add appends it
         # to an in-memory workflow the WorkflowRunner drives as one sequence.
         add_row = QHBoxLayout()

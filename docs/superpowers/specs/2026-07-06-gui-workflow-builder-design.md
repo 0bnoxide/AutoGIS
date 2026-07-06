@@ -1,7 +1,7 @@
 # Unified GUI — workflow builder (v1) design
 
-**Status:** design approved (2026-07-06), spec under review. **Date:** 2026-07-06.
-**ADR (on implementation):** 0061.
+**Status:** implemented (2026-07-06), ADR-0062. **Date:** 2026-07-06.
+**ADR:** 0062 (renumbered from 0061 — collided with open PR #174).
 
 ## Context
 

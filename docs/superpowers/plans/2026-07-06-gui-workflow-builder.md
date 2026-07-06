@@ -151,16 +151,20 @@ def _render_result(self, result: StepResult, index: int) -> None:
 def _on_result(self, result: StepResult) -> None:
     self._join_worker()
     index = len(self._runner.results) - 1   # the step that just ran
-    self._render_result(result, index)
+    self._render_result(result, index)      # sets status to the decision label
     state = self._runner.status
     if state is RunState.PENDING:
         self._advance()                     # loop to the next step
     elif state is RunState.PAUSED:
-        self._status.setText(
-            f"PAUSED after step {index + 1} -- Resume or Cancel")
-        # Task 3 enables the Resume button here
+        if self._run_is_workflow:
+            self._status.setText(
+                f"PAUSED after step {index + 1} -- Resume or Cancel")
+            # Task 3 enables the Resume button here
     else:                                    # DONE / HALTED / CANCELLED
-        self._status.setText(self._terminal_message(state, index, result))
+        if self._run_is_workflow:
+            self._status.setText(self._terminal_message(state, index, result))
+        # A single Run keeps the decision label _render_result set (today's
+        # UX: "CONTINUE"/"HALT"); only a workflow shows a run-level message.
         self._finish_run()
 
 def _on_failure(self, message: str) -> None:
@@ -179,11 +183,25 @@ def _terminal_message(self, state: RunState, index: int,
     return "Workflow complete"   # DONE
 ```
 
-- [ ] **Step 7: Update `closeEvent`** — replace the `self._join_worker()` call
-  in the idle branch with `self._join_worker(); self._finish_run()` so job-dir
-  cleanup still happens on close (join no longer cleans up). The
-  "refuse while a step is in flight" branch (`self._worker.isRunning()`) is
-  unchanged.
+- [ ] **Step 7: Update `closeEvent`** — after the unchanged "refuse while a
+  step is in flight" branch, call `_join_worker()` then `_finish_run()`
+  **unconditionally** (both are no-ops when there is nothing to do). Do NOT
+  gate on `self._worker is not None`: a PAUSED run has `_worker is None` but a
+  live `self._runner`/`self._job_root`, and its job dir must still be cleaned
+  up on close.
+
+```python
+def closeEvent(self, event) -> None:
+    if self._worker is not None and self._worker.isRunning():
+        self._status.setText(
+            "A step is still running -- please wait for it to finish "
+            "before closing.")
+        event.ignore()
+        return
+    self._join_worker()   # no-op when _worker is None
+    self._finish_run()    # cleans the job dir / clears runner; guards on None
+    event.accept()
+```
 
 - [ ] **Step 8: Run the existing suite — must be green unchanged**
 
@@ -450,16 +468,43 @@ def _on_run_workflow(self) -> None:
 def _on_cancel(self) -> None:
     if self._runner is None:
         return
-    self._runner.cancel()               # applies after any in-flight step
+    self._runner.cancel()
     self._cancel_button.setEnabled(False)
     self._resume_button.setEnabled(False)
+    if self._runner.status is not RunState.RUNNING:
+        # cancel took effect immediately (idle/paused, no in-flight step) ->
+        # no _on_result will fire to finish the run, so do it here. When a
+        # step IS in flight, status stays RUNNING and _on_result finishes it
+        # once that step completes.
+        self._status.setText("Cancelled")
+        self._finish_run()
 
 def _on_resume(self) -> None:
     if self._runner is None or self._runner.status is not RunState.PAUSED:
         return
     self._runner.resume()
     self._resume_button.setEnabled(False)
-    self._advance()
+    if self._runner.status is RunState.DONE:
+        # pause was on the LAST step -> resume() goes straight to DONE
+        # (runner.resume docstring); nothing left to advance to.
+        self._status.setText("Workflow complete")
+        self._finish_run()
+    else:
+        self._advance()
+```
+
+Add a test for the pause-on-last-step resume path:
+```python
+def test_pause_on_last_step_resume_completes(qapp, monkeypatch):
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0)])
+    win = MainWindow()
+    _add(win, "envmon validate-rtk-survey", pause=True)   # single step, pauses
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    win._on_resume()
+    _pump_until(lambda: win._runner is None)
+    assert "complete" in win._status.text().lower()
 ```
 
 - [ ] **Step 6: `_finish_run` disables Cancel/Resume** — add to `_finish_run`:
@@ -553,18 +598,18 @@ git commit -m "feat(gui): run multi-step workflows with pause/resume/cancel"
 
 ---
 
-### Task 4: ADR-0061 + docs
+### Task 4: ADR-0062 + docs
 
 **Files:**
-- Create: `docs/adr/0061-gui-workflow-builder.md`
+- Create: `docs/adr/0062-gui-workflow-builder.md`
 - Modify: `docs/adr/README.md` (index row); spec status line
 - Modify: `app.py` module docstring (window is no longer only single-command)
 
-- [ ] **Step 1: Verify 0061 is free** — `ls docs/adr/ | grep 006` and
+- [ ] **Step 1: Verify 0062 is free** — `ls docs/adr/ | grep 006` and
   `gh pr list --state open` then check each open PR's files for a `docs/adr/`
   addition (the chapter's repeated-collision guard).
 
-- [ ] **Step 2: Write ADR-0061** covering: the in-session/grow-window/gate-2/
+- [ ] **Step 2: Write ADR-0062** covering: the in-session/grow-window/gate-2/
   headless scope decisions and their rationale; the drive-loop unification
   (single Run = 1-step workflow through the shared loop) and the
   `_join_worker`/`_finish_run` split; why row-marking needs `_run_is_workflow`;
@@ -574,7 +619,7 @@ git commit -m "feat(gui): run multi-step workflows with pause/resume/cancel"
 
 - [ ] **Step 3: Add the README index row** (append after the 0060 row):
 ```
-| [061](0061-gui-workflow-builder.md) | GUI workflow builder v1 -- assemble + run multi-step headless workflows over WorkflowRunner (in-session, gate-2 pause/halt/cancel) | Accepted | 2026-07-06 |
+| [061](0062-gui-workflow-builder.md) | GUI workflow builder v1 -- assemble + run multi-step headless workflows over WorkflowRunner (in-session, gate-2 pause/halt/cancel) | Accepted | 2026-07-06 |
 ```
 
 - [ ] **Step 4: Update the `app.py` module docstring** — the window now also
@@ -585,10 +630,10 @@ git commit -m "feat(gui): run multi-step workflows with pause/resume/cancel"
 - [ ] **Step 6: Full suite + commit**
 ```bash
 python -m pytest -q      # whole suite green
-git add docs/adr/0061-gui-workflow-builder.md docs/adr/README.md \
+git add docs/adr/0062-gui-workflow-builder.md docs/adr/README.md \
         docs/superpowers/specs/2026-07-06-gui-workflow-builder-design.md \
         autogis/adapters/gui/app.py
-git commit -m "docs(gui): ADR-0061 workflow builder + index"
+git commit -m "docs(gui): ADR-0062 workflow builder + index"
 ```
 
 ---
@@ -608,7 +653,7 @@ git commit -m "docs(gui): ADR-0061 workflow builder + index"
   ✓; gate 2 — HALT (Task 1 terminal msg), Cancel (Task 3), pause-on-warning
   (Task 2 checkbox → Task 3 PAUSED/Resume) ✓; add/remove/reorder (Task 2) ✓;
   shared result panes (Task 1 `_render_result`) ✓; headless-only (unchanged
-  filter) ✓; tests for every state (Task 3) ✓; ADR-0061 (Task 4) ✓.
+  filter) ✓; tests for every state (Task 3) ✓; ADR-0062 (Task 4) ✓.
 - **Placeholder scan:** none — the Task-1 `_set_authoring_enabled` stub is
   explicitly replaced in Task 2 Step 5, not left dangling.
 - **Type consistency:** `self._runner`, `_start_run(steps, name)`, `_advance`,
