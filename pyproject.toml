@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 dependencies = ["PyYAML", "click>=8.0", "openpyxl", "numpy>=1.24"]   # click>=8.0: introspect.py's _field() calls param.to_info_dict()
 
 [project.optional-dependencies]
-dev = ["pytest", "Pillow>=9.0"]   # Pillow so the importorskip-gated photo tests actually run
+dev = ["pytest", "Pillow>=9.0", "matplotlib>=3.7"]   # Pillow/matplotlib so the importorskip-gated tests actually run
 cloud = ["arcgis>=2.4,<3", "setuptools"]   # Pro 3.4+ / arcgis-dist.json unverified (Esri/arcpy restricted).
     # setuptools: arcgis's `features.geo` package still imports the stdlib
     # `distutils` module (removed in Python 3.12+); it swallows that failure
@@ -18,6 +18,7 @@ cloud = ["arcgis>=2.4,<3", "setuptools"]   # Pro 3.4+ / arcgis-dist.json unverif
     # exact failure on arcgis 2.4.3 / Python 3.14.
 report = ["Pillow>=9.0"]   # photo embedding for generate-inspection-report (openpyxl Image needs PIL)
 gui = ["PySide6"]   # unified GUI adapter (ADR-0050); not needed for CLI/.pyt use
+profile = ["matplotlib>=3.7"]   # subsurface profile rendering (generate-subsurface-profile)
 
 [project.scripts]
 autogis = "autogis.adapters.cli:autogis"

@@ -79,6 +79,9 @@ Each ADR follows this structure:
 | [058](0058-coord-hook-target-resolution.md) | Coord hook resolves branch/tree from the write target (not payload cwd); soft contention warn instead of a hard deny | Accepted | 2026-07-05 |
 | [059](0059-gui-qa-results-table.md) | GUI QA-results table — renders the executor's already-parsed `qa_rows` as a worst-severity-first, drop-empty-columns, color-coded table (stdout pane kept) | Accepted | 2026-07-06 |
 | [060](0060-gui-window-polish-browse-help.md) | GUI window polish — Browse buttons for path fields (folder picker for dir-only params via new `is_dir`), command help text shown; dropped unreachable-greying (nothing to grey) | Accepted | 2026-07-06 |
+| [061](0061-drone-geotech-graphics-tool-batch.md) | Drone/geotech-graphics tool batch — DEMConditioningPipeline, CompareDroneSurfaces, GenerateSubsurfaceProfileFromBorings rescoped out of the Phase 5 geostatistical gate and shipped; new read-only LandXML TIN parser | Accepted | 2026-07-06 |
+| [062](0062-gui-local-tool-support.md) | GUI LOCAL (arcpy) tool support — persisted `local_python` picker (QSettings), Run gated per tool, class-1 redirect-only tools greyed via new `reachability.UNREACHABLE` map | Accepted | 2026-07-06 |
+| [063](0063-gui-workflow-builder.md) | GUI workflow builder v1 — assemble + run multi-step headless workflows over WorkflowRunner (in-session, gate-2 pause/halt/cancel); single Run unified as a 1-step workflow | Accepted | 2026-07-06 |
 
 ## File naming
 

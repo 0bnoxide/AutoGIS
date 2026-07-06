@@ -22,7 +22,7 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 The codebase now ships **103 `core/envmon/` + 10 `core/agol/` modules (113 total)**,
 **107 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 110 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1522-test** arcpy-free
+`manage-callout-overrides` subcommands are counted individually), and a **1732-test** arcpy-free
 suite. For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
@@ -202,8 +202,12 @@ ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 **AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
 — all deferred pending LLM seam design
 
-**Conditional / geostatistical (Phase 5):** 8 tools (kriging / EBK / surface modeling) — blocked on
-architecture review; see `docs/CONDITIONAL_TOOLS_REVIEW.md`
+**Conditional / geostatistical (Phase 5):** 3 tools — RunFieldToGroundwaterModelPipeline,
+BuildGroundwaterSurfaceModel, BuildAnalyticalConcentrationSurface (kriging / EBK / surface
+modeling) — blocked on architecture review; see `docs/CONDITIONAL_TOOLS_REVIEW.md`. The other
+6 tools originally reviewed there have shipped (see issue #167 and ADR-0061), including
+DEMConditioningPipeline, CompareDroneSurfaces and GenerateSubsurfaceProfileFromBorings, which
+turned out to be drone-raster/geotech-graphics work rather than geostatistical modeling.
 
 **These two groups are a separate future development phase, not a backlog to pick from.**
 Do not start implementation on any tool listed above without an explicit phase-gate
@@ -383,7 +387,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 1522 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 1732 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -591,7 +595,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1522 arcpy-free tests
+└── tests/               # 1732 arcpy-free tests
 ```
 
 ### Key modules
@@ -668,7 +672,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1522 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1732 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash
