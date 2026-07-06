@@ -109,6 +109,12 @@ was approved via `superpowers:brainstorming`, and this batch implements it.
   product ID (a full raster diff, cell-by-cell) rather than accepting raw
   file paths directly — consistent with `condition_dem`'s GDB-lookup pattern,
   but means both DEMs must already be registered products.
+- `condition_dem`'s `--smooth` supports `median` only. A `gaussian` option
+  was speculatively drafted but dropped before merge: `arcpy.sa` has no true
+  Gaussian-blur statistic, and hand-rolling one via an `NbrWeight` kernel file
+  would mean unverifiable arcpy syntax with zero test coverage. If a site
+  needs it, the safe path is repeated `NbrCircle`+`MEAN` passes (2-3x
+  converges toward Gaussian) using primitives already proven in this file.
 
 ## Alternatives considered
 

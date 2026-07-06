@@ -718,7 +718,7 @@ class ConditionDEM(object):
             _param("fill_voids_max_pixels", "Fill-voids max pixels", "GPLong",
                    required=False, default=9),
             _param("smooth", "Smooth method", "GPString", required=False,
-                   domain=("", "median", "gaussian")),
+                   domain=("", "median")),
             _param("with_slope", "Derive slope", "GPBoolean",
                    required=False, default=False),
             _param("with_contours", "Derive contours", "GPBoolean",
@@ -778,11 +778,12 @@ class CompareDroneSurfaces(object):
         baseline_product_id = p["baseline_product_id"].valueAsText or None
         baseline_landxml = p["baseline_landxml"].valueAsText or None
         validate_baseline_args(baseline_product_id, baseline_landxml)
+        lod_value = p["lod_threshold_ft"].value
         summary = compare_surfaces(
             p["gdb"].valueAsText, p["primary_product_id"].valueAsText,
             baseline_product_id=baseline_product_id or "",
             baseline_landxml_path=baseline_landxml or "",
-            lod_threshold_ft=float(p["lod_threshold_ft"].value or 0.2))
+            lod_threshold_ft=float(lod_value if lod_value is not None else 0.2))
         messages.addMessage(
             f"{summary.change_count}/{summary.count} cell(s) changed "
             f"(max {summary.max_diff_ft:.2f} ft, mean {summary.mean_diff_ft:.2f} ft).")

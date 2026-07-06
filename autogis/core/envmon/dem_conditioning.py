@@ -14,7 +14,13 @@ from typing import Optional
 
 from ..common.qa import QACollector, SEV_ERROR
 
-SMOOTH_METHODS: frozenset[str] = frozenset({"median", "gaussian"})
+# ponytail: "gaussian" dropped -- arcpy.sa has no true Gaussian-blur stat
+# (FocalStatistics only offers MEAN/MEDIAN/etc.), and hand-rolling one via
+# NbrWeight requires an unverified kernel-file format with zero test
+# coverage possible here. If a site needs it, the safe path is repeated
+# NbrCircle+MEAN passes (2-3x converges toward Gaussian) using primitives
+# already proven in this file -- not a blind new API call.
+SMOOTH_METHODS: frozenset[str] = frozenset({"median"})
 
 
 @dataclass
@@ -104,7 +110,8 @@ def condition_dem(  # pragma: no cover
                 dem_path = path
                 break
     if not dem_path:
-        return []
+        raise ValueError(
+            f"Flight {flight_id!r} not found in {gdb_path}'s DroneFlights table.")
 
     out = _P(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -115,8 +122,7 @@ def condition_dem(  # pragma: no cover
         dem = _ax.sa.Con(_ax.sa.IsNull(dem),
                          _ax.sa.FocalStatistics(dem, fill_kernel, "MEAN"), dem)
     if config.smooth:
-        stat = "MEDIAN" if config.smooth == "median" else "MEAN"
-        dem = _ax.sa.FocalStatistics(dem, _ax.sa.NbrCircle(3, "CELL"), stat)
+        dem = _ax.sa.FocalStatistics(dem, _ax.sa.NbrCircle(3, "CELL"), "MEDIAN")
 
     conditioned_path = str(out / f"{flight_id}_conditioned_dem.tif")
     dem.save(conditioned_path)

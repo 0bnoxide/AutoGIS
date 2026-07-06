@@ -8,7 +8,8 @@ from autogis.core.common.schema.boring import BoringLocation, LithologyInterval
 from autogis.core.common.sqlite_schema import insert_rows
 from autogis.core.envmon.create_boring_log_database import create_boring_log_database
 from autogis.core.envmon.subsurface_profile import (
-    build_profile, place_borings, project_onto_line, resolve_endpoints,
+    ProfileBoringPlacement, build_profile, place_borings, project_onto_line,
+    render_profile, resolve_endpoints,
 )
 
 
@@ -115,7 +116,42 @@ def test_place_borings_skips_borings_missing_coordinates():
     assert placements == []
 
 
+def test_place_borings_excludes_stations_beyond_line_length_plus_tolerance():
+    # On-line laterally (offset 0), but 2000 ft past the B-A->B-B line's own
+    # 100 ft length -- must not stretch the profile's station axis.
+    locations = {
+        "B-1": {"location": {"northing": 50.0, "easting": 0.0}, "lithology": []},
+        "B-FAR": {"location": {"northing": 2000.0, "easting": 0.0}, "lithology": []},
+    }
+    qa = QACollector()
+    placements = place_borings(locations, (0.0, 0.0), (100.0, 0.0),
+                                tolerance_ft=50.0, qa=qa)
+    assert [p.boring_id for p in placements] == ["B-1"]
+    warning = next(r for r in qa.records if r.category == "boring_outside_tolerance")
+    assert "B-FAR" in warning.message
+
+
 # ---- build_profile (end-to-end against the SQLite DB) --------------------------
+
+# ---- render_profile -------------------------------------------------------------
+
+def test_render_profile_skips_boring_with_missing_ground_elevation(tmp_path):
+    pytest.importorskip("matplotlib")
+    placements = [
+        ProfileBoringPlacement(
+            boring_id="B-OK", station_ft=0.0, offset_ft=0.0,
+            location={"ground_elevation": 100.0}, lithology=[]),
+        ProfileBoringPlacement(
+            boring_id="B-NULL", station_ft=50.0, offset_ft=0.0,
+            location={"ground_elevation": None}, lithology=[]),
+    ]
+    qa = QACollector()
+    out = render_profile(placements, tmp_path / "profile.png", qa=qa)
+    assert out.exists()
+    warning = next(r for r in qa.records if r.category == "boring_missing_ground_elevation")
+    assert "B-NULL" in warning.message
+    assert "B-OK" not in warning.message
+
 
 def test_build_profile_end_to_end(tmp_path):
     locations = [_loc("B-A", 0.0, 0.0), _loc("B-B", 100.0, 0.0),

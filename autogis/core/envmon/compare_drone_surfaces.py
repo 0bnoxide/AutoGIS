@@ -92,14 +92,18 @@ def compare_surfaces(  # pragma: no cover
 
     primary_path = _product_path(gdb_path, primary_product_id)
     if not primary_path:
-        return summarize_diffs([], lod_threshold_ft)
+        raise ValueError(
+            f"Product {primary_product_id!r} not found in {gdb_path}'s "
+            "DroneProductRegistry.")
     primary = _ax.Raster(primary_path)
     primary_arr = _ax.RasterToNumPyArray(primary, nodata_to_value=np.nan)
 
     if baseline_product_id:
         baseline_path = _product_path(gdb_path, baseline_product_id)
         if not baseline_path:
-            return summarize_diffs([], lod_threshold_ft)
+            raise ValueError(
+                f"Baseline product {baseline_product_id!r} not found in "
+                f"{gdb_path}'s DroneProductRegistry.")
         baseline = _ax.Raster(baseline_path)
         # Two independently-read rasters need not share an origin, cell size,
         # or extent even when their row/col counts happen to match -- a raw
@@ -107,9 +111,12 @@ def compare_surfaces(  # pragma: no cover
         # diff geographically unrelated cells. Run the subtraction through
         # arcpy's own Spatial Analyst raster algebra instead, which resamples
         # *baseline* onto *primary*'s grid per the analysis environment, and
-        # only convert the (already-aligned) result to numpy.
-        with _ax.EnvManager(snapRaster=primary, extent="INTERSECTION",
-                            cellSize=primary):
+        # only convert the (already-aligned) result to numpy. "MINOF" is
+        # arcpy's env.extent keyword for "intersection of inputs" (the Pro
+        # dialog's own label for that setting) -- "INTERSECTION" is not a
+        # valid value and raises at runtime.
+        with _ax.EnvManager(snapRaster=primary, extent="MINOF",
+                            cellSize=primary.meanCellWidth):
             diff_raster = _ax.sa.Minus(primary, baseline)
         diff_arr = _ax.RasterToNumPyArray(diff_raster, nodata_to_value=np.nan)
         diffs_ft = [float(d) for d in diff_arr.flatten() if not np.isnan(d)]

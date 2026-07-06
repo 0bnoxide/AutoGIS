@@ -104,3 +104,9 @@ def test_elevation_at_face_with_unknown_point_id_raises_value_error():
         faces=[(1, 2, 99)])
     with pytest.raises(ValueError, match="99"):
         elevation_at(surface, 1.0, 1.0)
+
+
+def test_elevation_at_surface_with_no_points_raises_clear_value_error():
+    surface = LandXMLSurface(name="empty", points={}, faces=[])
+    with pytest.raises(ValueError, match="no points"):
+        elevation_at(surface, 1.0, 1.0)

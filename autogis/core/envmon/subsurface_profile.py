@@ -105,6 +105,7 @@ def place_borings(
     *tolerance_ft* perpendicular offset. Borings beyond tolerance (or with no
     coordinates) are excluded with a QA warning naming them, not silently
     dropped."""
+    line_length = math.hypot(b[0] - a[0], b[1] - a[1])
     placements = []
     excluded = []
     for boring_id, bundle in locations.items():
@@ -114,7 +115,9 @@ def place_borings(
             excluded.append(boring_id)
             continue
         station, offset = project_onto_line((n, e), a, b)
-        if abs(offset) > tolerance_ft:
+        if (abs(offset) > tolerance_ft
+                or station < -tolerance_ft
+                or station > line_length + tolerance_ft):
             excluded.append(boring_id)
             continue
         placements.append(ProfileBoringPlacement(
@@ -153,10 +156,14 @@ _MATPLOTLIB_HINT = ('matplotlib is required to render subsurface profiles. '
                      'Install with: pip install "autogis[profile]"')
 
 
-def render_profile(placements: list, out_path: Path, *, title: str = "") -> Path:
+def render_profile(placements: list, out_path: Path, *, title: str = "",
+                    qa: Optional[QACollector] = None) -> Path:
     """Render a subsurface profile PNG/SVG: one lithology column per boring,
     positioned at its station, banded by interval. Pillow is not involved;
-    matplotlib is lazy-imported here (the only place)."""
+    matplotlib is lazy-imported here (the only place). A boring with no
+    ground elevation can't be drawn (nothing to anchor its column to) — it's
+    skipped with a QA warning rather than defaulting to elevation 0, which
+    would wreck the plot's y-scale on any real (non-zero-elevation) site."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -165,10 +172,17 @@ def render_profile(placements: list, out_path: Path, *, title: str = "") -> Path
     except ImportError as exc:
         raise ImportError(_MATPLOTLIB_HINT) from exc
 
-    fig, ax = plt.subplots(figsize=(max(6, len(placements) * 1.5), 8))
-    col_width = max((p.station_ft for p in placements), default=1.0) * 0.02 + 1.0
-    for p in placements:
-        ground = p.location.get("ground_elevation") or 0.0
+    drawable = [p for p in placements if p.location.get("ground_elevation") is not None]
+    skipped = [p.boring_id for p in placements if p not in drawable]
+    if skipped and qa is not None:
+        qa.add(SEV_WARNING, "boring_missing_ground_elevation",
+               f"{len(skipped)} boring(s) skipped (no ground elevation): "
+               + ", ".join(sorted(skipped)))
+
+    fig, ax = plt.subplots(figsize=(max(6, len(drawable) * 1.5), 8))
+    col_width = max((p.station_ft for p in drawable), default=1.0) * 0.02 + 1.0
+    for p in drawable:
+        ground = p.location["ground_elevation"]
         for iv in p.lithology:
             top = ground - iv["top_depth"]
             bottom = ground - iv["bottom_depth"]

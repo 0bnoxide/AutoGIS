@@ -25,8 +25,8 @@ def test_build_config_explicit_fill_voids_value():
 
 
 def test_build_config_smooth_and_opt_ins():
-    config = build_config(smooth="gaussian", with_slope=True, with_contours=True)
-    assert config.smooth == "gaussian"
+    config = build_config(smooth="median", with_slope=True, with_contours=True)
+    assert config.smooth == "median"
     assert config.with_slope is True
     assert config.with_contours is True
 

@@ -72,7 +72,10 @@ def _barycentric(px: float, py: float, a: tuple, b: tuple, c: tuple):
     u = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom
     v = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom
     w = 1 - u - v
-    if u < 0 or v < 0 or w < 0:
+    # ponytail: a point exactly on a shared edge can round to a tiny negative
+    # barycentric coordinate in either adjacent face; a strict < 0 can drop it
+    # from both. Tolerate float noise, not real exteriority.
+    if u < -1e-9 or v < -1e-9 or w < -1e-9:
         return None
     return u, v, w
 
@@ -93,6 +96,8 @@ def _build_grid(surface: LandXMLSurface) -> tuple:
     hits, since a face is registered in every cell its bounding box spans,
     which always includes the cell of any point actually inside it.
     """
+    if not surface.points:
+        raise ValueError(f"LandXML surface {surface.name!r} has no points.")
     for face in surface.faces:
         missing = [pid for pid in face if pid not in surface.points]
         if missing:

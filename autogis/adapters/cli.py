@@ -2467,7 +2467,7 @@ def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
               type=int, metavar="[MAX_PIXELS]",
               help="Void-fill nodata pixels. Bare flag = 9px kernel.")
 @click.option("--smooth", is_flag=False, flag_value="median", default=None,
-              type=click.Choice(["median", "gaussian"]),
+              type=click.Choice(["median"]),
               help="Smooth the DEM. Bare flag = median.")
 @click.option("--with-slope", is_flag=True, default=False,
               help="Also derive a slope raster.")
@@ -2653,7 +2653,7 @@ def generate_subsurface_profile_cmd(db_path, out_path, boring_a, boring_b,
     except ValueError as exc:
         raise click.ClickException(str(exc))
     try:
-        render_profile(placements, Path(out_path), title=title)
+        render_profile(placements, Path(out_path), title=title, qa=qa)
     except ImportError as exc:
         raise click.ClickException(str(exc))
     click.echo(f"Wrote {out_path}: {len(placements)} boring(s) on the profile.")
