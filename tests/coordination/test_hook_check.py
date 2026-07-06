@@ -151,3 +151,153 @@ def test_absolute_edit_path_matches_relative_glob(tmp_path):
     abs_fp = str(tmp_path / "autogis" / "adapters" / "cli.py")
     out = hook_check.decide(_payload("Edit", {"file_path": abs_fp}), p)
     assert "additionalContext" in out["hookSpecificOutput"]
+
+
+# --- bug 1a: resolve branch from the write TARGET, not stale payload cwd ------
+
+def test_edit_worktree_file_resolves_target_not_cwd(tmp_path):
+    # Pinned-cwd subagent: cwd resolves to 'main', but the file being edited is
+    # in a worktree on a feature branch. Resolve from the target dir, not cwd.
+    target = tmp_path / "autogis" / "core"
+    target.mkdir(parents=True)
+    payload, p = _repo_payload(tmp_path, "Edit", str(target / "x.py"))
+    bf = lambda d: "feat/x" if "core" in d.replace("\\", "/") else "main"
+    out = hook_check.decide(payload, p, branch_func=bf)
+    assert out is None
+
+
+def test_edit_main_tree_denied_even_when_cwd_is_feature(tmp_path):
+    # Inverse: cwd looks like a feature branch, but the file targets the main
+    # tree on 'main'. Target drives resolution → still denied.
+    target = tmp_path / "autogis" / "core"
+    target.mkdir(parents=True)
+    payload, p = _repo_payload(tmp_path, "Edit", str(target / "x.py"))
+    bf = lambda d: "main" if "core" in d.replace("\\", "/") else "feat/x"
+    out = hook_check.decide(payload, p, branch_func=bf)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_bash_cd_worktree_commit_resolves_target(tmp_path):
+    # `cd <wt> && git commit` — resolve the branch from the cd target, not cwd
+    # (which is the stale main root for a pinned-cwd subagent).
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    p = tmp_path / "c.json"
+    cmd = "cd %s && git commit -m x" % wt.as_posix()
+    bf = lambda d: "feat/x" if d.replace("\\", "/").endswith("/wt") else "main"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}, cwd="/repo"),
+                            p, branch_func=bf)
+    assert out is None
+
+
+def test_bash_git_dashC_worktree_commit_resolves_target(tmp_path):
+    # `git -C <wt> commit` — the -C path is the target, not cwd.
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    p = tmp_path / "c.json"
+    cmd = "git -C %s commit -m x" % wt.as_posix()
+    bf = lambda d: "feat/x" if d.replace("\\", "/").endswith("/wt") else "main"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}, cwd="/repo"),
+                            p, branch_func=bf)
+    assert out is None
+
+
+def test_empty_target_resolution_falls_back_to_cwd(tmp_path):
+    # Detached HEAD at the target resolves to '' — fall back to cwd's branch so
+    # the read-only-main floor is preserved ('' != 'main' would slip the guard).
+    target = tmp_path / "autogis" / "core"
+    target.mkdir(parents=True)
+    payload, p = _repo_payload(tmp_path, "Edit", str(target / "x.py"))
+    bf = lambda d: "" if "core" in d.replace("\\", "/") else "main"
+    out = hook_check.decide(payload, p, branch_func=bf)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_git_cmd_dir_parses_paths():
+    f = hook_check._git_cmd_dir
+    assert f("git -C /wt commit -m x") == "/wt"
+    assert f("cd /wt && git commit") == "/wt"
+    assert f("git commit -m x") == ""
+    assert f("cd a && cd b && git commit") == "b"          # last cd wins
+    assert f("cd /foo && ls && git -C /bar commit") == "/bar"  # -C overrides cd
+    assert f("git -c user.name=x -C /wt commit") == "/wt"  # -C after arg-taking opt
+
+
+# --- soft contention warn (option C): warn, never deny -----------------------
+
+def _sharer_payload(tmp_path, monkeypatch, tool, ti, sid="me"):
+    # repo_root(cwd) must resolve to tmp_path so the sharer claim (value=tmp_path)
+    # matches: tmp_path is not a git repo, so repo_root falls back to cwd — but
+    # only if CLAUDE_PROJECT_DIR is unset (else it wins). Clear it.
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    coord = tmp_path / ".claude" / "coordination"
+    coord.mkdir(parents=True, exist_ok=True)
+    p = coord / "claims.json"
+    registry.claim(p, "other", "worktree", str(tmp_path))   # another session, this root
+    return _payload(tool, ti, sid=sid, cwd=str(tmp_path)), p
+
+
+def test_shared_tree_warns_on_edit_when_contended(tmp_path, monkeypatch):
+    target = tmp_path / "autogis" / "core"
+    target.mkdir(parents=True)
+    payload, p = _sharer_payload(
+        tmp_path, monkeypatch, "Edit", {"file_path": str(target / "x.py")})
+    out = hook_check.decide(payload, p, branch_func=lambda d: "feat/x",
+                            main_tree_func=lambda d: True)
+    assert "additionalContext" in out["hookSpecificOutput"]
+    assert "permissionDecision" not in out["hookSpecificOutput"]
+    assert "share this main working tree" in \
+        out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_shared_tree_warns_on_bash_commit_when_contended(tmp_path, monkeypatch):
+    payload, p = _sharer_payload(
+        tmp_path, monkeypatch, "Bash", {"command": "git commit -m x"})
+    out = hook_check.decide(payload, p, branch_func=lambda d: "feat/x",
+                            main_tree_func=lambda d: True)
+    assert "additionalContext" in out["hookSpecificOutput"]
+    assert "permissionDecision" not in out["hookSpecificOutput"]
+
+
+def test_no_sharers_no_warn_and_no_git_call(tmp_path, monkeypatch):
+    # No sharer → registry check empty → main_tree_func must NOT be consulted
+    # (proves registry-first ordering: zero git subprocess under no contention).
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    target = tmp_path / "autogis" / "core"
+    target.mkdir(parents=True)
+    payload, p = _repo_payload(tmp_path, "Edit", str(target / "x.py"))
+
+    def boom(d):
+        raise AssertionError("main_tree_func consulted with no sharers")
+
+    out = hook_check.decide(payload, p, branch_func=lambda d: "feat/x",
+                            main_tree_func=boom)
+    assert out is None
+
+
+def test_sharers_but_worktree_target_no_warn(tmp_path, monkeypatch):
+    # Sharer exists, but the write targets a linked worktree (not the main tree)
+    # → main_tree_func → False → no warn.
+    target = tmp_path / "autogis" / "core"
+    target.mkdir(parents=True)
+    payload, p = _sharer_payload(
+        tmp_path, monkeypatch, "Edit", {"file_path": str(target / "x.py")})
+    out = hook_check.decide(payload, p, branch_func=lambda d: "feat/x",
+                            main_tree_func=lambda d: False)
+    assert out is None
+
+
+# --- _in_main_tree: git prints absolute git-dir but relative common-dir from a
+#     subdir; both must resolve against the query dir before comparison. --------
+
+def test_in_main_tree_normalizes_relative_common_dir(tmp_path, monkeypatch):
+    d = str(tmp_path / "autogis")
+    monkeypatch.setattr(hook_check, "_rev_parse",
+                        lambda cwd, *a: str(tmp_path / ".git") + "\n../.git\n")
+    assert hook_check._in_main_tree(d) is True
+
+
+def test_in_main_tree_false_for_linked_worktree(monkeypatch):
+    monkeypatch.setattr(hook_check, "_rev_parse",
+                        lambda cwd, *a: "/repo/.git/worktrees/wt\n/repo/.git\n")
+    assert hook_check._in_main_tree("/repo/.claude/worktrees/wt") is False
