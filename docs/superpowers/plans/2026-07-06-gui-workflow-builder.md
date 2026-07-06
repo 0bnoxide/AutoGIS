@@ -598,18 +598,18 @@ git commit -m "feat(gui): run multi-step workflows with pause/resume/cancel"
 
 ---
 
-### Task 4: ADR-0062 + docs
+### Task 4: ADR-0063 + docs
 
 **Files:**
-- Create: `docs/adr/0062-gui-workflow-builder.md`
+- Create: `docs/adr/0063-gui-workflow-builder.md`
 - Modify: `docs/adr/README.md` (index row); spec status line
 - Modify: `app.py` module docstring (window is no longer only single-command)
 
-- [ ] **Step 1: Verify 0062 is free** — `ls docs/adr/ | grep 006` and
+- [ ] **Step 1: Verify 0063 is free** — `ls docs/adr/ | grep 006` and
   `gh pr list --state open` then check each open PR's files for a `docs/adr/`
   addition (the chapter's repeated-collision guard).
 
-- [ ] **Step 2: Write ADR-0062** covering: the in-session/grow-window/gate-2/
+- [ ] **Step 2: Write ADR-0063** covering: the in-session/grow-window/gate-2/
   headless scope decisions and their rationale; the drive-loop unification
   (single Run = 1-step workflow through the shared loop) and the
   `_join_worker`/`_finish_run` split; why row-marking needs `_run_is_workflow`;
@@ -619,7 +619,7 @@ git commit -m "feat(gui): run multi-step workflows with pause/resume/cancel"
 
 - [ ] **Step 3: Add the README index row** (append after the 0060 row):
 ```
-| [061](0062-gui-workflow-builder.md) | GUI workflow builder v1 -- assemble + run multi-step headless workflows over WorkflowRunner (in-session, gate-2 pause/halt/cancel) | Accepted | 2026-07-06 |
+| [061](0063-gui-workflow-builder.md) | GUI workflow builder v1 -- assemble + run multi-step headless workflows over WorkflowRunner (in-session, gate-2 pause/halt/cancel) | Accepted | 2026-07-06 |
 ```
 
 - [ ] **Step 4: Update the `app.py` module docstring** — the window now also
@@ -630,10 +630,10 @@ git commit -m "feat(gui): run multi-step workflows with pause/resume/cancel"
 - [ ] **Step 6: Full suite + commit**
 ```bash
 python -m pytest -q      # whole suite green
-git add docs/adr/0062-gui-workflow-builder.md docs/adr/README.md \
+git add docs/adr/0063-gui-workflow-builder.md docs/adr/README.md \
         docs/superpowers/specs/2026-07-06-gui-workflow-builder-design.md \
         autogis/adapters/gui/app.py
-git commit -m "docs(gui): ADR-0062 workflow builder + index"
+git commit -m "docs(gui): ADR-0063 workflow builder + index"
 ```
 
 ---
@@ -653,7 +653,7 @@ git commit -m "docs(gui): ADR-0062 workflow builder + index"
   ✓; gate 2 — HALT (Task 1 terminal msg), Cancel (Task 3), pause-on-warning
   (Task 2 checkbox → Task 3 PAUSED/Resume) ✓; add/remove/reorder (Task 2) ✓;
   shared result panes (Task 1 `_render_result`) ✓; headless-only (unchanged
-  filter) ✓; tests for every state (Task 3) ✓; ADR-0062 (Task 4) ✓.
+  filter) ✓; tests for every state (Task 3) ✓; ADR-0063 (Task 4) ✓.
 - **Placeholder scan:** none — the Task-1 `_set_authoring_enabled` stub is
   explicitly replaced in Task 2 Step 5, not left dangling.
 - **Type consistency:** `self._runner`, `_start_run(steps, name)`, `_advance`,

@@ -1,9 +1,9 @@
-"""PySide6 window for the unified GUI adapter (ADR-0057, ADR-0062).
+"""PySide6 window for the unified GUI adapter (ADR-0057, ADR-0063).
 
 Pick a headless command from ``introspect_cli()``, fill its form, and either
 run it (single **Run**) or add it to a multi-step **workflow** the
 ``WorkflowRunner`` drives end to end -- per-step QA, pause-on-warning, HALT,
-and Cancel (the workflow builder, ADR-0062). A single Run is just a 1-step
+and Cancel (the workflow builder, ADR-0063). A single Run is just a 1-step
 workflow through the same advance-until-terminal loop. Exercises the full
 toolkit-free chain (``introspect`` -> ``forms`` -> ``runner`` -> ``executor``)
 through a real Qt event loop. Headless (non-arcpy) commands only -- LOCAL
@@ -142,7 +142,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self._run_button)
         outer.addLayout(row)
 
-        # --- workflow builder (v1, ADR-0062) -----------------------------
+        # --- workflow builder (v1, ADR-0063) -----------------------------
         # The same command + form above configures each step; Add appends it
         # to an in-memory workflow the WorkflowRunner drives as one sequence.
         add_row = QHBoxLayout()

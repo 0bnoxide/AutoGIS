@@ -369,7 +369,7 @@ def test_qa_table_hidden_when_run_produces_no_qa_rows(qapp, monkeypatch):
 
 
 def test_single_run_finishes_and_clears_run_state(qapp, monkeypatch):
-    # The drive-loop refactor (ADR-0062): a single Run is a 1-step workflow
+    # The drive-loop refactor (ADR-0063): a single Run is a 1-step workflow
     # through the shared loop -- it must end with the runner cleared and the
     # shared job dir removed, and keep today's decision-label status.
     monkeypatch.setattr(
@@ -386,7 +386,7 @@ def test_single_run_finishes_and_clears_run_state(qapp, monkeypatch):
     assert win._job_root is None              # shared job dir cleaned up
 
 
-# --- workflow builder: authoring (Task 2, ADR-0062) --------------------------
+# --- workflow builder: authoring (Task 2, ADR-0063) --------------------------
 
 def test_add_step_appends_to_list(qapp):
     win = MainWindow()
@@ -455,7 +455,7 @@ def test_clear_empties_steps_and_disables_run_workflow(qapp):
     assert not win._run_wf_button.isEnabled()
 
 
-# --- workflow builder: running (Task 3, ADR-0062) ----------------------------
+# --- workflow builder: running (Task 3, ADR-0063) ----------------------------
 
 def _script_run_step(monkeypatch, results):
     """Make run_step return `results` in order across successive calls; the

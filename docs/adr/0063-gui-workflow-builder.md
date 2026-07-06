@@ -1,4 +1,4 @@
-# ADR-0062: GUI workflow builder (v1) — assemble and run multi-step headless workflows over WorkflowRunner
+# ADR-0063: GUI workflow builder (v1) — assemble and run multi-step headless workflows over WorkflowRunner
 
 **Status:** Accepted
 
@@ -101,10 +101,12 @@ job-dir cleanup); and the dispatcher overwriting a single Run's decision-label
 status with a workflow message. All were fixed in the plan and implemented
 correctly.
 
-Renumbered **0061 → 0062**: open PR #174 already claimed 0061
-(`0061-drone-geotech-graphics-tool-batch.md`) — the chapter's recurring
-ADR-numbering collision. Checked `docs/adr/` **and** every open PR's files
-before settling on 0062.
+Renumbered to **0063** through a *double* collision — the chapter's recurring
+ADR-numbering hazard, hit twice at once: open PR #174 already claimed 0061
+(`0061-drone-geotech-graphics-tool-batch.md`) and open PR #177 already claimed
+0062 (`0062-gui-local-tool-support.md`, the LOCAL-tool slice built concurrently
+by another session). Checked `docs/adr/` **and** every open PR's files, so
+0063 is the first genuinely free number.
 
 The independent Fable pre-merge pass then caught a real **MEDIUM** race:
 `_on_cancel` decided "no step in flight" from `runner.status`, which the
