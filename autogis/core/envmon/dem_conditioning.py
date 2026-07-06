@@ -91,9 +91,6 @@ def condition_dem(  # pragma: no cover
     import uuid
     from pathlib import Path as _P
 
-    import arcpy
-    from arcpy.sa import Con, FocalStatistics, Hillshade, IsNull, NbrCircle, Slope
-
     from ...runtime.sessions import arcpy_env as _arcpy
     from ..common.schema.drone import DroneProductRecord
     from .import_drone_products import write_product_registry
@@ -111,31 +108,32 @@ def condition_dem(  # pragma: no cover
 
     out = _P(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    dem = arcpy.Raster(dem_path)
+    dem = _ax.Raster(dem_path)
 
     if config.fill_voids:
-        fill_kernel = NbrCircle(config.fill_voids_max_pixels, "CELL")
-        dem = Con(IsNull(dem), FocalStatistics(dem, fill_kernel, "MEAN"), dem)
+        fill_kernel = _ax.sa.NbrCircle(config.fill_voids_max_pixels, "CELL")
+        dem = _ax.sa.Con(_ax.sa.IsNull(dem),
+                         _ax.sa.FocalStatistics(dem, fill_kernel, "MEAN"), dem)
     if config.smooth:
         stat = "MEDIAN" if config.smooth == "median" else "MEAN"
-        dem = FocalStatistics(dem, NbrCircle(3, "CELL"), stat)
+        dem = _ax.sa.FocalStatistics(dem, _ax.sa.NbrCircle(3, "CELL"), stat)
 
     conditioned_path = str(out / f"{flight_id}_conditioned_dem.tif")
     dem.save(conditioned_path)
     outputs = {"conditioned_dem": conditioned_path}
 
     hillshade_path = str(out / f"{flight_id}_hillshade.tif")
-    Hillshade(dem).save(hillshade_path)
+    _ax.sa.Hillshade(dem).save(hillshade_path)
     outputs["hillshade"] = hillshade_path
 
     if config.with_slope:
         slope_path = str(out / f"{flight_id}_slope.tif")
-        Slope(dem).save(slope_path)
+        _ax.sa.Slope(dem).save(slope_path)
         outputs["slope"] = slope_path
 
     if config.with_contours:
         contours_path = str(out / f"{flight_id}_contours.shp")
-        arcpy.sa.Contour(dem, contours_path, 1)
+        _ax.sa.Contour(dem, contours_path, 1)
         outputs["contours"] = contours_path
 
     records = [

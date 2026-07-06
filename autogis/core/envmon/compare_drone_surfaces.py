@@ -85,21 +85,23 @@ def compare_surfaces(  # pragma: no cover
     set (validated by the caller via :func:`validate_baseline_args`). Both
     product IDs are looked up in *gdb_path*'s ``DroneProductRegistry``.
     """
-    import arcpy
     import numpy as np
+
+    from ...runtime.sessions import arcpy_env as _arcpy
+    _ax = _arcpy()
 
     primary_path = _product_path(gdb_path, primary_product_id)
     if not primary_path:
         return summarize_diffs([], lod_threshold_ft)
-    primary = arcpy.Raster(primary_path)
-    primary_arr = arcpy.RasterToNumPyArray(primary, nodata_to_value=np.nan)
+    primary = _ax.Raster(primary_path)
+    primary_arr = _ax.RasterToNumPyArray(primary, nodata_to_value=np.nan)
 
     if baseline_product_id:
         baseline_path = _product_path(gdb_path, baseline_product_id)
         if not baseline_path:
             return summarize_diffs([], lod_threshold_ft)
-        baseline_arr = arcpy.RasterToNumPyArray(
-            arcpy.Raster(baseline_path), nodata_to_value=np.nan)
+        baseline_arr = _ax.RasterToNumPyArray(
+            _ax.Raster(baseline_path), nodata_to_value=np.nan)
         diffs_ft = [float(d) for d in (primary_arr - baseline_arr).flatten()
                    if not np.isnan(d)]
     else:
