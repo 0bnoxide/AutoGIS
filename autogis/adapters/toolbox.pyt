@@ -69,6 +69,8 @@ class Toolbox(object):
             FullPipeline,            # tool 7
             ValidateDatabase,        # tool 8
             ReconcileSampleLocations,
+            ConditionDEM,
+            CompareDroneSurfaces,
         ]
 
 
@@ -693,3 +695,94 @@ class ReconcileSampleLocations(object):
             f"{len(result.unmatched_workbook)} unmatched workbook ID(s), "
             f"{len(result.unmatched_wells)} unsampled well(s).")
         _msg(messages, qa)
+
+
+class ConditionDEM(object):
+    """DEMConditioningPipeline — void-fill/smooth a drone flight's DEM and
+    derive hillshade/slope/contours (arcpy)."""
+
+    def __init__(self):
+        self.label = "Condition Drone DEM"
+        self.description = ("Void-fill and smooth a drone flight's DEM, then "
+                            "derive hillshade/slope/contours. Registers each "
+                            "output as a DroneProductRegistry row.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("flight_id", "Drone flight ID", "GPString"),
+            _param("out_dir", "Output folder", "DEFolder"),
+            _param("fill_voids", "Fill voids", "GPBoolean",
+                   required=False, default=False),
+            _param("fill_voids_max_pixels", "Fill-voids max pixels", "GPLong",
+                   required=False, default=9),
+            _param("smooth", "Smooth method", "GPString", required=False,
+                   domain=("", "median", "gaussian")),
+            _param("with_slope", "Derive slope", "GPBoolean",
+                   required=False, default=False),
+            _param("with_contours", "Derive contours", "GPBoolean",
+                   required=False, default=False),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.core.envmon.dem_conditioning import (
+            build_config, condition_dem, validate_config)
+        p = {q.name: q for q in parameters}
+        config = build_config(
+            fill_voids=(int(p["fill_voids_max_pixels"].value or 9)
+                       if bool(p["fill_voids"].value) else None),
+            smooth=(p["smooth"].valueAsText or None) or None,
+            with_slope=bool(p["with_slope"].value),
+            with_contours=bool(p["with_contours"].value),
+        )
+        qa = QACollector()
+        validate_config(config, qa)
+        _msg(messages, qa)
+        if qa.has_blocking():
+            return
+        records = condition_dem(
+            p["gdb"].valueAsText, p["flight_id"].valueAsText,
+            p["out_dir"].valueAsText, config)
+        messages.addMessage(f"Wrote {len(records)} product(s).")
+
+
+class CompareDroneSurfaces(object):
+    """CompareDroneSurfaces — raster-diff a drone DEM against a prior flight
+    or a LandXML design surface (arcpy)."""
+
+    def __init__(self):
+        self.label = "Compare Drone Surfaces"
+        self.description = ("Diff a drone DEM against a second "
+                            "DroneProductRegistry DEM or a LandXML design "
+                            "surface, classified by a limit-of-detection "
+                            "threshold.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("primary_product_id", "Primary DEM product ID", "GPString"),
+            _param("baseline_product_id", "Baseline DEM product ID",
+                   "GPString", required=False),
+            _param("baseline_landxml", "Baseline LandXML surface", "DEFile",
+                   required=False),
+            _param("lod_threshold_ft", "LOD threshold (ft)", "GPDouble",
+                   required=False, default=0.2),
+        ]
+
+    def execute(self, parameters, messages):
+        from autogis.core.envmon.compare_drone_surfaces import (
+            compare_surfaces, validate_baseline_args)
+        p = {q.name: q for q in parameters}
+        baseline_product_id = p["baseline_product_id"].valueAsText or None
+        baseline_landxml = p["baseline_landxml"].valueAsText or None
+        validate_baseline_args(baseline_product_id, baseline_landxml)
+        summary = compare_surfaces(
+            p["gdb"].valueAsText, p["primary_product_id"].valueAsText,
+            baseline_product_id=baseline_product_id or "",
+            baseline_landxml_path=baseline_landxml or "",
+            lod_threshold_ft=float(p["lod_threshold_ft"].value or 0.2))
+        messages.addMessage(
+            f"{summary.change_count}/{summary.count} cell(s) changed "
+            f"(max {summary.max_diff_ft:.2f} ft, mean {summary.mean_diff_ft:.2f} ft).")

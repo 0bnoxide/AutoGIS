@@ -2456,6 +2456,65 @@ def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("condition-dem")
+@click.option("--gdb", "gdb_path", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required).")
+@click.option("--flight-id", required=True,
+              help="Drone flight ID; its DroneFlights.DEMPath is conditioned.")
+@click.option("--out-dir", required=True, type=click.Path(),
+              help="Directory for the conditioned DEM and derived rasters.")
+@click.option("--fill-voids", is_flag=False, flag_value=9, default=None,
+              type=int, metavar="[MAX_PIXELS]",
+              help="Void-fill nodata pixels. Bare flag = 9px kernel.")
+@click.option("--smooth", is_flag=False, flag_value="median", default=None,
+              type=click.Choice(["median", "gaussian"]),
+              help="Smooth the DEM. Bare flag = median.")
+@click.option("--with-slope", is_flag=True, default=False,
+              help="Also derive a slope raster.")
+@click.option("--with-contours", is_flag=True, default=False,
+              help="Also derive a contour feature class.")
+def condition_dem_cmd(gdb_path, flight_id, out_dir, fill_voids, smooth,
+                      with_slope, with_contours):
+    """DEMConditioningPipeline: void-fill/smooth a flight's DEM and derive
+    hillshade/slope/contours (ArcGIS Pro)."""
+    _guard("condition-dem")
+    from autogis.core.envmon import dem_conditioning  # noqa: F401  (arcpy path)
+    raise click.ClickException(
+        "condition-dem runs inside ArcGIS Pro only. Use the ConditionDEM "
+        "tool in the .pyt toolbox."
+    )
+
+
+@envmon.command("compare-drone-surfaces")
+@click.option("--gdb", "gdb_path", required=True, type=click.Path(),
+              help="File geodatabase path (ArcGIS Pro required).")
+@click.option("--primary-product-id", required=True,
+              help="DroneProductRegistry product ID of the DEM to evaluate.")
+@click.option("--baseline-product-id", default=None,
+              help="Baseline: another DroneProductRegistry product ID "
+                   "(prior-flight DEM, raw or conditioned).")
+@click.option("--baseline-landxml", default=None, type=click.Path(exists=True),
+              help="Baseline: a LandXML design-surface file.")
+@click.option("--lod-threshold-ft", type=float, default=0.2, show_default=True,
+              help="Elevation diff magnitude above which a cell counts as change.")
+def compare_drone_surfaces_cmd(gdb_path, primary_product_id,
+                               baseline_product_id, baseline_landxml,
+                               lod_threshold_ft):
+    """CompareDroneSurfaces: raster-diff a drone DEM against a prior flight
+    or a LandXML design surface (ArcGIS Pro)."""
+    from autogis.core.envmon.compare_drone_surfaces import validate_baseline_args
+    try:
+        validate_baseline_args(baseline_product_id, baseline_landxml)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    _guard("compare-drone-surfaces")
+    from autogis.core.envmon import compare_drone_surfaces  # noqa: F401  (arcpy path)
+    raise click.ClickException(
+        "compare-drone-surfaces runs inside ArcGIS Pro only. Use the "
+        "CompareDroneSurfaces tool in the .pyt toolbox."
+    )
+
+
 @envmon.command("validate-boring-logs")
 @click.argument("input_dir", metavar="INPUT_DIR",
                 type=click.Path(exists=True, file_okay=False))
@@ -2544,6 +2603,53 @@ def gen_boring_logs_cmd(db_path, out_dir, borings, report, fail_on):
     paths = write_outputs(docs, Path(out_dir))
     click.echo(f"Wrote {len(paths)} file(s) for {len(docs)} boring(s) "
                f"-> {out_dir}")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("generate-subsurface-profile")
+@click.argument("db_path", metavar="DB_PATH",
+                 type=click.Path(exists=True, dir_okay=False))
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output image path (.png/.svg).")
+@click.option("--boring-a", default=None, help="Profile start, by boring ID.")
+@click.option("--boring-b", default=None, help="Profile end, by boring ID.")
+@click.option("--start", nargs=2, type=float, default=None,
+              metavar="NORTHING EASTING", help="Profile start, by coordinate.")
+@click.option("--end", nargs=2, type=float, default=None,
+              metavar="NORTHING EASTING", help="Profile end, by coordinate.")
+@click.option("--projection-tolerance-ft", type=float, default=50.0,
+              show_default=True,
+              help="Max perpendicular offset for a boring to be included.")
+@click.option("--title", default="", help="Optional plot title.")
+@qa_report_options
+def generate_subsurface_profile_cmd(db_path, out_path, boring_a, boring_b,
+                                    start, end, projection_tolerance_ft,
+                                    title, report, fail_on):
+    """Generate a subsurface profile figure from the boring-log database
+    (headless).
+
+    The profile line is exactly two endpoints — either --boring-a/--boring-b
+    or --start/--end. Borings within --projection-tolerance-ft of the line
+    are projected onto it and rendered as lithology columns; borings beyond
+    tolerance are excluded with a QA warning naming them.
+
+    Rendering requires matplotlib: pip install "autogis[profile]".
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.subsurface_profile import build_profile, render_profile
+    qa = QACollector()
+    try:
+        placements = build_profile(
+            Path(db_path), boring_a=boring_a, boring_b=boring_b,
+            start=start or None, end=end or None,
+            tolerance_ft=projection_tolerance_ft, qa=qa)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    try:
+        render_profile(placements, Path(out_path), title=title)
+    except ImportError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"Wrote {out_path}: {len(placements)} boring(s) on the profile.")
     _render_qa(qa, report, fail_on)
 
 

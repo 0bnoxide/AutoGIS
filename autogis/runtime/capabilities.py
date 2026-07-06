@@ -64,6 +64,8 @@ TOOLS: dict[str, Runtime] = {
     "register-drone-flight": Runtime.LOCAL,    # tool 8.6 GDB write
     "validate-drone-products": Runtime.CLOUD,  # tool 8.8 headless validate
     "import-drone-products": Runtime.LOCAL,    # tool 8.8 GDB write
+    "condition-dem": Runtime.LOCAL,  # DEMConditioningPipeline raster ops — needs arcpy
+    "compare-drone-surfaces": Runtime.LOCAL,  # CompareDroneSurfaces raster diff — needs arcpy
     "survey-to-well-elevation": Runtime.LOCAL,  # tool 8.5 GDB write (--gdb path)
     "rtk-control-check": Runtime.CLOUD,  # RTK control-network check, headless
     "portfolio-metrics": Runtime.CLOUD,  # cross-site readiness rollup, headless
@@ -288,6 +290,13 @@ _REGISTRY_SEED = [
      "intake", "Create/validate the normalized boring-log SQLite database"),
     ("gen-boring-logs", "GenerateBoringLogPDFs", "8.0c", "CLOUD", "stable",
      "reporting", "Assemble boring-log Markdown docs, appendix, photo log and sample CSV"),
+    ("generate-subsurface-profile", "GenerateSubsurfaceProfileFromBorings", "",
+     "CLOUD", "stable", "cartography",
+     "Render a subsurface profile figure from borings projected onto a line"),
+    ("condition-dem", "DEMConditioningPipeline", "", "LOCAL", "stable",
+     "analysis", "Void-fill/smooth a drone DEM and derive hillshade/slope/contours"),
+    ("compare-drone-surfaces", "CompareDroneSurfaces", "", "LOCAL", "stable",
+     "analysis", "Raster-diff a drone DEM against a prior flight or LandXML design surface"),
     ("index-field-attachments", "SyncFieldAttachments", "6.5", "CLOUD", "stable",
      "agol", "Index a harvester manifest into the AttachmentIndex table"),
     ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "planned",
