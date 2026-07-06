@@ -686,3 +686,24 @@ def test_close_while_paused_cleans_up_job_dir(qapp, monkeypatch):
     assert win.close()                     # no worker in flight -> close allowed
     assert win._runner is None
     assert win._job_root is None           # job dir cleaned on close
+
+
+def test_editing_local_python_while_paused_keeps_run_gated(qapp, monkeypatch):
+    # Merge seam (ADR-0062 x ADR-0063): _sync_run_availability must treat a
+    # live runner (incl. PAUSED, where _worker is None) as "running" -- editing
+    # local_python mid-pause must NOT enable Run or wipe the pause prompt.
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv", pause=True)
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())   # PAUSED
+    assert "PAUSED" in win._status.text()
+    win._local_python_edit.setText("C:/x/python.exe")
+    win._on_local_python_changed()                        # edit while paused
+    assert not win._run_button.isEnabled()                # Run stays gated
+    assert "PAUSED" in win._status.text()                 # pause prompt intact
+    win._on_resume()                                       # finish cleanly
+    _pump_until(lambda: win._runner is None)

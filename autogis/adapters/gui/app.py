@@ -260,7 +260,14 @@ class MainWindow(QMainWindow):
         in flight. ``show_reason`` surfaces the block reason in the status
         label (on a command switch or a local_python edit) -- kept False after
         a just-finished run so its decision text stays visible."""
-        running = self._worker is not None and self._worker.isRunning()
+        # "running" must count a live runner, not just a live worker: a PAUSED
+        # workflow (introduced by ADR-0063) has _worker None while _runner is
+        # still active, and the local_python row stays editable during a run --
+        # so editing it while paused must NOT re-enable Run or wipe the pause
+        # prompt. _finish_run nulls _runner before its own sync call, so this
+        # stays correct at run end.
+        running = self._runner is not None or (
+            self._worker is not None and self._worker.isRunning())
         reason = self._run_blocked_reason()
         self._run_button.setEnabled(reason is None and not running)
         if show_reason and not running:
