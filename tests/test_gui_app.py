@@ -384,3 +384,72 @@ def test_single_run_finishes_and_clears_run_state(qapp, monkeypatch):
     assert "CONTINUE" in win._status.text()   # single-run keeps decision label
     assert win._runner is None                # run finished, state cleared
     assert win._job_root is None              # shared job dir cleaned up
+
+
+# --- workflow builder: authoring (Task 2, ADR-0061) --------------------------
+
+def test_add_step_appends_to_list(qapp):
+    win = MainWindow()
+    form = win._forms["envmon validate-rtk-survey"]
+    win._command_box.setCurrentText(form.label)
+    win._field_widgets["csv_path"].setText("rtk.csv")
+    win._on_add_step()
+    assert len(win._steps) == 1
+    assert win._step_list.count() == 1
+    assert "validate-rtk-survey" in win._step_list.item(0).text()
+    assert win._run_wf_button.isEnabled()     # a step exists -> runnable
+
+
+def test_add_step_invalid_form_shows_error_adds_nothing(qapp):
+    win = MainWindow()
+    form = next(f for f in win._forms.values()
+               if any(fld.required for fld in f.fields))
+    win._command_box.setCurrentText(form.label)   # required left blank
+    win._on_add_step()
+    assert "Fix before adding" in win._status.text()
+    assert win._steps == []
+    assert win._step_list.count() == 0
+
+
+def test_pause_on_warning_checkbox_sets_step_flag(qapp):
+    win = MainWindow()
+    form = win._forms["envmon validate-rtk-survey"]
+    win._command_box.setCurrentText(form.label)
+    win._field_widgets["csv_path"].setText("rtk.csv")
+    win._pause_on_warning.setChecked(True)
+    win._on_add_step()
+    assert win._steps[0].pause_on_warning is True
+    assert "[pause-on-warn]" in win._step_list.item(0).text()
+
+
+def _add_step(win, label, csv="x.csv", pause=False):
+    win._command_box.setCurrentText(label)
+    if "csv_path" in win._field_widgets:
+        win._field_widgets["csv_path"].setText(csv)
+    win._pause_on_warning.setChecked(pause)
+    win._on_add_step()
+
+
+def test_move_and_remove_reorder_steps_and_list_in_lockstep(qapp):
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    assert len(win._steps) == 2
+    top_before = win._steps[0]
+    win._step_list.setCurrentRow(0)
+    win._move_step(1)                       # swap rows 0 and 1
+    assert win._step_list.currentRow() == 1
+    assert win._steps[1] is top_before      # the step object moved down
+    win._step_list.setCurrentRow(0)
+    win._on_remove_step()
+    assert len(win._steps) == 1 and win._step_list.count() == 1
+    assert win._steps[0] is top_before      # the other one was removed
+
+
+def test_clear_empties_steps_and_disables_run_workflow(qapp):
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey")
+    assert win._run_wf_button.isEnabled()
+    win._on_clear_steps()
+    assert win._steps == [] and win._step_list.count() == 0
+    assert not win._run_wf_button.isEnabled()

@@ -20,14 +20,16 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog,
-    QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
+    QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from .executor import Decision, Step, StepResult, _SEV_ORDER, needs_arcpy_env
@@ -139,6 +141,40 @@ class MainWindow(QMainWindow):
         row.addWidget(self._run_button)
         outer.addLayout(row)
 
+        # --- workflow builder (v1, ADR-0061) -----------------------------
+        # The same command + form above configures each step; Add appends it
+        # to an in-memory workflow the WorkflowRunner drives as one sequence.
+        add_row = QHBoxLayout()
+        self._add_button = QPushButton("+ Add to workflow")
+        self._add_button.clicked.connect(self._on_add_step)
+        self._pause_on_warning = QCheckBox("pause on warning")
+        add_row.addWidget(self._add_button)
+        add_row.addWidget(self._pause_on_warning)
+        outer.addLayout(add_row)
+
+        outer.addWidget(QLabel("Steps:"))
+        self._step_list = QListWidget()
+        outer.addWidget(self._step_list)
+
+        wf_row = QHBoxLayout()
+        self._remove_button = QPushButton("Remove")
+        self._remove_button.clicked.connect(self._on_remove_step)
+        self._up_button = QPushButton("↑")
+        self._up_button.clicked.connect(lambda: self._move_step(-1))
+        self._down_button = QPushButton("↓")
+        self._down_button.clicked.connect(lambda: self._move_step(1))
+        self._run_wf_button = QPushButton("Run workflow")   # wired in Task 3
+        self._clear_button = QPushButton("Clear")
+        self._clear_button.clicked.connect(self._on_clear_steps)
+        self._cancel_button = QPushButton("Cancel")         # wired in Task 3
+        self._resume_button = QPushButton("Resume")         # wired in Task 3
+        for _b in (self._remove_button, self._up_button, self._down_button,
+                   self._run_wf_button, self._clear_button,
+                   self._cancel_button, self._resume_button):
+            wf_row.addWidget(_b)
+        outer.addLayout(wf_row)
+        # -----------------------------------------------------------------
+
         self._status = QLabel("")
         outer.addWidget(self._status)
 
@@ -158,6 +194,7 @@ class MainWindow(QMainWindow):
 
         if self._command_box.count():
             self._rebuild_form(self._command_box.currentText())
+        self._refresh_step_controls()   # no steps yet -> step buttons disabled
 
     def _current_form(self) -> CommandForm | None:
         return self._forms.get(self._command_box.currentText())
@@ -264,9 +301,77 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
     def _set_authoring_enabled(self, enabled: bool) -> None:
-        # Task 1 stub -- Task 2 fleshes this out once the authoring widgets
-        # (Add / Run workflow / Clear / Remove / up / down) exist.
+        """Toggle every control that authors or starts a run. Disabled for the
+        duration of a run (including while PAUSED); re-enabled by _finish_run.
+        Step-list buttons defer to _refresh_step_controls so they only light up
+        when there are actually steps to act on."""
         self._run_button.setEnabled(enabled)
+        self._add_button.setEnabled(enabled)
+        self._command_box.setEnabled(enabled)
+        if enabled:
+            self._refresh_step_controls()
+        else:
+            for b in (self._run_wf_button, self._clear_button,
+                      self._remove_button, self._up_button, self._down_button):
+                b.setEnabled(False)
+
+    def _refresh_step_controls(self) -> None:
+        """Enable the step-list buttons only when idle and steps exist."""
+        active = bool(self._steps) and self._runner is None
+        self._run_wf_button.setEnabled(active)
+        self._clear_button.setEnabled(active)
+        for b in (self._remove_button, self._up_button, self._down_button):
+            b.setEnabled(active)
+
+    def _step_summary(self, form_label: str, values: dict, pause: bool) -> str:
+        """One-line row label: command + first non-empty text arg + pause tag."""
+        hint = next((str(v) for v in values.values()
+                     if isinstance(v, str) and v.strip()), "")
+        hint = f" ({hint})" if hint else ""
+        return f"{form_label}{hint}{'  [pause-on-warn]' if pause else ''}"
+
+    def _on_add_step(self) -> None:
+        if self._runner is not None:
+            return
+        form = self._current_form()
+        if form is None:
+            return
+        values = self._raw_values()
+        try:
+            step = build_step(form, values)
+        except FormValidationError as exc:
+            self._status.setText(f"Fix before adding: {exc}")
+            return
+        step = replace(step,
+                       pause_on_warning=self._pause_on_warning.isChecked())
+        self._steps.append(step)
+        self._step_list.addItem(
+            self._step_summary(form.label, values, step.pause_on_warning))
+        self._refresh_step_controls()
+
+    def _on_remove_step(self) -> None:
+        i = self._step_list.currentRow()
+        if self._runner is not None or i < 0:
+            return
+        del self._steps[i]
+        self._step_list.takeItem(i)
+        self._refresh_step_controls()
+
+    def _move_step(self, delta: int) -> None:
+        i = self._step_list.currentRow()
+        j = i + delta
+        if self._runner is not None or i < 0 or not (0 <= j < len(self._steps)):
+            return
+        self._steps[i], self._steps[j] = self._steps[j], self._steps[i]
+        self._step_list.insertItem(j, self._step_list.takeItem(i))
+        self._step_list.setCurrentRow(j)
+
+    def _on_clear_steps(self) -> None:
+        if self._runner is not None:
+            return
+        self._steps.clear()
+        self._step_list.clear()
+        self._refresh_step_controls()
 
     def _join_worker(self) -> None:
         # Thread-join ONLY (job-dir cleanup moved to _finish_run). A
