@@ -1,13 +1,17 @@
-"""PySide6 walking skeleton for the unified GUI adapter (ADR-0057, ADR-0062).
+"""PySide6 window for the unified GUI adapter (ADR-0057, ADR-0062, ADR-0063).
 
-One window: pick a command from ``introspect_cli()``, fill its form, run it,
-see the result. Exercises the full toolkit-free chain (``introspect`` ->
+Pick a command from ``introspect_cli()``, fill its form, and either run it
+(single **Run**) or add it to a multi-step **workflow** the ``WorkflowRunner``
+drives end to end -- per-step QA, pause-on-warning, HALT, and Cancel (the
+workflow builder, ADR-0063). A single Run is just a 1-step workflow through
+the same advance-until-terminal loop. Headless commands run under
+``sys.executable``; LOCAL (arcpy) tools run under a user-set ``local_python``
+(a cloned arcgispro-py3 ``python.exe``, persisted via ``settings.py`` --
+ADR-0062), with the single-Run button gated until one is set, and class-1
+redirect-only LOCAL tools (``reachability.UNREACHABLE``) shown greyed. A
+workflow may include LOCAL steps too; the runner is handed the same
+``local_python``. Exercises the full toolkit-free chain (``introspect`` ->
 ``forms`` -> ``runner`` -> ``executor``) through a real Qt event loop.
-Headless commands run under ``sys.executable``; LOCAL (arcpy) tools run under
-a user-set ``local_python`` (a cloned arcgispro-py3 ``python.exe``, persisted
-via ``settings.py`` -- ADR-0062), with the Run button gated until one is set.
-Class-1 redirect-only LOCAL tools (``reachability.UNREACHABLE``) are shown
-greyed with the reason, since they never execute via the CLI anyway.
 
 Threading: ``WorkflowRunner.advance()`` blocks for the length of one child
 process. ``_StepWorker`` (a ``QThread``) runs it off the UI thread and
@@ -28,16 +32,17 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog,
-    QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
+    QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from . import settings
-from .executor import Decision, StepResult, _SEV_ORDER, needs_arcpy_env
+from .executor import Decision, Step, StepResult, _SEV_ORDER, needs_arcpy_env
 from .forms import FormValidationError, build_step
 from .introspect import CommandForm, FormField, introspect_cli
 from .reachability import UNREACHABLE
-from .runner import Workflow, WorkflowRunner
+from .runner import RunState, Workflow, WorkflowRunner
 
 __all__ = ["MainWindow", "main"]
 
@@ -116,6 +121,9 @@ class MainWindow(QMainWindow):
         self._field_widgets: dict[str, QWidget] = {}
         self._worker: _StepWorker | None = None
         self._job_root: Path | None = None
+        self._runner: WorkflowRunner | None = None
+        self._steps: list[Step] = []
+        self._run_is_workflow = False  # True during Run workflow; marks list rows
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -158,6 +166,43 @@ class MainWindow(QMainWindow):
         row.addWidget(self._run_button)
         outer.addLayout(row)
 
+        # --- workflow builder (v1, ADR-0063) -----------------------------
+        # The same command + form above configures each step; Add appends it
+        # to an in-memory workflow the WorkflowRunner drives as one sequence.
+        add_row = QHBoxLayout()
+        self._add_button = QPushButton("+ Add to workflow")
+        self._add_button.clicked.connect(self._on_add_step)
+        self._pause_on_warning = QCheckBox("pause on warning")
+        add_row.addWidget(self._add_button)
+        add_row.addWidget(self._pause_on_warning)
+        outer.addLayout(add_row)
+
+        outer.addWidget(QLabel("Steps:"))
+        self._step_list = QListWidget()
+        outer.addWidget(self._step_list)
+
+        wf_row = QHBoxLayout()
+        self._remove_button = QPushButton("Remove")
+        self._remove_button.clicked.connect(self._on_remove_step)
+        self._up_button = QPushButton("↑")
+        self._up_button.clicked.connect(lambda: self._move_step(-1))
+        self._down_button = QPushButton("↓")
+        self._down_button.clicked.connect(lambda: self._move_step(1))
+        self._run_wf_button = QPushButton("Run workflow")
+        self._run_wf_button.clicked.connect(self._on_run_workflow)
+        self._clear_button = QPushButton("Clear")
+        self._clear_button.clicked.connect(self._on_clear_steps)
+        self._cancel_button = QPushButton("Cancel")
+        self._cancel_button.clicked.connect(self._on_cancel)
+        self._resume_button = QPushButton("Resume")
+        self._resume_button.clicked.connect(self._on_resume)
+        for _b in (self._remove_button, self._up_button, self._down_button,
+                   self._run_wf_button, self._clear_button,
+                   self._cancel_button, self._resume_button):
+            wf_row.addWidget(_b)
+        outer.addLayout(wf_row)
+        # -----------------------------------------------------------------
+
         self._status = QLabel("")
         outer.addWidget(self._status)
 
@@ -177,6 +222,7 @@ class MainWindow(QMainWindow):
 
         if self._command_box.count():
             self._rebuild_form(self._command_box.currentText())
+        self._refresh_step_controls()   # no steps yet -> step buttons disabled
 
     def _current_form(self) -> CommandForm | None:
         return self._forms.get(self._command_box.currentText())
@@ -214,7 +260,14 @@ class MainWindow(QMainWindow):
         in flight. ``show_reason`` surfaces the block reason in the status
         label (on a command switch or a local_python edit) -- kept False after
         a just-finished run so its decision text stays visible."""
-        running = self._worker is not None and self._worker.isRunning()
+        # "running" must count a live runner, not just a live worker: a PAUSED
+        # workflow (introduced by ADR-0063) has _worker None while _runner is
+        # still active, and the local_python row stays editable during a run --
+        # so editing it while paused must NOT re-enable Run or wipe the pause
+        # prompt. _finish_run nulls _runner before its own sync call, so this
+        # stays correct at run end.
+        running = self._runner is not None or (
+            self._worker is not None and self._worker.isRunning())
         reason = self._run_blocked_reason()
         self._run_button.setEnabled(reason is None and not running)
         if show_reason and not running:
@@ -292,8 +345,8 @@ class MainWindow(QMainWindow):
         return values
 
     def _on_run(self) -> None:
-        if self._worker is not None and self._worker.isRunning():
-            return  # defense in depth: the Run button is already disabled
+        if self._runner is not None:
+            return  # a run is already active
         form = self._current_form()
         if form is None:
             return
@@ -306,37 +359,174 @@ class MainWindow(QMainWindow):
         except FormValidationError as exc:
             self._status.setText(f"Fix before running: {exc}")
             return
+        self._run_is_workflow = False
+        self._start_run((step,), form.label)
 
+    def _start_run(self, steps: "tuple[Step, ...]", name: str) -> None:
+        """Shared entry for single Run and Run workflow: kick off a
+        WorkflowRunner over ``steps`` and advance the first step. The drive
+        loop (``_on_result``) carries it to a terminal/paused stop."""
         self._status.setText("Running...")
         self._output.clear()
         self._qa_table.setVisible(False)
-        self._run_button.setEnabled(False)
-
+        self._set_authoring_enabled(False)
         self._job_root = Path(tempfile.mkdtemp(prefix="autogis-gui-"))
-        workflow = Workflow(form.label, (step,))
-        runner = WorkflowRunner(workflow, self._job_root,
-                               local_python=self._local_python)
-        self._worker = _StepWorker(runner)
+        self._runner = WorkflowRunner(Workflow(name, steps), self._job_root,
+                                      local_python=self._local_python)
+        self._advance()
+
+    def _advance(self) -> None:
+        """Run the runner's next step off the UI thread on a fresh worker."""
+        self._worker = _StepWorker(self._runner)
         self._worker.finished_result.connect(self._on_result)
         self._worker.failed.connect(self._on_failure)
         self._worker.start()
 
+    def _set_authoring_enabled(self, enabled: bool) -> None:
+        """Toggle every control that authors or starts a run. Disabled for the
+        duration of a run (including while PAUSED); re-enabled by _finish_run.
+        Step-list buttons defer to _refresh_step_controls so they only light up
+        when there are actually steps to act on."""
+        self._run_button.setEnabled(enabled)
+        self._add_button.setEnabled(enabled)
+        self._command_box.setEnabled(enabled)
+        if enabled:
+            self._refresh_step_controls()
+        else:
+            for b in (self._run_wf_button, self._clear_button,
+                      self._remove_button, self._up_button, self._down_button):
+                b.setEnabled(False)
+
+    def _refresh_step_controls(self) -> None:
+        """Enable the step-list buttons only when idle and steps exist."""
+        active = bool(self._steps) and self._runner is None
+        self._run_wf_button.setEnabled(active)
+        self._clear_button.setEnabled(active)
+        for b in (self._remove_button, self._up_button, self._down_button):
+            b.setEnabled(active)
+
+    def _step_summary(self, form_label: str, values: dict, pause: bool) -> str:
+        """One-line row label: command + first non-empty text arg + pause tag."""
+        hint = next((str(v) for v in values.values()
+                     if isinstance(v, str) and v.strip()), "")
+        hint = f" ({hint})" if hint else ""
+        return f"{form_label}{hint}{'  [pause-on-warn]' if pause else ''}"
+
+    def _on_add_step(self) -> None:
+        if self._runner is not None:
+            return
+        form = self._current_form()
+        if form is None:
+            return
+        values = self._raw_values()
+        try:
+            step = build_step(
+                form, values,
+                pause_on_warning=self._pause_on_warning.isChecked())
+        except FormValidationError as exc:
+            self._status.setText(f"Fix before adding: {exc}")
+            return
+        self._steps.append(step)
+        self._step_list.addItem(
+            self._step_summary(form.label, values, step.pause_on_warning))
+        self._refresh_step_controls()
+
+    def _on_remove_step(self) -> None:
+        i = self._step_list.currentRow()
+        if self._runner is not None or i < 0:
+            return
+        del self._steps[i]
+        self._step_list.takeItem(i)
+        self._refresh_step_controls()
+
+    def _move_step(self, delta: int) -> None:
+        i = self._step_list.currentRow()
+        j = i + delta
+        if self._runner is not None or i < 0 or not (0 <= j < len(self._steps)):
+            return
+        self._steps[i], self._steps[j] = self._steps[j], self._steps[i]
+        self._step_list.insertItem(j, self._step_list.takeItem(i))
+        self._step_list.setCurrentRow(j)
+
+    def _on_clear_steps(self) -> None:
+        if self._runner is not None:
+            return
+        self._steps.clear()
+        self._step_list.clear()
+        self._refresh_step_controls()
+
+    def _on_run_workflow(self) -> None:
+        if self._runner is not None or not self._steps:
+            return
+        self._run_is_workflow = True
+        for i in range(self._step_list.count()):   # clear any prior-run glyphs
+            item = self._step_list.item(i)
+            item.setText(item.text().lstrip("✓⏸✗ "))
+        self._cancel_button.setEnabled(True)
+        self._resume_button.setEnabled(False)
+        self._start_run(tuple(self._steps), "gui-workflow")
+
+    def _on_cancel(self) -> None:
+        if self._runner is None:
+            return
+        self._runner.cancel()
+        self._cancel_button.setEnabled(False)
+        self._resume_button.setEnabled(False)
+        if self._worker is None:
+            # No worker in flight (idle/paused) -> no _on_result/_on_failure is
+            # coming to finish the run, so finish it here. Deciding from
+            # self._worker (a UI-thread-owned field), NOT runner.status: the
+            # worker thread mutates the runner state, so a step that just
+            # emitted its result is already non-RUNNING while its _on_result is
+            # still queued -- reading status here would finish the run and null
+            # self._runner out from under that pending _on_result.
+            self._status.setText("Cancelled")
+            self._finish_run()
+
+    def _on_resume(self) -> None:
+        if self._runner is None or self._runner.status is not RunState.PAUSED:
+            return
+        self._runner.resume()
+        self._resume_button.setEnabled(False)
+        if self._runner.status is RunState.DONE:
+            # Pause was on the LAST step -> resume() goes straight to DONE
+            # (runner.resume docstring); nothing left to advance to.
+            self._status.setText("Workflow complete")
+            self._finish_run()
+        else:
+            self._advance()
+
     def _join_worker(self) -> None:
+        # Thread-join ONLY (job-dir cleanup moved to _finish_run). A
+        # multi-step workflow shares one job dir across its steps, so cleanup
+        # must wait until the whole run ends, not fire after each step.
+        #
         # finished_result/failed are emitted from inside run(), an instant
         # before the underlying OS thread actually terminates -- so by the
         # time this queued-connection handler runs on the main thread, the
         # thread is *usually* done but not provably so yet. wait() blocks
         # until it truly is (near-instant in practice). Skipping this is
-        # undefined behavior: a QThread destroyed (e.g. via Python GC
-        # dropping the last reference, as happens when a MainWindow is
-        # replaced) while its underlying OS thread hasn't fully settled can
-        # crash the process (reproduced: back-to-back MainWindow()+run
-        # cycles segfaulted 0xC0000005 intermittently without this --
-        # connecting Qt's own `finished` signal to .wait() instead of
-        # calling it here was NOT enough, since that queued delivery isn't
-        # guaranteed to land before a test/caller moves on and drops the
-        # last reference).
-        self._worker.wait()
+        # undefined behavior: a QThread destroyed while its OS thread hasn't
+        # fully settled can crash the process (0xC0000005; connecting Qt's own
+        # `finished` signal to .wait() instead was NOT enough -- that queued
+        # delivery isn't guaranteed to land before a caller drops the ref).
+        if self._worker is not None:
+            self._worker.wait()
+            self._worker = None
+
+    def _finish_run(self) -> None:
+        """End the current run: clear the runner, re-enable authoring, and
+        remove the shared job dir. Safe to call when already idle (guards on
+        None) -- used by the terminal branches and by ``closeEvent``."""
+        self._runner = None
+        self._set_authoring_enabled(True)
+        # _set_authoring_enabled re-enables Run unconditionally; re-gate it for
+        # the current command (a LOCAL tool with no local_python, or an
+        # unreachable one, must stay blocked). show_reason=False so it doesn't
+        # clobber the terminal status just set by the caller.
+        self._sync_run_availability(show_reason=False)
+        self._cancel_button.setEnabled(False)
+        self._resume_button.setEnabled(False)
         if self._job_root is not None:
             shutil.rmtree(self._job_root, ignore_errors=True)
             self._job_root = None
@@ -355,15 +545,12 @@ class MainWindow(QMainWindow):
                 "before closing.")
             event.ignore()
             return
-        if self._worker is not None:
-            # isRunning() can flip False a moment before the OS thread has
-            # truly settled (Qt marks it not-running slightly ahead of the
-            # tail end of thread teardown). Harmless on its own, but if
-            # _join_worker's queued handler never got to run first (e.g. the
-            # window is closing right in that gap), its job-dir cleanup
-            # wouldn't either -- wait() here is an instant no-op if already
-            # joined, so this just guarantees the cleanup always happens.
-            self._join_worker()
+        # Idle or PAUSED (no thread in flight): join (a no-op when _worker is
+        # None) then finish, so the shared job dir is cleaned up even for a
+        # PAUSED workflow -- whose _worker is already None but whose
+        # _runner/_job_root are still live and would otherwise leak on close.
+        self._join_worker()
+        self._finish_run()
         event.accept()
 
     def _show_qa(self, rows: "tuple[dict, ...]") -> None:
@@ -404,11 +591,9 @@ class MainWindow(QMainWindow):
         tbl.resizeColumnsToContents()
         tbl.setVisible(True)
 
-    def _on_result(self, result: StepResult) -> None:
-        self._join_worker()
-        # re-gate on the current command (still runnable? still needs local_python?)
-        # without clobbering the decision text set just below.
-        self._sync_run_availability(show_reason=False)
+    def _render_result(self, result: StepResult, index: int) -> None:
+        """Show one step's result in the shared status/output/QA widgets.
+        ``index`` is the 0-based position of the step that just ran."""
         self._status.setText(_DECISION_LABEL[result.decision])
         text = [f"Decision: {_DECISION_LABEL[result.decision]}",
                f"Reason: {result.reason}"]
@@ -418,13 +603,62 @@ class MainWindow(QMainWindow):
             text += ["", "-- stderr --", result.stderr]
         self._output.setPlainText("\n".join(text))
         self._show_qa(result.qa_rows)
+        if self._run_is_workflow and index < self._step_list.count():
+            glyph = {Decision.CONTINUE: "✓", Decision.HALT: "✗",
+                     Decision.PAUSE_FOR_REVIEW: "⏸"}[result.decision]
+            item = self._step_list.item(index)
+            item.setText(f"{glyph} {item.text().lstrip('✓⏸✗ ')}")
+
+    def _terminal_message(self, state: RunState, index: int,
+                          result: StepResult) -> str:
+        if state is RunState.HALTED:
+            return f"HALTED at step {index + 1}: {result.reason}"
+        if state is RunState.CANCELLED:
+            return "Cancelled"
+        return "Workflow complete"  # DONE
+
+    def _on_result(self, result: StepResult) -> None:
+        self._join_worker()
+        if self._runner is None:
+            return  # a cancel/close finished the run while this delivery queued
+        index = len(self._runner.results) - 1  # the step that just ran
+        self._render_result(result, index)     # sets status to the decision label
+        state = self._runner.status
+        if state is RunState.PENDING:
+            self._advance()                     # loop to the next step
+        elif state is RunState.PAUSED:
+            if self._run_is_workflow:
+                self._status.setText(
+                    f"PAUSED after step {index + 1} -- Resume or Cancel")
+                self._resume_button.setEnabled(True)
+            else:
+                # Unreachable today (a single Run's step never pauses:
+                # pause_on_warning defaults False, no checkpoint steps). If a
+                # future slice makes it reachable, finish rather than leave the
+                # window bricked -- a single Run has no Resume affordance.
+                self._finish_run()
+        else:                                   # DONE / HALTED / CANCELLED
+            if self._run_is_workflow:
+                self._status.setText(
+                    self._terminal_message(state, index, result))
+            # A single Run keeps the decision label _render_result set
+            # (today's UX: "CONTINUE"/"HALT"); only a workflow shows a
+            # run-level message.
+            self._finish_run()
 
     def _on_failure(self, message: str) -> None:
         self._join_worker()
-        self._sync_run_availability(show_reason=False)
-        self._status.setText("Failed to run")
-        self._output.setPlainText(message)
-        self._show_qa(())
+        if self._runner is None:
+            return  # a cancel/close finished the run while this delivery queued
+        if self._runner.status is RunState.CANCELLED:
+            # advance() raised only because a cancel landed in the worker's
+            # startup gap -- report the cancel it was, not a failure.
+            self._status.setText("Cancelled")
+        else:
+            self._output.setPlainText(message)
+            self._show_qa(())
+            self._status.setText("Failed to run")
+        self._finish_run()
 
 
 def main() -> None:

@@ -467,3 +467,243 @@ def test_qa_table_hidden_when_run_produces_no_qa_rows(qapp, monkeypatch):
     win = _run_with_qa_rows(qapp, monkeypatch, ())  # no --report -> no rows
     assert win._qa_table.isHidden()
     assert win._qa_table.rowCount() == 0
+
+
+def test_single_run_finishes_and_clears_run_state(qapp, monkeypatch):
+    # The drive-loop refactor (ADR-0063): a single Run is a 1-step workflow
+    # through the shared loop -- it must end with the runner cleared and the
+    # shared job dir removed, and keep today's decision-label status.
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: StepResult(
+            Decision.CONTINUE, "ok", exit_code=0, stdout="hi"))
+    win = MainWindow()
+    form = next(iter(win._forms.values()))
+    _fill_required_fields(win, form)
+    win._on_run()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert "CONTINUE" in win._status.text()   # single-run keeps decision label
+    assert win._runner is None                # run finished, state cleared
+    assert win._job_root is None              # shared job dir cleaned up
+
+
+# --- workflow builder: authoring (Task 2, ADR-0063) --------------------------
+
+def test_add_step_appends_to_list(qapp):
+    win = MainWindow()
+    form = win._forms["envmon validate-rtk-survey"]
+    win._command_box.setCurrentText(form.label)
+    win._field_widgets["csv_path"].setText("rtk.csv")
+    win._on_add_step()
+    assert len(win._steps) == 1
+    assert win._step_list.count() == 1
+    assert "validate-rtk-survey" in win._step_list.item(0).text()
+    assert win._run_wf_button.isEnabled()     # a step exists -> runnable
+
+
+def test_add_step_invalid_form_shows_error_adds_nothing(qapp):
+    win = MainWindow()
+    form = next(f for f in win._forms.values()
+               if any(fld.required for fld in f.fields))
+    win._command_box.setCurrentText(form.label)   # required left blank
+    win._on_add_step()
+    assert "Fix before adding" in win._status.text()
+    assert win._steps == []
+    assert win._step_list.count() == 0
+
+
+def test_pause_on_warning_checkbox_sets_step_flag(qapp):
+    win = MainWindow()
+    form = win._forms["envmon validate-rtk-survey"]
+    win._command_box.setCurrentText(form.label)
+    win._field_widgets["csv_path"].setText("rtk.csv")
+    win._pause_on_warning.setChecked(True)
+    win._on_add_step()
+    assert win._steps[0].pause_on_warning is True
+    assert "[pause-on-warn]" in win._step_list.item(0).text()
+
+
+def _add_step(win, label, csv="x.csv", pause=False):
+    win._command_box.setCurrentText(label)
+    if "csv_path" in win._field_widgets:
+        win._field_widgets["csv_path"].setText(csv)
+    win._pause_on_warning.setChecked(pause)
+    win._on_add_step()
+
+
+def test_move_and_remove_reorder_steps_and_list_in_lockstep(qapp):
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    assert len(win._steps) == 2
+    top_before = win._steps[0]
+    win._step_list.setCurrentRow(0)
+    win._move_step(1)                       # swap rows 0 and 1
+    assert win._step_list.currentRow() == 1
+    assert win._steps[1] is top_before      # the step object moved down
+    win._step_list.setCurrentRow(0)
+    win._on_remove_step()
+    assert len(win._steps) == 1 and win._step_list.count() == 1
+    assert win._steps[0] is top_before      # the other one was removed
+
+
+def test_clear_empties_steps_and_disables_run_workflow(qapp):
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey")
+    assert win._run_wf_button.isEnabled()
+    win._on_clear_steps()
+    assert win._steps == [] and win._step_list.count() == 0
+    assert not win._run_wf_button.isEnabled()
+
+
+# --- workflow builder: running (Task 3, ADR-0063) ----------------------------
+
+def _script_run_step(monkeypatch, results):
+    """Make run_step return `results` in order across successive calls; the
+    returned dict's ["n"] counts how many steps actually ran."""
+    it = iter(results)
+    calls = {"n": 0}
+
+    def fake(step, job_dir, **kw):
+        calls["n"] += 1
+        return next(it)
+
+    monkeypatch.setattr(runner_mod, "run_step", fake)
+    return calls
+
+
+def test_two_step_workflow_runs_both_to_done(qapp, monkeypatch):
+    calls = _script_run_step(monkeypatch, [
+        StepResult(Decision.CONTINUE, "ok", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._runner is None)
+    assert calls["n"] == 2
+    assert "complete" in win._status.text().lower()
+    assert win._step_list.item(0).text().startswith("✓")
+    assert win._step_list.item(1).text().startswith("✓")
+    assert win._add_button.isEnabled()          # authoring re-enabled
+
+
+def test_halt_stops_before_later_steps(qapp, monkeypatch):
+    calls = _script_run_step(monkeypatch, [
+        StepResult(Decision.HALT, "QA FAIL", exit_code=1),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])  # must never run
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._runner is None)
+    assert calls["n"] == 1                       # second step never ran
+    assert "HALTED at step 1" in win._status.text()
+    assert win._step_list.item(0).text().startswith("✗")
+
+
+def test_pause_on_warning_then_resume_runs_next(qapp, monkeypatch):
+    calls = _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv", pause=True)
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    assert "PAUSED" in win._status.text()
+    assert calls["n"] == 1                       # paused before step 2
+    assert not win._add_button.isEnabled()       # authoring stays locked
+    win._on_resume()
+    _pump_until(lambda: win._runner is None)
+    assert calls["n"] == 2
+    assert "complete" in win._status.text().lower()
+
+
+def test_pause_on_last_step_resume_completes(qapp, monkeypatch):
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", pause=True)   # single, pauses
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    win._on_resume()                              # nothing left -> straight to DONE
+    _pump_until(lambda: win._runner is None)
+    assert "complete" in win._status.text().lower()
+
+
+def test_cancel_when_paused_ends_run(qapp, monkeypatch):
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv", pause=True)
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    win._on_cancel()
+    _pump_until(lambda: win._runner is None)
+    assert "Cancelled" in win._status.text()
+    assert win._add_button.isEnabled()           # authoring re-enabled after cancel
+
+
+def test_cancel_during_running_step_ends_after_it_completes(qapp, monkeypatch):
+    # Deferred cancel: a step is in flight, so _on_cancel must NOT finish the
+    # run (a worker exists -> its _on_result will); the run ends CANCELLED once
+    # that step completes, and later steps never run.
+    release = threading.Event()
+    calls = {"n": 0}
+
+    def fake(step, job_dir, **kw):
+        calls["n"] += 1
+        release.wait(timeout=5)
+        return StepResult(Decision.CONTINUE, "ok", exit_code=0)
+
+    monkeypatch.setattr(runner_mod, "run_step", fake)
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    QTest.qWait(50)                        # step 1 in flight, blocked on release
+    win._on_cancel()
+    assert win._runner is not None         # NOT finished -- a worker is in flight
+    release.set()
+    _pump_until(lambda: win._runner is None)
+    assert "Cancelled" in win._status.text()
+    assert calls["n"] == 1                 # step 2 never ran
+
+
+def test_close_while_paused_cleans_up_job_dir(qapp, monkeypatch):
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv", pause=True)
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())   # PAUSED
+    assert win._job_root is not None       # temp job dir exists while paused
+    assert win.close()                     # no worker in flight -> close allowed
+    assert win._runner is None
+    assert win._job_root is None           # job dir cleaned on close
+
+
+def test_editing_local_python_while_paused_keeps_run_gated(qapp, monkeypatch):
+    # Merge seam (ADR-0062 x ADR-0063): _sync_run_availability must treat a
+    # live runner (incl. PAUSED, where _worker is None) as "running" -- editing
+    # local_python mid-pause must NOT enable Run or wipe the pause prompt.
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv", pause=True)
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())   # PAUSED
+    assert "PAUSED" in win._status.text()
+    win._local_python_edit.setText("C:/x/python.exe")
+    win._on_local_python_changed()                        # edit while paused
+    assert not win._run_button.isEnabled()                # Run stays gated
+    assert "PAUSED" in win._status.text()                 # pause prompt intact
+    win._on_resume()                                       # finish cleanly
+    _pump_until(lambda: win._runner is None)
