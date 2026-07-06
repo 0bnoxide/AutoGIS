@@ -25,3 +25,23 @@ def test_no_session_id_is_noop(tmp_path):
     made = session_start.claim_session({"cwd": "/wt/x"}, p,
                                        branch_func=lambda cwd: "feat/x")
     assert made == []
+
+
+# --- additional_context nudge when the main tree is shared -------------------
+
+def test_additional_context_nudges_when_tree_shared(tmp_path, monkeypatch):
+    p = tmp_path / "c.json"
+    monkeypatch.setattr(registry, "repo_root", lambda cwd=None: str(tmp_path))
+    registry.claim(p, "s2", "worktree", str(tmp_path))
+    ctx = session_start.additional_context(
+        {"session_id": "s1", "cwd": str(tmp_path)}, p)
+    assert "share this main working tree" in ctx
+    assert ctx.startswith(session_start._POLICY)
+
+
+def test_additional_context_no_nudge_when_alone(tmp_path, monkeypatch):
+    p = tmp_path / "c.json"
+    monkeypatch.setattr(registry, "repo_root", lambda cwd=None: str(tmp_path))
+    ctx = session_start.additional_context(
+        {"session_id": "s1", "cwd": str(tmp_path)}, p)
+    assert ctx == session_start._POLICY

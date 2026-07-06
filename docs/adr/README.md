@@ -76,6 +76,7 @@ Each ADR follows this structure:
 | [055](0055-gui-workflow-runner-thread-boundary.md) | GUI workflow runner — single-flight advance/pause/resume/cancel; Qt thread-boundary punted to the widget-layer task | Accepted | 2026-07-05 |
 | [056](0056-gui-form-step-adapter.md) | GUI form-values -> Step adapter — reuses XOR_PAIRS metadata; conditional/type validation left to the child command | Accepted | 2026-07-05 |
 | [057](0057-gui-walking-skeleton.md) | GUI walking skeleton — first PySide6 code (optional `gui` extra), QThread bridge, fixed a UNSET-sentinel leak + a QThread lifecycle crash | Accepted | 2026-07-05 |
+| [058](0058-coord-hook-target-resolution.md) | Coord hook resolves branch/tree from the write target (not payload cwd); soft contention warn instead of a hard deny | Accepted | 2026-07-05 |
 
 ## File naming
 
