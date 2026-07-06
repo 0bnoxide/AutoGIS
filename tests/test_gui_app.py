@@ -544,3 +544,44 @@ def test_cancel_when_paused_ends_run(qapp, monkeypatch):
     _pump_until(lambda: win._runner is None)
     assert "Cancelled" in win._status.text()
     assert win._add_button.isEnabled()           # authoring re-enabled after cancel
+
+
+def test_cancel_during_running_step_ends_after_it_completes(qapp, monkeypatch):
+    # Deferred cancel: a step is in flight, so _on_cancel must NOT finish the
+    # run (a worker exists -> its _on_result will); the run ends CANCELLED once
+    # that step completes, and later steps never run.
+    release = threading.Event()
+    calls = {"n": 0}
+
+    def fake(step, job_dir, **kw):
+        calls["n"] += 1
+        release.wait(timeout=5)
+        return StepResult(Decision.CONTINUE, "ok", exit_code=0)
+
+    monkeypatch.setattr(runner_mod, "run_step", fake)
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    QTest.qWait(50)                        # step 1 in flight, blocked on release
+    win._on_cancel()
+    assert win._runner is not None         # NOT finished -- a worker is in flight
+    release.set()
+    _pump_until(lambda: win._runner is None)
+    assert "Cancelled" in win._status.text()
+    assert calls["n"] == 1                 # step 2 never ran
+
+
+def test_close_while_paused_cleans_up_job_dir(qapp, monkeypatch):
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
+        StepResult(Decision.CONTINUE, "ok", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv", pause=True)
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    win._on_run_workflow()
+    _pump_until(lambda: win._resume_button.isEnabled())   # PAUSED
+    assert win._job_root is not None       # temp job dir exists while paused
+    assert win.close()                     # no worker in flight -> close allowed
+    assert win._runner is None
+    assert win._job_root is None           # job dir cleaned on close

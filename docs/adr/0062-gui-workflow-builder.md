@@ -40,12 +40,14 @@ tab), **gate level 2** (HALT + Cancel + per-step pause-on-warning),
    must survive until the run ends. `_on_result` is the dispatcher: advance
    the next step while `PENDING`; stop on `PAUSED`/`DONE`/`HALTED`/`CANCELLED`.
 
-3. **Single Run keeps today's exact behavior** (the decision-label status,
-   "CONTINUE"/"HALT") via a `_run_is_workflow` guard. The same guard scopes
-   the per-step row glyphs (✓/⏸/✗) and the run-level status messages
+3. **Single Run keeps today's result and status behavior** (the decision-label
+   status, "CONTINUE"/"HALT") via a `_run_is_workflow` guard. The same guard
+   scopes the per-step row glyphs (✓/⏸/✗) and the run-level status messages
    ("Workflow complete" / "HALTED at step N" / "PAUSED after step N" /
-   "Cancelled") to **workflow** runs only — a single Run is observably
-   identical to before this change.
+   "Cancelled") to **workflow** runs only. (One benign consequence of the
+   shared loop: the authoring controls — command box, Add, step-list buttons —
+   are now disabled for a single Run's duration, where before only the Run
+   button was; the result and final status are unchanged.)
 
 4. **Authoring UI (grow-window, Option A):** `+ Add to workflow` (validated by
    `build_step`; an invalid form shows an inline error and adds nothing), a
@@ -104,6 +106,19 @@ Renumbered **0061 → 0062**: open PR #174 already claimed 0061
 ADR-numbering collision. Checked `docs/adr/` **and** every open PR's files
 before settling on 0062.
 
+The independent Fable pre-merge pass then caught a real **MEDIUM** race:
+`_on_cancel` decided "no step in flight" from `runner.status`, which the
+*worker thread* mutates — so a Cancel clicked while a step's `finished_result`
+was already queued could `_finish_run()` and null `self._runner` out from
+under the pending `_on_result` (an `AttributeError` in a Qt slot, and, in a
+narrower window, the ADR-0057 `QThread` teardown crash class). Fixed by
+deciding from the UI-thread-owned `self._worker` instead, plus a defensive
+`if self._runner is None: return` in both delivery handlers (which also closes
+the same hole for `closeEvent`). Two coverage tests were added (deferred
+cancel during a running step; close-while-paused job-dir cleanup), and four
+LOW nits addressed (a redundant `replace()`, a latent bricked-window branch, a
+mis-messaged cancel-in-startup-gap, this §3 wording).
+
 ## Alternatives considered
 
 1. **A separate "Workflow" tab** — rejected: duplicates the form-rendering and
@@ -134,4 +149,4 @@ before settling on 0062.
 
 - This decision + implementation: `autogis/adapters/gui/app.py` (the
   drive-loop refactor + authoring/driving UI) and `tests/test_gui_app.py`
-  (11 new offscreen tests). Spec + plan under `docs/superpowers/`.
+  (13 new offscreen tests). Spec + plan under `docs/superpowers/`.

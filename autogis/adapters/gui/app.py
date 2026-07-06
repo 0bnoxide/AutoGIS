@@ -22,7 +22,6 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
-from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -343,12 +342,12 @@ class MainWindow(QMainWindow):
             return
         values = self._raw_values()
         try:
-            step = build_step(form, values)
+            step = build_step(
+                form, values,
+                pause_on_warning=self._pause_on_warning.isChecked())
         except FormValidationError as exc:
             self._status.setText(f"Fix before adding: {exc}")
             return
-        step = replace(step,
-                       pause_on_warning=self._pause_on_warning.isChecked())
         self._steps.append(step)
         self._step_list.addItem(
             self._step_summary(form.label, values, step.pause_on_warning))
@@ -395,9 +394,14 @@ class MainWindow(QMainWindow):
         self._runner.cancel()
         self._cancel_button.setEnabled(False)
         self._resume_button.setEnabled(False)
-        if self._runner.status is not RunState.RUNNING:
-            # Cancel took effect immediately (idle/paused, no in-flight step):
-            # no _on_result will fire to finish the run, so finish it here.
+        if self._worker is None:
+            # No worker in flight (idle/paused) -> no _on_result/_on_failure is
+            # coming to finish the run, so finish it here. Deciding from
+            # self._worker (a UI-thread-owned field), NOT runner.status: the
+            # worker thread mutates the runner state, so a step that just
+            # emitted its result is already non-RUNNING while its _on_result is
+            # still queued -- reading status here would finish the run and null
+            # self._runner out from under that pending _on_result.
             self._status.setText("Cancelled")
             self._finish_run()
 
@@ -532,6 +536,8 @@ class MainWindow(QMainWindow):
 
     def _on_result(self, result: StepResult) -> None:
         self._join_worker()
+        if self._runner is None:
+            return  # a cancel/close finished the run while this delivery queued
         index = len(self._runner.results) - 1  # the step that just ran
         self._render_result(result, index)     # sets status to the decision label
         state = self._runner.status
@@ -542,6 +548,12 @@ class MainWindow(QMainWindow):
                 self._status.setText(
                     f"PAUSED after step {index + 1} -- Resume or Cancel")
                 self._resume_button.setEnabled(True)
+            else:
+                # Unreachable today (a single Run's step never pauses:
+                # pause_on_warning defaults False, no checkpoint steps). If a
+                # future slice makes it reachable, finish rather than leave the
+                # window bricked -- a single Run has no Resume affordance.
+                self._finish_run()
         else:                                   # DONE / HALTED / CANCELLED
             if self._run_is_workflow:
                 self._status.setText(
@@ -553,9 +565,16 @@ class MainWindow(QMainWindow):
 
     def _on_failure(self, message: str) -> None:
         self._join_worker()
-        self._output.setPlainText(message)
-        self._show_qa(())
-        self._status.setText("Failed to run")
+        if self._runner is None:
+            return  # a cancel/close finished the run while this delivery queued
+        if self._runner.status is RunState.CANCELLED:
+            # advance() raised only because a cancel landed in the worker's
+            # startup gap -- report the cancel it was, not a failure.
+            self._status.setText("Cancelled")
+        else:
+            self._output.setPlainText(message)
+            self._show_qa(())
+            self._status.setText("Failed to run")
         self._finish_run()
 
 
