@@ -77,6 +77,7 @@ Each ADR follows this structure:
 | [056](0056-gui-form-step-adapter.md) | GUI form-values -> Step adapter — reuses XOR_PAIRS metadata; conditional/type validation left to the child command | Accepted | 2026-07-05 |
 | [057](0057-gui-walking-skeleton.md) | GUI walking skeleton — first PySide6 code (optional `gui` extra), QThread bridge, fixed a UNSET-sentinel leak + a QThread lifecycle crash | Accepted | 2026-07-05 |
 | [058](0058-coord-hook-target-resolution.md) | Coord hook resolves branch/tree from the write target (not payload cwd); soft contention warn instead of a hard deny | Accepted | 2026-07-05 |
+| [059](0059-gui-qa-results-table.md) | GUI QA-results table — renders the executor's already-parsed `qa_rows` as a worst-severity-first, drop-empty-columns, color-coded table (stdout pane kept) | Accepted | 2026-07-06 |
 
 ## File naming
 

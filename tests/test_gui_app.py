@@ -205,3 +205,52 @@ def test_on_run_ignores_reentrant_call_while_step_in_flight(qapp, monkeypatch):
     release.set()
     _pump_until(lambda: win._run_button.isEnabled())
     assert "CONTINUE" in win._status.text()
+
+
+def _run_with_qa_rows(qapp, monkeypatch, rows):
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: StepResult(
+            Decision.HALT, "QA FAIL", exit_code=1, qa_rows=rows))
+    win = MainWindow()
+    form = next(iter(win._forms.values()))
+    _fill_required_fields(win, form)
+    win._on_run()
+    _pump_until(lambda: win._run_button.isEnabled())
+    return win
+
+
+def test_qa_rows_render_as_table_sorted_worst_first(qapp, monkeypatch):
+    # location_id is empty in every row -> its column must be dropped;
+    # site_id/recommended_action each have one non-empty value -> kept.
+    rows = (
+        {"severity": "INFO", "category": "count", "message": "3 points",
+         "recommended_action": "", "site_id": "", "location_id": ""},
+        {"severity": "ERROR", "category": "hrms", "message": "over threshold",
+         "recommended_action": "recollect", "site_id": "S1", "location_id": ""},
+        {"severity": "WARNING", "category": "vrms", "message": "high vrms",
+         "recommended_action": "", "site_id": "", "location_id": ""},
+    )
+    win = _run_with_qa_rows(qapp, monkeypatch, rows)
+    tbl = win._qa_table
+
+    assert not tbl.isHidden()  # a run with QA rows shows the table
+    assert tbl.rowCount() == 3
+    # worst severity first (CRITICAL/ERROR/WARNING/INFO order), not CSV order
+    assert [tbl.item(i, 0).text() for i in range(3)] == \
+        ["ERROR", "WARNING", "INFO"]
+
+    headers = [tbl.horizontalHeaderItem(j).text()
+               for j in range(tbl.columnCount())]
+    assert headers[:3] == ["severity", "category", "message"]
+    assert "site_id" in headers               # one non-empty value -> kept
+    assert "recommended_action" in headers
+    assert "location_id" not in headers       # empty everywhere -> dropped
+    # stdout pane is unaffected; the table is an addition, not a replacement
+    assert "QA FAIL" in win._output.toPlainText()
+
+
+def test_qa_table_hidden_when_run_produces_no_qa_rows(qapp, monkeypatch):
+    win = _run_with_qa_rows(qapp, monkeypatch, ())  # no --report -> no rows
+    assert win._qa_table.isHidden()
+    assert win._qa_table.rowCount() == 0

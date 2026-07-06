@@ -23,12 +23,14 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFormLayout,
+    QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QPushButton,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from .executor import Decision, StepResult, needs_arcpy_env
+from .executor import Decision, StepResult, _SEV_ORDER, needs_arcpy_env
 from .forms import FormValidationError, build_step
 from .introspect import CommandForm, introspect_cli
 from .runner import Workflow, WorkflowRunner
@@ -69,6 +71,11 @@ _DECISION_LABEL = {
     Decision.PAUSE_FOR_REVIEW: "PAUSE FOR REVIEW",
 }
 
+# QA severity -> cell-text color, chosen to read on both light and dark Qt
+# themes (a saturated red/orange, a muted gray for INFO).
+_SEV_COLOR = {"CRITICAL": "#d32f2f", "ERROR": "#d32f2f",
+              "WARNING": "#ed6c02", "INFO": "#9e9e9e"}
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -102,6 +109,16 @@ class MainWindow(QMainWindow):
 
         self._status = QLabel("")
         outer.addWidget(self._status)
+
+        # Structured QA view: the executor already parses the injected
+        # qa.csv into StepResult.qa_rows -- render it here as a sorted
+        # (worst-severity-first), per-column, color-coded table (stdout only
+        # shows it as flat text). Hidden until a run produces QA rows.
+        self._qa_table = QTableWidget()
+        self._qa_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._qa_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._qa_table.setVisible(False)
+        outer.addWidget(self._qa_table)
 
         self._output = QPlainTextEdit()
         self._output.setReadOnly(True)
@@ -171,6 +188,7 @@ class MainWindow(QMainWindow):
 
         self._status.setText("Running...")
         self._output.clear()
+        self._qa_table.setVisible(False)
         self._run_button.setEnabled(False)
 
         self._job_root = Path(tempfile.mkdtemp(prefix="autogis-gui-"))
@@ -226,6 +244,44 @@ class MainWindow(QMainWindow):
             self._join_worker()
         event.accept()
 
+    def _show_qa(self, rows: "tuple[dict, ...]") -> None:
+        """Render StepResult.qa_rows (parsed qa.csv) as a table -- worst
+        severity first, with columns that are empty across every row dropped
+        so the 15-field QARecord schema stays readable in a narrow window.
+        Hidden when a run produced no QA rows (a command with no --report
+        option, or a crash before any check ran)."""
+        tbl = self._qa_table
+        tbl.setRowCount(0)      # deletes every item + header (setColumnCount too)
+        tbl.setColumnCount(0)
+        if not rows:
+            tbl.setVisible(False)
+            return
+        # csv.DictReader gives every row the same keys in qa.csv header order
+        # (severity, category, message, ... from QARecord's field order).
+        cols = [c for c in rows[0].keys()
+                if any((r.get(c) or "").strip() for r in rows)]
+        ordered = sorted(
+            rows, key=lambda r: _SEV_ORDER.get(r.get("severity", ""), 9))
+        tbl.setColumnCount(len(cols))
+        tbl.setHorizontalHeaderLabels(cols)
+        tbl.setRowCount(len(ordered))
+        sev_col = cols.index("severity") if "severity" in cols else -1
+        for i, row in enumerate(ordered):
+            for j, col in enumerate(cols):
+                # `or ""` (not a .get default): csv.DictReader fills a short
+                # row's missing trailing fields with None, which str() would
+                # otherwise render as the literal "None".
+                item = QTableWidgetItem(str(row.get(col) or ""))
+                if j == sev_col:
+                    color = _SEV_COLOR.get(row.get("severity", ""))
+                    if color is not None:
+                        item.setForeground(QColor(color))
+                tbl.setItem(i, j, item)
+        # ponytail: full-scan resize on the UI thread; add a row cap if a tool
+        # ever emits thousands of QA records (walking-skeleton scope: fine).
+        tbl.resizeColumnsToContents()
+        tbl.setVisible(True)
+
     def _on_result(self, result: StepResult) -> None:
         self._join_worker()
         self._run_button.setEnabled(True)
@@ -237,12 +293,14 @@ class MainWindow(QMainWindow):
         if result.stderr:
             text += ["", "-- stderr --", result.stderr]
         self._output.setPlainText("\n".join(text))
+        self._show_qa(result.qa_rows)
 
     def _on_failure(self, message: str) -> None:
         self._join_worker()
         self._run_button.setEnabled(True)
         self._status.setText("Failed to run")
         self._output.setPlainText(message)
+        self._show_qa(())
 
 
 def main() -> None:
