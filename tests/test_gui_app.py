@@ -366,3 +366,21 @@ def test_qa_table_hidden_when_run_produces_no_qa_rows(qapp, monkeypatch):
     win = _run_with_qa_rows(qapp, monkeypatch, ())  # no --report -> no rows
     assert win._qa_table.isHidden()
     assert win._qa_table.rowCount() == 0
+
+
+def test_single_run_finishes_and_clears_run_state(qapp, monkeypatch):
+    # The drive-loop refactor (ADR-0061): a single Run is a 1-step workflow
+    # through the shared loop -- it must end with the runner cleared and the
+    # shared job dir removed, and keep today's decision-label status.
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: StepResult(
+            Decision.CONTINUE, "ok", exit_code=0, stdout="hi"))
+    win = MainWindow()
+    form = next(iter(win._forms.values()))
+    _fill_required_fields(win, form)
+    win._on_run()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert "CONTINUE" in win._status.text()   # single-run keeps decision label
+    assert win._runner is None                # run finished, state cleared
+    assert win._job_root is None              # shared job dir cleaned up
