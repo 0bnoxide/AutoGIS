@@ -228,6 +228,21 @@ def test_git_cmd_dir_parses_paths():
     assert f("git -c user.name=x -C /wt commit") == "/wt"  # -C after arg-taking opt
     assert f("git -C /wt log && git commit") == ""  # read git's -C must not leak
     assert f("git -C /a diff && cd /b && git commit") == "/b"  # write's cd wins
+    assert f("cd /wt | git commit") == ""     # pipe resets the carried cd
+    assert f("cd /wt || git commit") == ""    # or-else resets the carried cd too
+
+
+def test_bash_cd_piped_to_commit_resolves_cwd_not_cd(tmp_path):
+    # `cd <wt> | git commit` — the cd is a concurrent subshell; the commit runs
+    # in cwd, so it must NOT resolve to the cd target. cwd=main → still denied.
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    p = tmp_path / "c.json"
+    cmd = "cd %s | git commit -m x" % wt.as_posix()
+    bf = lambda d: "feat/x" if d.replace("\\", "/").endswith("/wt") else "main"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}, cwd="/repo"),
+                            p, branch_func=bf)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_bash_read_git_dashC_before_commit_resolves_cwd_not_read(tmp_path):

@@ -83,14 +83,19 @@ def _first_existing(d):
 
 def _git_cmd_dir(cmd):
     """Effective directory the git *write* runs in, parsed from a Bash command:
-    the write's `git -C <path>` argument, or a leading `cd <path>` carried across
-    &&/;/newline segments, else '' (caller falls back to cwd). A *read* git
-    (log/diff/...) does not count — its `-C` must not leak to the write, and its
-    presence must not stop the scan (matches _is_git_write, which keys on the
-    write subcommand too). Only sequential separators carry the cd. Best-effort —
-    subshells, $vars, and command substitution fall through to cwd."""
+    the write's `git -C <path>` argument, or a leading `cd <path>`, else ''
+    (caller falls back to cwd). A *read* git (log/diff/...) does not count — its
+    `-C` must not leak to the write, and its presence must not stop the scan
+    (matches _is_git_write, which keys on the write subcommand too). Only
+    *sequential* separators (&&/;/newline) carry the cd; a `|`/`||` resets it
+    (the git after a pipe/or runs in the original cwd, not the cd target).
+    Best-effort — subshells, $vars, and command substitution fall through to cwd."""
     cur = ""
-    for seg in re.split(r"&&|;|\n", cmd):
+    parts = re.split(r"(&&|\|\||;|\||\n)", cmd)   # keep separators (odd indices)
+    for k in range(0, len(parts), 2):
+        if k > 0 and parts[k - 1] in ("|", "||"):
+            cur = ""                              # non-sequential: cd doesn't carry
+        seg = parts[k]
         try:
             toks = shlex.split(seg)
         except ValueError:
@@ -165,7 +170,8 @@ def _in_main_tree(d):
 def _shared_tree_warn(reg_path, sid, target, cwd, main_tree_func=None):
     """Soft (non-blocking) nudge when another live session shares this main
     working tree AND the write targets it — the gotcha-#1 HEAD-churn condition.
-    Registry read FIRST (cheap); git only under real contention."""
+    repo_root() does one cheap `git rev-parse`, then the registry read; the
+    *expensive* _in_main_tree probe runs ONLY when a sharer actually exists."""
     import registry
     sharers = registry.tree_sharers(reg_path, sid, registry.repo_root(cwd))
     if not sharers:

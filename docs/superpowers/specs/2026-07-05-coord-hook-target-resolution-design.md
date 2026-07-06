@@ -1,11 +1,11 @@
 # Coordination-Hook Target-Based Resolution + Soft Contention Warn — Design
 
 **Date:** 2026-07-05
-**Status:** Implemented 2026-07-05 (commits `915e1dd`, `a0eccb9` on
-`worktree-coord-hook-target-resolution`). The shipped code in
-`.claude/coordination/hook_check.py` is authoritative; the sketches below are
-illustrative and were corrected post-implementation where they diverged (the
-`_first_existing`/`_git_cmd_dir`/`_in_main_tree` notes flag what changed).
+**Status:** Implemented 2026-07-05 (branch `worktree-coord-hook-target-resolution`,
+PR #160). The shipped code in `.claude/coordination/hook_check.py` is
+authoritative; the sketches below are illustrative and were corrected
+post-implementation where they diverged (the `_first_existing`/`_git_cmd_dir`/
+`_in_main_tree` notes flag what changed).
 **Scope chosen by user:** Option **C** — fix bug 1a (target-based resolution) **+**
 a *soft* (warn, not deny) contention guard. The hard-*deny* guard from
 `2026-06-30-coord-remediation-design.md` (§1b) is **not** built.
@@ -110,14 +110,19 @@ def _first_existing(d):                          # (shipped name; operates on a 
 
 def _git_cmd_dir(cmd):
     """Effective directory the git *WRITE* runs in, parsed from a Bash command:
-    the write's `git -C <path>`, or a leading `cd <path>` carried across
-    `&&`/`;`/newline segments, else '' (caller falls back to cwd). A *read* git
-    (log/diff/...) does NOT count — its `-C` must not leak to the write and its
-    presence must not stop the scan (keys on the write subcommand, matching
-    `_is_git_write`). Only sequential separators carry the `cd`. Best-effort —
-    subshells, $vars, command substitution fall through to cwd."""
+    the write's `git -C <path>`, or a leading `cd <path>`, else '' (caller falls
+    back to cwd). A *read* git (log/diff/...) does NOT count — its `-C` must not
+    leak to the write and its presence must not stop the scan (keys on the write
+    subcommand, matching `_is_git_write`). Only *sequential* separators
+    (`&&`/`;`/newline) carry the `cd`; a `|`/`||` resets it (the git after a
+    pipe/or runs in cwd, not the cd target). Best-effort — subshells, $vars,
+    command substitution fall through to cwd."""
     cur = ""
-    for seg in re.split(r"&&|;|\n", cmd):
+    parts = re.split(r"(&&|\|\||;|\||\n)", cmd)   # keep separators (odd indices)
+    for k in range(0, len(parts), 2):
+        if k > 0 and parts[k - 1] in ("|", "||"):
+            cur = ""                              # non-sequential: cd doesn't carry
+        seg = parts[k]
         try:
             toks = shlex.split(seg)
         except ValueError:
