@@ -1,13 +1,17 @@
-"""PySide6 window for the unified GUI adapter (ADR-0057, ADR-0063).
+"""PySide6 window for the unified GUI adapter (ADR-0057, ADR-0062, ADR-0063).
 
-Pick a headless command from ``introspect_cli()``, fill its form, and either
-run it (single **Run**) or add it to a multi-step **workflow** the
-``WorkflowRunner`` drives end to end -- per-step QA, pause-on-warning, HALT,
-and Cancel (the workflow builder, ADR-0063). A single Run is just a 1-step
-workflow through the same advance-until-terminal loop. Exercises the full
-toolkit-free chain (``introspect`` -> ``forms`` -> ``runner`` -> ``executor``)
-through a real Qt event loop. Headless (non-arcpy) commands only -- LOCAL
-tools need a ``local_python`` (arcgispro-py3 clone) picker, a later slice.
+Pick a command from ``introspect_cli()``, fill its form, and either run it
+(single **Run**) or add it to a multi-step **workflow** the ``WorkflowRunner``
+drives end to end -- per-step QA, pause-on-warning, HALT, and Cancel (the
+workflow builder, ADR-0063). A single Run is just a 1-step workflow through
+the same advance-until-terminal loop. Headless commands run under
+``sys.executable``; LOCAL (arcpy) tools run under a user-set ``local_python``
+(a cloned arcgispro-py3 ``python.exe``, persisted via ``settings.py`` --
+ADR-0062), with the single-Run button gated until one is set, and class-1
+redirect-only LOCAL tools (``reachability.UNREACHABLE``) shown greyed. A
+workflow may include LOCAL steps too; the runner is handed the same
+``local_python``. Exercises the full toolkit-free chain (``introspect`` ->
+``forms`` -> ``runner`` -> ``executor``) through a real Qt event loop.
 
 Threading: ``WorkflowRunner.advance()`` blocks for the length of one child
 process. ``_StepWorker`` (a ``QThread``) runs it off the UI thread and
@@ -33,20 +37,22 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import settings
 from .executor import Decision, Step, StepResult, _SEV_ORDER, needs_arcpy_env
 from .forms import FormValidationError, build_step
 from .introspect import CommandForm, FormField, introspect_cli
+from .reachability import UNREACHABLE
 from .runner import RunState, Workflow, WorkflowRunner
 
 __all__ = ["MainWindow", "main"]
 
 
-def _headless_forms() -> list[CommandForm]:
-    """Commands runnable under plain ``sys.executable`` -- no LOCAL (arcpy)
-    tool, no ``unreachable_reason``. LOCAL tools need a ``local_python``
-    (arcgispro-py3 clone) picker, which is a later slice."""
-    return [f for f in introspect_cli()
-           if not f.unreachable_reason and not needs_arcpy_env(f.path)]
+def _window_forms() -> list[CommandForm]:
+    """Every leaf command the window offers. Class-1 redirect-only LOCAL tools
+    are stamped ``unreachable_reason`` (``reachability.UNREACHABLE``) so they
+    render greyed; headless and class-2 (arcpy-executable) LOCAL tools carry no
+    reason -- the latter become runnable once a ``local_python`` is set."""
+    return introspect_cli(unreachable=UNREACHABLE)
 
 
 def _dialog_kind(field: FormField) -> str:
@@ -106,10 +112,12 @@ _SEV_COLOR = {"CRITICAL": "#d32f2f", "ERROR": "#d32f2f",
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, settings_store=None):
         super().__init__()
         self.setWindowTitle("AutoGIS -- GUI adapter (walking skeleton)")
-        self._forms = {f.label: f for f in _headless_forms()}
+        self._settings = settings_store  # None -> real per-user QSettings
+        self._local_python = settings.get_local_python(settings_store)
+        self._forms = {f.label: f for f in _window_forms()}
         self._field_widgets: dict[str, QWidget] = {}
         self._worker: _StepWorker | None = None
         self._job_root: Path | None = None
@@ -120,6 +128,22 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         outer = QVBoxLayout(central)
+
+        # local_python: the arcgispro-py3 python.exe LOCAL (arcpy) tools run
+        # under. Persisted (settings.py) so it survives launches; editing or
+        # browsing re-gates the Run button for the current command.
+        lp_row = QHBoxLayout()
+        lp_row.addWidget(QLabel("local_python:"))
+        self._local_python_edit = QLineEdit(self._local_python or "")
+        self._local_python_edit.setPlaceholderText(
+            "arcgispro-py3 python.exe -- needed to run LOCAL (arcpy) tools")
+        self._local_python_edit.editingFinished.connect(
+            self._on_local_python_changed)
+        lp_row.addWidget(self._local_python_edit)
+        lp_browse = QPushButton("Browse…")
+        lp_browse.clicked.connect(self._browse_local_python)
+        lp_row.addWidget(lp_browse)
+        outer.addLayout(lp_row)
 
         self._command_box = QComboBox()
         self._command_box.addItems(sorted(self._forms))
@@ -203,6 +227,45 @@ class MainWindow(QMainWindow):
     def _current_form(self) -> CommandForm | None:
         return self._forms.get(self._command_box.currentText())
 
+    def _browse_local_python(self) -> None:
+        path = _pick_path("open", self, "Select arcgispro-py3 python.exe",
+                         self._local_python_edit.text())
+        if path:
+            self._local_python_edit.setText(path)
+            self._on_local_python_changed()
+
+    def _on_local_python_changed(self) -> None:
+        text = self._local_python_edit.text().strip()
+        self._local_python = text or None
+        settings.set_local_python(self._local_python, self._settings)
+        self._sync_run_availability(show_reason=True)
+
+    def _run_blocked_reason(self) -> str | None:
+        """Why the current command can't run here, or ``None`` if it can. A
+        class-1 redirect-only tool carries an ``unreachable_reason``; a class-2
+        LOCAL (arcpy) tool needs a ``local_python``; headless tools always
+        run."""
+        form = self._current_form()
+        if form is None:
+            return "No command selected."
+        if form.unreachable_reason:
+            return form.unreachable_reason
+        if needs_arcpy_env(form.path) and not self._local_python:
+            return ("LOCAL (arcpy) tool: set the arcgispro-py3 python.exe "
+                   "above to run it.")
+        return None
+
+    def _sync_run_availability(self, *, show_reason: bool) -> None:
+        """Enable Run only when the current command is runnable and no step is
+        in flight. ``show_reason`` surfaces the block reason in the status
+        label (on a command switch or a local_python edit) -- kept False after
+        a just-finished run so its decision text stays visible."""
+        running = self._worker is not None and self._worker.isRunning()
+        reason = self._run_blocked_reason()
+        self._run_button.setEnabled(reason is None and not running)
+        if show_reason and not running:
+            self._status.setText(reason or "")
+
     def _rebuild_form(self, label: str) -> None:
         while self._form_layout.rowCount():
             self._form_layout.removeRow(0)
@@ -241,6 +304,8 @@ class MainWindow(QMainWindow):
                 # is the only option for the many click.Path() params that are
                 # file-or-dir ambiguous (see introspect.py).
                 browse = QPushButton("Browse…")
+                browse.setObjectName("field-browse")  # distinct from the
+                # single local_python Browse button in the settings row
                 browse.clicked.connect(
                     lambda _=False, f=field, le=widget: self._browse(f, le))
                 row = QHBoxLayout()
@@ -250,6 +315,7 @@ class MainWindow(QMainWindow):
             else:
                 self._form_layout.addRow(label_text, widget)
             self._field_widgets[field.name] = widget
+        self._sync_run_availability(show_reason=True)
 
     def _browse(self, field: FormField, line: QLineEdit) -> None:
         """Open the right file/folder dialog for ``field`` and, if the user
@@ -277,6 +343,10 @@ class MainWindow(QMainWindow):
         form = self._current_form()
         if form is None:
             return
+        blocked = self._run_blocked_reason()
+        if blocked:  # defense in depth: Run is already disabled when blocked
+            self._status.setText(blocked)
+            return
         try:
             step = build_step(form, self._raw_values())
         except FormValidationError as exc:
@@ -294,7 +364,8 @@ class MainWindow(QMainWindow):
         self._qa_table.setVisible(False)
         self._set_authoring_enabled(False)
         self._job_root = Path(tempfile.mkdtemp(prefix="autogis-gui-"))
-        self._runner = WorkflowRunner(Workflow(name, steps), self._job_root)
+        self._runner = WorkflowRunner(Workflow(name, steps), self._job_root,
+                                      local_python=self._local_python)
         self._advance()
 
     def _advance(self) -> None:
@@ -442,6 +513,11 @@ class MainWindow(QMainWindow):
         None) -- used by the terminal branches and by ``closeEvent``."""
         self._runner = None
         self._set_authoring_enabled(True)
+        # _set_authoring_enabled re-enables Run unconditionally; re-gate it for
+        # the current command (a LOCAL tool with no local_python, or an
+        # unreachable one, must stay blocked). show_reason=False so it doesn't
+        # clobber the terminal status just set by the caller.
+        self._sync_run_availability(show_reason=False)
         self._cancel_button.setEnabled(False)
         self._resume_button.setEnabled(False)
         if self._job_root is not None:
