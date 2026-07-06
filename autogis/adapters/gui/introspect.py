@@ -126,7 +126,13 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
         label=param.name.replace("_", " ").title(),
         kind=kind,
         required=bool(param.required),
-        default=param.default,
+        # param.default leaks Click's internal UNSET sentinel for a
+        # required param with no declared default (Click >= 8.4).
+        # to_info_dict()['default'] is Click's own public normalization of
+        # that same value back to None -- discovered by the first GUI code
+        # that actually renders .default (app.py pre-filling a text field
+        # with str(UNSET) instead of leaving it blank).
+        default=param.to_info_dict()["default"],
         choices=choices,
         help_text=getattr(param, "help", None),
         repeatable=bool(getattr(param, "multiple", False)),
