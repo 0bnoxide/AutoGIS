@@ -47,7 +47,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | [IdentifyMonitoringDataGaps](autogis/core/envmon/data_gaps.py) | 4.10 | `envmon identify-data-gaps` | Tool 4.10: report missing wells/analytes vs an expected schedule |
 | [CompareScheduleVsActual](autogis/core/envmon/schedule_vs_actual.py) | — | `envmon compare-schedule-vs-actual` | Compare scheduled monitoring wells/analytes vs actual results (headless) |
 | [ProcessLevelLoop](autogis/core/envmon/level_loop.py) | 8.1 | `envmon process-level-loop` | Tool 8.1: differential leveling — adjusted elevations + misclosure QA |
-| [ValidateRTKSurvey](autogis/core/envmon/validate_rtk_survey.py) | 8.4 | `envmon validate-rtk-survey` | Validate an RTK survey CSV for precision and fix-type QA (headless) |
+| [ValidateRTKSurvey](autogis/core/envmon/validate_rtk_survey.py) | 8.4 | `envmon validate-rtk-survey` | Validate an RTK survey CSV for precision and fix-type QA; auto-detects headerless PNEZD/PENZD field exports (`--format`/`--extra-columns` to override, ADR-0049) (headless) |
 | [DroneGCPCheckpointQA](autogis/core/envmon/drone_checkpoint_qa.py) | 8.7 | `envmon drone-checkpoint-qa` | Tool 11.1: evaluate GCP checkpoint accuracy (headless) |
 | [ReconcileSurvey123AndLabResults](autogis/core/envmon/reconcile_survey123_lab.py) | 2.6 | `envmon reconcile-survey123-lab` | Pre-production: reconcile Survey123 field submissions vs lab EDD (headless) |
 | [BuildSurvey123XLSFormFromConfig](autogis/core/envmon/survey123_form_builder.py) | 7.1a | `envmon build-survey-form` | Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config |
@@ -57,7 +57,7 @@ here have advanced past that snapshot — a large batch of tools merged 2026-06-
 | [ExportGeoJSONResults](autogis/core/envmon/export_geojson.py) | — | `envmon export-geojson` | Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless) |
 | [ValidateScheduleYAML](autogis/core/envmon/validate_schedule.py) | — | `envmon validate-schedule` | Tool 10.2: validate monitoring schedule YAML structure and analyte names |
 | [RunHistoryReport / Query](autogis/core/envmon/history_report.py) | 10.1 | `envmon run-history-report` / `envmon run-history` | Tool 10.1: per-location per-analyte history summary across events |
-| WriteRunHistory | 10.5 | partially wired -- `RunHistory.write()` (`core/common/run_history.py`) has exactly one production caller (`agol promote`, via `core/agol/promote.py`); no other command writes yet, so `evaluate-readiness`/`envmon run-history` stay near-empty for everything else (see ADR-0017 status update, issue #147) | — |
+| WriteRunHistory | 10.5 | generically wired at the CLI adapter seam -- every `RecordingCommand`/`RecordingGroup` invocation (~105 leaf commands, `cli.py`) writes a `RunRecord` via `RunHistory.write()`, not just `agol promote`'s hand-wired call (see ADR-0054, ADR-0017 status update) | — |
 | [PublishEnvironmentalLayersToAGOL](autogis/core/agol/publish.py) | 6.1 | `agol publish-layer` | Publish or overwrite a hosted AGOL feature service |
 | [BuildGroundwaterElevationEvent](autogis/core/envmon/build_gwe_event.py) | 4.1 | `envmon build-gwe-event` | Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags |
 | [EstimateGWFlowDirection](autogis/core/envmon/estimate_gw_flow_direction.py) | 4.3 | `envmon estimate-gw-flow-direction` (DRAFT) | Tool 4.3: estimate GW flow direction and gradient (DRAFT) from well GWEs |
@@ -140,7 +140,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ValidateEnvironmentalDatabase](autogis/core/envmon/validate_database.py) | 3.1 | `envmon validate-db` | Tool 8: validate the GDB schema and cross-table integrity (ArcGIS Pro) |
 | [UpgradeEnvMonitoringGDBSchema](autogis/core/envmon/upgrade_schema.py) | 10.3 | `envmon upgrade-schema` | Upgrade a file GDB to the current envmon schema version (ArcGIS Pro) |
 | [ExportEventDatabaseSnapshot](autogis/core/envmon/export_snapshot.py) | 9.0a | `envmon export-snapshot` | Freeze a GDB snapshot for a reporting event (ArcGIS Pro) |
-| [ImportRTKSurveyPoints](autogis/core/envmon/import_rtk_survey.py) | 8.3 | `envmon import-rtk-survey` | Import RTK survey CSV into SurveyPoints_Raw/QA (ArcGIS Pro) |
+| [ImportRTKSurveyPoints](autogis/core/envmon/import_rtk_survey.py) | 8.3 | `envmon import-rtk-survey` | Import RTK survey CSV into SurveyPoints_Raw/QA, incl. PDOP/Satellites from headerless extended-layout exports (ArcGIS Pro) |
 | [RouteSurvey123Submission](autogis/core/envmon/normalize_survey123.py) | 7.1b | `envmon route-survey123` | Route Survey123 field submissions into the GDB (ArcGIS Pro) |
 | [ImportDroneProducts](autogis/core/envmon/import_drone_products.py) | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) | Tool 8.8: import drone deliverables to raster catalog + GCP table (ArcGIS Pro) |
 | [ImportFieldBoringLogs](autogis/core/envmon/import_boring_logs.py) | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) | Tool 8.0b: import a boring-log CSV package into the GDB (ArcGIS Pro) |
@@ -438,6 +438,7 @@ autogis envmon evaluate-gw-models --observations <predictions.csv> --tolerance-f
 # Field & survey
 autogis envmon build-survey-form --site <site.yaml> --analytes <analytes.yaml> --event <event.yaml> --out <form.xlsx>
 autogis envmon validate-rtk-survey <points.csv>
+autogis envmon validate-rtk-survey <headerless_points.csv> --format penzd --report qa.md  # headerless PNEZD/PENZD auto-detect (ADR-0049); --format overrides a guessed Northing/Easting order
 autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
 autogis envmon rtk-control-check --control-points <control.csv> --horizontal-tolerance-ft 0.05 --vertical-tolerance-ft 0.10
 autogis envmon export-survey-cad <points.csv> --feature-code-map <map.yaml> --output-dir <out>

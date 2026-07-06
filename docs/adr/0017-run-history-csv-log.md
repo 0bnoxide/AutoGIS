@@ -23,6 +23,18 @@ still structurally near-empty for every other command. See issue #147 for the
 open question of which commands get wired next (or whether to revisit the generic
 CLI-seam hook now that ADR-0050 §5/§6 has scoped a GUI's run-history needs).
 
+**Update (2026-07-06):** issue #147's option (b) was taken — ADR-0054's
+`RecordingCommand`/`RecordingGroup` pair (`cli.py`) now wraps essentially every
+leaf command (~105, via Click's `command_class`/`group_class` cascade) and calls
+`RunHistory.write()` generically at the CLI adapter seam, superseding the
+per-command hand-wiring this status update previously described. The "not
+uniformly available at the adapter layer" concern in the "generic hook" analysis
+below was resolved via `ctx.meta` for QA counts and `ctx.params`/exit-code
+classification for the rest — see ADR-0054 for the mechanism. `evaluate-readiness`
+and `envmon run-history` are no longer structurally near-empty; the one open item
+is `promote`'s pre-existing self-logging being skip-listed to avoid double
+recording (also documented in ADR-0054).
+
 A generic write-side hook (e.g. a click `result_callback` wrapping every `envmon`
 command) was considered and rejected: it would fire under every `CliRunner` test in
 the suite (stray-file writes / failures in read-only test dirs unless explicitly
