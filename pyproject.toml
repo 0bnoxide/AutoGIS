@@ -7,7 +7,15 @@ dependencies = ["PyYAML", "click>=8.0", "openpyxl", "numpy>=1.24"]   # click>=8.
 
 [project.optional-dependencies]
 dev = ["pytest", "Pillow>=9.0"]   # Pillow so the importorskip-gated photo tests actually run
-cloud = ["arcgis>=2.4,<3"]   # Pro 3.4+ / arcgis-dist.json unverified (Esri/arcpy restricted)
+cloud = ["arcgis>=2.4,<3", "setuptools"]   # Pro 3.4+ / arcgis-dist.json unverified (Esri/arcpy restricted).
+    # setuptools: arcgis's `features.geo` package still imports the stdlib
+    # `distutils` module (removed in Python 3.12+); it swallows that failure
+    # in a bare `except ImportError: pass` and silently loses
+    # `_is_geoenabled`/`GeoAccessor`, which later surfaces as an unrelated
+    # `AttributeError` deep inside `gis.content.add()`. Modern setuptools
+    # ships a vendored `distutils` shim that satisfies the import -- no code
+    # change needed, just having the package present. Confirmed against the
+    # exact failure on arcgis 2.4.3 / Python 3.14.
 report = ["Pillow>=9.0"]   # photo embedding for generate-inspection-report (openpyxl Image needs PIL)
 gui = ["PySide6"]   # unified GUI adapter (ADR-0050); not needed for CLI/.pyt use
 
