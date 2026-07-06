@@ -1,8 +1,17 @@
 # Conditional Tools Review: Architecture Decisions Needed
 
-**Date:** 2026-06-25
+**Date:** 2026-06-25 (updated 2026-07-06, see issue #167)
 
-8 high-value tools remain conditional. They fit the hybrid harness architecture but require design decisions before integration. This document outlines blockers and integration paths.
+8 high-value tools were originally reviewed here as conditional. Since then,
+#3/#4/#5 shipped as fast-track tools, and #7/#8/#9 turned out — on review —
+to be drone-raster/geotech-graphics work rather than kriging/EBK
+geostatistical modeling; they've shipped too and their sections below are
+removed (see ADR for the batch). Only **3** tools remain conditional under
+the Phase 5 geostatistical gate: #1 RunFieldToGroundwaterModelPipeline, #2
+BuildGroundwaterSurfaceModel, and #6 BuildAnalyticalConcentrationSurface —
+the true kriging/EBK/surface-modeling items. They fit the hybrid harness
+architecture but require design decisions before integration. This document
+outlines blockers and integration paths for those three.
 
 ---
 
@@ -123,6 +132,9 @@
 
 # 3. SurveyToWellElevationUpdate ⚠️ HIGH PRIORITY (Depends on #1 above)
 
+✅ **SHIPPED** — `survey-to-well-elevation` (tool 8.5). Body kept for
+historical design context; no longer conditional.
+
 **Evaluation:** Fits all three modes (local ✓ | CLI ✓ | AGOL ✗) but depends on ProcessLevelLoop + ValidateRTKSurvey.
 
 ## Current Blockers
@@ -175,6 +187,9 @@
 ---
 
 # 4. GenerateRegulatoryTables ⚠️ MEDIUM-HIGH PRIORITY
+
+✅ **SHIPPED** — `generate-reg-tables`. Body kept for historical design
+context; no longer conditional.
 
 **Evaluation:** Fits all three modes (local ✓ | CLI ✓ | AGOL ✗) but nondetect rules + template system design needed.
 
@@ -243,6 +258,9 @@ analytical_tables:
 ---
 
 # 5. EvaluateGroundwaterSurfaceModels ⚠️ MEDIUM PRIORITY
+
+✅ **SHIPPED** — `evaluate-gw-models`. Body kept for historical design
+context; no longer conditional.
 
 **Evaluation:** Fits all three modes (local ✓ | CLI ✓ | AGOL ✗) but depends on BuildGroundwaterSurfaceModel.
 
@@ -359,228 +377,19 @@ Same as GenerateRegulatoryTables (see #4), but for concentration mapping:
 
 ---
 
-# 7. DEMConditioningPipeline ⚠️ MEDIUM PRIORITY
-
-**Evaluation:** Fits all three modes (local ✓✓ | CLI ✓ | AGOL ✗) but config choices need documentation.
-
-## Current Blockers
-
-### A. Void-Filling and Smoothing Are Optional
-- Fill small voids? If yes, what's "small"? (3 pixels? 10 pixels?)
-- Smooth DEM? If yes, which method? (Gaussian? median filter?)
-- Both are optional and affect downstream analysis (contours, slope, volume calculations)
-
-### B. Output Product Selection
-- All sites need clean DEM + hillshade
-- Slope raster: only if stability analysis planned
-- Contours: only if needed for deliverables (vs. generating from source points)
-
-### C. Projection and Unit Alignment
-- DEM source CRS might not match site CRS
-- Vertical units might be mixed (meters from drone, feet from survey)
-
-## Recommended Integration Path
-
-**Phase 1:** Minimal conditioning
-- Clip to boundary
-- Reproject if necessary
-- Set vertical units
-- Derive hillshade + slope (always useful)
-- No void-filling or smoothing (keep raw)
-
-**Phase 2:** Add optional void-fill
-
-**Phase 3:** Add optional smoothing (with user-chosen method)
-
-## Architecture Decisions Needed
-
-1. **Void-fill method** — interpolate? copy from adjacent? or leave as NoData?
-2. **Smoothing method** — none, Gaussian, median, or user choice?
-3. **Contour generation** — always? or user choice?
-4. **Output DEM location** — overwrite original? save as `_conditioned`?
-5. **QA rasters** — export difference between raw and conditioned?
-
-## Recommended Config
-
-```yaml
-dem_conditioning:
-  clip_to_boundary: true
-  reproject: true
-  vertical_units: feet
-  fill_voids: false  # optional
-  smooth_method: none  # options: none, gaussian, median
-  derive_hillshade: true
-  derive_slope: true
-  derive_contours: true
-  contour_interval: 2
-```
-
-## Test Case for Design
-
-**Site with drone DEM:**
-- Orthomosaic DEM: 0.1 m resolution, 50 m × 50 m area
-- Few small voids (1-2 pixels) from shadows
-- Need hillshade for base map, slope for stability assessment
-- Process: clip + reproject + no fill (voids are small) + no smooth + hillshade + slope
-- Output: Clean DEM ready for analysis
-
----
-
-# 8. CompareDroneSurfaces ⚠️ MEDIUM PRIORITY
-
-**Evaluation:** Fits all three modes (local ✓✓ | CLI ✓ | AGOL ✗) but LOD config needed.
-
-## Current Blockers
-
-### A. Level-of-Detection (LOD) Threshold
-Not all DEM changes are real; some are noise/drone accuracy limits:
-- Drone horizontal accuracy: typically ± 1-5 cm (with GCPs)
-- Drone vertical accuracy: typically ± 3-10 cm (with GCPs)
-- What's the minimum detectable change? (e.g., 0.2 ft? 0.5 ft?)
-- Varies by drone model, GCP quality, processing software
-
-### B. Baseline vs. Current Surface Definition
-- Compare against prior drone flight? (requires good temporal alignment)
-- Compare against design surface? (requires CAD/design import)
-- Compare against survey points? (scattered, requires interpolation)
-- Flatten baseline if multi-event? (average prior 3 flights?)
-
-### C. Cut/Fill Polygon Definition
-- Difference > +threshold = fill
-- Difference < -threshold = cut
-- Between thresholds = no change
-- Uncertainty region (±LOD) = unknown
-
-## Recommended Integration Path
-
-**Phase 1:** Simple difference raster
-- Baseline DEM vs. current DEM
-- No complex fill/cut logic
-- Color ramp: blue (cut) → white (no change) → red (fill)
-
-**Phase 2:** Add cut/fill polygon generation
-
-**Phase 3:** Add volume calculation + tonnage estimate
-
-## Architecture Decisions Needed
-
-1. **LOD threshold** — fixed (0.2 ft)? or configurable per site/project?
-2. **Uncertainty region handling** — show separately? or color as unknown?
-3. **Polygon generation method** — contour difference raster at threshold?
-4. **Volume unit** — cubic yards? cubic meters?
-5. **Export format** — GIS polygon? spreadsheet? PDF map?
-
-## Recommended Config
-
-```yaml
-dem_comparison:
-  level_of_detection_ft: 0.2
-  baseline_dem_path: /path/to/baseline_dem.tif
-  current_dem_path: /path/to/current_dem.tif
-  uncertainty_visualization: separate_raster  # options: separate, overlay, suppress
-  generate_cutfill_polygons: true
-  volume_units: cubic_yards
-```
-
-## Test Case for Design
-
-**Landfill reclamation project:**
-- Baseline DEM from Q1 2026 drone
-- Current DEM from Q2 2026 drone (after 1 month of filling)
-- LOD = 0.5 ft (conservative estimate)
-- Difference raster: up to 3 ft of fill in southwest cell
-- Cut/fill polygons: 4 fills detected, 1 small settlement detected
-- Volume report: ~500 cubic yards fill added, volume reconciles with material delivery tickets
-
----
-
-# 9. GenerateSubsurfaceProfileFromBorings ⚠️ MEDIUM PRIORITY
-
-**Evaluation:** Fits all three modes (local ✓✓ | CLI ✓ | AGOL ✗) but profile graphics design needed.
-
-## Current Blockers
-
-### A. Profile Graphics Format Not Designed
-Options:
-1. **Matplotlib** — pure Python, no external dependencies, flexible
-2. **ArcGIS Pro layouts** — native, integrated, but limited control
-3. **Civil 3D profile** — if target is CAD deliverable
-4. **Geotechnical software** (gINT, OpenGround) — if target is client software
-
-### B. Projection Distance Tolerance
-- Boring doesn't fall exactly on profile line; needs projection distance (e.g., ± 50 ft)
-- What happens if boring is far from line? (exclude it? show offset?)
-
-### C. Vertical Exaggeration
-- Borin logs don't need VE, but subsurface profiles often do (VE = 2x, 5x, 10x)
-- How to decide? (user choice? fixed per site?)
-
-### D. Lithology Symbolization
-- How are lithologic intervals drawn? (colored rectangles? patterns? USCS symbols?)
-- How are water level and screen intervals shown? (line? band?)
-
-## Recommended Integration Path
-
-**Phase 1:** Simple matplotlib profile
-- Vertical boring sticks
-- Lithology bars (colored by USCS code)
-- Water table marker
-- Screen/casing symbols
-- Minimal formatting
-
-**Phase 2:** Enhance with legends, title, scale
-
-**Phase 3:** Export to CAD (DWG) for Civil 3D integration
-
-## Architecture Decisions Needed
-
-1. **Graphics library** — matplotlib? ArcGIS? Geotechnical software?
-2. **Projection distance** — ± 50 ft? ± 100 ft? configurable?
-3. **Vertical exaggeration** — default 2x? user choice?
-4. **Lithology symbolization** — colors? patterns? USCS symbols?
-5. **Export formats** — PDF? PNG? DWG? all?
-
-## Recommended Config
-
-```yaml
-subsurface_profile:
-  projection_distance_ft: 50
-  vertical_exaggeration: 2
-  lithology_symbolization: color_by_uscs
-  water_table_line: true
-  screen_symbols: true
-  export_format: pdf  # options: pdf, png, dwg
-```
-
-## Test Case for Design
-
-**Site H281 (hydrogeologic cross-section):**
-- 3 borings along N-S line (B-01, B-02, B-03)
-- B-01: fill over clay, water table at 15 ft bgs
-- B-02: silty sand over bedrock, water table at 12 ft bgs
-- B-03: abandoned; water table at 8 ft bgs (perched)
-- Profile output:
-  - 3 boring sticks with lithology
-  - Water table line connecting observations
-  - Screen intervals shown
-  - Title: "Hydrogeologic Profile, Site H281, A-A'"
-  - VE = 2x, projection distance = 50 ft
-
----
-
 # Summary Decision Matrix
 
 | Tool | Priority | Primary Blocker | Test Case Site | Est. Design Time | Est. Build Time |
 |---|---|---|---|---|---|
 | RunFieldToGroundwaterModelPipeline | HIGH | Model QA schema | H281 | 2 weeks | 4-6 weeks (TIN), +4 weeks (IDW), +6 weeks (kriging) |
 | BuildGroundwaterSurfaceModel | HIGH | Uncertainty output format | H281 | 2 weeks | 4 weeks (TIN/IDW), +6 weeks (kriging) |
-| SurveyToWellElevationUpdate | HIGH | GWE recalc scope | H281 | 1 week | 1-2 weeks (depends on phase 1 tools) |
-| GenerateRegulatoryTables | MED-HIGH | Nondetect rule + template system | H281, ZT42 | 2 weeks | 2-3 weeks (Excel), +2 weeks (Word) |
-| EvaluateGroundwaterSurfaceModels | MEDIUM | Model ranking logic | H281 | 1 week | 2 weeks (after BuildGroundwaterSurfaceModel) |
+| SurveyToWellElevationUpdate | HIGH | ✅ SHIPPED (`survey-to-well-elevation`) | H281 | — | — |
+| GenerateRegulatoryTables | MED-HIGH | ✅ SHIPPED (`generate-reg-tables`) | H281, ZT42 | — | — |
+| EvaluateGroundwaterSurfaceModels | MEDIUM | ✅ SHIPPED (`evaluate-gw-models`) | H281 | — | — |
 | BuildAnalyticalConcentrationSurface | MED-HIGH | Nondetect + plume boundary | ZT42 | 2 weeks | 3 weeks (deterministic), +4 weeks (kriging) |
-| DEMConditioningPipeline | MEDIUM | Config choices | Drone project | 1 week | 2 weeks |
-| CompareDroneSurfaces | MEDIUM | LOD threshold config | Landfill project | 1 week | 2 weeks |
-| GenerateSubsurfaceProfileFromBorings | MEDIUM | Graphics format design | H281 | 2 weeks | 2-3 weeks |
+| DEMConditioningPipeline | MEDIUM | ✅ SHIPPED (`condition-dem`) | Drone project | — | — |
+| CompareDroneSurfaces | MEDIUM | ✅ SHIPPED (`compare-drone-surfaces`) | Landfill project | — | — |
+| GenerateSubsurfaceProfileFromBorings | MEDIUM | ✅ SHIPPED (`generate-subsurface-profile`) | H281 | — | — |
 
 ---
 
@@ -596,9 +405,8 @@ subsurface_profile:
 ## Design Sessions (2-3 weeks)
 
 - Geostatistical modeling (RunFieldToGroundwaterModelPipeline, BuildGroundwaterSurfaceModel)
-- Nondetect handling and regulatory tables (GenerateRegulatoryTables, BuildAnalyticalConcentrationSurface)
-- Drone operations (DEMConditioningPipeline, CompareDroneSurfaces)
-- Subsurface visualization (GenerateSubsurfaceProfileFromBorings)
+- Nondetect handling and concentration surfaces (BuildAnalyticalConcentrationSurface) —
+  GenerateRegulatoryTables shipped, so this session no longer covers it
 
 ## Implementation Sequencing
 
@@ -607,14 +415,11 @@ subsurface_profile:
 - Start with TIN only (minimal dependencies)
 
 **Phase 2-3 (After fast-track tools stable):**
-- Regulatory tables + nondetect rules
-- Concentration surfaces
+- Concentration surfaces + nondetect rules
 
 **Phase 3+ (Advanced):**
 - EBK/kriging, uncertainty surfaces
-- Drone surface comparison
-- Subsurface profiles
 
 ---
 
-**Next:** Choose which conditional tools to prioritize and assign design owners.
+**Next:** Choose which of the 3 remaining conditional tools to prioritize and assign design owners.
