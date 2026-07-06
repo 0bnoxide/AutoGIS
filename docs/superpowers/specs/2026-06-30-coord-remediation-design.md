@@ -1,16 +1,18 @@
 # Concurrent-Session Coordination Remediation — Design
 
 **Date:** 2026-06-30
-**Status:** Partially implemented 2026-07-05 (issue #135) — fixes #1a (nudge),
-#2 (worktree-scoped pytest), and #3 (`resolve_sid`/`whoami`/`release-mine`/
-`resync`) are shipped and tested (`tests/coordination/`). The **hard guard**
-(#1b, in `hook_check.py`) is deliberately NOT built: issue #136 found that
-resolving branch/tree identity from payload `cwd` (this design's approach)
-breaks for pinned-cwd subagents the same way the FORCE-override escape hatch
-does — building #1b as specced here would add a hard deny with a broken
-bypass for exactly that session type. #1b needs a redesign together with
-#136, resolving identity from the target path or the claim itself, not
-payload `cwd`. Tracked as a follow-up, not silently dropped.
+**Status:** Superseded for #1b/#136 — fully resolved 2026-07-05. Fixes #1a
+(nudge), #2 (worktree-scoped pytest), and #3 (`resolve_sid`/`whoami`/
+`release-mine`/`resync`) shipped here (PR #156). The **hard guard (#1b)** was
+deliberately NOT built as specced — resolving identity from payload `cwd`
+breaks for pinned-cwd subagents (issue #136 bug 1a) — and was **redesigned** in
+`docs/superpowers/specs/2026-07-05-coord-hook-target-resolution-design.md`:
+resolve from the write *target* (not `cwd`, not the claim), and reshape the
+hard *deny* into a soft *warn* (user-chosen option C). That design is
+**implemented** (`hook_check.py`, `tests/coordination/test_hook_check.py`); the
+#135-vs-#136 "bug 1b" numbering collision is retired there. Read the 2026-07-05
+doc for #1b/1a; the sections below are the original #1b deny proposal, kept for
+history only — **not built**.
 **Scope chosen by user:** Full bundle **+ hard guard**
 **Source:** Hand-off "Operational gotchas" + memory
 `worktree-isolation-parallel-sessions.md`. All root causes empirically verified

@@ -1,7 +1,11 @@
 # Coordination-Hook Target-Based Resolution + Soft Contention Warn — Design
 
 **Date:** 2026-07-05
-**Status:** Design gate — pending approval; implementation follows once approved
+**Status:** Implemented 2026-07-05 (commits `915e1dd`, `a0eccb9` on
+`worktree-coord-hook-target-resolution`). The shipped code in
+`.claude/coordination/hook_check.py` is authoritative; the sketches below are
+illustrative and were corrected post-implementation where they diverged (the
+`_first_existing`/`_git_cmd_dir`/`_in_main_tree` notes flag what changed).
 **Scope chosen by user:** Option **C** — fix bug 1a (target-based resolution) **+**
 a *soft* (warn, not deny) contention guard. The hard-*deny* guard from
 `2026-06-30-coord-remediation-design.md` (§1b) is **not** built.
@@ -89,14 +93,14 @@ Three helpers added to `hook_check.py`, then the two `bf(cwd)` call sites in
 `decide()` switch to the resolved target.
 
 ```python
-def _existing_dir(path):
-    """Nearest existing ancestor directory of `path`.
-
-    A brand-new file in a not-yet-created package (dirname does not exist yet)
-    still resolves to its worktree's branch instead of failing to '' — we walk
-    up to the first real directory so `git -C <dir>` can succeed."""
-    d = os.path.dirname(os.path.abspath(path))
-    while d and not os.path.isdir(d):
+def _first_existing(d):                          # (shipped name; operates on a DIR)
+    """Nearest existing ancestor of directory d (d itself if it exists), so a
+    new file in a not-yet-created package still resolves via its worktree
+    instead of failing `git -C` to ''. NB: this takes a directory — the caller
+    does dirname(file) for the Edit case (an earlier sketch folded the dirname
+    in here, which off-by-one'd the Bash path whose base is already a dir)."""
+    d = os.path.abspath(d)
+    while not os.path.isdir(d):
         parent = os.path.dirname(d)
         if parent == d:
             break
@@ -105,14 +109,13 @@ def _existing_dir(path):
 
 
 def _git_cmd_dir(cmd):
-    """Effective directory a git write runs in, parsed from a Bash command.
-
-    A `git -C <path>` argument wins; otherwise a leading `cd <path>` carried
-    across `&&` / `;` / newline segments; else '' (caller falls back to cwd).
-    Only sequential separators (`&&` / `;` / newline) carry the `cd` — a `|`
-    pipe does not establish "then run git in this dir". Best-effort — exotic
-    constructs (subshells, $variables, command substitution) are not parsed and
-    fall through to cwd."""
+    """Effective directory the git *WRITE* runs in, parsed from a Bash command:
+    the write's `git -C <path>`, or a leading `cd <path>` carried across
+    `&&`/`;`/newline segments, else '' (caller falls back to cwd). A *read* git
+    (log/diff/...) does NOT count — its `-C` must not leak to the write and its
+    presence must not stop the scan (keys on the write subcommand, matching
+    `_is_git_write`). Only sequential separators carry the `cd`. Best-effort —
+    subshells, $vars, command substitution fall through to cwd."""
     cur = ""
     for seg in re.split(r"&&|;|\n", cmd):
         try:
@@ -126,15 +129,22 @@ def _git_cmd_dir(cmd):
             continue
         if "git" in toks:
             i = toks.index("git") + 1
+            dashC = ""
+            sub = ""
             while i < len(toks):
                 t = toks[i]
                 if t == "-C" and i + 1 < len(toks):
-                    return toks[i + 1]           # -C overrides the carried cd
-                if t.startswith("-"):             # skip option (+ its arg), same
-                    i += 2 if t in _GLOBAL_OPTS_WITH_ARG else 1  # rule as _git_subcommands
+                    dashC = toks[i + 1]
+                    i += 2
                     continue
-                break                            # reached the subcommand
-            return cur
+                if t.startswith("-"):            # skip option (+ arg), same rule
+                    i += 2 if t in _GLOBAL_OPTS_WITH_ARG else 1  # as _git_subcommands
+                    continue
+                sub = t
+                break
+            if sub in _GIT_WRITE_SUBCMDS:
+                return dashC or cur              # only the WRITE's dir counts
+            # read git — its -C doesn't count; keep scanning later segments
     return cur
 
 
@@ -143,13 +153,13 @@ def _target_dir(tool, ti, cwd):
     stale for pinned-cwd subagents."""
     if tool in ("Edit", "Write", "MultiEdit"):
         fp = ti.get("file_path", "")
-        base = fp if fp else cwd
+        d = os.path.dirname(os.path.abspath(fp)) if fp else cwd  # file → its dir
     elif tool == "Bash":
-        d = _git_cmd_dir(ti.get("command", ""))
-        base = os.path.join(cwd, d) if d else cwd   # os.path.join: abs d wins, rel joins
+        parsed = _git_cmd_dir(ti.get("command", ""))
+        d = os.path.join(cwd, parsed) if parsed else cwd   # abs parsed wins, rel joins
     else:
-        base = cwd
-    return _existing_dir(base)
+        d = cwd
+    return _first_existing(d)
 ```
 
 Branch resolution in `decide()` becomes:
@@ -169,10 +179,15 @@ Key correctness points:
   and are correctly *allowed*; only a genuine main-tree-on-`main` write is denied.
 - **Empty resolution** (detached HEAD, or — defensively — an unresolvable target)
   falls back to `bf(cwd)`, restoring today's floor. Without this, `"" != "main"`
-  would silently let a write slip the read-only-`main` guard. The `_existing_dir`
+  would silently let a write slip the read-only-`main` guard. The `_first_existing`
   walk means a new-file-in-new-dir does **not** hit this path (it resolves to the
   nearest real ancestor's branch), so the fallback fires only for true detached
   HEAD, where "not `main`" → allowed matches today.
+- **`_git_cmd_dir` resolves the *write*'s dir, not the first git's.** `git -C <x>
+  log && git commit` must resolve the commit (cwd), not the read's `-C <x>` —
+  otherwise a commit to `main` behind a read `git -C <feature-wt> …` would
+  false-*allow*. The parser keys on the write subcommand, matching
+  `_is_git_write`.
 
 ## Component 2 — soft contention warn (option C)
 
@@ -194,10 +209,21 @@ def _rev_parse(cwd, *args):
 
 
 def _in_main_tree(d):
-    # main tree: git-dir == git-common-dir; linked worktree: they differ.
-    # One subprocess returns both lines. git error → '' → [] → False.
+    # main tree: git-dir and git-common-dir point at the SAME .git; a linked
+    # worktree: they differ. git prints either absolute OR cwd-relative paths
+    # (e.g. git-dir absolute but common-dir '../.git' from a SUBDIR), so resolve
+    # both against d before comparing — a plain samepath(out[0], out[1]) on the
+    # raw lines false-negatives from a subdirectory. git error → '' → [] → False.
     out = _rev_parse(d, "--git-dir", "--git-common-dir").splitlines()
-    return len(out) == 2 and registry.samepath(out[0], out[1])
+    if len(out) != 2:
+        return False
+
+    def _abs(p):
+        p = p.strip()
+        return os.path.normcase(os.path.abspath(
+            p if os.path.isabs(p) else os.path.join(d, p)))
+
+    return _abs(out[0]) == _abs(out[1])
 
 
 def _shared_tree_warn(reg_path, sid, target, cwd, main_tree_func=None):
@@ -266,7 +292,10 @@ Bug 1a (target resolution):
   cwd → uses cwd branch.
 - `_git_cmd_dir` unit cases: `git -C /wt commit` → `/wt`; `cd /wt && git commit`
   → `/wt`; `git commit` → `""`; `cd a && cd b && git commit` → `b`;
-  `git -C /bar` inside `cd /foo && … && git -C /bar commit` → `/bar`.
+  `git -C /bar` inside `cd /foo && … && git -C /bar commit` → `/bar`;
+  **`git -C /wt log && git commit` → `""`** (a *read*'s `-C` must not leak).
+- No-false-allow at `decide()` level: `git -C <wt> log && git commit` with cwd on
+  `main` → **denied** (the commit runs in cwd, not the read's `-C`).
 
 Soft warn:
 
@@ -278,15 +307,21 @@ Soft warn:
 - Sharers present but `main_tree_func` → False (isolated worktree target) → no
   warn.
 - `AUTOGIS_COORD_FORCE=1` bypasses everything (existing pattern).
+- `_in_main_tree` normalization: injected `_rev_parse` returning an absolute
+  git-dir + relative `../.git` common-dir → `True`; differing gitdirs → `False`;
+  **plus a real-git test** (skipif no git) building a repo + linked worktree so
+  the subdir absolute/relative format regression can't silently return.
 
 Regression: the existing tests use `lambda cwd: …` lambdas that ignore their arg,
 so they keep passing unchanged.
 
-**Manual / integration verify** (recursion-safe, required before merge): dry-run
-`decide()` against the **real** `.claude/coordination/claims.json` at the main
-root with an actual concurrent session present (not just a `tmp_path` fixture),
-covering (a) a worktree write that used to be false-denied now allowed, and (b)
-the warn firing when a real sharer exists.
+**Manual / integration verify** (recursion-safe) — **done:** dry-ran `decide()`
+against the **real** `.claude/coordination/claims.json` at the main root with the
+live registry (13 stale main-root claims + this session's live worktree claim),
+confirming (a) a worktree write with stale `cwd=main` now allowed (target →
+`worktree-…` branch, not `main`), (b) the warn firing on a synthetic live sharer
+(temp registry copy — the shared file was never mutated), and (c) the stale
+main-root claims correctly ignored (`tree_sharers` → 0, no false warn).
 
 ## Documentation & records
 
@@ -305,15 +340,10 @@ the warn firing when a real sharer exists.
 
 ## Sequencing / prerequisites
 
-- The soft warn depends on `registry.tree_sharers` and `registry.samepath`, which
-  exist **only on PR #156's branch** (draft, not yet merged). **Merge PR #156
-  first**, then build the whole change (1a + warn) on the resulting `main`.
-- The 1a fix touches **only `hook_check.py`**, which PR #156 never touches, so it
-  is conflict-free regardless of merge order; merging #156 first simply keeps one
-  coherent history and gives the warn its primitives.
-- Merging #156 is a separate authorization (it is the user's draft PR) — surface
-  it for an explicit decision at implementation time; do not fold it into this
-  work silently.
+- **Resolved:** PR #156 merged to `main` (`006e921`) before this work started, so
+  `registry.tree_sharers` / `registry.samepath` are present. This branch is based
+  on the merged `main`; the 1a fix touches only `hook_check.py` (which #156 never
+  touched), so the change is conflict-free.
 
 ## Explicit YAGNI / scope boundaries
 
@@ -323,6 +353,13 @@ the warn firing when a real sharer exists.
 - **No** TTL tuning, no new config knobs.
 - **No** parsing of exotic Bash constructs (subshells, `$vars`, command
   substitution) — documented ceiling; they fall back to cwd.
+- **Windows / Git-Bash path ceiling (safe direction).** On this box the Bash tool
+  is Git Bash, so `cd`/`-C` paths are POSIX. Only **relative** paths
+  (`cd .claude/worktrees/x`) and **drive-letter-forward-slash** (`C:/…`) resolve
+  cleanly. An MSYS absolute (`cd /c/Users/…`) mis-joins via `os.path.join` and a
+  backslash path is mangled by POSIX `shlex` — **both fall back to cwd** (→ a
+  false-*deny*, the safe direction; recourse is the `git -C C:/…` form or
+  `AUTOGIS_COORD_FORCE=1`). Relative is the common case, so no code is added.
 - **No** product-code / `core/` / `adapters/` / `.pyt` changes; pure stdlib.
 - **No** new dependencies.
 

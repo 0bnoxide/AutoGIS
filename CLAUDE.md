@@ -129,6 +129,15 @@ Two separate records — easy to conflate, keep both:
   cwd-claim fallback, not the FORCE bypass. The SessionStart hook also
   fast-forward-pulls a clean `main` so every session (and the worktrees that
   branch from HEAD) starts current.
+- **The hook resolves the write's branch/tree from the *target*, not payload
+  `cwd`** (fixes #136 bug 1a). A pinned-cwd subagent whose `cwd` is frozen at the
+  main root is judged by where the write actually lands — the edited file's dir,
+  or the `git -C <wt>` / `cd <wt> && …` dir of a git write — so a legitimate
+  worktree commit is no longer false-denied. Ceiling (safe direction): exotic
+  Bash (subshells, `$vars`) and non-POSIX Windows paths fall back to `cwd`; the
+  `git -C C:/…` form always resolves. The hook also emits a **soft, non-blocking
+  warning** on an in-repo write when another live session shares this main tree
+  and the write targets it — a re-nudge to isolate (it never blocks).
 - **Worktrees live under `.claude/worktrees/`** (gitignored), not the
   `superpowers:using-git-worktrees` default `.worktrees/`. Prefer the native
   `EnterWorktree` tool (Step 1a); if you ever fall back to `git worktree add`,
