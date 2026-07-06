@@ -2477,8 +2477,15 @@ def condition_dem_cmd(gdb_path, flight_id, out_dir, fill_voids, smooth,
                       with_slope, with_contours):
     """DEMConditioningPipeline: void-fill/smooth a flight's DEM and derive
     hillshade/slope/contours (ArcGIS Pro)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.dem_conditioning import build_config, validate_config
+    config = build_config(fill_voids=fill_voids, smooth=smooth,
+                          with_slope=with_slope, with_contours=with_contours)
+    qa = QACollector()
+    validate_config(config, qa)
+    if qa.records:
+        raise click.ClickException("; ".join(r.message for r in qa.records))
     _guard("condition-dem")
-    from autogis.core.envmon import dem_conditioning  # noqa: F401  (arcpy path)
     raise click.ClickException(
         "condition-dem runs inside ArcGIS Pro only. Use the ConditionDEM "
         "tool in the .pyt toolbox."

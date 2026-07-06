@@ -100,15 +100,24 @@ def compare_surfaces(  # pragma: no cover
         baseline_path = _product_path(gdb_path, baseline_product_id)
         if not baseline_path:
             return summarize_diffs([], lod_threshold_ft)
-        baseline_arr = _ax.RasterToNumPyArray(
-            _ax.Raster(baseline_path), nodata_to_value=np.nan)
-        diffs_ft = [float(d) for d in (primary_arr - baseline_arr).flatten()
-                   if not np.isnan(d)]
+        baseline = _ax.Raster(baseline_path)
+        # Two independently-read rasters need not share an origin, cell size,
+        # or extent even when their row/col counts happen to match -- a raw
+        # numpy subtraction of two separately-converted arrays would silently
+        # diff geographically unrelated cells. Run the subtraction through
+        # arcpy's own Spatial Analyst raster algebra instead, which resamples
+        # *baseline* onto *primary*'s grid per the analysis environment, and
+        # only convert the (already-aligned) result to numpy.
+        with _ax.EnvManager(snapRaster=primary, extent="INTERSECTION",
+                            cellSize=primary):
+            diff_raster = _ax.sa.Minus(primary, baseline)
+        diff_arr = _ax.RasterToNumPyArray(diff_raster, nodata_to_value=np.nan)
+        diffs_ft = [float(d) for d in diff_arr.flatten() if not np.isnan(d)]
     else:
         from ..common.landxml import elevation_at, parse_landxml_surface
         surface = parse_landxml_surface(baseline_landxml_path)
         extent = primary.extent
-        cell = primary.meanCellWidth
+        cell_e, cell_n = primary.meanCellWidth, primary.meanCellHeight
         rows, cols = primary_arr.shape
         diffs_ft = []
         for r in range(rows):
@@ -116,8 +125,8 @@ def compare_surfaces(  # pragma: no cover
                 value = primary_arr[r, c]
                 if np.isnan(value):
                     continue
-                easting = extent.XMin + (c + 0.5) * cell
-                northing = extent.YMax - (r + 0.5) * cell
+                easting = extent.XMin + (c + 0.5) * cell_e
+                northing = extent.YMax - (r + 0.5) * cell_n
                 design_z = elevation_at(surface, northing, easting)
                 if design_z is not None:
                     diffs_ft.append(float(value) - design_z)

@@ -1,7 +1,9 @@
 """Tests for autogis/core/common/landxml.py (read-only TIN parser, stdlib)."""
 import pytest
 
-from autogis.core.common.landxml import elevation_at, parse_landxml_surface
+from autogis.core.common.landxml import (
+    LandXMLSurface, elevation_at, parse_landxml_surface,
+)
 
 _LANDXML = """<?xml version="1.0"?>
 <LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2">
@@ -62,3 +64,43 @@ def test_elevation_at_vertex_matches_vertex_elevation(tmp_path):
 def test_elevation_at_outside_triangle_is_none(tmp_path):
     surface = parse_landxml_surface(_write(tmp_path))
     assert elevation_at(surface, 1000.0, 1000.0) is None
+
+
+def _grid_surface() -> LandXMLSurface:
+    """A 2x2-quad (8-triangle) mesh with z == northing everywhere, so any
+    point inside the mesh's convex hull interpolates to exactly its own
+    northing regardless of which triangle contains it (the sampled function
+    is itself an affine plane, exactly reproduced by every triangle)."""
+    points = {}
+    for row in range(3):
+        for col in range(3):
+            points[row * 3 + col + 1] = (float(row), float(col), float(row))
+    faces = []
+    for row in range(2):
+        for col in range(2):
+            tl, tr = row * 3 + col + 1, row * 3 + col + 2
+            bl, br = (row + 1) * 3 + col + 1, (row + 1) * 3 + col + 2
+            faces.append((tl, tr, br))
+            faces.append((tl, br, bl))
+    return LandXMLSurface(name="grid", points=points, faces=faces)
+
+
+def test_elevation_at_grid_index_is_correct_across_many_faces():
+    surface = _grid_surface()
+    for northing, easting in [(0.25, 0.75), (0.75, 0.25), (1.3, 0.5),
+                              (0.5, 1.9), (1.9, 1.1), (1.0, 1.0)]:
+        assert elevation_at(surface, northing, easting) == pytest.approx(northing)
+
+
+def test_elevation_at_grid_index_outside_mesh_is_none():
+    surface = _grid_surface()
+    assert elevation_at(surface, 10.0, 10.0) is None
+
+
+def test_elevation_at_face_with_unknown_point_id_raises_value_error():
+    surface = LandXMLSurface(
+        name="broken",
+        points={1: (0.0, 0.0, 100.0), 2: (0.0, 10.0, 102.0)},
+        faces=[(1, 2, 99)])
+    with pytest.raises(ValueError, match="99"):
+        elevation_at(surface, 1.0, 1.0)

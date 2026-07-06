@@ -133,6 +133,9 @@ def condition_dem(  # pragma: no cover
 
     if config.with_contours:
         contours_path = str(out / f"{flight_id}_contours.shp")
+        # ponytail: contour interval fixed at 1 (vertical unit); not in the
+        # approved design's CLI flags. Add a --contour-interval flag if a
+        # site needs a different spacing.
         _ax.sa.Contour(dem, contours_path, 1)
         outputs["contours"] = contours_path
 
