@@ -25,14 +25,14 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QPushButton,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog,
+    QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
+    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .executor import Decision, StepResult, _SEV_ORDER, needs_arcpy_env
 from .forms import FormValidationError, build_step
-from .introspect import CommandForm, introspect_cli
+from .introspect import CommandForm, FormField, introspect_cli
 from .runner import Workflow, WorkflowRunner
 
 __all__ = ["MainWindow", "main"]
@@ -44,6 +44,31 @@ def _headless_forms() -> list[CommandForm]:
     (arcgispro-py3 clone) picker, which is a later slice."""
     return [f for f in introspect_cli()
            if not f.unreachable_reason and not needs_arcpy_env(f.path)]
+
+
+def _dialog_kind(field: FormField) -> str:
+    """Which QFileDialog a path field's Browse button opens: a folder-only
+    param always wants a directory picker; a bare-output path a save picker;
+    anything else (an existing input) an open picker. ``is_dir`` wins over
+    ``is_path_output`` because a directory is picked the same way whether it
+    is read or written."""
+    if field.is_dir:
+        return "dir"
+    return "save" if field.is_path_output else "open"
+
+
+def _pick_path(kind: str, parent, title: str, start: str) -> str:
+    """Open the native folder/save/open dialog for ``kind`` and return the
+    chosen path, or "" if cancelled. Thin QFileDialog glue -- the one piece
+    here a headless test can't drive (a modal native dialog); the ``kind``
+    decision it acts on is :func:`_dialog_kind`, which is unit-tested, and
+    the wiring around it (:meth:`MainWindow._browse`) is tested by stubbing
+    this function out."""
+    if kind == "dir":
+        return QFileDialog.getExistingDirectory(parent, title, start)
+    if kind == "save":
+        return QFileDialog.getSaveFileName(parent, title, start)[0]
+    return QFileDialog.getOpenFileName(parent, title, start)[0]
 
 
 class _StepWorker(QThread):
@@ -96,6 +121,10 @@ class MainWindow(QMainWindow):
         outer.addWidget(QLabel("Command:"))
         outer.addWidget(self._command_box)
 
+        self._help_label = QLabel()
+        self._help_label.setWordWrap(True)
+        outer.addWidget(self._help_label)
+
         self._form_layout = QFormLayout()
         form_container = QWidget()
         form_container.setLayout(self._form_layout)
@@ -136,7 +165,9 @@ class MainWindow(QMainWindow):
         self._field_widgets.clear()
         form = self._forms.get(label)
         if form is None:
+            self._help_label.clear()
             return
+        self._help_label.setText(form.help_text or "")
         for field in form.fields:
             if field.kind == "flag":
                 widget: QWidget = QCheckBox()
@@ -160,8 +191,30 @@ class MainWindow(QMainWindow):
                 if field.help_text:
                     widget.setPlaceholderText(field.help_text)
             label_text = field.label + (" *" if field.required else "")
-            self._form_layout.addRow(label_text, widget)
+            if field.kind == "path":
+                # line edit stays the value widget (_raw_values reads it) and
+                # stays editable -- Browse is a convenience over typing, which
+                # is the only option for the many click.Path() params that are
+                # file-or-dir ambiguous (see introspect.py).
+                browse = QPushButton("Browse…")
+                browse.clicked.connect(
+                    lambda _=False, f=field, le=widget: self._browse(f, le))
+                row = QHBoxLayout()
+                row.addWidget(widget)
+                row.addWidget(browse)
+                self._form_layout.addRow(label_text, row)
+            else:
+                self._form_layout.addRow(label_text, widget)
             self._field_widgets[field.name] = widget
+
+    def _browse(self, field: FormField, line: QLineEdit) -> None:
+        """Open the right file/folder dialog for ``field`` and, if the user
+        picks something, drop it into ``line``. The field stays editable, so
+        a cancelled dialog (empty return) leaves whatever was typed."""
+        path = _pick_path(_dialog_kind(field), self,
+                          f"Select {field.label}", line.text())
+        if path:
+            line.setText(path)
 
     def _raw_values(self) -> dict[str, object]:
         values: dict[str, object] = {}

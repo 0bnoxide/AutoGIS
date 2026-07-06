@@ -51,6 +51,25 @@ def test_field_mapping_spot_checks():
     assert ready["required_tools"].kind == "text"
 
 
+def test_is_dir_flags_directory_only_path_params():
+    """A folder-only param (click.Path(file_okay=False)) is marked is_dir so a
+    GUI opens a folder picker; a file/ambiguous path or any non-path field is
+    not (defaults False, keeping the descriptor backward-compatible)."""
+    forms = _by_label()
+
+    # --edd_dir is declared file_okay=False -> directory picker
+    edd = {f.name: f for f in forms["envmon batch-import-workbooks"].fields}
+    assert edd["edd_dir"].kind == "path"
+    assert edd["edd_dir"].is_dir is True
+
+    # a bare click.Path() output (file_okay & dir_okay default True) is ambiguous
+    recon = {f.name: f for f in forms["envmon reconcile-locations"].fields}
+    assert recon["report"].kind == "path"
+    assert recon["report"].is_dir is False
+    # a non-path field is never a directory
+    assert recon["threshold"].is_dir is False
+
+
 def test_xor_pairs_resolve_to_real_params():
     forms = _by_label()
     for label, pair in XOR_PAIRS.items():

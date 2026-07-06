@@ -68,6 +68,7 @@ class FormField:
     help_text: str | None = None
     repeatable: bool = False  # click multiple=True: one value-widget, repeated
     is_path_output: bool = False  # kind == "path": save picker vs open picker
+    is_dir: bool = False  # kind == "path": directory-only -> folder picker
     xor_group: str | None = None  # shared id; fill one, grey its sibling
 
 
@@ -100,6 +101,7 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
     kind = "text"
     choices: tuple[str, ...] | None = None
     is_path_output = False
+    is_dir = False
     ptype = param.type
     if getattr(param, "is_flag", False):
         kind = "flag"
@@ -109,6 +111,9 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
     elif isinstance(ptype, click.Path):
         kind = "path"
         is_path_output = not ptype.exists  # heuristic; see module docstring
+        # dir_okay & file_okay both default True (ambiguous, most params) --
+        # only a param that opts out of files is unambiguously a folder.
+        is_dir = ptype.dir_okay and not ptype.file_okay
     elif ptype.name == "integer":
         kind = "int"
     elif ptype.name == "float":
@@ -137,6 +142,7 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
         help_text=getattr(param, "help", None),
         repeatable=bool(getattr(param, "multiple", False)),
         is_path_output=is_path_output,
+        is_dir=is_dir,
         xor_group=xor_group,
     )
 
