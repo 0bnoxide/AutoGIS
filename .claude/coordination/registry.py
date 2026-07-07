@@ -123,7 +123,23 @@ def save_registry(path, data):
     tmp = "%s.tmp.%d" % (path, os.getpid())
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
-    os.replace(tmp, path)
+    # Windows: os.replace fails with PermissionError while another process has
+    # the target open for reading (CRT opens lack FILE_SHARE_DELETE) — and the
+    # hook reads this file on every tool call of every session. Readers hold it
+    # only for a sub-ms json.load, so brief retries absorb the collision; on
+    # final failure clean up the .tmp and re-raise (callers fail open).
+    for attempt in range(5):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+            time.sleep(0.02)
 
 
 def is_stale(claim, now=None):

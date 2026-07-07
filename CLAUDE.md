@@ -116,8 +116,10 @@ Two separate records — easy to conflate, keep both:
 ## Worktrees & session coordination
 
 - **`main` is READ-ONLY — branch before you write.** On `main` only *reading* is
-  permitted. Every write (Edit/Write/MultiEdit to a repo file, `git commit`,
-  `git push`) is **denied** by the PreToolUse coordination hook
+  permitted. Every write (Edit/Write/MultiEdit/NotebookEdit to a repo file;
+  `git commit`/`merge`/`rebase`/`cherry-pick`/`revert` on main; any `git push`
+  whose refspec targets remote `main`, from any branch) is **denied** by the
+  PreToolUse coordination hook
   (`hook_check.py`); writes to paths *outside* the repo — your memory dir, the
   scratchpad — are exempt. Before any work: check out a feature branch and claim
   it + your files via the coordination framework below. **This rule applies to
