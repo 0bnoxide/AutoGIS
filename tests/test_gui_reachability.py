@@ -16,9 +16,13 @@ def test_unreachable_labels_resolve_to_real_commands():
 
 def test_class2_executable_local_tools_are_not_marked():
     # these DO run via the CLI when arcpy is present -> must stay runnable
+    labels = {f.label for f in introspect_cli()}
     for label in ("envmon import-edd", "envmon validate-db",
-                  "envmon upgrade-schema", "envmon sync-to-gdb",
+                  "envmon upgrade-schema", "agol sync-to-gdb",
                   "envmon survey-to-well-elevation", "envmon update-layout-text"):
+        # a mistyped label would vacuously pass "not in UNREACHABLE"
+        # (sync-to-gdb sat here as "envmon sync-to-gdb" -- wrong group)
+        assert label in labels, f"not a live command: {label!r}"
         assert label not in UNREACHABLE
 
 
