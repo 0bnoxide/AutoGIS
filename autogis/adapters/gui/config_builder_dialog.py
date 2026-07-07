@@ -1,4 +1,4 @@
-"""Site Config Builder dialog (ADR-0064).
+"""Site Config Builder dialog (ADR-0065).
 
 A Qt form that authors a harvest-job ``config.yaml`` for a user who may not
 know AGOL concepts — plain-language help on every field, a live

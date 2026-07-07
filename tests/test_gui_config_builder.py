@@ -1,4 +1,4 @@
-"""Pure-logic tests for the Site Config Builder (ADR-0064).
+"""Pure-logic tests for the Site Config Builder (ADR-0065).
 
 No Qt, no network: dict assembly, validation-reuse through
 ``HarvestConfig.load`` (never a re-derived copy of its rules), YAML

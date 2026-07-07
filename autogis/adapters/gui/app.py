@@ -144,7 +144,7 @@ class MainWindow(QMainWindow):
         lp_browse = QPushButton("Browse…")
         lp_browse.clicked.connect(self._browse_local_python)
         lp_row.addWidget(lp_browse)
-        # Site Config Builder (ADR-0064): author a harvest config.yaml via a
+        # Site Config Builder (ADR-0065): author a harvest config.yaml via a
         # guided form instead of hand-writing YAML / inspecting item.layers.
         self._config_dialog: ConfigBuilderDialog | None = None
         build_config_btn = QPushButton("Build Site Config…")

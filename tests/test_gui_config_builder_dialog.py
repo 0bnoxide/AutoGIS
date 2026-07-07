@@ -1,4 +1,4 @@
-"""Site Config Builder dialog tests (ADR-0064).
+"""Site Config Builder dialog tests (ADR-0065).
 
 Offscreen Qt, real widgets/threads -- same technique as test_gui_app.py.
 The two untestable seams are stubbed: ``config_builder.fetch_sublayers``

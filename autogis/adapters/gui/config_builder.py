@@ -1,4 +1,4 @@
-"""Pure logic for the Site Config Builder dialog (ADR-0064).
+"""Pure logic for the Site Config Builder dialog (ADR-0065).
 
 Builds, validates, and serializes a harvest-job ``config.yaml`` from plain
 form values, and maps an AGOL item's sublayers to dropdown entries whose

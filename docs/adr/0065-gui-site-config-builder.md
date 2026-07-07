@@ -1,4 +1,4 @@
-# ADR-0064: GUI Site Config Builder — guided harvest `config.yaml` authoring with live sublayer lookup
+# ADR-0065: GUI Site Config Builder — guided harvest `config.yaml` authoring with live sublayer lookup
 
 **Status:** Accepted
 
