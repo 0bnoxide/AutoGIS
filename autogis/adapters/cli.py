@@ -1812,7 +1812,7 @@ def agol():
 @click.option("--profile", default=None, help="ArcGIS API for Python profile name")
 @click.option("--title", required=True, help="Hosted service title")
 @click.option("--source", required=True, type=click.Path(exists=True),
-              help="Zip of FGDB or JSON FeatureSet to publish")
+              help="Zip of FGDB or shapefiles, or GeoJSON, to publish")
 @click.option("--tags", default="autogis", help="Comma-separated AGOL tags")
 @click.option("--folder", default=None, help="AGOL content folder (default: root)")
 @click.option("--share-with", default="org",
