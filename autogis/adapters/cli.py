@@ -1408,13 +1408,19 @@ def build_event_cmd(site_config):
 @envmon.command("build-callouts")
 @click.argument("site_config", type=click.Path(exists=True))
 @click.argument("figure_spec", type=click.Path(exists=True))
-def build_callouts_cmd(site_config, figure_spec):
+@click.option("--use-hull-collision", is_flag=True, default=False,
+              help="Use convex-hull (numpy) callout collision detection "
+                   "(Tool 5.2, ADR-0020). Mirrors the BuildCallouts .pyt "
+                   "parameter of the same name.")
+def build_callouts_cmd(site_config, figure_spec, use_hull_collision):
     """Tool 4: generate callout feature classes (ArcGIS Pro)."""
     _guard("build-callouts")
     from autogis.core.envmon import build_figure_dataset  # noqa: F401
     raise click.ClickException(
         "build-callouts runs inside ArcGIS Pro only. Use the BuildCallouts "
-        "tool in the .pyt toolbox."
+        "tool in the .pyt toolbox"
+        + (" with 'Use hull collision (numpy)' enabled."
+           if use_hull_collision else ".")
     )
 
 
@@ -1422,15 +1428,12 @@ def build_callouts_cmd(site_config, figure_spec):
 @click.argument("site_config", type=click.Path(exists=True))
 @click.argument("figure_spec", type=click.Path(exists=True))
 def optimize_callouts_cmd(site_config, figure_spec):
-    """Tool 5.2: run callout placement optimizer (ArcGIS Pro)."""
+    """Tool 5.2: hull-collision callout placement (see build-callouts)."""
     _guard("optimize-callouts")
     raise click.ClickException(
-        "optimize-callouts (Tool 5.2) is not implemented as a standalone "
-        "command -- there is no OptimizeCalloutPlacement .pyt tool either. "
-        "Its function was superseded by a --use-hull-collision flag design "
-        "on build-callouts (ADR-0020 + docs/superpowers/plans/"
-        "2026-06-27-optimize-callout-placement.md), which is itself not yet "
-        "wired into the CLI or .pyt. See ADR-0039."
+        "optimize-callouts (Tool 5.2) was folded into build-callouts as its "
+        "--use-hull-collision flag (ADR-0020). Use the BuildCallouts tool "
+        "in the .pyt toolbox with 'Use hull collision (numpy)' enabled."
     )
 
 
@@ -1448,17 +1451,26 @@ _OV_SPEC = click.option("--spec", required=True, help="FigureSpecID to scope the
 @_OV_GDB
 @_OV_SITE
 @_OV_SPEC
-def manage_overrides_list_cmd(gdb, site, spec):
-    """List all placement overrides for a site/figure spec."""
+@click.option("--map-type", default="",
+              help="MapType to scope the listing (default: blank). Overrides "
+                   "are keyed per map type; list one at a time.")
+def manage_overrides_list_cmd(gdb, site, spec, map_type):
+    """List placement overrides for a site/figure spec/map type."""
     _guard("manage-callout-overrides")
-    raise click.ClickException(
-        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
-        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
-        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
-        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
-        "read-one-full-override function needed for a correct 'unlock' "
-        "round-trip. See ADR-0039."
-    )
+    from autogis.core.envmon.manage_callout_overrides import load_overrides
+    overrides = load_overrides(gdb, site, spec, map_type)
+    if not overrides:
+        click.echo(f"No overrides for {site}/{spec}"
+                   f"/{map_type or 'blank'}.")
+        return
+    for loc, ov in sorted(overrides.items()):
+        origin = ov["origin"]
+        pos = (f"origin=({origin[0]:.2f}, {origin[1]:.2f})" if origin
+               else "origin=auto")
+        quad = ov["preferred_quadrant"] or "-"
+        state = "LOCKED" if ov["locked"] else "unlocked"
+        click.echo(f"{loc}: {pos} quadrant={quad} [{state}]")
+    click.echo(f"{len(overrides)} override(s).")
 
 
 @manage_callout_overrides_group.command("clear")
@@ -1468,14 +1480,11 @@ def manage_overrides_list_cmd(gdb, site, spec):
 def manage_overrides_clear_cmd(gdb, site, spec):
     """Delete all unlocked overrides for a site/figure spec."""
     _guard("manage-callout-overrides")
-    raise click.ClickException(
-        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
-        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
-        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
-        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
-        "read-one-full-override function needed for a correct 'unlock' "
-        "round-trip. See ADR-0039."
+    from autogis.core.envmon.manage_callout_overrides import (
+        clear_unlocked_overrides,
     )
+    n = clear_unlocked_overrides(gdb, site, spec)
+    click.echo(f"Cleared {n} unlocked override(s) for {site}/{spec}.")
 
 
 @manage_callout_overrides_group.command("lock")
@@ -1487,19 +1496,28 @@ def manage_overrides_clear_cmd(gdb, site, spec):
               help="Box lower-left X in map units.")
 @click.option("--anchor-y", type=float, required=True,
               help="Box lower-left Y in map units.")
-@click.option("--map-type", default="", help="MapType filter (default: all).")
+@click.option("--map-type", default="",
+              help="MapType key of the override row (default: blank).")
 def manage_overrides_lock_cmd(gdb, site, spec, location,
                                anchor_x, anchor_y, map_type):
     """Lock a callout to a fixed position."""
     _guard("manage-callout-overrides")
-    raise click.ClickException(
-        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
-        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
-        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
-        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
-        "read-one-full-override function needed for a correct 'unlock' "
-        "round-trip. See ADR-0039."
+    from autogis.core.envmon.manage_callout_overrides import (
+        CalloutOverride, get_override, save_override,
     )
+    ov = get_override(gdb, site, spec, location, map_type=map_type)
+    if ov is None:
+        ov = CalloutOverride(site_id=site, location_id=location,
+                             figure_spec_id=spec, map_type=map_type)
+    ov.anchor_x = anchor_x
+    ov.anchor_y = anchor_y
+    # The anchor IS the box lower-left; stale offsets would shift it.
+    ov.offset_x = 0.0
+    ov.offset_y = 0.0
+    ov.locked = True
+    save_override(gdb, ov)
+    click.echo(f"Locked {location} at ({anchor_x}, {anchor_y}) "
+               f"for {site}/{spec}.")
 
 
 @manage_callout_overrides_group.command("unlock")
@@ -1507,17 +1525,22 @@ def manage_overrides_lock_cmd(gdb, site, spec, location,
 @_OV_SITE
 @_OV_SPEC
 @click.option("--location", required=True, help="LocationID to unlock.")
-def manage_overrides_unlock_cmd(gdb, site, spec, location):
-    """Remove the lock on a callout (override becomes a quadrant hint)."""
+@click.option("--map-type", default="",
+              help="MapType key of the override row (default: blank).")
+def manage_overrides_unlock_cmd(gdb, site, spec, location, map_type):
+    """Clear a callout's lock; its position becomes an adjustable candidate."""
     _guard("manage-callout-overrides")
-    raise click.ClickException(
-        "manage-callout-overrides (Tool 5.3) is not wired to the CLI yet -- "
-        "there is no ManageCalloutPlacementOverrides .pyt tool either. The "
-        "core CRUD (autogis.core.envmon.manage_callout_overrides) exists "
-        "and is arcpy-tested there, but CLI wiring is blocked on a missing "
-        "read-one-full-override function needed for a correct 'unlock' "
-        "round-trip. See ADR-0039."
+    from autogis.core.envmon.manage_callout_overrides import (
+        get_override, save_override,
     )
+    ov = get_override(gdb, site, spec, location, map_type=map_type)
+    if ov is None:
+        raise click.ClickException(
+            f"No override found for {location} ({site}/{spec}, "
+            f"map type {map_type or 'blank'}).")
+    ov.locked = False
+    save_override(gdb, ov)
+    click.echo(f"Unlocked {location} for {site}/{spec}.")
 
 
 @envmon.command("gw-contours")

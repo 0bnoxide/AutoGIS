@@ -211,6 +211,7 @@ def generate_callout_features(
     points_fcs: Sequence[str] = ("MonitoringWells", "SoilBorings"),
     map_units: str = "feet",
     batch_id: str = "",
+    use_hull_collision: bool = False,
 ) -> int:
     """Write callouts to the four feature classes; returns callout count."""
     arcpy = _arcpy()
@@ -233,10 +234,11 @@ def generate_callout_features(
                site_id=site_id)
         return 0
 
-    overrides = _load_overrides(gdb, site_id, spec_id)
+    overrides = _load_overrides(gdb, site_id, spec_id, map_type)
     callouts = assemble_callouts(wide_rows, locations, spec,
                                  analyte_dictionary, qa, extent, map_units,
-                                 overrides)
+                                 overrides,
+                                 use_hull_collision=use_hull_collision)
 
     where = (f"SiteID = '{site_id}' AND FigureSpecID = '{spec_id}' "
              f"AND MapType = '{map_type}'")
