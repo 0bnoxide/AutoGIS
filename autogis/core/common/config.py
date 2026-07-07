@@ -314,6 +314,12 @@ class HarvestConfig:
     filename_template: str
     item_id: str | None = None
     url: str | None = None
+    # Index into the item's COMBINED layers+tables list (layers first, then
+    # tables) — the same continuous numbering AGOL uses for the portal
+    # ``?sublayer=N`` URL parameter and REST service sublayer ids. It is NOT
+    # an index into the arcgis Python API's separate ``.layers[]`` /
+    # ``.tables[]`` arrays. Only used with ``item_id``; ignored for ``url``.
+    layer_index: int = 0
     where: str = "1=1"
     incremental: bool = False
     skip_existing: bool = True
@@ -359,6 +365,10 @@ class HarvestConfig:
             filename_template=output["filename_template"],
             item_id=item_id,
             url=url,
+            # layer_index counts across layers-then-tables combined (AGOL
+            # ?sublayer=N numbering), not the API's separate arrays — see the
+            # field comment on the dataclass.
+            layer_index=layer.get("layer_index", 0),
             where=where if where is not None else "1=1",
             incremental=options.get("incremental", False),
             skip_existing=options.get("skip_existing", True),
