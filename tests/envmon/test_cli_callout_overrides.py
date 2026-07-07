@@ -141,10 +141,24 @@ def test_list_calls_core_and_prints_rows(fake_files):
              str(fake_files["gdb"]), "--site", "SITE1", "--spec", "SPEC1"],
         )
     assert result.exit_code == 0, result.output
-    lo.assert_called_once_with(str(fake_files["gdb"]), "SITE1", "SPEC1")
+    lo.assert_called_once_with(str(fake_files["gdb"]), "SITE1", "SPEC1", "")
     assert "MW-1" in result.output and "LOCKED" in result.output
     assert "MW-2" in result.output and "NE" in result.output
     assert "2 override(s)" in result.output
+
+
+def test_list_scopes_by_map_type(fake_files):
+    """list --map-type must forward the map type to the core scope."""
+    with _pass_guard(), \
+         patch(f"{_CORE}.load_overrides", return_value={}) as lo:
+        result = CliRunner().invoke(
+            autogis,
+            ["envmon", "manage-callout-overrides", "list",
+             str(fake_files["gdb"]), "--site", "SITE1", "--spec", "SPEC1",
+             "--map-type", "GW"],
+        )
+    assert result.exit_code == 0, result.output
+    lo.assert_called_once_with(str(fake_files["gdb"]), "SITE1", "SPEC1", "GW")
 
 
 def test_list_empty_says_so(fake_files):

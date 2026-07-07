@@ -1451,13 +1451,17 @@ _OV_SPEC = click.option("--spec", required=True, help="FigureSpecID to scope the
 @_OV_GDB
 @_OV_SITE
 @_OV_SPEC
-def manage_overrides_list_cmd(gdb, site, spec):
-    """List all placement overrides for a site/figure spec."""
+@click.option("--map-type", default="",
+              help="MapType to scope the listing (default: blank). Overrides "
+                   "are keyed per map type; list one at a time.")
+def manage_overrides_list_cmd(gdb, site, spec, map_type):
+    """List placement overrides for a site/figure spec/map type."""
     _guard("manage-callout-overrides")
     from autogis.core.envmon.manage_callout_overrides import load_overrides
-    overrides = load_overrides(gdb, site, spec)
+    overrides = load_overrides(gdb, site, spec, map_type)
     if not overrides:
-        click.echo(f"No overrides for {site}/{spec}.")
+        click.echo(f"No overrides for {site}/{spec}"
+                   f"/{map_type or 'blank'}.")
         return
     for loc, ov in sorted(overrides.items()):
         origin = ov["origin"]

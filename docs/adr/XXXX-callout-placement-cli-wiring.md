@@ -72,6 +72,31 @@ Keeping it as an alias is the smaller, non-breaking diff.
   `survey_to_well_elevation.py`) — the previous f-string `where` clauses were
   apostrophe-unsafe (e.g. `O'Brien Site`).
 
+### `load_overrides` MapType-collapse fix (pre-existing bug)
+
+`load_overrides` keyed its returned dict by `LocationID.upper()` and filtered
+only on `SiteID`/`FigureSpecID` — **no MapType**. Two override rows for one
+LocationID under different MapTypes collapsed into that location-keyed dict
+(last-read-wins, one silently dropped). Overrides are stored per
+`(SiteID, FigureSpecID, MapType, LocationID)`, and a figure render targets one
+MapType (`generate_callout_features` already scopes its own delete/insert by
+`map_type`), so the fix is to **scope `load_overrides` to a single map_type**,
+not to re-key the dict — `assemble_callouts` looks up by LocationID only and is
+never multi-map_type, so a composite key would buy nothing and force churn
+there. Shared `_scope_where(site, spec, map_type)` (blank ⇒ `'' OR NULL`) now
+backs both `load_overrides` and `_key_where`, guaranteeing identical MapType
+semantics.
+
+- **Caller `generate_callout_features`** now passes its `map_type` (was the
+  latent bug: it loaded every map_type collapsed).
+- **CLI `list`** gains `--map-type` (default blank), consistent with
+  lock/unlock; each listing is one map_type.
+- **Behavior change:** `load_overrides(gdb, site, spec)` with no map_type now
+  returns only blank-MapType rows, not an all-map_types collapse. Every real
+  caller passes its map_type. Covered by a WHERE-aware-mock behavioral test
+  (two MapTypes, same LocationID, both survive across scoped calls) confirmed
+  red against the pre-fix unscoped WHERE.
+
 ### Capability catalog honesty
 
 `capabilities.py`'s discovery rows for both tools described phantom behavior.
@@ -83,10 +108,11 @@ guard) are unchanged.
 
 - **arcpy-free + pytest-covered:** the `use_hull_collision` plumbing through
   `assemble_callouts`; `get_override`'s field-mapping, blank-map_type SQL, and
-  apostrophe quoting (via mocked cursors); `_key_where`; the get→save round-trip;
-  every CLI subcommand's *wiring* (core mocked at its source module, guard
-  patched) — verifies the CLI calls the core with the right args and shapes
-  output, which is exactly the gap #161 reported.
+  apostrophe quoting (via mocked cursors); `_scope_where`/`_key_where` MapType
+  scoping and the `load_overrides` no-collapse behavior (WHERE-aware mock); the
+  get→save round-trip; every CLI subcommand's *wiring* (core mocked at its source
+  module, guard patched) — verifies the CLI calls the core with the right args
+  and shapes output, which is exactly the gap #161 reported.
 - **arcpy-only + review-only (human runs in ArcGIS Pro):** the actual cursor
   I/O inside `get_override` / `save_override` / `clear_unlocked_overrides` /
   `generate_callout_features`, and the `.pyt` `BuildCallouts.execute` path. These

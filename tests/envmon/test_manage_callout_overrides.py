@@ -60,6 +60,83 @@ def test_load_overrides_upcases_location_id(tmp_path):
     assert result["MW-3"]["locked"] is True
 
 
+# ---------------------------------------------------------- MapType scoping
+# Regression: load_overrides keyed its dict by LocationID with NO MapType
+# filter, so two rows for one LocationID under different MapTypes collapsed
+# (last-read-wins). load_overrides is now scoped to one map_type.
+
+def _where_aware_arcpy(rows):
+    """arcpy mock whose SearchCursor honors the MapType constraint in the
+    where clause, simulating the GDB's own row filtering. Not a fake of the
+    fix — it filters on whatever WHERE the function actually builds, so it
+    fails when the WHERE lacks a MapType constraint.
+
+    rows: (LocationID, AnchorX, AnchorY, OffsetX, OffsetY, PrefQuad,
+           Locked, MapType) — the 8th field is stripped before the cursor.
+    """
+    arcpy = MagicMock()
+    arcpy.Exists.return_value = True
+
+    def _search(table, fields, where_clause=""):
+        def keep(r):
+            mt = r[7]
+            if "MapType IS NULL" in where_clause:
+                return mt in (None, "")
+            if "MapType" not in where_clause:
+                return True  # unscoped WHERE -> every map type leaks in
+            return f"MapType = '{mt}'" in where_clause
+        selected = [r[:7] for r in rows if keep(r)]
+        cm = MagicMock()
+        cm.__enter__ = lambda s: iter(selected)
+        cm.__exit__ = MagicMock(return_value=False)
+        return cm
+
+    arcpy.da.SearchCursor.side_effect = _search
+    return arcpy
+
+
+_TWO_MAP_TYPES = [
+    ("MW-1", 100.0, 100.0, 0.0, 0.0, None, 0, "GW"),
+    ("MW-1", 900.0, 900.0, 0.0, 0.0, None, 0, "SOIL"),
+]
+
+
+def test_load_overrides_where_includes_map_type(tmp_path):
+    mock = _mock_arcpy(exists=True, cursor_rows=[])
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=mock):
+        from autogis.core.envmon.manage_callout_overrides import load_overrides
+        load_overrides(tmp_path / "fake.gdb", "SITE1", "SPEC1", "GW")
+    where = mock.da.SearchCursor.call_args.kwargs["where_clause"]
+    assert "MapType = 'GW'" in where
+
+
+def test_load_overrides_scopes_to_map_type_no_collapse(tmp_path):
+    """The bug: same LocationID under two MapTypes must NOT collapse.
+
+    Each scoped call returns only its own MapType's row. Against the old
+    unscoped WHERE the where-aware mock leaks both rows into every call and
+    GW's origin gets overwritten by SOIL — this test fails there.
+    """
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=_where_aware_arcpy(_TWO_MAP_TYPES)):
+        from autogis.core.envmon.manage_callout_overrides import load_overrides
+        gw = load_overrides(tmp_path / "fake.gdb", "SITE1", "SPEC1", "GW")
+        soil = load_overrides(tmp_path / "fake.gdb", "SITE1", "SPEC1", "SOIL")
+    assert gw["MW-1"]["origin"] == (100.0, 100.0)
+    assert soil["MW-1"]["origin"] == (900.0, 900.0)
+
+
+def test_load_overrides_blank_map_type_matches_null(tmp_path):
+    mock = _mock_arcpy(exists=True, cursor_rows=[])
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=mock):
+        from autogis.core.envmon.manage_callout_overrides import load_overrides
+        load_overrides(tmp_path / "fake.gdb", "SITE1", "SPEC1")
+    where = mock.da.SearchCursor.call_args.kwargs["where_clause"]
+    assert "MapType IS NULL" in where
+
+
 def test_callout_override_dataclass_fields():
     from autogis.core.envmon.manage_callout_overrides import CalloutOverride
     ov = CalloutOverride(site_id="S", location_id="MW-1", figure_spec_id="F")

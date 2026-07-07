@@ -38,10 +38,31 @@ class CalloutOverride:
     notes: str = ""
 
 
+def _scope_where(site_id: str, figure_spec_id: str, map_type: str) -> str:
+    """SiteID/FigureSpecID/MapType scope shared by load_overrides + _key_where.
+
+    A blank map_type matches both '' and NULL — file GDBs may store an empty
+    text value either way. LocationID is NOT part of the scope; the logical
+    row key is (SiteID, FigureSpecID, MapType, LocationID), so within one
+    scope each LocationID is unique.
+    """
+    mt = (f"MapType = '{_q(map_type)}'" if map_type
+          else "(MapType = '' OR MapType IS NULL)")
+    return (f"SiteID = '{_q(site_id)}' "
+            f"AND FigureSpecID = '{_q(figure_spec_id)}' "
+            f"AND {mt}")
+
+
 def load_overrides(
-    gdb_path, site_id: str, figure_spec_id: str
+    gdb_path, site_id: str, figure_spec_id: str, map_type: str = ""
 ) -> Dict[str, dict]:
     """Return override dicts keyed by LocationID (upper-cased).
+
+    Scoped to one map_type: overrides are stored per
+    (SiteID, FigureSpecID, MapType, LocationID), and a figure render targets a
+    single MapType. WITHOUT this scope, two rows for the same LocationID under
+    different MapTypes collapse (last-read-wins) into this location-keyed dict.
+    Callers that render/list per map_type must pass their map_type.
 
     Return shape matches what assemble_callouts expects for its ``overrides``
     parameter: each value has keys ``origin`` (tuple|None),
@@ -52,8 +73,7 @@ def load_overrides(
     if not arcpy.Exists(table):
         return {}
     out: Dict[str, dict] = {}
-    where = (f"SiteID = '{_q(site_id)}' "
-             f"AND FigureSpecID = '{_q(figure_spec_id)}'")
+    where = _scope_where(site_id, figure_spec_id, map_type)
     with arcpy.da.SearchCursor(table, _READ_FIELDS, where_clause=where) as cur:
         for loc, ax, ay, ox, oy, pq, locked in cur:
             origin = None
@@ -77,17 +97,10 @@ _WRITE_FIELDS = [
 
 def _key_where(site_id: str, figure_spec_id: str, location_id: str,
                map_type: str) -> str:
-    """Where clause for the (SiteID, FigureSpecID, MapType, LocationID) key.
-
-    A blank map_type matches both '' and NULL — file GDBs may store an
-    empty text value either way.
-    """
-    mt = (f"MapType = '{_q(map_type)}'" if map_type
-          else "(MapType = '' OR MapType IS NULL)")
-    return (f"SiteID = '{_q(site_id)}' "
-            f"AND FigureSpecID = '{_q(figure_spec_id)}' "
-            f"AND {mt} "
-            f"AND LocationID = '{_q(location_id)}'")
+    """Where clause for the full (SiteID, FigureSpecID, MapType, LocationID)
+    row key — the scope plus a LocationID equality."""
+    return (_scope_where(site_id, figure_spec_id, map_type)
+            + f" AND LocationID = '{_q(location_id)}'")
 
 
 def get_override(

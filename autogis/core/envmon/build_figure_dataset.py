@@ -234,7 +234,7 @@ def generate_callout_features(
                site_id=site_id)
         return 0
 
-    overrides = _load_overrides(gdb, site_id, spec_id)
+    overrides = _load_overrides(gdb, site_id, spec_id, map_type)
     callouts = assemble_callouts(wide_rows, locations, spec,
                                  analyte_dictionary, qa, extent, map_units,
                                  overrides,
