@@ -93,11 +93,21 @@ def test_fetch_disabled_until_profile_and_item_id(qapp):
     dlg = ConfigBuilderDialog()
     assert not dlg._fetch_button.isEnabled()
     dlg._profile.setText("corp")
-    dlg._profile.textChanged.emit(dlg._profile.text())  # setText fires it; be explicit
     dlg._item_id.setText("abc123")
     assert dlg._fetch_button.isEnabled()
     dlg._item_id.clear()
     assert not dlg._fetch_button.isEnabled()
+
+
+def test_fetch_enables_when_profile_filled_after_item_id(qapp):
+    # Order-dependent regression: profile's textChanged must itself trigger
+    # the gate re-check, not just item_id/url's -- filling item_id first and
+    # profile last must still enable Fetch.
+    dlg = ConfigBuilderDialog()
+    dlg._item_id.setText("abc123")
+    assert not dlg._fetch_button.isEnabled()
+    dlg._profile.setText("corp")
+    assert dlg._fetch_button.isEnabled()
 
 
 def test_fetch_populates_combo_off_the_ui_thread(qapp, monkeypatch):

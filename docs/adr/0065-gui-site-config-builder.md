@@ -74,12 +74,13 @@ schema (url-XOR-item_id, required output keys).
 - Every field carries plain-language help; the retries/backoff copy was
   written from `core/harvest/download.py` itself (linear backoff:
   `backoff_seconds × attempt-number`), not guessed.
-- 26 new tests: 15 pure (dict assembly, validation reuse, YAML round-trip
+- 30 new tests: 15 pure (dict assembly, validation reuse, YAML round-trip
   through `HarvestConfig.load`, sublayer mapping/sorting/`None`-tables) and
-  11 offscreen Qt (xor wiring, fetch gating/population/failure via a stubbed
-  `fetch_sublayers`, browse/save via a stubbed `_pick_path`,
-  validate-before-file-dialog, MainWindow entry point). No test touches the
-  network or the real QSettings registry.
+  15 offscreen Qt (xor wiring, fetch gating/population/failure via a stubbed
+  `fetch_sublayers` — including the profile-filled-after-item_id fill order —
+  browse/save via a stubbed `_pick_path`, validate-before-file-dialog,
+  MainWindow entry point). No test touches the network or the real QSettings
+  registry.
 
 ### Negative / accepted trade-offs
 

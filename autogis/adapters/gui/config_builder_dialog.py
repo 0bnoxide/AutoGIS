@@ -97,6 +97,7 @@ class ConfigBuilderDialog(QDialog):
         form.addRow("", _help(
             "AGOL/Portal connection profile name saved via ArcGIS Pro or the "
             "ArcGIS API for Python — leave blank for anonymous access."))
+        self._profile.textChanged.connect(self._sync_fetch_enabled)
 
         # --- layer: item_id XOR url ----------------------------------------
         self._item_id = QLineEdit()
