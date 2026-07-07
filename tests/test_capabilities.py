@@ -52,6 +52,50 @@ def test_every_guarded_command_is_in_tools():
         f"names passed to _guard() missing from capabilities.TOOLS: {missing}")
 
 
+def test_pyt_redirect_targets_exist():
+    """Every CLI redirect message that says "Use the <X> tool in the .pyt
+    toolbox" must name a class that actually exists in toolbox.pyt.
+
+    This drift class is real, not hypothetical: the 2026-07-01 architecture
+    review (docs/reviews/fable-architecture-review.md, H2) found two
+    redirect messages pointing at wrong/nonexistent .pyt classes and fixed
+    them by hand, and 5.2/5.3 shipped pointing at classes that never existed
+    (ADR-0039 / issue #161). This is the .pyt leg of the four-surface
+    consistency guard above.
+
+    Ceiling: matches the current message phrasing only -- a rephrased
+    redirect drops out of the check silently (the non-empty assert below
+    catches wholesale rot, not one-off rewording).
+    """
+    import ast
+    import inspect
+    import re
+    from pathlib import Path
+
+    import autogis
+    from autogis.adapters import cli
+
+    # Implicit string-literal concatenation is folded at parse time, so the
+    # split message literals in cli.py appear as single ast.Constant values.
+    cli_strings = [
+        node.value for node in ast.walk(ast.parse(inspect.getsource(cli)))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    targets = set()
+    for s in cli_strings:
+        targets.update(re.findall(r"Use the (\w+)\s+tool in the \.pyt toolbox", s))
+    assert targets, "expected at least one '.pyt toolbox' redirect message in cli.py"
+
+    pyt = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
+    tree = ast.parse(pyt.read_text(encoding="utf-8"), filename=str(pyt))
+    classes = {n.name for n in tree.body if isinstance(n, ast.ClassDef)}
+
+    missing = sorted(targets - classes)
+    assert not missing, (
+        f"cli.py redirect messages point at .pyt tool classes that do not "
+        f"exist in toolbox.pyt: {missing}")
+
+
 def test_qa_report_commands_share_fail_on_contract():
     """Every envmon command that declares BOTH --report and --fail-on must
     use the shared contract (choices error/warning, default "error"), except
