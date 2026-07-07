@@ -1,4 +1,4 @@
-# ADR-XXXX: Record run history for `.pyt` toolbox executions via a toolbox_core helper
+# ADR-0068: Record run history for `.pyt` toolbox executions via a toolbox_core helper
 
 **Status:** Proposed (draft — do not implement without review)
 
