@@ -1,6 +1,6 @@
-# ADR-XXXX: Coordination hook covers every git write in a command, push-to-main refspecs, history-writing porcelain, links, and NotebookEdit
+# ADR-0067: Coordination hook covers every git write in a command, push-to-main refspecs, history-writing porcelain, links, and NotebookEdit
 
-> **Numbering note:** placeholder `XXXX` — number at merge time. Parallel
+> **Numbering note:** placeholder `0067` — number at merge time. Parallel
 > sessions have collided on ADR numbers three times (0030/0034/0061); check
 > every open PR's files, not just `ls docs/adr/`.
 
