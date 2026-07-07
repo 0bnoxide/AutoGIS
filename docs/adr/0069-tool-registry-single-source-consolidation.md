@@ -1,10 +1,10 @@
-# ADR-XXXX: Consolidate the hand-maintained tool registries behind one table (PROPOSAL)
+# ADR-0069: Consolidate the hand-maintained tool registries behind one table (PROPOSAL)
 
 **Status:** Proposed (not executed — see Decision)
 
 **Date:** 2026-07-06
 
-> Numbering: placeholder `XXXX` on purpose; assign the next free number at
+> Numbering: placeholder `0069` on purpose; assign the next free number at
 > merge time after checking every open PR's files (ADR-0034/0061/0062
 > collision pattern).
 
