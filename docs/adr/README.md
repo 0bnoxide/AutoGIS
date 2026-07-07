@@ -82,6 +82,7 @@ Each ADR follows this structure:
 | [061](0061-drone-geotech-graphics-tool-batch.md) | Drone/geotech-graphics tool batch — DEMConditioningPipeline, CompareDroneSurfaces, GenerateSubsurfaceProfileFromBorings rescoped out of the Phase 5 geostatistical gate and shipped; new read-only LandXML TIN parser | Accepted | 2026-07-06 |
 | [062](0062-gui-local-tool-support.md) | GUI LOCAL (arcpy) tool support — persisted `local_python` picker (QSettings), Run gated per tool, class-1 redirect-only tools greyed via new `reachability.UNREACHABLE` map | Accepted | 2026-07-06 |
 | [063](0063-gui-workflow-builder.md) | GUI workflow builder v1 — assemble + run multi-step headless workflows over WorkflowRunner (in-session, gate-2 pause/halt/cancel); single Run unified as a 1-step workflow | Accepted | 2026-07-06 |
+| [064](0064-agol-publish-hardening.md) | AGOL publish-layer hardening — keep tracebacks in QA errors, pre-check the hosted service name + explicit `publish_parameters`, detect/validate source type (FGDB zip, shapefile zip, GeoJSON) | Accepted | 2026-07-06 |
 
 ## File naming
 
