@@ -96,20 +96,55 @@ def test_harvest_records_failure_and_continues(tmp_path):
     assert (tmp_path / "Done" / "2_b.jpg").exists()
 
 
-def test_resolve_layer_rejects_no_attachments(tmp_path):
-    layer = FakeLayer([], {}, props={"hasAttachments": False})
+def _fake_gis(layers=(), tables=()):
+    class Item:
+        pass
+    item = Item()
+    item.layers = list(layers)
+    item.tables = list(tables)
 
     class FakeContent:
         def get(self, item_id):
-            class Item:
-                layers = [layer]
-            return Item()
+            return item
 
     class FakeGIS:
         content = FakeContent()
 
+    return FakeGIS()
+
+
+def test_resolve_layer_rejects_no_attachments(tmp_path):
+    layer = FakeLayer([], {}, props={"hasAttachments": False})
+    gis = _fake_gis(layers=[layer])
     with pytest.raises(ValueError):
-        harvester.resolve_layer(FakeGIS(), _cfg(tmp_path))
+        harvester.resolve_layer(gis, _cfg(tmp_path))
+
+
+def test_resolve_layer_defaults_to_first_sublayer(tmp_path):
+    first = FakeLayer([], {})
+    gis = _fake_gis(layers=[first, FakeLayer([], {})])
+    assert harvester.resolve_layer(gis, _cfg(tmp_path)) is first
+
+
+def test_resolve_layer_index_reaches_table_in_combined_list(tmp_path):
+    # layer_index counts across layers-then-tables combined (AGOL
+    # ?sublayer=N numbering): 2 layers + tables means index 3 = tables[1].
+    target = FakeLayer([], {})
+    gis = _fake_gis(
+        layers=[FakeLayer([], {}), FakeLayer([], {})],
+        tables=[FakeLayer([], {}), target],
+    )
+    cfg = _cfg(tmp_path, layer_index=3)
+    assert harvester.resolve_layer(gis, cfg) is target
+
+
+def test_resolve_layer_index_out_of_range_raises_config_error(tmp_path):
+    from autogis.core.common.config import ConfigError
+    gis = _fake_gis(layers=[FakeLayer([], {})])
+    with pytest.raises(ConfigError, match="out of range"):
+        harvester.resolve_layer(gis, _cfg(tmp_path, layer_index=5))
+    with pytest.raises(ConfigError, match="out of range"):
+        harvester.resolve_layer(gis, _cfg(tmp_path, layer_index=-1))
 
 
 def test_incremental_writes_state_and_filters(tmp_path):

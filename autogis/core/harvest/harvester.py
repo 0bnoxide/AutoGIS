@@ -2,6 +2,7 @@ import os
 import time
 
 from .models import AttachmentResult, RunSummary, summary_counts
+from ..common.config import ConfigError
 from .manifest import Manifest
 from .templates import render_path_component
 from .download import download_one
@@ -26,7 +27,17 @@ def resolve_layer(gis, config):
         layer = FeatureLayer(config.url, gis)
     else:
         item = gis.content.get(config.item_id)
-        layer = item.layers[0]
+        # config.layer_index addresses the COMBINED layers+tables list
+        # (layers first, then tables) — AGOL's continuous ?sublayer=N /
+        # REST numbering, NOT the arcgis API's separate .layers[]/.tables[]
+        # arrays. Same precedent as dashboard_refresh.py.
+        sublayers = list(item.layers or []) + list(item.tables or [])
+        if not 0 <= config.layer_index < len(sublayers):
+            raise ConfigError(
+                f"layer_index {config.layer_index} is out of range for item "
+                f"{config.item_id}: it has {len(sublayers)} sublayer(s) "
+                f"(layers+tables combined, 0-based)")
+        layer = sublayers[config.layer_index]
     if not _prop(layer.properties, "hasAttachments"):
         raise ValueError(
             f"Layer {config.layer_ref()} does not have attachments enabled")

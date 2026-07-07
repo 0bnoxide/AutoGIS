@@ -22,6 +22,22 @@ def _write_config(tmp_path, extra=None):
     return str(p)
 
 
+def test_load_layer_index_defaults_to_zero(tmp_path):
+    from pathlib import Path
+    from autogis.core.models import HarvestConfig
+    cfg = HarvestConfig.load(Path(_write_config(tmp_path)))
+    assert cfg.layer_index == 0
+
+
+def test_load_layer_index_round_trips_from_yaml(tmp_path):
+    from pathlib import Path
+    from autogis.core.models import HarvestConfig
+    config_path = _write_config(
+        tmp_path, extra={"layer": {"item_id": "abc123", "layer_index": 5}})
+    cfg = HarvestConfig.load(Path(config_path))
+    assert cfg.layer_index == 5
+
+
 def test_run_loads_config_and_calls_harvest(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path)
     captured = {}
