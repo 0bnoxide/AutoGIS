@@ -83,6 +83,7 @@ Each ADR follows this structure:
 | [062](0062-gui-local-tool-support.md) | GUI LOCAL (arcpy) tool support — persisted `local_python` picker (QSettings), Run gated per tool, class-1 redirect-only tools greyed via new `reachability.UNREACHABLE` map | Accepted | 2026-07-06 |
 | [063](0063-gui-workflow-builder.md) | GUI workflow builder v1 — assemble + run multi-step headless workflows over WorkflowRunner (in-session, gate-2 pause/halt/cancel); single Run unified as a 1-step workflow | Accepted | 2026-07-06 |
 | [064](0064-agol-publish-hardening.md) | AGOL publish-layer hardening — keep tracebacks in QA errors, pre-check the hosted service name + explicit `publish_parameters`, detect/validate source type (FGDB zip, shapefile zip, GeoJSON) | Accepted | 2026-07-06 |
+| [065](0065-gui-site-config-builder.md) | GUI Site Config Builder — guided harvest `config.yaml` dialog; live sublayer lookup resolves the pick to `layer.url`; validation round-trips through `HarvestConfig.load` | Accepted | 2026-07-06 |
 | [066](0066-harvest-layer-index-combined-sublayers.md) | `HarvestConfig.layer_index` — harvest sublayer selection over the combined layers+tables list (AGOL `?sublayer=N` numbering); out-of-range raises `ConfigError`; fixes hardcoded `layers[0]` | Accepted | 2026-07-06 |
 
 ## File naming

@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import settings
+from .config_builder_dialog import ConfigBuilderDialog
 from .executor import Decision, Step, StepResult, _SEV_ORDER, needs_arcpy_env
 from .forms import FormValidationError, build_step
 from .introspect import CommandForm, FormField, introspect_cli
@@ -143,6 +144,12 @@ class MainWindow(QMainWindow):
         lp_browse = QPushButton("Browse…")
         lp_browse.clicked.connect(self._browse_local_python)
         lp_row.addWidget(lp_browse)
+        # Site Config Builder (ADR-0065): author a harvest config.yaml via a
+        # guided form instead of hand-writing YAML / inspecting item.layers.
+        self._config_dialog: ConfigBuilderDialog | None = None
+        build_config_btn = QPushButton("Build Site Config…")
+        build_config_btn.clicked.connect(self._on_build_config)
+        lp_row.addWidget(build_config_btn)
         outer.addLayout(lp_row)
 
         self._command_box = QComboBox()
@@ -226,6 +233,12 @@ class MainWindow(QMainWindow):
 
     def _current_form(self) -> CommandForm | None:
         return self._forms.get(self._command_box.currentText())
+
+    def _on_build_config(self) -> None:
+        """Open the Site Config Builder (window-modal, non-blocking --
+        ``open()`` keeps the event loop free, unlike ``exec()``)."""
+        self._config_dialog = ConfigBuilderDialog(self)
+        self._config_dialog.open()
 
     def _browse_local_python(self) -> None:
         path = _pick_path("open", self, "Select arcgispro-py3 python.exe",
