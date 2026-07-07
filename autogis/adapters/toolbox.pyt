@@ -361,6 +361,8 @@ class BuildCallouts(object):
             _param("map_type", "Map type", "GPString", default="GW_ANALYTICAL"),
             _param("replace_existing", "Replace existing callouts",
                    "GPBoolean", required=False, default=True),
+            _param("use_hull_collision", "Use hull collision (numpy)",
+                   "GPBoolean", required=False, default=False),
         ]
 
     def execute(self, parameters, messages):
@@ -386,6 +388,7 @@ class BuildCallouts(object):
             event_date=ev, map_type=p["map_type"].valueAsText,
             replace_existing=bool(p["replace_existing"].value),
             map_units=site.get("map_units", "feet"),
+            use_hull_collision=bool(p["use_hull_collision"].value),
         )
         messages.addMessage(f"{n} callouts generated.")
         _msg(messages, qa)

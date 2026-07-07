@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from ...runtime.sessions import arcpy_env as _arcpy
+from .survey_to_well_elevation import sql_quote as _q
 
 _TABLE = "Env_CalloutPlacementOverrides"
 _READ_FIELDS = [
@@ -51,7 +52,8 @@ def load_overrides(
     if not arcpy.Exists(table):
         return {}
     out: Dict[str, dict] = {}
-    where = f"SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}'"
+    where = (f"SiteID = '{_q(site_id)}' "
+             f"AND FigureSpecID = '{_q(figure_spec_id)}'")
     with arcpy.da.SearchCursor(table, _READ_FIELDS, where_clause=where) as cur:
         for loc, ax, ay, ox, oy, pq, locked in cur:
             origin = None
@@ -73,6 +75,57 @@ _WRITE_FIELDS = [
 ]
 
 
+def _key_where(site_id: str, figure_spec_id: str, location_id: str,
+               map_type: str) -> str:
+    """Where clause for the (SiteID, FigureSpecID, MapType, LocationID) key.
+
+    A blank map_type matches both '' and NULL — file GDBs may store an
+    empty text value either way.
+    """
+    mt = (f"MapType = '{_q(map_type)}'" if map_type
+          else "(MapType = '' OR MapType IS NULL)")
+    return (f"SiteID = '{_q(site_id)}' "
+            f"AND FigureSpecID = '{_q(figure_spec_id)}' "
+            f"AND {mt} "
+            f"AND LocationID = '{_q(location_id)}'")
+
+
+def get_override(
+    gdb_path, site_id: str, figure_spec_id: str, location_id: str,
+    map_type: str = "",
+) -> Optional[CalloutOverride]:
+    """Read one full override row by its logical key, or None.
+
+    save_override rewrites the whole row, so any partial update (lock,
+    unlock) must read every field first to round-trip without data loss.
+    """
+    arcpy = _arcpy()
+    table = str(Path(gdb_path) / _TABLE)
+    if not arcpy.Exists(table):
+        return None
+    where = _key_where(site_id, figure_spec_id, location_id, map_type)
+    with arcpy.da.SearchCursor(table, _WRITE_FIELDS, where_clause=where) as cur:
+        for row in cur:
+            d = dict(zip(_WRITE_FIELDS, row))
+            return CalloutOverride(
+                site_id=str(d["SiteID"]),
+                location_id=str(d["LocationID"]),
+                figure_spec_id=str(d["FigureSpecID"]),
+                map_type=str(d["MapType"] or ""),
+                event_date=d["EventDate"],
+                sample_id=str(d["SampleID"] or ""),
+                anchor_x=d["AnchorX"],
+                anchor_y=d["AnchorY"],
+                offset_x=float(d["OffsetX"] or 0.0),
+                offset_y=float(d["OffsetY"] or 0.0),
+                preferred_quadrant=(str(d["PreferredQuadrant"]).strip() or None
+                                    if d["PreferredQuadrant"] else None),
+                locked=bool(d["LockedPlacement"]),
+                notes=str(d["Notes"] or ""),
+            )
+    return None
+
+
 def save_override(gdb_path, override: CalloutOverride) -> None:
     """Upsert one row in Env_CalloutPlacementOverrides.
 
@@ -83,12 +136,8 @@ def save_override(gdb_path, override: CalloutOverride) -> None:
     table = str(Path(gdb_path) / _TABLE)
     if not arcpy.Exists(table):
         raise RuntimeError(f"Table not found: {table}")
-    where = (
-        f"SiteID = '{override.site_id}' "
-        f"AND FigureSpecID = '{override.figure_spec_id}' "
-        f"AND MapType = '{override.map_type}' "
-        f"AND LocationID = '{override.location_id}'"
-    )
+    where = _key_where(override.site_id, override.figure_spec_id,
+                       override.location_id, override.map_type)
     with arcpy.da.UpdateCursor(table, ["OID@"], where_clause=where) as cur:
         for _ in cur:
             cur.deleteRow()
@@ -120,7 +169,8 @@ def clear_unlocked_overrides(
     if not arcpy.Exists(table):
         return 0
     where = (
-        f"SiteID = '{site_id}' AND FigureSpecID = '{figure_spec_id}' "
+        f"SiteID = '{_q(site_id)}' "
+        f"AND FigureSpecID = '{_q(figure_spec_id)}' "
         f"AND (LockedPlacement = 0 OR LockedPlacement IS NULL)"
     )
     n = 0

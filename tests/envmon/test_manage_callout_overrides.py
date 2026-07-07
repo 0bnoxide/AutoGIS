@@ -151,3 +151,97 @@ def test_clear_unlocked_overrides_zero_when_table_missing(tmp_path):
             clear_unlocked_overrides,
         )
         assert clear_unlocked_overrides(tmp_path / "fake.gdb", "S", "F") == 0
+
+
+# ---------------------------------------------------------- get_override
+# Full-row read keyed by (SiteID, FigureSpecID, MapType, LocationID) —
+# the missing piece for a lossless lock/unlock round-trip (save_override
+# rewrites the whole row).
+
+# One row in _WRITE_FIELDS order.
+_FULL_ROW = ("SITE1", None, "GW", "SPEC1", "MW-1", "S-9",
+             100.0, 200.0, 1.5, 2.5, "NE", 1, "hand placed")
+
+
+def test_get_override_none_when_table_missing(tmp_path):
+    mock = _mock_arcpy(exists=False)
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=mock):
+        from autogis.core.envmon.manage_callout_overrides import get_override
+        assert get_override(tmp_path / "fake.gdb", "S", "F", "MW-1") is None
+
+
+def test_get_override_none_when_no_row(tmp_path):
+    mock = _mock_arcpy(exists=True, cursor_rows=[])
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=mock):
+        from autogis.core.envmon.manage_callout_overrides import get_override
+        assert get_override(tmp_path / "fake.gdb", "S", "F", "MW-1") is None
+
+
+def test_get_override_returns_full_row(tmp_path):
+    mock = _mock_arcpy(exists=True, cursor_rows=[_FULL_ROW])
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=mock):
+        from autogis.core.envmon.manage_callout_overrides import get_override
+        ov = get_override(tmp_path / "fake.gdb", "SITE1", "SPEC1", "MW-1",
+                          map_type="GW")
+    assert ov is not None
+    assert ov.site_id == "SITE1"
+    assert ov.map_type == "GW"
+    assert ov.sample_id == "S-9"
+    assert ov.anchor_x == 100.0 and ov.anchor_y == 200.0
+    assert ov.offset_x == 1.5 and ov.offset_y == 2.5
+    assert ov.preferred_quadrant == "NE"
+    assert ov.locked is True
+    assert ov.notes == "hand placed"
+
+
+def test_get_override_blank_map_type_matches_null(tmp_path):
+    """A blank map_type must match both '' and NULL in the where clause."""
+    mock = _mock_arcpy(exists=True, cursor_rows=[])
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=mock):
+        from autogis.core.envmon.manage_callout_overrides import get_override
+        get_override(tmp_path / "fake.gdb", "S", "F", "MW-1", map_type="")
+    where = mock.da.SearchCursor.call_args.kwargs["where_clause"]
+    assert "MapType IS NULL" in where
+
+
+def test_get_override_quotes_apostrophes(tmp_path):
+    mock = _mock_arcpy(exists=True, cursor_rows=[])
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=mock):
+        from autogis.core.envmon.manage_callout_overrides import get_override
+        get_override(tmp_path / "fake.gdb", "O'Brien Site", "F", "MW-1")
+    where = mock.da.SearchCursor.call_args.kwargs["where_clause"]
+    assert "O''Brien Site" in where
+
+
+def test_get_then_save_round_trips_every_field(tmp_path):
+    """unlock's contract: read full row, flip locked, rewrite losslessly."""
+    read_mock = _mock_arcpy(exists=True, cursor_rows=[_FULL_ROW])
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=read_mock):
+        from autogis.core.envmon.manage_callout_overrides import get_override
+        ov = get_override(tmp_path / "fake.gdb", "SITE1", "SPEC1", "MW-1",
+                          map_type="GW")
+
+    write_mock = MagicMock()
+    write_mock.Exists.return_value = True
+    update_cm = MagicMock()
+    update_cm.__iter__ = lambda s: iter([])
+    write_mock.da.UpdateCursor.return_value.__enter__ = lambda s: update_cm
+    write_mock.da.UpdateCursor.return_value.__exit__ = MagicMock(
+        return_value=False)
+    insert_cm = MagicMock()
+    write_mock.da.InsertCursor.return_value.__enter__ = lambda s: insert_cm
+    write_mock.da.InsertCursor.return_value.__exit__ = MagicMock(
+        return_value=False)
+    with patch("autogis.core.envmon.manage_callout_overrides._arcpy",
+               return_value=write_mock):
+        from autogis.core.envmon.manage_callout_overrides import save_override
+        save_override(tmp_path / "fake.gdb", ov)
+
+    row = insert_cm.insertRow.call_args[0][0]
+    assert row == list(_FULL_ROW), "get_override -> save_override lost data"
