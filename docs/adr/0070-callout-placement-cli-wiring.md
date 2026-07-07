@@ -1,4 +1,4 @@
-# ADR-XXXX: Wire callout-placement tools 5.2 / 5.3 (folded hull-collision flag; override CRUD with a full-row read)
+# ADR-0070: Wire callout-placement tools 5.2 / 5.3 (folded hull-collision flag; override CRUD with a full-row read)
 
 > Placeholder number — the orchestrator assigns the real ADR number at merge to
 > avoid collisions with parallel branches.
