@@ -102,6 +102,12 @@ def _fake_gis(layers=(), tables=()):
     item = Item()
     item.layers = list(layers)
     item.tables = list(tables)
+    # Real AGOL sublayers carry their own REST id on .properties.id; assign
+    # the combined layers-then-tables position as that id here (unless a
+    # test already set one explicitly), matching production's id-based
+    # lookup instead of raw positional indexing.
+    for position, sub in enumerate(item.layers + item.tables):
+        sub.properties.setdefault("id", position)
 
     class FakeContent:
         def get(self, item_id):
@@ -140,11 +146,21 @@ def test_resolve_layer_index_reaches_table_in_combined_list(tmp_path):
 
 def test_resolve_layer_index_out_of_range_raises_config_error(tmp_path):
     from autogis.core.common.config import ConfigError
-    gis = _fake_gis(layers=[FakeLayer([], {})])
-    with pytest.raises(ConfigError, match="out of range"):
+    gis = _fake_gis(layers=[FakeLayer([], {})])  # only sublayer id 0 exists
+    with pytest.raises(ConfigError, match="does not match any sublayer id"):
         harvester.resolve_layer(gis, _cfg(tmp_path, layer_index=5))
-    with pytest.raises(ConfigError, match="out of range"):
+    with pytest.raises(ConfigError, match="does not match any sublayer id"):
         harvester.resolve_layer(gis, _cfg(tmp_path, layer_index=-1))
+
+
+def test_resolve_layer_index_matches_by_id_not_position(tmp_path):
+    # Sublayer ids aren't guaranteed contiguous-from-position-0 -- a service
+    # can have non-zero-based or gappy ids. Position 0 here carries id=7;
+    # requesting layer_index=7 must resolve it by id, not by treating 7 as
+    # an out-of-bounds position in a 1-element list.
+    target = FakeLayer([], {}, props={"hasAttachments": True, "id": 7})
+    gis = _fake_gis(layers=[target])
+    assert harvester.resolve_layer(gis, _cfg(tmp_path, layer_index=7)) is target
 
 
 def test_incremental_writes_state_and_filters(tmp_path):

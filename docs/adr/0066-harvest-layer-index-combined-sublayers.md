@@ -1,4 +1,4 @@
-# ADR-0064: `HarvestConfig.layer_index` — select a sublayer from the combined layers+tables list
+# ADR-0066: `HarvestConfig.layer_index` — select a sublayer from the combined layers+tables list
 
 **Status:** Accepted
 
@@ -18,19 +18,27 @@ the wrong sublayer — confirmed live 2026-07-06 against item
 
 Add **`layer_index: int = 0`** to `HarvestConfig` (canonical home
 `core/common/config.py`), parsed from the optional `layer.layer_index` YAML
-key. `resolve_layer()` indexes
-`list(item.layers or []) + list(item.tables or [])` — the same combined-list
-precedent as `core/agol/dashboard_refresh.py`.
+key. `resolve_layer()` builds `list(item.layers or []) + list(item.tables or
+[])` — the same combined-list precedent as `core/agol/dashboard_refresh.py`
+— then **matches by each sublayer's own `.properties.id`**, not by treating
+`layer_index` as a raw position in that concatenated list.
 
-- **Numbering is the COMBINED layers-then-tables list**, matching AGOL's
-  continuous portal `?sublayer=N` / REST sublayer numbering — NOT the arcgis
-  Python API's separate `.layers[]`/`.tables[]` arrays. Documented on the
-  field, the loader, and the resolver.
-- Out-of-range (including negative) indexes raise `ConfigError` with the
-  item id and sublayer count instead of leaking `IndexError` (or silently
-  wrapping via negative indexing).
-- Default `0` = first entry of the combined list; existing configs keep
-  today's behavior unchanged (`layers[0]` when any layer exists).
+- **`layer_index` is AGOL's REST/portal sublayer id** (the continuous
+  `?sublayer=N` numbering across layers+tables combined) — NOT a position in
+  the arcgis Python API's separate `.layers[]`/`.tables[]` arrays, and (cold
+  review caught this) also not assumed to equal its position in the
+  concatenated list: the API gives no guarantee those arrays are returned
+  sorted by id or laid out layers-then-tables internally, so positional
+  indexing could silently resolve the wrong sublayer on a service with
+  gappy/interleaved ids — the exact class of bug this ADR exists to fix, just
+  narrower. Matching on `.properties.id` is correct regardless of array
+  order.
+- No match for the requested id raises `ConfigError` naming the item id and
+  the sorted list of ids that *do* exist, instead of leaking `IndexError` or
+  silently resolving the wrong sublayer.
+- Default `0` = whichever sublayer carries id `0` (normally the first layer);
+  existing configs keep today's behavior unchanged for the common case where
+  layer 0 exists and is at REST id 0.
 - **No CLI flag** (YAGNI): the override whitelist stays `where`/`out`/
   `incremental`; `layer_index` is config-file-only.
 - Arcpy-free invariant untouched: the change adds no `arcgis` imports.

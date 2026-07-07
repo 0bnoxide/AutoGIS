@@ -27,17 +27,20 @@ def resolve_layer(gis, config):
         layer = FeatureLayer(config.url, gis)
     else:
         item = gis.content.get(config.item_id)
-        # config.layer_index addresses the COMBINED layers+tables list
-        # (layers first, then tables) — AGOL's continuous ?sublayer=N /
-        # REST numbering, NOT the arcgis API's separate .layers[]/.tables[]
-        # arrays. Same precedent as dashboard_refresh.py.
+        # config.layer_index is AGOL's REST/portal sublayer id (the
+        # continuous ?sublayer=N numbering across layers+tables combined),
+        # NOT a positional index into the arcgis API's separate .layers[]/
+        # .tables[] arrays -- those arrays aren't guaranteed sorted by id or
+        # laid out layers-then-tables, so we match on each sublayer's own
+        # .properties.id rather than concatenating-and-indexing positionally.
         sublayers = list(item.layers or []) + list(item.tables or [])
-        if not 0 <= config.layer_index < len(sublayers):
+        by_id = {_prop(s.properties, "id"): s for s in sublayers}
+        if config.layer_index not in by_id:
             raise ConfigError(
-                f"layer_index {config.layer_index} is out of range for item "
-                f"{config.item_id}: it has {len(sublayers)} sublayer(s) "
-                f"(layers+tables combined, 0-based)")
-        layer = sublayers[config.layer_index]
+                f"layer_index {config.layer_index} does not match any "
+                f"sublayer id for item {config.item_id}: available ids are "
+                f"{sorted(i for i in by_id if i is not None)}")
+        layer = by_id[config.layer_index]
     if not _prop(layer.properties, "hasAttachments"):
         raise ValueError(
             f"Layer {config.layer_ref()} does not have attachments enabled")
