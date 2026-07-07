@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 
@@ -46,8 +47,12 @@ def test_non_git_bash_allowed(tmp_path):
 def test_edit_claimed_file_warns(tmp_path):
     p = tmp_path / "c.json"
     registry.claim(p, "other", "file_glob", "autogis/adapters/cli.py")
+    # branch_func override keeps the test hermetic: without it the real
+    # _git_branch resolves the checkout pytest runs from (issue #169 — the
+    # test failed when run from a real 'main' checkout).
     out = hook_check.decide(
-        _payload("Edit", {"file_path": "autogis/adapters/cli.py"}), p)
+        _payload("Edit", {"file_path": "autogis/adapters/cli.py"}), p,
+        branch_func=lambda cwd: "feat/x")
     assert "additionalContext" in out["hookSpecificOutput"]
     assert "permissionDecision" not in out["hookSpecificOutput"]
 
@@ -218,18 +223,193 @@ def test_empty_target_resolution_falls_back_to_cwd(tmp_path):
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
-def test_git_cmd_dir_parses_paths():
-    f = hook_check._git_cmd_dir
-    assert f("git -C /wt commit -m x") == "/wt"
-    assert f("cd /wt && git commit") == "/wt"
-    assert f("git commit -m x") == ""
-    assert f("cd a && cd b && git commit") == "b"          # last cd wins
-    assert f("cd /foo && ls && git -C /bar commit") == "/bar"  # -C overrides cd
-    assert f("git -c user.name=x -C /wt commit") == "/wt"  # -C after arg-taking opt
-    assert f("git -C /wt log && git commit") == ""  # read git's -C must not leak
-    assert f("git -C /a diff && cd /b && git commit") == "/b"  # write's cd wins
-    assert f("cd /wt | git commit") == ""     # pipe resets the carried cd
-    assert f("cd /wt || git commit") == ""    # or-else resets the carried cd too
+def test_git_writes_parses_paths():
+    f = lambda cmd: [d for _s, d, _a in hook_check._git_writes(cmd)]
+    assert f("git -C /wt commit -m x") == ["/wt"]
+    assert f("cd /wt && git commit") == ["/wt"]
+    assert f("git commit -m x") == [""]
+    assert f("cd a && cd b && git commit") == ["b"]          # last cd wins
+    assert f("cd /foo && ls && git -C /bar commit") == ["/bar"]  # -C overrides cd
+    assert f("git -c user.name=x -C /wt commit") == ["/wt"]  # -C after arg-taking opt
+    assert f("git -C /wt log && git commit") == [""]  # read git's -C must not leak
+    assert f("git -C /a diff && cd /b && git commit") == ["/b"]  # write's cd wins
+    assert f("cd /wt | git commit") == [""]     # pipe resets the carried cd
+    assert f("cd /wt || git commit") == [""]    # or-else resets the carried cd too
+    assert f("git log --grep=commit") == []     # read git yields nothing
+    # EVERY write is yielded, not just the first (multi-target commands):
+    assert f("git -C /a commit && git commit") == ["/a", ""]
+    assert f("cd /wt & git commit") == [""]     # background & resets like a pipe
+    # --work-tree / --git-dir place the write too (both = and space forms):
+    assert f("git --work-tree=/main commit") == ["/main"]
+    assert f("git --work-tree /main commit") == ["/main"]
+    assert f("git --git-dir=/main/.git commit") == ["/main"]
+    assert f("git --git-dir /main/.git commit") == ["/main"]
+
+
+# --- false-allow: EVERY git write in a compound command must be checked -------
+
+def test_second_write_on_main_in_compound_command_denied(tmp_path):
+    # `git -C <wt> commit && git commit` — the first write resolves the feature
+    # worktree, but the SECOND runs in cwd (main). Checking only the first
+    # write's dir false-allowed the main commit.
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    p = tmp_path / "c.json"
+    cmd = "git -C %s commit -m x && git commit -m y" % wt.as_posix()
+    bf = lambda d: "feat/x" if d.replace("\\", "/").endswith("/wt") else "main"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}, cwd="/repo"),
+                            p, branch_func=bf)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_single_ampersand_resets_carried_cd(tmp_path):
+    # `cd <wt> & git commit` — the cd is backgrounded into a subshell; the
+    # commit runs in cwd (main). The carried cd must reset on `&` like `|`.
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    p = tmp_path / "c.json"
+    cmd = "cd %s & git commit -m x" % wt.as_posix()
+    bf = lambda d: "feat/x" if d.replace("\\", "/").endswith("/wt") else "main"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}, cwd="/repo"),
+                            p, branch_func=bf)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_work_tree_option_resolves_target(tmp_path):
+    # `git --work-tree=<main> commit` from a feature cwd lands the write on
+    # main; falling back to cwd false-allowed it.
+    mainroot = tmp_path / "mainroot"
+    mainroot.mkdir()
+    p = tmp_path / "c.json"
+    cmd = "git --work-tree=%s commit -m x" % mainroot.as_posix()
+    bf = lambda d: "main" if d.replace("\\", "/").endswith("/mainroot") \
+        else "feat/x"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}, cwd="/repo"),
+                            p, branch_func=bf)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+# --- false-allow: commit-creating porcelain beyond commit/push ----------------
+
+@pytest.mark.parametrize("cmd", [
+    "git merge feat/x",
+    "git rebase feat/x",
+    "git cherry-pick abc123",
+    "git revert HEAD",
+])
+def test_history_writing_porcelain_on_main_denied(tmp_path, cmd):
+    p = tmp_path / "c.json"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}),
+                            p, branch_func=lambda cwd: "main")
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("cmd", [
+    "git merge main",            # updating a feature branch FROM main
+    "git rebase main",
+    "git pull",                  # the legit ff-update path stays open
+    "git pull --ff-only",
+])
+def test_history_writing_porcelain_on_feature_allowed(tmp_path, cmd):
+    p = tmp_path / "c.json"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}),
+                            p, branch_func=lambda cwd: "feat/x")
+    assert out is None
+
+
+# --- false-allow: push refspec targeting remote 'main' from any branch --------
+
+@pytest.mark.parametrize("cmd", [
+    "git push origin main",              # pushes local main ref
+    "git push origin feat/x:main",       # explicit refspec to main
+    "git push origin +feat/x:main",      # forced refspec
+    "git push origin HEAD:refs/heads/main",
+    "git push origin :main",             # deletes remote main
+    "git push -u origin main",           # option before refspec
+])
+def test_push_targeting_remote_main_denied_from_feature(tmp_path, cmd):
+    p = tmp_path / "c.json"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}),
+                            p, branch_func=lambda cwd: "feat/x")
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("cmd", [
+    "git push origin feat/x",
+    "git push -u origin feat/main-window",   # 'main' as substring only
+    "git push origin main:feat/backup",      # main as SOURCE is fine
+    "git push",
+])
+def test_push_not_targeting_main_allowed(tmp_path, cmd):
+    p = tmp_path / "c.json"
+    out = hook_check.decide(_payload("Bash", {"command": cmd}),
+                            p, branch_func=lambda cwd: "feat/x")
+    assert out is None
+
+
+# --- false-allow: symlink/junction from outside the repo into it --------------
+
+def _dirlink(src, dst):
+    try:
+        os.symlink(src, dst, target_is_directory=True)
+        return True
+    except (OSError, NotImplementedError):
+        pass
+    if os.name == "nt":   # junction needs no privilege on Windows
+        r = subprocess.run(["cmd", "/c", "mklink", "/J", dst, src],
+                           capture_output=True)
+        return r.returncode == 0
+    return False
+
+
+def test_edit_via_link_into_repo_denied_on_main(tmp_path):
+    # A junction/symlink from OUTSIDE the repo into it must not defeat the
+    # read-only-main rule: the write physically lands in the repo, so classify
+    # by its REAL path.
+    repo = tmp_path / "repo"
+    (repo / ".claude" / "coordination").mkdir(parents=True)
+    (repo / "autogis").mkdir()
+    p = repo / ".claude" / "coordination" / "claims.json"
+    link = tmp_path / "link"
+    if not _dirlink(str(repo / "autogis"), str(link)):
+        pytest.skip("cannot create a directory link on this platform")
+    out = hook_check.decide(
+        _payload("Edit", {"file_path": str(link / "x.py")}), p,
+        branch_func=lambda cwd: "main")
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+# --- false-allow: NotebookEdit writes repo files but bypassed the hook --------
+
+def test_notebook_edit_in_repo_on_main_is_denied(tmp_path):
+    coord = tmp_path / ".claude" / "coordination"
+    coord.mkdir(parents=True)
+    p = coord / "claims.json"
+    out = hook_check.decide(
+        _payload("NotebookEdit", {"notebook_path": str(tmp_path / "nb.ipynb")}),
+        p, branch_func=lambda cwd: "main")
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+# --- false-deny: an unrelated repo's 'main' is not OUR main -------------------
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+def test_commit_in_unrelated_repo_on_its_main_allowed(tmp_path):
+    # A scratch repo outside the coordination root whose branch happens to be
+    # named 'main' is that repo's business — denying it (with a message about
+    # OUR read-only main) is a false-deny. No branch_func: real git resolves
+    # the scratch repo's branch to 'main'.
+    coordroot = tmp_path / "proj"
+    (coordroot / ".claude" / "coordination").mkdir(parents=True)
+    p = coordroot / ".claude" / "coordination" / "claims.json"
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=str(scratch),
+                   check=True, capture_output=True)
+    cmd = "git -C %s commit -m x" % scratch.as_posix()
+    out = hook_check.decide(
+        _payload("Bash", {"command": cmd}, cwd=str(coordroot)), p)
+    assert out is None
 
 
 def test_bash_cd_piped_to_commit_resolves_cwd_not_cd(tmp_path):

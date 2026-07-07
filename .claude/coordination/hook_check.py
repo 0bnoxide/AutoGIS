@@ -15,35 +15,104 @@ import sys
 # real subcommand is the token *after* the argument (e.g. `git -C /repo commit`).
 _GLOBAL_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree",
                          "--namespace", "--exec-path", "--super-prefix"}
-_GIT_WRITE_SUBCMDS = {"commit", "push"}
+# Subcommands that write history/refs — the read-only-main and claimed-branch
+# rules key on these. merge/rebase/cherry-pick/revert create commits exactly
+# like `commit` (`git checkout main && git merge feat/x` was a false-allow).
+# `pull` is deliberately absent: an ff-pull is the sanctioned way to update
+# main (it is what the SessionStart hook itself does). Plumbing ref-writers
+# (update-ref, branch -f, fetch-with-refspec) stay out of scope — this is a
+# guardrail against common agent mistakes, not a security boundary.
+_GIT_WRITE_SUBCMDS = {"commit", "push", "merge", "rebase", "cherry-pick",
+                      "revert"}
 
 
-def _git_subcommands(cmd):
-    """Yield the git subcommand for each `git ...` invocation in a shell command.
+def _git_writes(cmd):
+    """Yield (subcmd, dir, args) for each git *write* invocation in a shell
+    command — EVERY write, so a second write in a compound command can't slip
+    past on the first one's dir. dir is where that write runs: the
+    invocation's own `-C` / `--work-tree` / `--git-dir`'s parent, else the
+    carried `cd` target, else '' (caller falls back to cwd). args are the
+    write's own tokens after the subcommand (for refspec inspection).
 
     Splits on shell separators and tokenizes, so the operative subcommand is
     identified by position (first non-option token after `git`), not by mere
-    presence of the word. `git log --grep=commit` yields 'log', not 'commit'.
-    """
-    for seg in re.split(r"&&|\|\||;|\||\n", cmd):
+    word presence — `git log --grep=commit` yields nothing. Only *sequential*
+    separators (&&/;/newline) carry the cd; `|`, `||` and a background `&`
+    reset it (that git runs in the original cwd, not the cd target).
+    Best-effort — subshells, $vars, and command substitution fall through to
+    '' (cwd), the deny-biased direction."""
+    cur = ""
+    parts = re.split(r"(&&|\|\||;|\||&|\n)", cmd)   # keep separators (odd idx)
+    for k in range(0, len(parts), 2):
+        if k > 0 and parts[k - 1] in ("|", "||", "&"):
+            cur = ""                        # non-sequential: cd doesn't carry
+        seg = parts[k]
         try:
             toks = shlex.split(seg)
         except ValueError:
             toks = seg.split()
+        if not toks:
+            continue
+        if toks[0] == "cd" and len(toks) >= 2:
+            cur = toks[1]
+            continue
         if "git" not in toks:
             continue
         i = toks.index("git") + 1
+        loc = ""                            # this invocation's own location
+        sub = ""
         while i < len(toks):
             t = toks[i]
-            if t.startswith("-"):
+            if t == "-C" and i + 1 < len(toks):
+                loc = toks[i + 1]
+                i += 2
+                continue
+            if t == "--work-tree" and i + 1 < len(toks):
+                loc = toks[i + 1]
+                i += 2
+                continue
+            if t.startswith("--work-tree="):
+                loc = t.split("=", 1)[1]
+                i += 1
+                continue
+            # --git-dir points at <tree>/.git: the write lands in its parent.
+            if t == "--git-dir" and i + 1 < len(toks):
+                loc = os.path.dirname(toks[i + 1]) or toks[i + 1]
+                i += 2
+                continue
+            if t.startswith("--git-dir="):
+                v = t.split("=", 1)[1]
+                loc = os.path.dirname(v) or v
+                i += 1
+                continue
+            if t.startswith("-"):           # skip option (+ arg)
                 i += 2 if t in _GLOBAL_OPTS_WITH_ARG else 1
                 continue
-            yield t
+            sub = t                         # first non-option token = subcmd
             break
+        if sub in _GIT_WRITE_SUBCMDS:
+            yield sub, (loc or cur), toks[i + 1:]
 
 
 def _is_git_write(cmd):
-    return any(s in _GIT_WRITE_SUBCMDS for s in _git_subcommands(cmd))
+    return next(_git_writes(cmd), None) is not None
+
+
+def _pushes_to_main(args):
+    """True when a `git push`'s args update the remote 'main' ref: `push
+    origin main`, `feat:main`, `+feat:main`, `HEAD:refs/heads/main`, or the
+    deletion `:main`. Pushing to main is blocked from ANY branch — checking
+    only the checked-out branch false-allowed `git push origin main` from a
+    feature branch. A remote literally named 'main' can false-match —
+    acceptable rarity; FORCE is the recourse."""
+    for t in args:
+        if not t or t.startswith("-"):
+            continue                        # options; refspecs never start '-'
+        t = t.lstrip("+")
+        dst = t.split(":", 1)[1] if ":" in t else t
+        if dst in ("main", "refs/heads/main"):
+            return True
+    return False
 
 
 def _deny(reason):
@@ -81,64 +150,32 @@ def _first_existing(d):
     return d
 
 
-def _git_cmd_dir(cmd):
-    """Effective directory the git *write* runs in, parsed from a Bash command:
-    the write's `git -C <path>` argument, or a leading `cd <path>`, else ''
-    (caller falls back to cwd). A *read* git (log/diff/...) does not count — its
-    `-C` must not leak to the write, and its presence must not stop the scan
-    (matches _is_git_write, which keys on the write subcommand too). Only
-    *sequential* separators (&&/;/newline) carry the cd; a `|`/`||` resets it
-    (the git after a pipe/or runs in the original cwd, not the cd target).
-    Best-effort — subshells, $vars, and command substitution fall through to cwd."""
-    cur = ""
-    parts = re.split(r"(&&|\|\||;|\||\n)", cmd)   # keep separators (odd indices)
-    for k in range(0, len(parts), 2):
-        if k > 0 and parts[k - 1] in ("|", "||"):
-            cur = ""                              # non-sequential: cd doesn't carry
-        seg = parts[k]
-        try:
-            toks = shlex.split(seg)
-        except ValueError:
-            toks = seg.split()
-        if not toks:
-            continue
-        if toks[0] == "cd" and len(toks) >= 2:
-            cur = toks[1]
-            continue
-        if "git" in toks:
-            i = toks.index("git") + 1
-            dashC = ""
-            sub = ""
-            while i < len(toks):
-                t = toks[i]
-                if t == "-C" and i + 1 < len(toks):
-                    dashC = toks[i + 1]          # this invocation's -C
-                    i += 2
-                    continue
-                if t.startswith("-"):            # skip option (+ arg), same rule
-                    i += 2 if t in _GLOBAL_OPTS_WITH_ARG else 1  # as _git_subcommands
-                    continue
-                sub = t                          # first non-option token = subcmd
-                break
-            if sub in _GIT_WRITE_SUBCMDS:
-                return dashC or cur              # only the WRITE's dir counts
-            # read git — its -C doesn't count; keep scanning later segments
-    return cur
+def _coord_root(reg_path):
+    """Root of the repo this registry governs — reg_path is always
+    <root>/.claude/coordination/claims.json (see registry.claims_path)."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(reg_path))))
 
 
-def _target_dir(tool, ti, cwd):
-    """Directory the write actually lands in — not payload cwd, which is stale
-    for pinned-cwd subagents. Edit/Write: the edited file's own dir (structured,
-    exact). Bash: the dir the git command runs in (parsed cd/-C, else cwd)."""
-    if tool in ("Edit", "Write", "MultiEdit"):
-        fp = ti.get("file_path", "")
-        d = os.path.dirname(os.path.abspath(fp)) if fp else cwd
-    elif tool == "Bash":
-        parsed = _git_cmd_dir(ti.get("command", ""))
-        d = os.path.join(cwd, parsed) if parsed else cwd   # abs parsed wins
-    else:
-        d = cwd
-    return _first_existing(d)
+def _foreign_repo(target, root):
+    """True when target provably belongs to a DIFFERENT git repo than the
+    coordination root — its writes (even on a branch named 'main') are that
+    repo's business, e.g. a scratch clone in the temp dir; denying those with
+    a message about OUR read-only main is a false-deny. Conservative: paths
+    under root, non-repo dirs, and git failures all count as OURS, so the
+    deny/conflict checks still apply. realpath, so a link-spelled path can't
+    dodge the prefix check."""
+    t = os.path.normcase(os.path.realpath(target))
+    r = os.path.normcase(os.path.realpath(root))
+    if t == r or t.startswith(r.rstrip("\\/") + os.sep):
+        return False
+    common = _rev_parse(target, "--git-common-dir").strip()
+    if not common:
+        return False
+    if not os.path.isabs(common):
+        common = os.path.join(target, common)
+    main_root = os.path.dirname(os.path.realpath(common))
+    return os.path.normcase(main_root) != r
 
 
 def _rev_parse(cwd, *args):
@@ -200,18 +237,21 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
     except Exception:
         pass
 
-    if tool in ("Edit", "Write", "MultiEdit"):
-        fp = ti.get("file_path", "")
+    if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        fp = ti.get("file_path", "") or ti.get("notebook_path", "")
         if fp:
             # Edit/Write send absolute paths in production, but file_glob claims
             # are repo-relative — make the path relative to the repo root
             # (reg_path is <root>/.claude/coordination/claims.json) before match.
-            root = os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.abspath(reg_path))))
+            # realpath, not abspath: a junction/symlink from outside the repo
+            # INTO it must classify as in-repo, or main is writable through a
+            # link (false-allow).
+            root = _coord_root(reg_path)
             rel = fp
             if os.path.isabs(fp):
                 try:
-                    rel = os.path.relpath(fp, root)
+                    rel = os.path.relpath(os.path.realpath(fp),
+                                          os.path.realpath(root))
                 except ValueError:
                     rel = fp
             rel = rel.replace("\\", "/")
@@ -221,8 +261,10 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
             in_repo = not rel.startswith("../") and not os.path.isabs(rel)
             if in_repo:
                 bf = branch_func or _git_branch
-                target = _target_dir(tool, ti, cwd)
-                if (bf(target) or bf(cwd)) == "main":   # target, not stale cwd
+                # the write's own dir, not payload cwd (stale for pinned-cwd
+                # subagents — issue #136 bug 1a)
+                target = _first_existing(os.path.dirname(os.path.realpath(fp)))
+                if (bf(target) or bf(cwd)) == "main":
                     return _deny(
                         "[coord] 'main' is read-only — writing %s is blocked. "
                         "Only reading is allowed on main. Check out a feature "
@@ -244,26 +286,46 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
         return None
 
     if tool == "Bash":
-        cmd = ti.get("command", "")
-        if _is_git_write(cmd):
+        writes = list(_git_writes(ti.get("command", "")))
+        if writes:
             bf = branch_func or _git_branch
-            target = _target_dir(tool, ti, cwd)
-            branch = bf(target) or bf(cwd)          # target, not stale cwd
-            if branch == "main":
-                return _deny(
-                    "[coord] Direct commit/push to 'main' is blocked. Use a "
-                    "feature branch + PR. Override: AUTOGIS_COORD_FORCE=1.")
-            conflicts = registry.branch_conflicts(reg_path, sid, branch)
-            if conflicts:
-                c = conflicts[0]
-                return _deny(
-                    "[coord] Branch '%s' is claimed by session %s (pid %s). "
-                    "You may be on the wrong branch. "
-                    "Override: AUTOGIS_COORD_FORCE=1."
-                    % (branch, c["session_id"][:8], c.get("pid")))
-            warn = _shared_tree_warn(reg_path, sid, target, cwd, main_tree_func)
-            if warn:
-                return warn
+            root = _coord_root(reg_path)
+            first_target = None      # first non-foreign target, for the warn
+            checked = set()          # dirs already branch-checked
+            for sub, d, args in writes:
+                # this write's own dir, not payload cwd (stale for pinned-cwd
+                # subagents — issue #136 bug 1a); abs parsed dir wins the join
+                target = _first_existing(os.path.join(cwd, d) if d else cwd)
+                if _foreign_repo(target, root):
+                    continue
+                if first_target is None:
+                    first_target = target
+                if target not in checked:
+                    checked.add(target)
+                    branch = bf(target) or bf(cwd)
+                    if branch == "main":
+                        return _deny(
+                            "[coord] git %s on 'main' is blocked — 'main' is "
+                            "read-only. Use a feature branch + PR. "
+                            "Override: AUTOGIS_COORD_FORCE=1." % sub)
+                    conflicts = registry.branch_conflicts(reg_path, sid, branch)
+                    if conflicts:
+                        c = conflicts[0]
+                        return _deny(
+                            "[coord] Branch '%s' is claimed by session %s "
+                            "(pid %s). You may be on the wrong branch. "
+                            "Override: AUTOGIS_COORD_FORCE=1."
+                            % (branch, c["session_id"][:8], c.get("pid")))
+                if sub == "push" and _pushes_to_main(args):
+                    return _deny(
+                        "[coord] Pushing to remote 'main' is blocked from any "
+                        "branch — merge via PR instead. "
+                        "Override: AUTOGIS_COORD_FORCE=1.")
+            if first_target is not None:
+                warn = _shared_tree_warn(reg_path, sid, first_target, cwd,
+                                         main_tree_func)
+                if warn:
+                    return warn
         return None
 
     return None

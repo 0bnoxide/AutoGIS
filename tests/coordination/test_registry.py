@@ -25,6 +25,42 @@ def test_save_is_atomic_no_tmp_left(tmp_path):
     assert leftovers == []
 
 
+def test_save_registry_retries_replace_on_permissionerror(tmp_path, monkeypatch):
+    # Windows: os.replace fails with PermissionError while a concurrent reader
+    # holds claims.json open (CRT opens without FILE_SHARE_DELETE). Readers
+    # hold it for a sub-ms json.load, so brief retries must absorb it.
+    import pytest as _  # noqa: F401  (parallel import style with file tail)
+    p = tmp_path / "claims.json"
+    calls = {"n": 0}
+    real = os.replace
+
+    def flaky(src, dst):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise PermissionError("held open by a reader")
+        return real(src, dst)
+
+    monkeypatch.setattr(registry.os, "replace", flaky)
+    registry.save_registry(p, {"claims": []})
+    assert calls["n"] == 3
+    assert registry.load_registry(p) == {"claims": []}
+
+
+def test_save_registry_final_failure_raises_and_leaves_no_tmp(tmp_path,
+                                                              monkeypatch):
+    import pytest
+    p = tmp_path / "claims.json"
+
+    def always_fails(src, dst):
+        raise PermissionError("never released")
+
+    monkeypatch.setattr(registry.os, "replace", always_fails)
+    with pytest.raises(PermissionError):
+        registry.save_registry(p, {"claims": []})
+    # the orphaned .tmp.<pid> must be cleaned up, not littered
+    assert [f for f in os.listdir(tmp_path) if ".tmp." in f] == []
+
+
 import os
 from datetime import timedelta
 
