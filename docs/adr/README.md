@@ -88,11 +88,23 @@ Each ADR follows this structure:
 
 ADRs are named sequentially: `NNNN-kebab-case-title.md`
 
+**Collision-prone case (parallel branches/PRs):** git won't flag a duplicate
+ADR number if two branches each grab the "next" number with different slugs
+(this has happened repeatedly — 0034, 0061/0062). If your ADR is on a branch
+that may land alongside others, name the file `XXXX-kebab-case-title.md`
+(literal `XXXX` placeholder) instead of guessing a number. Assign the real
+next-free number at merge time, after checking both `docs/adr/` *and* the
+files of any other open PRs. `tests/test_adr_numbering.py` guards against
+duplicate real numbers on `main`; it ignores `XXXX-*.md` files since those
+are pre-merge by design.
+
 ## New ADRs
 
 When proposing a new ADR:
 
-1. Create a new file with the next sequential number
+1. Create a new file with the next sequential number — or, if your branch
+   may land alongside others, use an `XXXX-` placeholder (see "File naming"
+   above) and assign the real number at merge
 2. Use the [template](TEMPLATE.md)
 3. Start with **Proposed** status
 4. Submit for review/discussion
