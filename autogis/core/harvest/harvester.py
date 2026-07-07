@@ -2,6 +2,7 @@ import os
 import time
 
 from .models import AttachmentResult, RunSummary, summary_counts
+from ..common.config import ConfigError
 from .manifest import Manifest
 from .templates import render_path_component
 from .download import download_one
@@ -26,7 +27,20 @@ def resolve_layer(gis, config):
         layer = FeatureLayer(config.url, gis)
     else:
         item = gis.content.get(config.item_id)
-        layer = item.layers[0]
+        # config.layer_index is AGOL's REST/portal sublayer id (the
+        # continuous ?sublayer=N numbering across layers+tables combined),
+        # NOT a positional index into the arcgis API's separate .layers[]/
+        # .tables[] arrays -- those arrays aren't guaranteed sorted by id or
+        # laid out layers-then-tables, so we match on each sublayer's own
+        # .properties.id rather than concatenating-and-indexing positionally.
+        sublayers = list(item.layers or []) + list(item.tables or [])
+        by_id = {_prop(s.properties, "id"): s for s in sublayers}
+        if config.layer_index not in by_id:
+            raise ConfigError(
+                f"layer_index {config.layer_index} does not match any "
+                f"sublayer id for item {config.item_id}: available ids are "
+                f"{sorted(i for i in by_id if i is not None)}")
+        layer = by_id[config.layer_index]
     if not _prop(layer.properties, "hasAttachments"):
         raise ValueError(
             f"Layer {config.layer_ref()} does not have attachments enabled")
