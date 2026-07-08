@@ -1,4 +1,4 @@
-# ADR-0067: `all_sublayers` — harvest every attachment-bearing layer/table of an item in one run
+# ADR-0071: `all_sublayers` — harvest every attachment-bearing layer/table of an item in one run
 
 **Status:** Accepted
 
