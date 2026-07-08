@@ -2,7 +2,7 @@
 form-field list without errors, and the hardcoded XOR_PAIRS table must
 resolve to real parameter names (drift guard against option renames)."""
 
-from autogis.adapters.gui.introspect import XOR_PAIRS, introspect_cli
+from autogis.adapters.gui.introspect import LABEL_OVERRIDES, XOR_PAIRS, introspect_cli
 
 KINDS = {"text", "int", "float", "flag", "choice", "path"}
 
@@ -80,6 +80,18 @@ def test_xor_pairs_resolve_to_real_params():
         group_id = "/".join(pair)
         marked = {f.name for f in forms[label].fields if f.xor_group == group_id}
         assert marked == set(pair), f"{label}: xor_group not set on both fields"
+
+
+def test_label_overrides_win_over_title_case_heuristic():
+    """Cryptic Click dest names (e.g. ``fmt``, ``out_dir``) get a friendlier
+    curated label instead of a raw title-cased identifier."""
+    forms = _by_label()
+
+    fmt = {f.name: f for f in forms["envmon run-history"].fields}
+    assert fmt["fmt"].label == LABEL_OVERRIDES["fmt"] == "Format"
+
+    edd = {f.name: f for f in forms["envmon batch-import-workbooks"].fields}
+    assert edd["edd_dir"].label == LABEL_OVERRIDES["edd_dir"] == "EDD Directory"
 
 
 def test_unreachable_marking():

@@ -28,13 +28,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog,
-    QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
-    QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QCompleter,
+    QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QMainWindow, QPlainTextEdit, QPushButton, QSplitter, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import settings
@@ -154,6 +154,17 @@ class MainWindow(QMainWindow):
 
         self._command_box = QComboBox()
         self._command_box.addItems(sorted(self._forms))
+        # Editable + a substring-matching completer so typing "sync" finds
+        # "agol sync-to-gdb" without knowing which group it's under or
+        # scrolling ~130 entries -- NoInsert keeps a typed non-match from
+        # becoming a bogus new item.
+        self._command_box.setEditable(True)
+        self._command_box.setInsertPolicy(QComboBox.NoInsert)
+        completer = QCompleter(sorted(self._forms), self._command_box)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchContains)
+        completer.setCompletionMode(QCompleter.PopupCompletion)
+        self._command_box.setCompleter(completer)
         self._command_box.currentTextChanged.connect(self._rebuild_form)
         outer.addWidget(QLabel("Command:"))
         outer.addWidget(self._command_box)
@@ -184,9 +195,12 @@ class MainWindow(QMainWindow):
         add_row.addWidget(self._pause_on_warning)
         outer.addLayout(add_row)
 
-        outer.addWidget(QLabel("Steps:"))
+        steps_container = QWidget()
+        steps_layout = QVBoxLayout(steps_container)
+        steps_layout.setContentsMargins(0, 0, 0, 0)
+        steps_layout.addWidget(QLabel("Steps:"))
         self._step_list = QListWidget()
-        outer.addWidget(self._step_list)
+        steps_layout.addWidget(self._step_list)
 
         wf_row = QHBoxLayout()
         self._remove_button = QPushButton("Remove")
@@ -207,11 +221,15 @@ class MainWindow(QMainWindow):
                    self._run_wf_button, self._clear_button,
                    self._cancel_button, self._resume_button):
             wf_row.addWidget(_b)
-        outer.addLayout(wf_row)
+        steps_layout.addLayout(wf_row)
         # -----------------------------------------------------------------
 
+        results_container = QWidget()
+        results_layout = QVBoxLayout(results_container)
+        results_layout.setContentsMargins(0, 0, 0, 0)
+
         self._status = QLabel("")
-        outer.addWidget(self._status)
+        results_layout.addWidget(self._status)
 
         # Structured QA view: the executor already parses the injected
         # qa.csv into StepResult.qa_rows -- render it here as a sorted
@@ -221,11 +239,22 @@ class MainWindow(QMainWindow):
         self._qa_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._qa_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._qa_table.setVisible(False)
-        outer.addWidget(self._qa_table)
+        results_layout.addWidget(self._qa_table)
 
         self._output = QPlainTextEdit()
         self._output.setReadOnly(True)
-        outer.addWidget(self._output)
+        results_layout.addWidget(self._output)
+
+        # Steps (often empty for a single Run) and the output/QA area below
+        # compete for the same fixed vertical space -- a splitter lets the
+        # user reclaim it instead of a static, often-wasted allocation (#173).
+        splitter = QSplitter(Qt.Vertical)
+        splitter.addWidget(steps_container)
+        splitter.addWidget(results_container)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([120, 400])
+        outer.addWidget(splitter)
 
         if self._command_box.count():
             self._rebuild_form(self._command_box.currentText())
@@ -317,7 +346,12 @@ class MainWindow(QMainWindow):
                     widget.setText(str(field.default))
                 if field.help_text:
                     widget.setPlaceholderText(field.help_text)
-            label_text = field.label + (" *" if field.required else "")
+            # xor_group fields aren't individually `required` (Click sees them
+            # as optional; the CLI body enforces "choose exactly one"), but
+            # from the user's perspective they're just as required -- reuse
+            # the same marker rather than leaving them looking optional.
+            label_text = field.label + (
+                " *" if (field.required or field.xor_group) else "")
             if field.kind == "path":
                 # line edit stays the value widget (_raw_values reads it) and
                 # stays editable -- Browse is a convenience over typing, which

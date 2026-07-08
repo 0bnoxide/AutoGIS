@@ -2,7 +2,7 @@ import dataclasses
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime as _dt
 from pathlib import Path
 
 import click
@@ -92,7 +92,15 @@ class RecordingCommand(click.Command):
     """Leaf command that best-effort writes a RunRecord for every run."""
 
     def invoke(self, ctx):
-        started = datetime.now()
+        # ponytail: `_dt` alias, not `datetime` -- when this module runs as
+        # `__main__` (arcgispro-py3 `python -m autogis.adapters.cli`, the
+        # GUI's own invocation), importing arcpy transitively (via
+        # HarvestConfig -> arcgis -> arcpy -> arcgisscripting) overwrites any
+        # `__main__` global literally named `datetime` (or `math`/`numpy`/
+        # `time`) with the stdlib module -- ESRI's C extension pre-seeds
+        # `__main__` the way the ArcGIS Pro Python window does. A module-
+        # level name matching one of those gets silently stomped.
+        started = _dt.now()
         try:
             rv = super().invoke(ctx)
         except BaseException as exc:
@@ -122,7 +130,7 @@ class RecordingCommand(click.Command):
                     event_id=(str(ctx.params["event_id"])
                               if ctx.params.get("event_id") else None),
                     started_at=started,
-                    finished_at=datetime.now(),
+                    finished_at=_dt.now(),
                     status=status,
                     # run_history._encode json.dumps()es inputs with no
                     # default=; one unserializable param (Path, date) would
@@ -153,7 +161,15 @@ def autogis():
 @click.option("--config", "config_path", required=True, type=click.Path(exists=True))
 @click.option("--where", default=None)
 @click.option("--out", default=None)
-@click.option("--incremental/--no-incremental", default=None)
+@click.option(
+    "--incremental/--no-incremental",
+    default=None,
+    help=(
+        "Override the config's incremental setting: only fetch attachments for "
+        "features edited since the last successful run (requires editor tracking "
+        "on the layer)."
+    ),
+)
 def harvest_cmd(config_path, where, out, incremental):
     run(config_path, where, out, incremental)
 
