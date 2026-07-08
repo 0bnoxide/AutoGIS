@@ -76,6 +76,14 @@ Implement `RunHistory` in `autogis/core/common/run_history.py` as an append-only
 
 Path is configured in `SiteConfig` under `run_history_path`; defaults to `run_history.csv` in the project root.
 
+> **Correction (2026-07-08, issue #189):** `SiteConfig.run_history_path` was
+> never implemented (zero code hits) — ADR-0054's `RecordingCommand` instead
+> resolves the destination via the `AUTOGIS_RUN_HISTORY` env var, defaulting
+> to `Path.cwd()/"run_history.csv"`. Kept as documented original intent, not
+> removed, since ADR-0068 (`.pyt`-side recording, proposed) considers reviving
+> a per-`SiteConfig` destination as one of its precedence options. Decide
+> keep-vs-remove together with ADR-0068's destination-precedence call.
+
 ## Consequences
 
 ### Positive consequences
