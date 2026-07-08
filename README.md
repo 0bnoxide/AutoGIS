@@ -9,7 +9,7 @@ GUI, and the importable core itself).
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-07-03**. The
+Status against the 79-tool environmental monitoring roadmap, as of **2026-07-08**. The
 Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
@@ -20,13 +20,14 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **103 `core/envmon/` + 10 `core/agol/` modules (113 total)**,
-**107 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level; 110 if the 4
-`manage-callout-overrides` subcommands are counted individually), and a **1732-test** arcpy-free
-suite. For the authoritative per-tool breakdown see
+The codebase now ships **106 `core/envmon/` + 10 `core/agol/` modules (116 total)**,
+**113 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
+`manage-callout-overrides`'s 4 subcommands counted individually), and a **1779-test**
+arcpy-free suite (counts as of 2026-07-08). For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
-2026-07-02, PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119).
+2026-07-02, PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119, plus ongoing wiring/hardening work
+through 2026-07-07, PRs #196-#200).
 
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
@@ -118,7 +119,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [RTKControlCheckReport](autogis/core/envmon/rtk_control_check.py) | `envmon rtk-control-check` | Compare RTK-surveyed control shots to published benchmarks (headless) |
 | [GeneratePortfolioMetrics](autogis/core/envmon/portfolio_metrics.py) | `envmon portfolio-metrics` | Roll up per-site report readiness across a multi-site run history |
 | [EvaluateGroundwaterSurfaceModels](autogis/core/envmon/evaluate_gw_models.py) | `envmon evaluate-gw-models` | Cross-validate interpolation model predictions against observed values |
-| [ExportSurveyToCADGIS](autogis/core/envmon/export_survey_cad.py) | `envmon export-survey-cad` | Export RTK survey points to feature-code-mapped CSV/GeoJSON layers (headless) |
+| [ExportSurveyToCADGIS](autogis/core/envmon/export_survey_cad.py) | `envmon export-survey-cad` | Export RTK survey points to feature-code-mapped CSV/GeoJSON/LandXML layers (headless; `--landxml` per ADR-0071) |
 | [GenerateWellInspectionReports](autogis/core/envmon/well_inspection_report.py) | `envmon well-inspection-report` | Generate Markdown well inspection reports + a site summary (headless) |
 
 </details>
@@ -132,8 +133,8 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ImportToGDB](autogis/core/envmon/import_to_gdb.py) | 2/3 | `envmon import-gdb` | Tool 2: import a workbook into the file geodatabase (ArcGIS Pro) |
 | [BuildCurrentEvent](autogis/core/envmon/build_current_event.py) | 4 | `envmon build-event` | Tool 3: build the current-event feature data (ArcGIS Pro) |
 | [BuildAnalyticalCallouts](autogis/core/envmon/build_figure_dataset.py) | 5.1 | `envmon build-callouts` | Tool 4: generate callout feature classes (ArcGIS Pro) |
-| [OptimizeCalloutPlacement](autogis/core/envmon/callout_collision.py) | 5.2 | `envmon optimize-callouts` | Tool 5.2: run callout placement optimizer (ArcGIS Pro) |
-| [ManageCalloutPlacementOverrides](autogis/core/envmon/manage_callout_overrides.py) | 5.3 | `envmon manage-callout-overrides` | — |
+| [OptimizeCalloutPlacement](autogis/core/envmon/callout_collision.py) | 5.2 | `envmon optimize-callouts` (honest alias for `build-callouts --use-hull-collision`, ADR-0070) | Tool 5.2: hull-collision callout placement, folded into BuildCallouts (ArcGIS Pro) |
+| [ManageCalloutPlacementOverrides](autogis/core/envmon/manage_callout_overrides.py) | 5.3 | `envmon manage-callout-overrides` (list/clear/lock/unlock) | Tool 5.3: CRUD for locked/preferred callout placement overrides (ArcGIS Pro) |
 | [GenerateDraftGWContours](autogis/core/envmon/groundwater_contours.py) | 4.2 | `envmon gw-contours` | Tool 5: build groundwater contours (ArcGIS Pro) |
 | [ExportFigures](autogis/core/envmon/export_figures.py) | 6 | `envmon export-figures` | Tool 6: export figure layouts (ArcGIS Pro) |
 | [FullPipeline](autogis/core/envmon/import_to_gdb.py) | 7 | `envmon full-pipeline` | Tool 7: run the full import-to-figures pipeline (ArcGIS Pro) |
@@ -672,7 +673,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **1732 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **1779 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash

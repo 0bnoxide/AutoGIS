@@ -1,6 +1,7 @@
-"""Tests for feature-code-mapped RTK survey CSV/GeoJSON export."""
+"""Tests for feature-code-mapped RTK survey CSV/GeoJSON/LandXML export."""
 import json
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.export_survey_cad import (
@@ -9,14 +10,15 @@ from autogis.core.envmon.export_survey_cad import (
     load_feature_code_map,
     write_layer_csv,
     write_layer_geojson,
+    write_layer_landxml,
 )
 from autogis.core.envmon.import_rtk_survey import RTKPoint
 
 
-def _pt(point_id, feature_code=""):
+def _pt(point_id, feature_code="", description=""):
     return RTKPoint(
         point_id=point_id, northing=2000.0, easting=1000.0, elevation_ft=50.0,
-        feature_code=feature_code,
+        feature_code=feature_code, description=description,
     )
 
 
@@ -70,6 +72,30 @@ def test_write_layer_geojson(tmp_path):
     fc = json.loads(out.read_text(encoding="utf-8"))
     assert fc["type"] == "FeatureCollection"
     assert fc["features"][0]["geometry"]["coordinates"] == [1000.0, 2000.0, 50.0]
+
+
+def test_write_layer_landxml(tmp_path):
+    out = tmp_path / "MonitoringWells.xml"
+    write_layer_landxml([_pt("MW-1", "MW", "well head")], out)
+    root = ET.parse(out).getroot()
+    ns = {"lx": "http://www.landxml.org/schema/LandXML-1.2"}
+    points = root.findall("lx:CgPoints/lx:CgPoint", ns)
+    assert len(points) == 1
+    pt = points[0]
+    assert pt.get("name") == "MW-1"
+    assert pt.get("code") == "MW"
+    assert pt.get("desc") == "well head"
+    assert pt.text.split() == ["2000.0", "1000.0", "50.0"]
+
+
+def test_export_with_landxml_flag(tmp_path):
+    qa = QACollector()
+    output_dir = tmp_path / "out"
+    export_survey_to_cad_gis(
+        [_pt("MW-1", "MW")], {"MW": "MonitoringWells"}, output_dir,
+        write_landxml=True, qa=qa,
+    )
+    assert (output_dir / "MonitoringWells.xml").exists()
 
 
 def test_load_feature_code_map(tmp_path):
