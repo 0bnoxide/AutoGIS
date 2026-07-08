@@ -87,6 +87,62 @@ def test_filling_item_id_disables_url_and_back(qapp):
     assert not dlg._item_id.isEnabled()
 
 
+# --- all_sublayers -----------------------------------------------------------------
+
+def test_all_sublayers_checkbox_disables_url_and_incremental(qapp):
+    dlg = ConfigBuilderDialog()
+    dlg._profile.setText("corp")
+    dlg._item_id.setText("abc123")
+    dlg._incremental.setChecked(True)
+    assert dlg._fetch_button.isEnabled()
+
+    dlg._all_sublayers.setChecked(True)
+    assert not dlg._url.isEnabled()
+    assert not dlg._sublayer_box.isEnabled()
+    assert not dlg._incremental.isEnabled()
+    assert dlg._incremental.isChecked() is False  # cleared, not just disabled
+    assert not dlg._fetch_button.isEnabled()  # no single sublayer to fetch/pick
+
+    dlg._all_sublayers.setChecked(False)
+    assert dlg._sublayer_box.isEnabled()
+    assert dlg._incremental.isEnabled()
+    assert dlg._fetch_button.isEnabled()  # re-enabled, not left stuck off
+    # url stays disabled: item_id is still filled, and that xor still holds
+    assert not dlg._url.isEnabled()
+    dlg._item_id.clear()
+    assert dlg._url.isEnabled()
+
+
+def test_save_all_sublayers_writes_yaml_harvestconfig_can_load(qapp, monkeypatch, tmp_path):
+    dest = tmp_path / "config.yaml"
+    monkeypatch.setattr(dialog_mod, "_pick_path", lambda *a: str(dest))
+    dlg = ConfigBuilderDialog()
+    _fill_valid(dlg, tmp_path)
+    dlg._all_sublayers.setChecked(True)
+    dlg._on_save()
+    assert "Saved" in dlg._status.text()
+    loaded = HarvestConfig.load(dest)
+    assert loaded.all_sublayers is True
+
+
+def test_save_all_sublayers_with_url_rejected_via_load(qapp, monkeypatch, tmp_path):
+    monkeypatch.setattr(dialog_mod, "_pick_path",
+                        lambda *a: str(tmp_path / "config.yaml"))
+    dlg = ConfigBuilderDialog()
+    dlg._directory.setText(str(tmp_path / "out"))
+    dlg._group_template.setText("{OBJECTID}")
+    dlg._filename_template.setText("{OBJECTID}_{name}")
+    dlg._all_sublayers.setChecked(True)
+    dlg._item_id.setEnabled(True)      # bypass the widget-level guard
+    dlg._item_id.clear()
+    dlg._url.setEnabled(True)
+    dlg._url.setText("https://x/FeatureServer/5")
+    dlg._on_save()
+    assert "Fix before saving" in dlg._status.text()
+    assert "all_sublayers requires item_id" in dlg._status.text()
+    assert not (tmp_path / "config.yaml").exists()
+
+
 # --- fetch gating + worker ------------------------------------------------------
 
 def test_fetch_disabled_until_profile_and_item_id(qapp):

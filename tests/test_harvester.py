@@ -163,6 +163,42 @@ def test_resolve_layer_index_matches_by_id_not_position(tmp_path):
     assert harvester.resolve_layer(gis, _cfg(tmp_path, layer_index=7)) is target
 
 
+def test_resolve_all_layers_returns_only_attachment_bearing_sublayers(tmp_path):
+    no_attach = FakeLayer([], {}, props={"hasAttachments": False, "name": "Skip"})
+    attach_layer = FakeLayer([], {}, props={"hasAttachments": True, "name": "Wells"})
+    attach_table = FakeLayer([], {}, props={"hasAttachments": True, "name": "Photos"})
+    gis = _fake_gis(layers=[no_attach, attach_layer], tables=[attach_table])
+    result = harvester.resolve_all_layers(gis, _cfg(tmp_path))
+    assert result == [attach_layer, attach_table]
+
+
+def test_resolve_all_layers_raises_when_none_have_attachments(tmp_path):
+    gis = _fake_gis(layers=[FakeLayer([], {}, props={"hasAttachments": False})])
+    with pytest.raises(ValueError, match="no layers or tables"):
+        harvester.resolve_all_layers(gis, _cfg(tmp_path))
+
+
+def test_harvest_all_sublayers_downloads_into_per_sublayer_subfolders(tmp_path):
+    wells = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Done"})],
+        {1: [{"id": 10, "name": "a.jpg", "size": 4}]},
+        props={"hasAttachments": True, "name": "Wells"})
+    photos = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Open"})],
+        {1: [{"id": 20, "name": "b.jpg", "size": 5}]},
+        props={"hasAttachments": True, "name": "Daily Photos"})
+    gis = _fake_gis(layers=[wells], tables=[photos])
+
+    summary = harvester.harvest(
+        gis, _cfg(tmp_path, all_sublayers=True), now_ms=1, sleep=lambda s: None)
+
+    assert summary.downloaded == 2
+    assert (tmp_path / "Wells" / "Done" / "1_a.jpg").exists()
+    assert (tmp_path / "Daily_Photos" / "Open" / "1_b.jpg").exists()
+    source_tables = {r.source_table for r in summary.results}
+    assert source_tables == {"Wells", "Daily Photos"}
+
+
 def test_incremental_writes_state_and_filters(tmp_path):
     features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
     listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}

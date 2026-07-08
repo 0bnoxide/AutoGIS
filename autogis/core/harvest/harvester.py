@@ -4,7 +4,7 @@ import time
 from .models import AttachmentResult, RunSummary, summary_counts
 from ..common.config import ConfigError
 from .manifest import Manifest
-from .templates import render_path_component
+from .templates import render_path_component, sanitize
 from .download import download_one
 from .state import read_last_run, write_last_run
 
@@ -47,6 +47,24 @@ def resolve_layer(gis, config):
     return layer
 
 
+def resolve_all_layers(gis, config):
+    """Every attachment-bearing layer/table of the item, combined-list order."""
+    item = gis.content.get(config.item_id)
+    sublayers = list(item.layers or []) + list(item.tables or [])
+    with_attachments = [
+        s for s in sublayers if _prop(s.properties, "hasAttachments")]
+    if not with_attachments:
+        raise ValueError(
+            f"Item {config.item_id} has no layers or tables with "
+            f"attachments enabled")
+    return with_attachments
+
+
+def _sublayer_name(layer) -> str:
+    name = _prop(layer.properties, "name")
+    return name if name else f"sublayer_{_prop(layer.properties, 'id')}"
+
+
 def _effective_where(config, layer):
     where = config.where
     if not config.incremental:
@@ -61,13 +79,10 @@ def _effective_where(config, layer):
     return where
 
 
-def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):
-    if layer is None:
-        layer = resolve_layer(gis, config)
-
+def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
+    """Query ONE layer/table and accumulate its attachments into the shared
+    manifest, rooting destination paths at ``base_dir``."""
     where = _effective_where(config, layer)
-    manifest = Manifest()
-
     result = layer.query(where=where, out_fields="*", return_geometry=False)
     for feature in result.features:
         attrs = feature.attributes
@@ -77,23 +92,43 @@ def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):
             group = render_path_component(config.group_template, attrs)
             fname = render_path_component(
                 config.filename_template, {**attrs, "name": name})
-            dest = os.path.join(config.directory, group, fname)
+            dest = os.path.join(base_dir, group, fname)
 
             if config.skip_existing and os.path.exists(dest):
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, dest, size, "skipped",
-                    disposition="skipped"))
+                    disposition="skipped", source_table=source_table))
                 continue
             try:
                 download_one(layer, objectid, att_id, dest,
                              config.retries, config.backoff_seconds, sleep=sleep)
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, dest, size, "downloaded",
-                    disposition="downloaded"))
+                    disposition="downloaded", source_table=source_table))
             except Exception as exc:  # resilience: never kill the run
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, None, size, "failed", str(exc),
-                    disposition="failed"))
+                    disposition="failed", source_table=source_table))
+
+
+def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):
+    if layer is not None:
+        layers = [layer]
+    elif config.all_sublayers:
+        layers = resolve_all_layers(gis, config)
+    else:
+        layers = [resolve_layer(gis, config)]
+
+    manifest = Manifest()
+    for sub in layers:
+        name = _sublayer_name(sub)
+        # In all-sublayers mode each sublayer gets its own subfolder: two
+        # sublayers of one item can share OBJECTID values, so a flat shared
+        # directory could silently overwrite one sublayer's downloads with
+        # another's. Single-sublayer paths stay byte-identical to before.
+        base_dir = (os.path.join(config.directory, sanitize(name))
+                    if config.all_sublayers else config.directory)
+        _harvest_layer(sub, config, manifest, base_dir, name, sleep)
 
     manifest.write(config.directory)
     counts = summary_counts(manifest.results)
