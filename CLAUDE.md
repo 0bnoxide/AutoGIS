@@ -160,13 +160,12 @@ Two separate records — easy to conflate, keep both:
   keeps refreshing them) and has *not* claimed the new branch. Left as-is this
   both (a) falsely locks the old branch against other sessions and (b) can make
   the hook deny you committing to the branch you just moved to (if another
-  session claimed it). After `EnterWorktree`, **release the old claims, then
-  claim the new** — using the canonical coordination dir at the main root:
+  session claimed it). After `EnterWorktree`, **run `resync`** — it releases
+  the old branch/worktree claims (preserving any in-flight `file_glob` claims,
+  #159) and reclaims the new ones in one step, using the canonical coordination
+  dir at the main root:
 
   ```bash
   COORD="$(git rev-parse --git-common-dir)/.."   # main tree root
-  python "$COORD/.claude/coordination/coord_cli.py" release --session "$SESSION_ID" --kind branch   --value <old-branch>
-  python "$COORD/.claude/coordination/coord_cli.py" release --session "$SESSION_ID" --kind worktree --value <old-worktree-abspath>
-  python "$COORD/.claude/coordination/coord_cli.py" claim   --session "$SESSION_ID" --kind branch   --value <new-branch>
-  python "$COORD/.claude/coordination/coord_cli.py" claim   --session "$SESSION_ID" --kind worktree --value <new-worktree-abspath>
+  python "$COORD/.claude/coordination/coord_cli.py" resync --session "$SESSION_ID"
   ```
