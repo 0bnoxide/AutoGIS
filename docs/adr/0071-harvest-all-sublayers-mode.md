@@ -19,8 +19,8 @@ Add **`all_sublayers: bool = False`** to `HarvestConfig`. When set,
 attachment-bearing sublayer of the item (`item.layers` + `item.tables`
 combined, same precedent as `resolve_layer`/ADR-0066), and `harvest()` runs
 each through the existing per-feature download loop, rooting each
-sublayer's output under `directory/<sanitized sublayer name>/` instead of
-`directory/` directly — the same collision the multi-run workaround above
+sublayer's output under `directory/<sanitized name>_<sublayer id>/` instead
+of `directory/` directly — the same collision the multi-run workaround above
 avoids, but from one config and one run.
 
 Mutually exclusive with `url` (targets exactly one sublayer already) and
@@ -52,6 +52,26 @@ can't be filled into a combination that only fails at Save time.
 - A second directory-nesting convention (single-sublayer: flat; all-sublayers:
   one subfolder per sublayer) for callers reading `manifest.csv`/`.json` to
   reason about.
+
+Cold review caught two gaps in the first pass, both fixed before merge:
+
+- **Sanitized-name folder collisions.** Two sublayers whose names sanitize
+  to the same string (`sanitize()` only strips illegal filesystem chars, so
+  e.g. `"Photos/A"` and `"PhotosA"` both become `"PhotosA"`) would have
+  landed in the same subfolder, reintroducing the exact OBJECTID collision
+  this feature exists to prevent. Fixed: the subfolder name is always
+  `sanitize(name) + "_" + sublayer_id` — REST sublayer ids are unique per
+  item, so this is a hard guarantee, not a best-effort one.
+- **Lost manifest state on a mid-batch sublayer failure.** A fatal error
+  resolving/querying one sublayer (bad `where` for its schema, a transient
+  network error) used to propagate and abort the whole run before
+  `manifest.write()` ever ran, discarding already-completed sublayers'
+  results. Fixed: in all-sublayers mode only, a per-sublayer exception is
+  caught and recorded as a `failed` manifest row (naming the sublayer, no
+  `objectid`/`attachment_id`) instead of raised — the same "never kill the
+  run" resilience `_harvest_layer` already applies one level down, extended
+  to the sublayer level. Single-sublayer mode keeps its pre-existing
+  behavior of propagating the exception.
 
 ## Alternatives considered
 

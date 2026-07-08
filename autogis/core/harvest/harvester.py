@@ -65,6 +65,16 @@ def _sublayer_name(layer) -> str:
     return name if name else f"sublayer_{_prop(layer.properties, 'id')}"
 
 
+def _sublayer_folder(layer, name) -> str:
+    # REST sublayer ids are unique per item (they're the ?sublayer=N
+    # numbering) -- suffixing with it guarantees distinct subfolders even
+    # when two sublayers' names sanitize to the same string (e.g. "Photos
+    # (A)" and "Photos [A]" both -> "Photos_A"), which would otherwise
+    # silently reintroduce the cross-sublayer OBJECTID collision this
+    # per-sublayer split exists to prevent.
+    return f"{sanitize(name)}_{_prop(layer.properties, 'id')}"
+
+
 def _effective_where(config, layer):
     where = config.where
     if not config.incremental:
@@ -126,9 +136,23 @@ def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):
         # sublayers of one item can share OBJECTID values, so a flat shared
         # directory could silently overwrite one sublayer's downloads with
         # another's. Single-sublayer paths stay byte-identical to before.
-        base_dir = (os.path.join(config.directory, sanitize(name))
+        base_dir = (os.path.join(config.directory, _sublayer_folder(sub, name))
                     if config.all_sublayers else config.directory)
-        _harvest_layer(sub, config, manifest, base_dir, name, sleep)
+        try:
+            _harvest_layer(sub, config, manifest, base_dir, name, sleep)
+        except Exception as exc:
+            # Only in all-sublayers mode: a fatal error resolving/querying
+            # ONE sublayer (bad where-clause for its schema, transient
+            # network error, ...) must not discard already-recorded results
+            # for the sublayers processed before it, nor skip the ones
+            # after -- same "never kill the run" resilience as per-attachment
+            # failures in _harvest_layer, one level up. Single-sublayer mode
+            # keeps its pre-existing behavior of propagating the exception.
+            if not config.all_sublayers:
+                raise
+            manifest.add(AttachmentResult(
+                None, None, name, None, None, "failed", str(exc),
+                disposition="failed", source_table=name))
 
     manifest.write(config.directory)
     counts = summary_counts(manifest.results)
