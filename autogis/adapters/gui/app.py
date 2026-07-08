@@ -322,6 +322,7 @@ class MainWindow(QMainWindow):
         form = self._forms.get(label)
         if form is None:
             self._help_label.clear()
+            self._sync_run_availability(show_reason=True)
             return
         self._help_label.setText(form.help_text or "")
         for field in form.fields:

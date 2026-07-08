@@ -284,6 +284,32 @@ def test_selecting_command_rebuilds_form(qapp):
         assert win._form_layout.rowCount() == len(win._forms[label].fields)
 
 
+def test_xor_group_field_gets_required_marker(qapp):
+    win = MainWindow()
+    form = next(f for f in win._forms.values()
+               if any(fld.xor_group for fld in f.fields))
+    win._command_box.setCurrentText(form.label)
+    # pick the checkbox side of the xor pair -- its widget is added directly
+    # (not wrapped in a Browse-button row), so labelForField resolves it.
+    xor_field = next(fld for fld in form.fields
+                     if fld.xor_group and fld.kind == "flag")
+    label_widget = win._form_layout.labelForField(
+        win._field_widgets[xor_field.name])
+    assert label_widget.text() == xor_field.label + " *"
+
+
+def test_typing_unmatched_command_text_disables_run(qapp):
+    # The command box is now editable (with a completer) so typing can leave
+    # it on text that matches no real command -- Run must disable and report
+    # it instead of silently keeping the previous command's gated state.
+    win = MainWindow()
+    win._command_box.setCurrentText(_first_runnable(win).label)
+    assert win._run_button.isEnabled()
+    win._command_box.setCurrentText("not a real command")
+    assert not win._run_button.isEnabled()
+    assert win._status.text() == "No command selected."
+
+
 def test_run_with_missing_required_field_shows_inline_error_no_thread(qapp):
     win = MainWindow()
     form = next(f for f in win._forms.values()
