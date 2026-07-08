@@ -14,11 +14,24 @@ import pytest
 from autogis.core.agol.promote import (
     STAGES,
     PromotionResult,
+    _copy_layer_data,
     plan_promotion,
     requires_approval,
     promote_layer,
 )
 from autogis.core.common.run_history import RunHistory
+
+
+def _item(layers=(), tables=()):
+    """Fake AGOL item: real .layers/.tables lists whose sublayers carry their
+    REST sublayer id on .properties (combined layers-then-tables position by
+    default, unless a test already set a dict explicitly) -- matching
+    production's id-based resolve_sublayer lookup."""
+    item = MagicMock(layers=list(layers), tables=list(tables))
+    for position, sub in enumerate(item.layers + item.tables):
+        if not isinstance(sub.properties, dict):
+            sub.properties = {"id": position}
+    return item
 
 
 # -- a coded-value domain on both sides -- the case that actually proves
@@ -121,8 +134,8 @@ def test_promote_dev_to_qa_succeeds_without_approval():
     src_layer, dst_layer = MagicMock(), MagicMock()
     src_layer.query.return_value.features = ["f1", "f2"]
     gis.content.get.side_effect = lambda iid: {
-        "dev-item": MagicMock(layers=[src_layer]),
-        "qa-item": MagicMock(layers=[dst_layer]),
+        "dev-item": _item(layers=[src_layer]),
+        "qa-item": _item(layers=[dst_layer]),
     }[iid]
     fetch = _patched_fetch({"dev-item": _MATCHING_SCHEMA, "qa-item": _MATCHING_SCHEMA})
 
@@ -143,8 +156,8 @@ def test_promote_qa_to_prod_with_approval_writes_run_history(tmp_path):
     src_layer, dst_layer = MagicMock(), MagicMock()
     src_layer.query.return_value.features = ["f1", "f2", "f3"]
     gis.content.get.side_effect = lambda iid: {
-        "qa-item": MagicMock(layers=[src_layer]),
-        "prod-item": MagicMock(layers=[dst_layer]),
+        "qa-item": _item(layers=[src_layer]),
+        "prod-item": _item(layers=[dst_layer]),
     }[iid]
     fetch = _patched_fetch({"qa-item": _MATCHING_SCHEMA, "prod-item": _MATCHING_SCHEMA})
     rh_path = tmp_path / "run_history.csv"
@@ -208,8 +221,8 @@ def test_promote_copy_failure_after_truncate_writes_error_run_history(tmp_path):
     src_layer.query.return_value.features = ["f1", "f2"]
     dst_layer.edit_features.side_effect = RuntimeError("AGOL 500")
     gis.content.get.side_effect = lambda iid: {
-        "dev-item": MagicMock(layers=[src_layer]),
-        "qa-item": MagicMock(layers=[dst_layer]),
+        "dev-item": _item(layers=[src_layer]),
+        "qa-item": _item(layers=[dst_layer]),
     }[iid]
     fetch = _patched_fetch({"dev-item": _MATCHING_SCHEMA, "qa-item": _MATCHING_SCHEMA})
     rh_path = tmp_path / "run_history.csv"
