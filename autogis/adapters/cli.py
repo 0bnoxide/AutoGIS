@@ -2,7 +2,7 @@ import dataclasses
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime as _dt
 from pathlib import Path
 
 import click
@@ -92,7 +92,7 @@ class RecordingCommand(click.Command):
     """Leaf command that best-effort writes a RunRecord for every run."""
 
     def invoke(self, ctx):
-        started = datetime.now()
+        started = _dt.now()
         try:
             rv = super().invoke(ctx)
         except BaseException as exc:
@@ -122,7 +122,7 @@ class RecordingCommand(click.Command):
                     event_id=(str(ctx.params["event_id"])
                               if ctx.params.get("event_id") else None),
                     started_at=started,
-                    finished_at=datetime.now(),
+                    finished_at=_dt.now(),
                     status=status,
                     # run_history._encode json.dumps()es inputs with no
                     # default=; one unserializable param (Path, date) would
@@ -2286,11 +2286,14 @@ def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, coord_form
               help="Directory to write one CSV (+ manifest.json) per layer.")
 @click.option("--geojson/--no-geojson", default=False,
               help="Also write a GeoJSON FeatureCollection per layer.")
+@click.option("--landxml/--no-landxml", default=False,
+              help="Also write a LandXML <CgPoints> file per layer (points only; "
+                   "no surface/alignment data).")
 @qa_report_options
-def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, report, fail_on):
-    """Export RTK survey points to feature-code-mapped CSV/GeoJSON layers (headless).
+def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, landxml, report, fail_on):
+    """Export RTK survey points to feature-code-mapped CSV/GeoJSON/LandXML layers (headless).
 
-    CSV/GeoJSON only — DWG/DXF/LandXML CAD export is out of scope for this tool.
+    DWG/DXF CAD export is still out of scope for this tool.
     """
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
@@ -2304,7 +2307,7 @@ def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, report, fail_
     qa = QACollector()
     manifest = export_survey_to_cad_gis(
         points, feature_code_map, Path(output_dir),
-        write_geojson=geojson, qa=qa,
+        write_geojson=geojson, write_landxml=landxml, qa=qa,
     )
 
     for entry in manifest:
