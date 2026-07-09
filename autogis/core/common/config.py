@@ -320,6 +320,11 @@ class HarvestConfig:
     # an index into the arcgis Python API's separate ``.layers[]`` /
     # ``.tables[]`` arrays. Only used with ``item_id``; ignored for ``url``.
     layer_index: int = 0
+    # Harvest every attachment-bearing layer AND table of the item in one
+    # run (each under its own sanitized-name subfolder). Requires ``item_id``;
+    # mutually exclusive with ``layer_index`` and ``incremental`` — see
+    # ``.load``.
+    all_sublayers: bool = False
     where: str = "1=1"
     incremental: bool = False
     skip_existing: bool = True
@@ -358,6 +363,26 @@ class HarvestConfig:
                 f"harvest config {path}: layer must set exactly one of "
                 f"'url' or 'item_id'")
 
+        all_sublayers = bool(layer.get("all_sublayers", False))
+        if all_sublayers:
+            if url:
+                raise ConfigError(
+                    f"harvest config {path}: all_sublayers requires item_id, "
+                    f"not url (a url targets exactly one layer/table)")
+            # layer_index defaults to 0 even when absent, so check the RAW
+            # YAML dict for an explicit key — the two selections are
+            # mutually exclusive.
+            if "layer_index" in layer:
+                raise ConfigError(
+                    f"harvest config {path}: all_sublayers and layer_index "
+                    f"are mutually exclusive — pick one")
+            if options.get("incremental", False):
+                raise ConfigError(
+                    f"harvest config {path}: all_sublayers cannot be "
+                    f"combined with incremental — last-run state is kept "
+                    f"per output directory, so one shared directory would "
+                    f"conflate 'last run' across unrelated sublayers")
+
         where = layer.get("where")
         return cls(
             directory=output["directory"],
@@ -369,6 +394,7 @@ class HarvestConfig:
             # ?sublayer=N numbering), not the API's separate arrays — see the
             # field comment on the dataclass.
             layer_index=layer.get("layer_index", 0),
+            all_sublayers=all_sublayers,
             where=where if where is not None else "1=1",
             incremental=options.get("incremental", False),
             skip_existing=options.get("skip_existing", True),

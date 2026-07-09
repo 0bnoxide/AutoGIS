@@ -85,6 +85,7 @@ Each ADR follows this structure:
 | [064](0064-agol-publish-hardening.md) | AGOL publish-layer hardening — keep tracebacks in QA errors, pre-check the hosted service name + explicit `publish_parameters`, detect/validate source type (FGDB zip, shapefile zip, GeoJSON) | Accepted | 2026-07-06 |
 | [065](0065-gui-site-config-builder.md) | GUI Site Config Builder — guided harvest `config.yaml` dialog; live sublayer lookup resolves the pick to `layer.url`; validation round-trips through `HarvestConfig.load` | Accepted | 2026-07-06 |
 | [066](0066-harvest-layer-index-combined-sublayers.md) | `HarvestConfig.layer_index` — harvest sublayer selection over the combined layers+tables list (AGOL `?sublayer=N` numbering); out-of-range raises `ConfigError`; fixes hardcoded `layers[0]` | Accepted | 2026-07-06 |
+| [071](0071-harvest-all-sublayers-mode.md) | `HarvestConfig.all_sublayers` — harvest every attachment-bearing layer/table of an item in one run, each under its own subfolder; mutually exclusive with `url`/`layer_index`/`incremental`; GUI checkbox in the Site Config Builder | Accepted | 2026-07-08 |
 
 ## File naming
 

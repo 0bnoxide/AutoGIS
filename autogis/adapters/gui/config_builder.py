@@ -33,6 +33,7 @@ __all__ = [
 def build_config(*, profile: str = "", item_id: str = "", url: str = "",
                  where: str = "", directory: str = "",
                  group_template: str = "", filename_template: str = "",
+                 all_sublayers: bool = False,
                  incremental: bool = False, skip_existing: bool = True,
                  retries: int = 3, backoff_seconds: float = 2.0) -> dict:
     """Assemble the nested config dict from raw form values.
@@ -49,6 +50,11 @@ def build_config(*, profile: str = "", item_id: str = "", url: str = "",
         layer["url"] = url.strip()
     if where.strip():
         layer["where"] = where.strip()
+    if all_sublayers:
+        # Reflect the form value only — the conflicts (url, layer_index,
+        # incremental) are enforced once, in HarvestConfig.load via
+        # validate_config, never re-derived here.
+        layer["all_sublayers"] = True
 
     output: dict = {}
     if directory.strip():

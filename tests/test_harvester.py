@@ -163,6 +163,100 @@ def test_resolve_layer_index_matches_by_id_not_position(tmp_path):
     assert harvester.resolve_layer(gis, _cfg(tmp_path, layer_index=7)) is target
 
 
+def test_resolve_all_layers_returns_only_attachment_bearing_sublayers(tmp_path):
+    no_attach = FakeLayer([], {}, props={"hasAttachments": False, "name": "Skip"})
+    attach_layer = FakeLayer([], {}, props={"hasAttachments": True, "name": "Wells"})
+    attach_table = FakeLayer([], {}, props={"hasAttachments": True, "name": "Photos"})
+    gis = _fake_gis(layers=[no_attach, attach_layer], tables=[attach_table])
+    result = harvester.resolve_all_layers(gis, _cfg(tmp_path))
+    assert result == [attach_layer, attach_table]
+
+
+def test_resolve_all_layers_raises_when_none_have_attachments(tmp_path):
+    gis = _fake_gis(layers=[FakeLayer([], {}, props={"hasAttachments": False})])
+    with pytest.raises(ValueError, match="no layers or tables"):
+        harvester.resolve_all_layers(gis, _cfg(tmp_path))
+
+
+def test_harvest_all_sublayers_downloads_into_per_sublayer_subfolders(tmp_path):
+    wells = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Done"})],
+        {1: [{"id": 10, "name": "a.jpg", "size": 4}]},
+        props={"hasAttachments": True, "name": "Wells", "id": 0})
+    photos = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Open"})],
+        {1: [{"id": 20, "name": "b.jpg", "size": 5}]},
+        props={"hasAttachments": True, "name": "Daily Photos", "id": 1})
+    gis = _fake_gis(layers=[wells], tables=[photos])
+
+    summary = harvester.harvest(
+        gis, _cfg(tmp_path, all_sublayers=True), now_ms=1, sleep=lambda s: None)
+
+    assert summary.downloaded == 2
+    # folder = sanitize(name) + "_" + sublayer id, guaranteeing distinct
+    # subfolders even if two sublayers' names sanitize to the same string.
+    assert (tmp_path / "Wells_0" / "Done" / "1_a.jpg").exists()
+    assert (tmp_path / "Daily_Photos_1" / "Open" / "1_b.jpg").exists()
+    source_tables = {r.source_table for r in summary.results}
+    assert source_tables == {"Wells", "Daily Photos"}
+
+
+def test_harvest_all_sublayers_folder_disambiguates_same_sanitized_name(tmp_path):
+    # Two sublayers whose names sanitize to the SAME string (sanitize() only
+    # strips illegal filesystem chars -- "Photos/A" and "PhotosA" both
+    # become "PhotosA") must still land in distinct subfolders -- the id
+    # suffix is what actually guarantees this, not the name.
+    a = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Done"})],
+        {1: [{"id": 10, "name": "a.jpg", "size": 4}]},
+        props={"hasAttachments": True, "name": "Photos/A", "id": 0})
+    b = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Done"})],
+        {1: [{"id": 20, "name": "b.jpg", "size": 5}]},
+        props={"hasAttachments": True, "name": "PhotosA", "id": 1})
+    gis = _fake_gis(layers=[a, b])
+
+    summary = harvester.harvest(
+        gis, _cfg(tmp_path, all_sublayers=True), now_ms=1, sleep=lambda s: None)
+
+    assert summary.downloaded == 2
+    assert (tmp_path / "PhotosA_0" / "Done" / "1_a.jpg").exists()
+    assert (tmp_path / "PhotosA_1" / "Done" / "1_b.jpg").exists()
+
+
+def test_harvest_all_sublayers_one_sublayer_failure_keeps_others(tmp_path):
+    # A fatal error resolving/querying ONE sublayer (bad where-clause, layer-
+    # level exception, ...) must not discard the manifest for sublayers
+    # already processed, nor abort the ones still queued.
+    class _BrokenLayer(FakeLayer):
+        def query(self, where, out_fields, return_geometry):
+            raise RuntimeError("layer offline")
+
+    good_first = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Done"})],
+        {1: [{"id": 10, "name": "a.jpg", "size": 4}]},
+        props={"hasAttachments": True, "name": "Good", "id": 0})
+    broken = _BrokenLayer([], {}, props={"hasAttachments": True, "name": "Bad", "id": 1})
+    good_second = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Done"})],
+        {1: [{"id": 30, "name": "c.jpg", "size": 6}]},
+        props={"hasAttachments": True, "name": "AlsoGood", "id": 2})
+    gis = _fake_gis(layers=[good_first, broken, good_second])
+
+    summary = harvester.harvest(
+        gis, _cfg(tmp_path, all_sublayers=True), now_ms=1, sleep=lambda s: None)
+
+    assert summary.downloaded == 2
+    assert summary.failed == 1
+    assert (tmp_path / "Good_0" / "Done" / "1_a.jpg").exists()
+    assert (tmp_path / "AlsoGood_2" / "Done" / "1_c.jpg").exists()
+    failed = next(r for r in summary.results if r.status == "failed")
+    assert failed.source_table == "Bad"
+    assert "layer offline" in failed.error
+    # single-sublayer mode keeps its pre-existing behavior: propagate
+    assert (tmp_path / "manifest.csv").exists()
+
+
 def test_incremental_writes_state_and_filters(tmp_path):
     features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
     listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
@@ -183,6 +277,20 @@ def test_incremental_without_tracking_raises(tmp_path):
     with pytest.raises(ValueError):
         harvester.harvest(None, _cfg(tmp_path, incremental=True),
                           layer=layer, now_ms=1, sleep=lambda s: None)
+
+
+def test_harvest_single_sublayer_populates_source_table(tmp_path):
+    # Not just the new all-sublayers path -- harvest() now names the
+    # resolved sublayer once for both modes, so the pre-existing
+    # single-sublayer path gets accurate provenance too (previously always
+    # None; see ADR-0071's "Positive consequences").
+    layer = FakeLayer(
+        [FakeFeature({"OBJECTID": 1, "Status": "Done"})],
+        {1: [{"id": 10, "name": "a.jpg", "size": 4}]},
+        props={"hasAttachments": True, "name": "Wells"})
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    assert summary.results[0].source_table == "Wells"
 
 
 def test_harvest_results_list_populated(tmp_path):

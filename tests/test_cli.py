@@ -38,6 +38,46 @@ def test_load_layer_index_round_trips_from_yaml(tmp_path):
     assert cfg.layer_index == 5
 
 
+def test_load_all_sublayers_round_trips_from_yaml(tmp_path):
+    from pathlib import Path
+    from autogis.core.models import HarvestConfig
+    config_path = _write_config(
+        tmp_path, extra={"layer": {"item_id": "abc123", "all_sublayers": True}})
+    cfg = HarvestConfig.load(Path(config_path))
+    assert cfg.all_sublayers is True
+
+
+def test_load_all_sublayers_requires_item_id_not_url(tmp_path):
+    from pathlib import Path
+    from autogis.core.common.config import ConfigError
+    from autogis.core.models import HarvestConfig
+    config_path = _write_config(tmp_path, extra={
+        "layer": {"url": "https://x/FeatureServer/0", "all_sublayers": True}})
+    with pytest.raises(ConfigError, match="all_sublayers requires item_id"):
+        HarvestConfig.load(Path(config_path))
+
+
+def test_load_all_sublayers_rejects_explicit_layer_index(tmp_path):
+    from pathlib import Path
+    from autogis.core.common.config import ConfigError
+    from autogis.core.models import HarvestConfig
+    config_path = _write_config(tmp_path, extra={
+        "layer": {"item_id": "abc123", "all_sublayers": True, "layer_index": 2}})
+    with pytest.raises(ConfigError, match="mutually exclusive"):
+        HarvestConfig.load(Path(config_path))
+
+
+def test_load_all_sublayers_rejects_incremental(tmp_path):
+    from pathlib import Path
+    from autogis.core.common.config import ConfigError
+    from autogis.core.models import HarvestConfig
+    config_path = _write_config(tmp_path, extra={
+        "layer": {"item_id": "abc123", "all_sublayers": True},
+        "options": {"incremental": True}})
+    with pytest.raises(ConfigError, match="cannot be combined with incremental"):
+        HarvestConfig.load(Path(config_path))
+
+
 def test_run_loads_config_and_calls_harvest(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path)
     captured = {}
