@@ -279,6 +279,33 @@ def test_run_step_exports_report_even_on_halt(tmp_path, monkeypatch):
     assert dest.exists()
 
 
+def test_form_report_field_reaches_exported_file(tmp_path, monkeypatch):
+    """End-to-end guard for the whole form -> build_step -> run_step -> export
+    chain (#205): a typed `report` field on a real command's form must survive
+    build_step and land as a file. Guards against a future report-filter in
+    forms.py/introspect.py leaving every stubbed test green while silently
+    killing the feature (the coverage seam the review flagged)."""
+    import autogis.adapters.gui.executor as ex
+    from autogis.adapters.gui.forms import build_step
+    from autogis.adapters.gui.introspect import introspect_cli
+
+    form = {f.label: f for f in introspect_cli()}["envmon validate-rtk-survey"]
+    dest = tmp_path / "out" / "REPORT"
+    step = build_step(form, {"csv_path": "x.csv", "report": str(dest)})
+    assert step.values.get("report") == str(dest)   # survived introspect+build_step
+
+    stub = tmp_path / "stub.py"
+    stub.write_text(STUB, encoding="utf-8")
+
+    def stub_argv(path, values, *, python=None, report_path=None, fail_on=None):
+        return [sys.executable, str(stub), "0", str(report_path), "INFO"]
+
+    monkeypatch.setattr(ex, "build_argv", stub_argv)
+    res = ex.run_step(step, job_dir=tmp_path / "job")
+    assert res.report_out == str(dest)
+    assert dest.exists()
+
+
 def test_run_step_ignores_stale_qa_csv_from_reused_job_dir(tmp_path, monkeypatch):
     """A prior step's qa.csv left in a reused job_dir must not leak into
     this step's verdict (a job_dir isn't guaranteed fresh on retry)."""
