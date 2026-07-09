@@ -1,14 +1,17 @@
-"""Export RTK survey points to feature-code-mapped CSV/GeoJSON layers (headless).
+"""Export RTK survey points to feature-code-mapped CSV/GeoJSON/LandXML layers
+(headless).
 
 Reuses ``import_rtk_survey.parse_rtk_csv()`` as the source parser, then groups
 points by a configurable feature-code -> layer-name mapping (e.g. ``MW`` ->
 ``MonitoringWells``, ``GCP`` -> ``DroneControlPoints``, ``BM`` ->
-``Benchmarks``) and writes one CSV (+ optional GeoJSON) per layer, plus a
-JSON manifest.
+``Benchmarks``) and writes one CSV (+ optional GeoJSON/LandXML) per layer,
+plus a JSON manifest.
 
-Scope: CSV/GeoJSON layers only. DWG/DXF/LandXML CAD export needs a template
-or external library decision and is explicitly out of scope for this tool —
-see the related ADR for the deferred follow-up.
+LandXML output is ``<CgPoints>`` only (control/survey points, no surface or
+alignment) — that's the full extent of what these RTK point layers are.
+Format decision: LandXML, made 2026-07-06 (issue #164); shares its point
+serialization with the arcpy-gated Civil3D/CAD legs (issue #166) where
+practical.
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ import json
 import re
 from pathlib import Path
 from typing import Dict, List
+from xml.etree import ElementTree as ET
 
 from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .import_rtk_survey import RTKPoint
@@ -135,15 +139,42 @@ def write_layer_geojson(points: List[RTKPoint], output_path: Path) -> None:
     )
 
 
+_LANDXML_NS = "http://www.landxml.org/schema/LandXML-1.2"
+
+
+def write_layer_landxml(points: List[RTKPoint], output_path: Path) -> None:
+    """Write one LandXML 1.2 ``<CgPoints>`` file per layer.
+
+    Point-only output (control/survey points) -- no surface or alignment
+    data, since these RTK layers carry neither. Point text is
+    "northing easting elevation", the LandXML default convention.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    root = ET.Element("LandXML", {"xmlns": _LANDXML_NS, "version": "1.2"})
+    cg_points = ET.SubElement(root, "CgPoints")
+    for pt in points:
+        attrs = {"name": pt.point_id}
+        if pt.feature_code:
+            attrs["code"] = pt.feature_code
+        if pt.description:
+            attrs["desc"] = pt.description
+        el = ET.SubElement(cg_points, "CgPoint", attrs)
+        el.text = f"{pt.northing} {pt.easting} {pt.elevation_ft}"
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
+
+
 def export_survey_to_cad_gis(
     points: List[RTKPoint],
     feature_code_map: Dict[str, str],
     output_dir: Path,
     *,
     write_geojson: bool = False,
+    write_landxml: bool = False,
     qa: QACollector,
 ) -> List[LayerManifestEntry]:
-    """Export RTK survey points to per-layer CSV (+ optional GeoJSON) files.
+    """Export RTK survey points to per-layer CSV (+ optional GeoJSON/LandXML) files.
 
     Writes ``manifest.json`` to ``output_dir`` and returns the same manifest
     as a list of LayerManifestEntry, one per layer written.
@@ -168,6 +199,8 @@ def export_survey_to_cad_gis(
         write_layer_csv(layer_points, csv_path)
         if write_geojson:
             write_layer_geojson(layer_points, output_dir / f"{layer_name}.geojson")
+        if write_landxml:
+            write_layer_landxml(layer_points, output_dir / f"{layer_name}.xml")
         codes = sorted({p.feature_code for p in layer_points if p.feature_code})
         manifest.append(LayerManifestEntry(
             layer_name=layer_name,

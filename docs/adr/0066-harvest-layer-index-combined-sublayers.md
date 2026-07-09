@@ -50,6 +50,14 @@ key. `resolve_layer()` builds `list(item.layers or []) + list(item.tables or
 - Tables and non-first layers with attachments are now harvestable per job
   config; misconfiguration fails loudly at resolve time.
 
+**2026-07-08 update:** the three sibling `layer_index` call sites named above
+in "Alternatives considered" (`sync_layer.fetch_layer_edits`,
+`audit_schema.fetch_layer_schema`, `promote._copy_layer_data`) still did
+positional `item.layers[layer_index]` indexing. Extended the same id-matching
+fix to all three via a shared `core/agol/_sublayers.resolve_sublayer()`
+helper — this ADR's decision now covers all four `layer_index` consumers,
+not just the harvester.
+
 ### Negative consequences
 
 - One more knob whose combined-list semantics differ from the arcgis API's

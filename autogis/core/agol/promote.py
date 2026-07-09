@@ -25,6 +25,7 @@ from typing import Dict, Optional
 
 from ..common.qa import QACollector, SEV_INFO, SEV_ERROR
 from ..common.run_history import RunHistory, RunRecord
+from ._sublayers import resolve_sublayer
 from .audit_schema import diff_schema, fetch_layer_schema
 
 STAGES = ("dev", "qa", "prod")
@@ -107,9 +108,13 @@ def _copy_layer_data(gis, src_item_id: str, dst_item_id: str, layer_index: int =
     Truncates the target layer, then re-adds every source feature. Uses only
     methods on the injected ``gis`` (and the Item/FeatureLayer objects it
     returns) -- no arcgis class is constructed here.
+
+    ``layer_index`` is AGOL's REST sublayer id, matched independently on each
+    item across its layers AND tables via ``resolve_sublayer`` (see
+    ``_sublayers.py``) -- not a positional index into ``item.layers``.
     """
-    src_layer = gis.content.get(src_item_id).layers[layer_index]
-    dst_layer = gis.content.get(dst_item_id).layers[layer_index]
+    src_layer = resolve_sublayer(gis.content.get(src_item_id), layer_index, src_item_id)
+    dst_layer = resolve_sublayer(gis.content.get(dst_item_id), layer_index, dst_item_id)
     features = src_layer.query(where="1=1", out_fields="*").features
     dst_layer.manager.truncate()
     if features:

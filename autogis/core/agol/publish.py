@@ -36,6 +36,7 @@ def _source_item_type(src: Path, qa: QACollector) -> Optional[str]:
         qa.add(SEV_ERROR, "publish_source_unsupported",
                f"source is not a valid zip archive: {src}")
         return None
+    names = [n.replace("\\", "/") for n in names]
     if any(".gdb/" in n for n in names):
         return "File Geodatabase"
     if any(n.endswith(".shp") for n in names):
@@ -81,6 +82,9 @@ def publish_or_overwrite_layer(
 
         if existing and config.overwrite:
             try:
+                # ponytail: no _source_item_type() precheck here -- an overwrite
+                # must match the existing service's type regardless, and
+                # mgr.overwrite's failure now carries a full traceback (#180).
                 from arcgis.features.managers import FeatureLayerManager
                 mgr = FeatureLayerManager(existing.layers[0].url, gis)
                 mgr.overwrite(str(src))
@@ -102,7 +106,12 @@ def publish_or_overwrite_layer(
         # opaque `str + None` TypeError when AGOL synchronously rejects a publish
         # whose name is taken (including soft-deleted "ghost" services still
         # reserving the name in the Recycle Bin). See issue #180.
-        service_name = re.sub(r"[\W_]+", "_", config.title)
+        service_name = re.sub(r"[\W_]+", "_", config.title).strip("_")
+        if not service_name:
+            qa.add(SEV_ERROR, "publish_name_invalid",
+                   f"title '{config.title}' sanitizes to an empty service name; "
+                   "choose a title with at least one alphanumeric character")
+            return None
         if not gis.content.is_service_name_available(service_name, "featureService"):
             qa.add(SEV_ERROR, "publish_name_taken",
                    f"hosted service name '{service_name}' is already taken in this "

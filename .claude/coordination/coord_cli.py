@@ -14,6 +14,10 @@ cwd->claim fallback that only works from an already-claimed worktree in
 steady state. resync in particular needs --session or the env var — it is run
 immediately after EnterWorktree, before the new worktree has a claim, so the
 cwd fallback cannot resolve it.
+
+resync releases only this session's branch/worktree claims before reclaiming
+the new ones -- unlike release-mine, it does NOT drop file_glob claims. A
+worktree move is not an abandonment of in-flight file locks (#159).
 """
 from __future__ import annotations
 
@@ -100,7 +104,10 @@ def run(argv, reg_path, cwd=None, env=None, branch_func=None):
         if not sid:
             print(_UNRESOLVED, file=sys.stderr)
             return 1
-        registry.release(reg_path, sid)
+        # Scoped to branch/worktree only -- resync moves a session between
+        # worktrees, it doesn't abandon in-flight file_glob claims (#159).
+        registry.release(reg_path, sid, "branch")
+        registry.release(reg_path, sid, "worktree")
         import session_start
         bf = branch_func or session_start._git_branch
         branch = bf(cwd)

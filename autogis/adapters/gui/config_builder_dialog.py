@@ -137,6 +137,14 @@ class ConfigBuilderDialog(QDialog):
             "Lists every layer and table in the item (attachment-bearing "
             "ones first). Picking one writes its resolved URL above."))
 
+        self._all_sublayers = QCheckBox("Harvest every layer/table in this item")
+        self._all_sublayers.setToolTip(
+            "Harvest every attachment-bearing layer AND table of the item in "
+            "one run, each under its own subfolder. Requires Item ID (not a "
+            "URL) and disables Incremental.")
+        self._all_sublayers.toggled.connect(self._on_all_sublayers_toggled)
+        form.addRow("", self._all_sublayers)
+
         # --- where filter ----------------------------------------------------
         self._where = QLineEdit()
         self._where.setPlaceholderText("e.g. Status = 'Open'")
@@ -233,18 +241,33 @@ class ConfigBuilderDialog(QDialog):
     def _sync_xor(self) -> None:
         """Filling one of Item ID / URL disables the other (the schema
         accepts exactly one); clearing it re-enables both. Also gates Fetch,
-        which needs Profile + Item ID."""
+        which needs Profile + Item ID. all_sublayers requires item_id, so it
+        keeps URL disabled regardless of what Item ID holds."""
         has_item = bool(self._item_id.text().strip())
         has_url = bool(self._url.text().strip())
+        all_sub = self._all_sublayers.isChecked()
         self._item_id.setEnabled(not has_url)
-        self._url.setEnabled(not has_item)
+        self._url.setEnabled(not has_item and not all_sub)
         self._sync_fetch_enabled()
 
     def _sync_fetch_enabled(self) -> None:
         self._fetch_button.setEnabled(
             bool(self._profile.text().strip())
             and bool(self._item_id.text().strip())
+            and not self._all_sublayers.isChecked()
             and self._worker is None)
+
+    def _on_all_sublayers_toggled(self, checked: bool) -> None:
+        """all_sublayers requires item_id (not url) and conflicts with
+        incremental (HarvestConfig.load enforces both) -- clear/disable the
+        URL field, the sublayer picker, and Incremental here so the form
+        can't be filled into a state that only fails at Save time."""
+        self._sublayer_box.setEnabled(not checked)
+        if checked:
+            self._url.clear()
+            self._incremental.setChecked(False)
+        self._incremental.setEnabled(not checked)
+        self._sync_xor()
 
     # --- fetch layers/tables -------------------------------------------------
 
@@ -312,6 +335,7 @@ class ConfigBuilderDialog(QDialog):
             directory=self._directory.text(),
             group_template=self._group_template.text(),
             filename_template=self._filename_template.text(),
+            all_sublayers=self._all_sublayers.isChecked(),
             incremental=self._incremental.isChecked(),
             skip_existing=self._skip_existing.isChecked(),
             retries=self._retries.value(),

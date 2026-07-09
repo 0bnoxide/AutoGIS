@@ -2302,11 +2302,14 @@ def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, coord_form
               help="Directory to write one CSV (+ manifest.json) per layer.")
 @click.option("--geojson/--no-geojson", default=False,
               help="Also write a GeoJSON FeatureCollection per layer.")
+@click.option("--landxml/--no-landxml", default=False,
+              help="Also write a LandXML <CgPoints> file per layer (points only; "
+                   "no surface/alignment data).")
 @qa_report_options
-def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, report, fail_on):
-    """Export RTK survey points to feature-code-mapped CSV/GeoJSON layers (headless).
+def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, landxml, report, fail_on):
+    """Export RTK survey points to feature-code-mapped CSV/GeoJSON/LandXML layers (headless).
 
-    CSV/GeoJSON only — DWG/DXF/LandXML CAD export is out of scope for this tool.
+    DWG/DXF CAD export is still out of scope for this tool.
     """
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.import_rtk_survey import parse_rtk_csv
@@ -2320,7 +2323,7 @@ def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, report, fail_
     qa = QACollector()
     manifest = export_survey_to_cad_gis(
         points, feature_code_map, Path(output_dir),
-        write_geojson=geojson, qa=qa,
+        write_geojson=geojson, write_landxml=landxml, qa=qa,
     )
 
     for entry in manifest:

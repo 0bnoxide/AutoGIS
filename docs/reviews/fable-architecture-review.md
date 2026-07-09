@@ -27,6 +27,16 @@ expensive to fix. All of it gets more expensive per batch.
 
 ### H1. ADR-0017's run-history write side was never implemented — readers consume a log nothing produces
 
+> **RESOLVED (2026-07-04, ADR-0054; see issue #189).**
+> `RecordingCommand`/`RecordingGroup` in `cli.py` now wrap essentially every
+> CLI leaf command (~105, via Click's `command_class`/`group_class` cascade)
+> and write a `RunRecord` generically at the CLI adapter seam — this includes
+> GUI-launched runs, which go through the same CLI child process. This is the
+> "wire the write side once, at the adapter layer" recommendation below, taken
+> almost verbatim. One residual gap remains and is tracked separately: `.pyt`
+> toolbox `execute()` bodies (running directly inside ArcGIS Pro, not via the
+> CLI) still write no record — see ADR-0068 (proposed) / issue #190.
+
 ADR-0017 (`docs/adr/0017-run-history-csv-log.md`) says *"Every AutoGIS tool
 execution needs an auditable record"* and names three consumers:
 `EvaluateReportReadiness`, the dashboard mart, and the job queue.
@@ -57,6 +67,16 @@ be 80 call sites for what one adapter hook can do. If the feature is instead
 deferred, mark ADR-0017 as such so the readiness tool's status is honest.
 
 ### H2. The CLI/.pyt seam has bifurcated into two contradictory generations
+
+> **RESOLVED (2026-07-02, ADR-0039; see issue #189).** ADR-0039 supersedes
+> ADR-0006 for generation-2 LOCAL tools: they are CLI-first inside the Pro
+> conda env, and `guard.py`'s message now branches on whether the tool has a
+> `.pyt` entry. The two dead-end tools named below, `optimize-callouts` and
+> `manage-callout-overrides`, were wired to real CLI/`.pyt` logic in PR #200
+> (ADR-0070, issue #161) — `optimize-callouts` is now an honest alias for
+> `build-callouts --use-hull-collision`, and the `manage-callout-overrides`
+> subcommands call the core CRUD directly. Core owns the logic; adapters only
+> marshal it — no duplication remains.
 
 ADR-0006 (`.pyt` as primary UI): tools 2–8 CLI commands guard then
 **unconditionally redirect** to the `.pyt` — they never execute, even inside

@@ -109,9 +109,11 @@ def test_agol_promote_self_logs_exactly_one_record(tmp_path, monkeypatch):
     gis = MagicMock()
     src_layer, dst_layer = MagicMock(), MagicMock()
     src_layer.query.return_value.features = ["f1", "f2"]
+    src_layer.properties = {"id": 0}
+    dst_layer.properties = {"id": 0}
     gis.content.get.side_effect = lambda iid: {
-        "dev-item": MagicMock(layers=[src_layer]),
-        "qa-item": MagicMock(layers=[dst_layer]),
+        "dev-item": MagicMock(layers=[src_layer], tables=[]),
+        "qa-item": MagicMock(layers=[dst_layer], tables=[]),
     }[iid]
     monkeypatch.setattr("autogis.adapters.cli.agol_from_profile",
                         lambda profile: gis)
