@@ -7,10 +7,12 @@ installed, matching the dev extras already used for Pillow/matplotlib-gated
 tests elsewhere in tests/envmon/.
 """
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING, SEV_INFO
+from autogis.core.common.schema.boring import LithologyInterval
 from autogis.core.envmon.draft_lithology_from_scan import (
     CellResult, _flag_row_confidence, _row_to_lithology_interval, _to_float,
-    map_columns,
+    map_columns, write_draft_csv,
 )
+from autogis.core.envmon.import_boring_logs import parse_lithology_csv
 
 
 def test_map_columns_matches_known_aliases():
@@ -111,3 +113,25 @@ def test_row_to_lithology_interval_flags_missing_boring_id():
     interval = _row_to_lithology_interval(row, field_to_index, qa, 1, 1)
     assert interval.boring_id == ""
     assert any(r.category == "boring_id_not_detected" for r in qa.records)
+
+
+def test_write_draft_csv_round_trips_through_existing_parser(tmp_path):
+    rows = [
+        LithologyInterval(boring_id="MW-1", top_depth=0.0, bottom_depth=2.0,
+                           uscs="ML", primary_material="Silt", color="Brown",
+                           moisture="Moist", description="Sandy silt"),
+        LithologyInterval(boring_id="MW-1", top_depth=2.0, bottom_depth=5.0,
+                           uscs="CL", primary_material="Clay", color="Gray",
+                           moisture="Wet", description="Lean clay"),
+    ]
+    out_path = write_draft_csv(rows, tmp_path / "lithology.csv")
+    assert out_path.exists()
+
+    parsed = parse_lithology_csv(out_path)
+    assert len(parsed) == 2
+    assert parsed[0].boring_id == "MW-1"
+    assert parsed[0].top_depth == 0.0
+    assert parsed[0].bottom_depth == 2.0
+    assert parsed[0].uscs == "ML"
+    assert parsed[0].description == "Sandy silt"
+    assert parsed[1].color == "Gray"

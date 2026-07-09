@@ -185,3 +185,27 @@ def _row_to_lithology_interval(
         color=_cell_text("color"), moisture=_cell_text("moisture"),
         description=_cell_text("description"),
     )
+
+
+def write_draft_csv(rows: list[LithologyInterval], out_path: Path) -> Path:
+    """Write draft lithology rows using the exact headers
+    parse_lithology_csv() (import_boring_logs.py) already expects."""
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["BoringID", "TopDepth_ft", "BottomDepth_ft", "USCS",
+                  "PrimaryMaterial", "Color", "Moisture", "Description"]
+    with out_path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({
+                "BoringID": row.boring_id,
+                "TopDepth_ft": row.top_depth,
+                "BottomDepth_ft": row.bottom_depth,
+                "USCS": row.uscs,
+                "PrimaryMaterial": row.primary_material,
+                "Color": row.color,
+                "Moisture": row.moisture,
+                "Description": row.description,
+            })
+    return out_path
