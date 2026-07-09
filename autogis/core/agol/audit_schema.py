@@ -26,6 +26,8 @@ from __future__ import annotations
 import dataclasses
 from typing import Dict, List, Optional
 
+from ._sublayers import resolve_sublayer
+
 # -- drift type constants ------------------------------------------------------
 DRIFT_MISSING_FIELD     = "MISSING_FIELD"      # spec field absent from AGOL
 DRIFT_EXTRA_FIELD       = "EXTRA_FIELD"        # AGOL field absent from spec
@@ -293,9 +295,14 @@ def fetch_layer_schema(  # pragma: no cover
     Exactly one of ``layer_url`` or ``item_id`` must be provided.
     Returns the raw layer properties dict, which has a "fields" list.
 
+    ``layer_index`` is AGOL's REST sublayer id, matched across the item's
+    layers AND tables via ``resolve_sublayer`` (see ``_sublayers.py``) -- not
+    a positional index into ``item.layers``.
+
     Lazy: ``arcgis.features`` is imported only here -- this module stays
     importable without the arcgis package installed.  Called by the CLI
-    command; never called in headless tests.
+    command; the live arcgis fetch is never exercised in headless tests
+    (sublayer resolution itself is covered via fakes in ``_sublayers``).
     """
     from arcgis.features import FeatureLayer  # type: ignore[import]
 
@@ -303,7 +310,7 @@ def fetch_layer_schema(  # pragma: no cover
         item = gis.content.get(item_id)
         if item is None:
             raise ValueError(f"AGOL item {item_id!r} not found in this GIS")
-        layer_url = item.layers[layer_index].url
+        layer_url = resolve_sublayer(item, layer_index, item_id).url
     if not layer_url:
         raise ValueError("Provide layer_url or item_id")
     return dict(FeatureLayer(layer_url, gis).properties)

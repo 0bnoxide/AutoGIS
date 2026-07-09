@@ -19,6 +19,7 @@ from datetime import date, datetime, time, timezone
 from typing import Dict, Iterable, List, Optional
 
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
+from ._sublayers import resolve_sublayer
 
 _SYSTEM_FIELD_NAMES = {"OBJECTID", "SHAPE"}
 
@@ -131,9 +132,14 @@ def fetch_layer_edits(  # pragma: no cover
     only (``return_geometry=False``) — 6.2 is an attribute sync; attachments
     are the harvester's job (see module docstring).
 
+    ``layer_index`` is AGOL's REST sublayer id, matched across the item's
+    layers AND tables via ``resolve_sublayer`` (see ``_sublayers.py``) — not
+    a positional index into ``item.layers``.
+
     Lazy: ``arcgis.features`` is imported only here — this module stays
     importable without the arcgis package installed.  Called by the CLI
-    command; never called in headless tests.
+    command; the live arcgis query is never exercised in headless tests
+    (sublayer resolution itself is covered via fakes in ``_sublayers``).
     """
     from arcgis.features import FeatureLayer  # type: ignore[import]
 
@@ -141,7 +147,7 @@ def fetch_layer_edits(  # pragma: no cover
         item = gis.content.get(item_id)
         if item is None:
             raise ValueError(f"AGOL item {item_id!r} not found in this GIS")
-        layer_url = item.layers[layer_index].url
+        layer_url = resolve_sublayer(item, layer_index, item_id).url
     if not layer_url:
         raise ValueError("Provide layer_url or item_id")
     layer = FeatureLayer(layer_url, gis)
