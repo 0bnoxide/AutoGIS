@@ -28,13 +28,14 @@ line this doc's PR adds (see *Deviations → #1072* below).
 | Console script | `headroom` → `headroom.cli:main` (on PATH as `headroom.EXE`) |
 | Compression mode | **`cache`** — reversible CCR only, no lossy Kompress rewrite (chosen deliberately; see *Two-layer compression*) |
 | Proxy | `headroom proxy --mode cache --memory --learn --port 8787`, loopback-only |
-| Persistence | Windows **service** `headroom-default` via `headroom install apply` (needs **admin** — `sc.exe`/`schtasks` require elevation) |
-| Runner (where `--learn` lives) | `~/.headroom/deploy/default/run-headroom.ps1` — **not** `.cmd` (the `.cmd` is a fixed shim that drops `%*`) |
+| Persistence | **NSSM service `HeadroomProxy`** — auto-start + auto-restart. headroom's own `headroom install apply` is **broken on Windows** — do NOT use it (see *Deviations → install apply*). |
+| Where `--learn` lives | the NSSM service's `AppParameters` (`proxy --mode cache --memory --learn --port 8787`) — **permanent**; nothing regenerates it |
+| SYSTEM-profile override (critical) | the service runs as LocalSystem, so `AppEnvironmentExtra` sets `USERPROFILE=C:\Users\ichbi`, `HEADROOM_MEMORY_DB_PATH=…\.headroom\memory.db`, `HEADROOM_LOG_FILE=…\.headroom\proxy.log` — else `--learn` scans SYSTEM's empty `~/.claude/projects` and memory lands in the wrong profile (dead weight). |
 | MCP server (CCR retrieve) | registered in `~/.claude.json` as `headroom` → `headroom.EXE mcp serve`; tools `mcp__headroom__headroom_retrieve/_compress/_stats` |
 | Memory DB | `C:\Users\ichbi\.headroom\memory.db` (local SQLite+HNSW; no Docker) |
 | Learn output (personal) | project `CLAUDE.local.md` (gitignored) + `~/.claude/projects/C--Users-ichbi-AutoGIS/memory/MEMORY.md` |
-| Routing | `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` written into Claude Code config by the install |
-| When it takes effect | proxy = live immediately; **routing + MCP load at Claude Code startup only** — restart after wiring |
+| Routing | `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` set as a **user env var** via `setx` — not via headroom's installer |
+| When it takes effect | proxy = live once the service starts; **routing + MCP load at Claude Code startup only** — restart after wiring |
 
 ### Two-layer compression — why `cache` mode
 
@@ -67,27 +68,44 @@ lossy Kompress rewrite for more savings. **We chose `cache`** for reversibility.
    → writes `headroom` server to `~/.claude.json`. *(Restart Claude Code to load.)*
 3. **Land the `.gitignore` line for `CLAUDE.local.md` on `main` first** — see
    *Deviations → #1072* for why this MUST precede enabling `--learn`.
-4. **Install the persistent service (admin terminal, once):**
-   `headroom install apply --preset persistent-service --runtime python --scope user --mode cache --memory`
-   This also writes `ANTHROPIC_BASE_URL` routing into Claude Code config.
-5. **Add `--learn` to the runner** (`install apply` has no `--learn` flag, and
-   `--learn` has no env var — the generated `run-headroom.ps1` is the only lever):
-   edit `~/.headroom/deploy/default/run-headroom.ps1`, append ` --learn` to the
-   `& <python> -m headroom.cli proxy …` line, restart the service.
-   **Re-running `install apply` regenerates this script and silently drops
-   `--learn` — re-add + re-verify after any re-apply.**
+4. **Install the persistent service with NSSM (admin terminal, once).** Do NOT
+   use `headroom install apply` — it is broken on Windows (see Deviations). NSSM
+   supervises the console proxy properly (reports RUNNING while managing the
+   child); bare `sc.exe` cannot.
+   ```powershell
+   choco install nssm -y ; refreshenv
+   $hr = "C:\Users\ichbi\AppData\Local\Programs\Python\Python314\Scripts\headroom.exe"
+   nssm install HeadroomProxy $hr proxy --mode cache --memory --learn --port 8787
+   nssm set HeadroomProxy AppDirectory "C:\Users\ichbi\.headroom"
+   # CRITICAL — SYSTEM service must resolve YOUR profile or --learn is dead weight:
+   nssm set HeadroomProxy AppEnvironmentExtra USERPROFILE=C:\Users\ichbi HEADROOM_MEMORY_DB_PATH=C:\Users\ichbi\.headroom\memory.db HEADROOM_LOG_FILE=C:\Users\ichbi\.headroom\proxy.log
+   nssm set HeadroomProxy Start SERVICE_AUTO_START
+   nssm set HeadroomProxy AppExit Default Restart
+   nssm set HeadroomProxy AppRestartDelay 5000
+   nssm set HeadroomProxy AppStdout "C:\Users\ichbi\.headroom\service.log"
+   nssm set HeadroomProxy AppStderr "C:\Users\ichbi\.headroom\service.log"
+   nssm start HeadroomProxy
+   ```
+   (To run the service **as you** instead of SYSTEM — avoids the profile override
+   and SYSTEM-owned files — use `nssm edit HeadroomProxy` → *Log on* tab with your
+   Windows password; the `USERPROFILE` line then becomes unnecessary.)
+5. **Wire routing (no admin), only after the service is confirmed up**
+   (proxy-up-before-routing): `setx ANTHROPIC_BASE_URL "http://127.0.0.1:8787"`.
 6. **Restart Claude Code** so routing + the MCP server load.
 
 ---
 
 ## Prove it's not dead weight (run these, don't trust install messages)
 
-```bash
-headroom doctor                       # proxy ✓, claude routed ✓, savings after traffic
-curl -s http://127.0.0.1:8787/readyz  # "ready":true; checks.memory.enabled == true
-curl -s http://127.0.0.1:8787/health  # config.memory:true, config.learn:true, mode
-netstat -ano | grep 8787              # LISTENING
+```powershell
+nssm status HeadroomProxy             # SERVICE_RUNNING   (Get-Service HeadroomProxy → Running)
+Get-NetTCPConnection -LocalPort 8787 -State Listen        # one row = listening
+Invoke-RestMethod http://127.0.0.1:8787/readyz | Select ready,@{n='mem';e={$_.checks.memory.enabled}}
+Invoke-RestMethod http://127.0.0.1:8787/health | %{ $_.config } | Select memory,learn,mode
+headroom doctor                       # proxy ✓ (savings appear after real traffic)
 ```
+Good: `SERVICE_RUNNING`, one listener, `ready:True mem:True`, `memory:True learn:True mode:cache`.
+If it won't start: `Get-Content C:\Users\ichbi\.headroom\service.log -Tail 40`.
 
 After the first **routed** request also confirm:
 - `~/.headroom/proxy.log` is gaining entries (proxy actually saw traffic),
@@ -114,12 +132,25 @@ unset, nothing on 8787, no `proxy.log`, no `memory.db`, `claude mcp get headroom
   (`session-start.sh` ends the pull in `|| true`) → **main drift, no signal**.
   Fix = the `.gitignore` line. It must be **merged to `main` and pulled *before*
   `--learn` goes live** — a draft PR protects nothing.
-- **Patch `run-headroom.ps1`, never `run-headroom.cmd`.** The `.cmd` is a fixed
-  shim (`powershell … -File run-headroom.ps1 %*`) and the `.ps1` has no `$args`
-  passthrough, so `%*` is dropped. `--learn` appended to the `.cmd` is a silent
-  no-op. (`install apply` exposes no `--learn` flag and `--learn` has no env var.)
-- **`install apply` regenerates both runner scripts** from a fixed arg set →
-  drops your `--learn` on every re-apply. Re-add and re-verify afterwards.
+- **`headroom install apply` is broken on Windows — use NSSM.** Both persistence
+  presets fail: the `persistent-service` preset builds a malformed `sc.exe`
+  command (unquoted `binPath=` with spaces → `sc` rejects `start=`, exit **1639**)
+  and the `persistent-task` preset uses `schtasks /SC ONSTART` (needs admin). On
+  failure `install apply` **rolls back completely** — no scripts, no routing, no
+  service left behind. `--learn` also has no `install apply` flag and no env var,
+  so even a working install couldn't enable it. Bare `sc.exe` can't host the
+  console proxy either (SCM kills it for not answering service control). **NSSM is
+  the working path** — it reports RUNNING while supervising the child. Because
+  `--learn` lives in NSSM's `AppParameters`, nothing regenerates/strips it (the
+  old "re-apply drops `--learn`" hazard does not apply to the NSSM setup).
+- **A SYSTEM-run service needs profile overrides or `--learn` is dead weight.**
+  NSSM defaults to LocalSystem, whose `~` is `…\config\systemprofile` — so without
+  `AppEnvironmentExtra USERPROFILE=C:\Users\ichbi` the learner scans an empty
+  `~/.claude/projects` and finds nothing, and memory writes to the wrong profile.
+  Set `USERPROFILE` + `HEADROOM_MEMORY_DB_PATH` + `HEADROOM_LOG_FILE`, or run the
+  service as your user (`nssm edit` → *Log on*, needs your Windows password). Auth
+  is unaffected either way — the proxy forwards the client's per-request token, so
+  SYSTEM never needs your credentials for the API itself.
 - **Never paste the `<!-- headroom:learn -->` markers into tracked `CLAUDE.md`.**
   `writer.py:_migrate_legacy_block` will rewrite / `unlink()` `CLAUDE.md`
   out-of-band on `main` if it finds the block there — bypassing the read-only-main
@@ -152,8 +183,15 @@ unset, nothing on 8787, no `proxy.log`, no `memory.db`, `claude mcp get headroom
 - **2026-07-09** — Diagnosed 2-week dead-weight install; wired for real:
   registered the `headroom` MCP (`headroom mcp install --agent claude`), stood
   up the proxy in `cache` mode with `--memory --learn`, decided reversible-CCR
-  (`cache`) over lossy `token`. Added this doc + the `CLAUDE.local.md` /
-  `HEADROOM_MEMORY.md` `.gitignore` lines. Plan cold-reviewed by Fable against
-  the 0.27.0 source: corrected the runner-file target (`.ps1` not `.cmd`) and the
-  merge-before-live-learn ordering; dropped a self-defeating `skip-worktree`
-  approach. Persistent Windows service install (admin) owner-run separately.
+  (`cache`) over lossy `token`. Added the `CLAUDE.local.md` / `HEADROOM_MEMORY.md`
+  `.gitignore` lines (PR #206) + this doc. Plan cold-reviewed by Fable against the
+  0.27.0 source: caught the merge-before-live-learn ordering; dropped a
+  self-defeating `skip-worktree` approach.
+- **2026-07-09 (same day, superseding update)** — `headroom install apply` proved
+  **broken on Windows** (sc.exe `start=`/exit-1639 quoting bug; rolls back). The
+  planned `install apply` + `run-headroom.ps1 --learn` patch was **abandoned**;
+  replaced with a real **NSSM service `HeadroomProxy`** (`--learn` baked into
+  `AppParameters`; SYSTEM-profile overrides via `AppEnvironmentExtra`; auto-start
+  + auto-restart). Routing set with `setx ANTHROPIC_BASE_URL`. Verified live:
+  `SERVICE_RUNNING`, `readyz` memory healthy, `health` memory+learn true, mode
+  cache, memory DB resolved to the user profile. This doc updated to match.
