@@ -51,6 +51,47 @@ def test_publish_creates_new_item(tmp_path):
     gis.content.add.return_value.publish.assert_called_once()
 
 
+def test_service_name_strips_stray_underscores(tmp_path):
+    src = _fgdb_zip(tmp_path)
+    gis = MagicMock()
+    gis.content.search.return_value = []
+    qa = QACollector()
+
+    cfg = PublishConfig(title="Test Layer!", tags=["autogis"])
+    publish_or_overwrite_layer(gis, cfg, str(src), qa)
+
+    published_kwargs = gis.content.add.return_value.publish.call_args.kwargs
+    assert published_kwargs["publish_parameters"]["name"] == "Test_Layer"
+
+
+def test_punctuation_only_title_rejected(tmp_path):
+    src = _fgdb_zip(tmp_path)
+    gis = MagicMock()
+    gis.content.search.return_value = []
+    qa = QACollector()
+
+    cfg = PublishConfig(title="!!!", tags=["autogis"])
+    result = publish_or_overwrite_layer(gis, cfg, str(src), qa)
+
+    assert result is None
+    assert any(r.category == "publish_name_invalid" for r in qa.records)
+    gis.content.add.assert_not_called()
+
+
+def test_fgdb_zip_backslash_separator_detected(tmp_path):
+    p = tmp_path / "data.zip"
+    with zipfile.ZipFile(p, "w") as zf:
+        zf.writestr("data.gdb\\a00000001.gdbtable", b"")
+    gis = MagicMock()
+    gis.content.search.return_value = []
+    qa = QACollector()
+
+    publish_or_overwrite_layer(gis, _cfg(), str(p), qa)
+
+    item_props = gis.content.add.call_args[0][0]
+    assert item_props["type"] == "File Geodatabase"
+
+
 def test_publish_overwrites_existing(tmp_path, mock_arcgis_modules):
     src = tmp_path / "data.zip"
     src.write_bytes(b"fake")
@@ -200,6 +241,19 @@ def test_fgdb_zip_sets_fgdb_type(tmp_path):
 
 def test_geojson_source_sets_geojson_type(tmp_path):
     src = tmp_path / "data.geojson"
+    src.write_text('{"type": "FeatureCollection", "features": []}')
+    gis = MagicMock()
+    gis.content.search.return_value = []
+    qa = QACollector()
+
+    publish_or_overwrite_layer(gis, _cfg(), str(src), qa)
+
+    item_props = gis.content.add.call_args[0][0]
+    assert item_props["type"] == "GeoJson"
+
+
+def test_json_source_sets_geojson_type(tmp_path):
+    src = tmp_path / "data.json"
     src.write_text('{"type": "FeatureCollection", "features": []}')
     gis = MagicMock()
     gis.content.search.return_value = []

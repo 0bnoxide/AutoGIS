@@ -95,6 +95,21 @@ def test_resync_replaces_claims_with_current_cwd_and_branch(tmp_path):
     assert claims == {"branch": "new/branch", "worktree": os.path.abspath(new_wt)}
 
 
+def test_resync_preserves_file_glob_claims(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "branch", "old/branch")
+    registry.claim(p, "s1", "worktree", "/old/wt")
+    registry.claim(p, "s1", "file_glob", "autogis/adapters/cli.py")
+    new_wt = str(tmp_path / "new-wt")
+    rc = coord_cli.run(["resync", "--session", "s1"], p,
+                       cwd=new_wt, branch_func=lambda cwd: "new/branch")
+    assert rc == 0
+    claims = {(c["kind"], c["value"]) for c in registry.list_claims(p)}
+    assert ("file_glob", "autogis/adapters/cli.py") in claims
+    assert ("branch", "new/branch") in claims
+    assert ("worktree", os.path.abspath(new_wt)) in claims
+
+
 def test_resync_detached_head_claims_only_worktree(tmp_path):
     p = tmp_path / "c.json"
     new_wt = str(tmp_path / "new-wt")
