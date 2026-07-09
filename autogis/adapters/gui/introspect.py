@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 import click
 
-__all__ = ["FormField", "CommandForm", "XOR_PAIRS", "introspect_cli"]
+__all__ = ["FormField", "CommandForm", "XOR_PAIRS", "LABEL_OVERRIDES", "introspect_cli"]
 
 
 # ponytail: 5 hardcoded pairs, deliberately not a constraint DSL (ADR-0052).
@@ -52,6 +52,45 @@ XOR_PAIRS: dict[str, tuple[str, str]] = {
     "envmon update-well-elevations": ("wells_csv", "gdb"),
     "agol sync-to-gdb": ("out_csv", "gdb"),
     "envmon batch-import-workbooks": ("manifest", "edd_dir"),
+}
+
+
+# ponytail: hand-curated label overrides, deliberately not a derived-from-type
+# DSL. A repo-wide param-name survey (252 distinct names across ~130 leaf
+# commands) found a cluster of cryptic Click dest names (``fmt``, ``out_dir``,
+# ``sl_path``, ...) that ``.replace("_", " ").title()`` renders unreadably
+# (e.g. "Sl Path", "No Dedup"). Every key below means the same thing on every
+# command it appears on; names that are reused for genuinely different things
+# across commands (``wells``, ``profile``, ``spec``, bare ``analytes``) are
+# deliberately excluded -- one friendlier label would be wrong on one side of
+# the split.
+LABEL_OVERRIDES: dict[str, str] = {
+    "out": "Output",
+    "out_path": "Output Path",
+    "out_dir": "Output Directory",
+    "out_csv": "Output CSV",
+    "out_xlsx": "Output Excel Workbook",
+    "out_format": "Output Format",
+    "output_dir": "Output Directory",
+    "input_dir": "Input Directory",
+    "harvest_dir": "Harvest Directory",
+    "edd_dir": "EDD Directory",
+    "specs_dir": "Figure Specs Directory",
+    "mart_dir": "Data Mart Directory",
+    "sl_path": "Screening Levels Path",
+    "screening_path": "Screening Levels Path",
+    "screening": "Screening Levels",
+    "config_path": "Configuration Path",
+    "site_config": "Site Configuration",
+    "db_path": "Database Path",
+    "fmt": "Format",
+    "analytes_str": "Analyte List",
+    "coord_format": "Coordinate Column Format",
+    "gm_path": "Group Map Path",
+    "wl_path": "Water Levels Path",
+    "no_dedup": "Skip Deduplication",
+    "anomaly_stdev": "Anomaly Std-Dev Threshold",
+    "top_n": "Top N Results",
 }
 
 
@@ -128,7 +167,7 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
 
     return FormField(
         name=param.name,
-        label=param.name.replace("_", " ").title(),
+        label=LABEL_OVERRIDES.get(param.name, param.name.replace("_", " ").title()),
         kind=kind,
         required=bool(param.required),
         # param.default leaks Click's internal UNSET sentinel for a

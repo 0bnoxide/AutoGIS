@@ -283,7 +283,7 @@ def test_harvest_single_sublayer_populates_source_table(tmp_path):
     # Not just the new all-sublayers path -- harvest() now names the
     # resolved sublayer once for both modes, so the pre-existing
     # single-sublayer path gets accurate provenance too (previously always
-    # None; see ADR-0071's "Positive consequences").
+    # None; see ADR-0072's "Positive consequences").
     layer = FakeLayer(
         [FakeFeature({"OBJECTID": 1, "Status": "Done"})],
         {1: [{"id": 10, "name": "a.jpg", "size": 4}]},
