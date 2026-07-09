@@ -6,11 +6,14 @@ pytest.importorskip; everything else here runs with zero OCR dependencies
 installed, matching the dev extras already used for Pillow/matplotlib-gated
 tests elsewhere in tests/envmon/.
 """
+import pytest
+
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING, SEV_INFO
 from autogis.core.common.schema.boring import LithologyInterval
 from autogis.core.envmon.draft_lithology_from_scan import (
     CellResult, _flag_row_confidence, _row_to_lithology_interval, _to_float,
-    map_columns, write_draft_csv,
+    draft_lithology, extract_table_regions, map_columns, ocr_cells,
+    rasterize_pdf, recognize_structure, write_draft_csv,
 )
 from autogis.core.envmon.import_boring_logs import parse_lithology_csv
 
@@ -135,3 +138,38 @@ def test_write_draft_csv_round_trips_through_existing_parser(tmp_path):
     assert parsed[0].uscs == "ML"
     assert parsed[0].description == "Sandy silt"
     assert parsed[1].color == "Gray"
+
+
+def test_rasterize_pdf_returns_one_image_per_page(tmp_path):
+    pytest.importorskip("fitz")
+    fitz = pytest.importorskip("fitz")
+    pdf_path = tmp_path / "sample.pdf"
+    doc = fitz.open()
+    doc.new_page()
+    doc.new_page()
+    doc.save(pdf_path)
+    doc.close()
+
+    pages = rasterize_pdf(pdf_path)
+    assert len(pages) == 2
+
+
+def test_draft_lithology_no_table_detected_is_sev_error(tmp_path, monkeypatch):
+    pytest.importorskip("fitz")
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    fitz = pytest.importorskip("fitz")
+    pdf_path = tmp_path / "blank.pdf"
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(pdf_path)
+    doc.close()
+
+    monkeypatch.setattr(
+        "autogis.core.envmon.draft_lithology_from_scan.extract_table_regions",
+        lambda image: [])
+
+    result = draft_lithology(pdf_path)
+    assert result.rows == []
+    assert any(r.category == "no_table_detected" and r.severity == "ERROR"
+               for r in result.qa.records)

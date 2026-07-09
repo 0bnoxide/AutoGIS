@@ -209,3 +209,163 @@ def write_draft_csv(rows: list[LithologyInterval], out_path: Path) -> Path:
                 "Description": row.description,
             })
     return out_path
+
+
+def rasterize_pdf(path: Path, dpi: int = 200) -> list:
+    """Render each page of a PDF (or a single-page image file) to a PIL Image."""
+    import fitz  # pymupdf
+
+    doc = fitz.open(str(path))
+    zoom = dpi / 72
+    matrix = fitz.Matrix(zoom, zoom)
+    pages = []
+    try:
+        for page in doc:
+            pix = page.get_pixmap(matrix=matrix)
+            from PIL import Image
+            image = Image.frombytes(
+                "RGB" if pix.n < 4 else "RGBA", (pix.width, pix.height), pix.samples)
+            pages.append(image.convert("RGB"))
+    finally:
+        doc.close()
+    return pages
+
+
+@lru_cache(maxsize=1)
+def _get_detector():
+    from transformers import pipeline
+    return pipeline("object-detection", model="microsoft/table-transformer-detection")
+
+
+@lru_cache(maxsize=1)
+def _get_structure_recognizer():
+    from transformers import pipeline
+    return pipeline("object-detection",
+                     model="microsoft/table-transformer-structure-recognition")
+
+
+@lru_cache(maxsize=2)
+def _get_trocr(handwritten: bool):
+    from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+    name = ("microsoft/trocr-base-handwritten" if handwritten
+            else "microsoft/trocr-base-printed")
+    processor = TrOCRProcessor.from_pretrained(name)
+    model = VisionEncoderDecoderModel.from_pretrained(name)
+    model.eval()
+    return processor, model
+
+
+def extract_table_regions(image) -> list["TableRegion"]:
+    """Detect table bounding boxes on a page image (table-transformer-detection)."""
+    detector = _get_detector()
+    results = detector(image)
+    regions = []
+    for detection in results:
+        if detection["label"] != "table":
+            continue
+        box = detection["box"]
+        regions.append(TableRegion(
+            bbox=(box["xmin"], box["ymin"], box["xmax"], box["ymax"]),
+            confidence=detection["score"]))
+    return regions
+
+
+def recognize_structure(image, region: "TableRegion") -> "TableGrid":
+    """Detect row/column geometry inside one table region
+    (table-transformer-structure-recognition) and derive per-cell boxes as
+    row×column intersections. The topmost detected row is treated as the
+    header row (cell text is filled in later by ocr_cells)."""
+    crop = image.crop(region.bbox)
+    recognizer = _get_structure_recognizer()
+    results = recognizer(crop)
+
+    row_boxes = sorted(
+        (d["box"] for d in results if d["label"] == "table row"),
+        key=lambda b: b["ymin"])
+    col_boxes = sorted(
+        (d["box"] for d in results if d["label"] == "table column"),
+        key=lambda b: b["xmin"])
+
+    cell_boxes: list[list[tuple[float, float, float, float]]] = [
+        [(col["xmin"], row["ymin"], col["xmax"], row["ymax"]) for col in col_boxes]
+        for row in row_boxes
+    ]
+    n_cols = len(col_boxes)
+    n_data_rows = max(len(cell_boxes) - 1, 0)
+    return TableGrid(
+        header_row=[""] * n_cols,
+        rows=[[CellResult("", 0.0) for _ in range(n_cols)] for _ in range(n_data_rows)],
+        cell_boxes=cell_boxes,
+        source_image=crop,
+    )
+
+
+def ocr_cells(grid: "TableGrid", *, handwritten: bool = False) -> "TableGrid":
+    """Crop + TrOCR each detected cell, filling in header_row and rows."""
+    import torch
+
+    if not grid.cell_boxes or grid.source_image is None:
+        return grid
+
+    processor, model = _get_trocr(handwritten)
+
+    def _ocr_one(cell_image) -> tuple[str, float]:
+        pixel_values = processor(images=cell_image, return_tensors="pt").pixel_values
+        with torch.no_grad():
+            generated = model.generate(
+                pixel_values, output_scores=True,
+                return_dict_in_generate=True, max_new_tokens=32)
+        text = processor.batch_decode(
+            generated.sequences, skip_special_tokens=True)[0].strip()
+        if not generated.scores:
+            return text, 0.0
+        scores = torch.stack(generated.scores, dim=1).softmax(-1)
+        token_ids = generated.sequences[:, 1:1 + scores.shape[1]]
+        token_probs = scores.gather(-1, token_ids.unsqueeze(-1)).squeeze(-1)
+        confidence = float(token_probs.mean()) if token_probs.numel() else 0.0
+        return text, confidence
+
+    header_boxes = grid.cell_boxes[0] if grid.cell_boxes else []
+    grid.header_row = [_ocr_one(grid.source_image.crop(box))[0] for box in header_boxes]
+
+    new_rows = []
+    for row_boxes in grid.cell_boxes[1:]:
+        row_cells = []
+        for box in row_boxes:
+            text, confidence = _ocr_one(grid.source_image.crop(box))
+            row_cells.append(CellResult(text=text, confidence=confidence))
+        new_rows.append(row_cells)
+    grid.rows = new_rows
+    return grid
+
+
+def draft_lithology(scan_path: Path, *, handwritten: bool = False) -> "DraftResult":
+    """Full pipeline: rasterize -> detect -> recognize -> OCR -> map -> rows + QA."""
+    qa = QACollector()
+    qa.add(SEV_INFO, "draft_lithology_from_scan",
+           "DRAFT output: OCR/table-structure extraction, human review "
+           "required before running validate-boring-logs.")
+
+    pages = rasterize_pdf(Path(scan_path))
+    rows: list[LithologyInterval] = []
+    found_table = False
+
+    for page_index, image in enumerate(pages):
+        for region in extract_table_regions(image):
+            found_table = True
+            grid = recognize_structure(image, region)
+            grid = ocr_cells(grid, handwritten=handwritten)
+            column_map = map_columns(grid.header_row)
+            field_to_index = {field_name: index
+                               for index, field_name in column_map.items()}
+            for row_number, row_cells in enumerate(grid.rows, start=1):
+                interval = _row_to_lithology_interval(
+                    row_cells, field_to_index, qa, page_index + 1, row_number)
+                if interval is not None:
+                    rows.append(interval)
+
+    if not found_table:
+        qa.add(SEV_ERROR, "no_table_detected",
+               "no lithology table detected; nothing drafted")
+
+    return DraftResult(rows=rows, qa=qa)
