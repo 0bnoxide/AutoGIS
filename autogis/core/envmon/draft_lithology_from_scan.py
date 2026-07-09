@@ -123,3 +123,65 @@ def map_columns(header_row: list[str]) -> dict[int, str]:
         if best_field is not None:
             mapped[index] = best_field
     return mapped
+
+
+def _to_float(text: str) -> Optional[float]:
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _flag_row_confidence(qa: QACollector, avg_confidence: float,
+                          page_number: int, row_number: int) -> None:
+    where = f"page {page_number} row {row_number}"
+    if avg_confidence < 0.6:
+        qa.add(SEV_WARNING, "low_confidence_row",
+               f"{where}: avg OCR confidence {avg_confidence:.2f} — "
+               f"verify against scan")
+    elif avg_confidence < 0.85:
+        qa.add(SEV_INFO, "moderate_confidence_row",
+               f"{where}: avg OCR confidence {avg_confidence:.2f} — "
+               f"low-moderate confidence, spot-check")
+
+
+def _row_to_lithology_interval(
+    row_cells: list["CellResult"], field_to_index: dict[str, int],
+    qa: QACollector, page_number: int, row_number: int,
+) -> Optional[LithologyInterval]:
+    """Build one LithologyInterval from a mapped OCR row, or None if the
+    row's depths can't be parsed (dropped, matching parse_lithology_csv's
+    existing missing-depth convention in import_boring_logs.py)."""
+    def _cell_text(field_name: str) -> str:
+        index = field_to_index.get(field_name)
+        if index is None or index >= len(row_cells):
+            return ""
+        return row_cells[index].text.strip()
+
+    top = _to_float(_cell_text("top_depth"))
+    bottom = _to_float(_cell_text("bottom_depth"))
+    where = f"page {page_number} row {row_number}"
+    if top is None or bottom is None:
+        qa.add(SEV_WARNING, "row_dropped_unparseable_depth",
+               f"{where}: could not parse TopDepth_ft/BottomDepth_ft, row skipped")
+        return None
+
+    boring_id = _cell_text("boring_id")
+    if not boring_id:
+        qa.add(SEV_WARNING, "boring_id_not_detected",
+               f"{where}: BoringID column not detected or empty; fill in "
+               f"manually before validate-boring-logs")
+
+    if row_cells:
+        avg_confidence = sum(c.confidence for c in row_cells) / len(row_cells)
+        _flag_row_confidence(qa, avg_confidence, page_number, row_number)
+
+    return LithologyInterval(
+        boring_id=boring_id, top_depth=top, bottom_depth=bottom,
+        uscs=_cell_text("uscs"), primary_material=_cell_text("primary_material"),
+        color=_cell_text("color"), moisture=_cell_text("moisture"),
+        description=_cell_text("description"),
+    )
