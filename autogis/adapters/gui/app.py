@@ -23,6 +23,7 @@ bridge, chosen now that there is an actual window to build it against.
 """
 from __future__ import annotations
 
+import html
 import shutil
 import sys
 import tempfile
@@ -33,8 +34,8 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QCompleter,
     QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QMainWindow, QPlainTextEdit, QPushButton, QSplitter, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QMainWindow, QPushButton, QSplitter, QTableWidget,
+    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from . import settings
@@ -110,6 +111,34 @@ _DECISION_LABEL = {
 # themes (a saturated red/orange, a muted gray for INFO).
 _SEV_COLOR = {"CRITICAL": "#d32f2f", "ERROR": "#d32f2f",
               "WARNING": "#ed6c02", "INFO": "#9e9e9e"}
+
+# Line-level coloring for the raw output/decision pane (#205 comment).
+# Distinct from _SEV_COLOR (the QA *table*, INFO=gray): here INFO is blue and
+# CONTINUE/PASS green, per the issue. First matching group wins; the order is
+# the precedence -- a red signal beats a warning, and INFO stays blue even on
+# an "...QA pass." line where "pass" would otherwise read as green.
+_LINE_COLORS = (
+    ("#d32f2f", ("CRITICAL", "ERROR", "FAIL", "HALT")),   # red
+    ("#ed6c02", ("WARNING", "PAUSE")),                     # orange
+    ("#1976d2", ("INFO",)),                                # blue
+    ("#2e7d32", ("CONTINUE", "PASS")),                     # green
+)
+
+
+def _colorize_output(text: str) -> str:
+    """Render raw output/decision text as HTML, coloring each line by the first
+    severity/decision keyword it contains (#205). Every line is escaped so
+    arbitrary child-process stdout can't inject markup; the whole is wrapped in
+    ``<pre>`` to keep console monospacing and the ``[SEVERITY] category``
+    alignment."""
+    lines = []
+    for line in text.split("\n"):
+        upper = line.upper()
+        color = next((c for c, words in _LINE_COLORS
+                      if any(w in upper for w in words)), None)
+        esc = html.escape(line)
+        lines.append(f'<span style="color:{color}">{esc}</span>' if color else esc)
+    return "<pre>" + "\n".join(lines) + "</pre>"
 
 
 class MainWindow(QMainWindow):
@@ -241,7 +270,10 @@ class MainWindow(QMainWindow):
         self._qa_table.setVisible(False)
         results_layout.addWidget(self._qa_table)
 
-        self._output = QPlainTextEdit()
+        # QTextEdit (not QPlainTextEdit) so decision/QA lines can be colored via
+        # setHtml/_colorize_output (#205 comment); read-only, still monospaced
+        # by the <pre> wrapper the colorizer emits.
+        self._output = QTextEdit()
         self._output.setReadOnly(True)
         results_layout.addWidget(self._output)
 
@@ -403,7 +435,9 @@ class MainWindow(QMainWindow):
             self._status.setText(blocked)
             return
         try:
-            step = build_step(form, self._raw_values())
+            step = build_step(
+                form, self._raw_values(),
+                pause_on_warning=self._pause_on_warning.isChecked())
         except FormValidationError as exc:
             self._status.setText(f"Fix before running: {exc}")
             return
@@ -418,6 +452,10 @@ class MainWindow(QMainWindow):
         self._output.clear()
         self._qa_table.setVisible(False)
         self._set_authoring_enabled(False)
+        # Cancel/Resume apply to any run, single Run included (#205): reset them
+        # here so the pause branch can light Resume for a single Run too.
+        self._cancel_button.setEnabled(True)
+        self._resume_button.setEnabled(False)
         self._job_root = Path(tempfile.mkdtemp(prefix="autogis-gui-"))
         self._runner = WorkflowRunner(Workflow(name, steps), self._job_root,
                                       local_python=self._local_python)
@@ -510,9 +548,7 @@ class MainWindow(QMainWindow):
         for i in range(self._step_list.count()):   # clear any prior-run glyphs
             item = self._step_list.item(i)
             item.setText(item.text().lstrip("✓⏸✗ "))
-        self._cancel_button.setEnabled(True)
-        self._resume_button.setEnabled(False)
-        self._start_run(tuple(self._steps), "gui-workflow")
+        self._start_run(tuple(self._steps), "gui-workflow")  # sets Cancel/Resume
 
     def _on_cancel(self) -> None:
         if self._runner is None:
@@ -645,11 +681,15 @@ class MainWindow(QMainWindow):
         self._status.setText(_DECISION_LABEL[result.decision])
         text = [f"Decision: {_DECISION_LABEL[result.decision]}",
                f"Reason: {result.reason}"]
+        if result.report_out:      # #205: the qa.csv was copied to the user's path
+            text.append(f"Report saved to: {result.report_out}")
+        if result.report_error:    # copy-out failed; decision unaffected, just shown
+            text.append(f"Report NOT saved: {result.report_error}")
         if result.stdout:
             text += ["", "-- stdout --", result.stdout]
         if result.stderr:
             text += ["", "-- stderr --", result.stderr]
-        self._output.setPlainText("\n".join(text))
+        self._output.setHtml(_colorize_output("\n".join(text)))
         self._show_qa(result.qa_rows)
         if self._run_is_workflow and index < self._step_list.count():
             glyph = {Decision.CONTINUE: "✓", Decision.HALT: "✗",
@@ -675,23 +715,22 @@ class MainWindow(QMainWindow):
         if state is RunState.PENDING:
             self._advance()                     # loop to the next step
         elif state is RunState.PAUSED:
-            if self._run_is_workflow:
-                self._status.setText(
-                    f"PAUSED after step {index + 1} -- Resume or Cancel")
-                self._resume_button.setEnabled(True)
-            else:
-                # Unreachable today (a single Run's step never pauses:
-                # pause_on_warning defaults False, no checkpoint steps). If a
-                # future slice makes it reachable, finish rather than leave the
-                # window bricked -- a single Run has no Resume affordance.
-                self._finish_run()
+            # A single Run pauses too now (#205): _start_run reset Resume, so
+            # both paths get the same Resume/Cancel affordance here.
+            self._status.setText(
+                f"PAUSED after step {index + 1} -- Resume or Cancel")
+            self._resume_button.setEnabled(True)
         else:                                   # DONE / HALTED / CANCELLED
             if self._run_is_workflow:
                 self._status.setText(
                     self._terminal_message(state, index, result))
-            # A single Run keeps the decision label _render_result set
-            # (today's UX: "CONTINUE"/"HALT"); only a workflow shows a
-            # run-level message.
+            elif state is RunState.CANCELLED:
+                # A cancelled single Run must read "Cancelled", not the decision
+                # label of the step that completed under a deferred cancel
+                # (#205 C made mid-flight cancel reachable for single Run).
+                self._status.setText("Cancelled")
+            # Otherwise a single Run keeps the decision label _render_result set
+            # (today's UX: "CONTINUE"/"HALT").
             self._finish_run()
 
     def _on_failure(self, message: str) -> None:
@@ -703,7 +742,7 @@ class MainWindow(QMainWindow):
             # startup gap -- report the cancel it was, not a failure.
             self._status.setText("Cancelled")
         else:
-            self._output.setPlainText(message)
+            self._output.setHtml(_colorize_output(message))
             self._show_qa(())
             self._status.setText("Failed to run")
         self._finish_run()

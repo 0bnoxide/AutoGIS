@@ -336,6 +336,86 @@ def test_run_happy_path_updates_output_via_worker_thread(qapp, monkeypatch):
     assert "hello from stub" in win._output.toPlainText()
 
 
+def test_report_out_path_surfaced_in_output(qapp, monkeypatch):
+    # #205: a successful copy-out of qa.csv to the user's --report path must be
+    # shown -- the old behavior silently discarded the typed path.
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: StepResult(
+            Decision.CONTINUE, "ok", exit_code=0, stdout="hi",
+            report_out=r"C:\out\REPORT_CLEAN"))
+    win = MainWindow()
+    _fill_required_fields(win, _first_runnable(win))
+    win._on_run()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert r"C:\out\REPORT_CLEAN" in win._output.toPlainText()
+
+
+def test_report_copy_error_surfaced_in_output(qapp, monkeypatch):
+    # A failed copy-out must not stay silent (that was the original bug); the
+    # QA decision is unaffected (still CONTINUE), the failure is just shown.
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: StepResult(
+            Decision.CONTINUE, "ok", exit_code=0,
+            report_error="could not write report to C:\\bad\\x: denied"))
+    win = MainWindow()
+    _fill_required_fields(win, _first_runnable(win))
+    win._on_run()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert "could not write report" in win._output.toPlainText()
+
+
+# --- output-pane colorization (#205 comment) --------------------------------
+
+def test_colorize_output_colors_lines_by_keyword():
+    from autogis.adapters.gui.app import _colorize_output
+    out = _colorize_output(
+        "Decision: HALT\n"
+        "[WARNING] vrms: high\n"
+        "[INFO] done: 1/6 QA pass.\n"   # 'pass' must NOT override the INFO tag
+        "Status: PASS")
+    assert '#d32f2f">Decision: HALT' in out       # red for HALT/FAIL/ERROR
+    assert '#ed6c02">[WARNING]' in out            # orange for WARNING/PAUSE
+    assert '#1976d2">[INFO]' in out               # blue for INFO (not green)
+    assert '#2e7d32">Status: PASS' in out         # green for CONTINUE/PASS
+
+
+def test_colorize_output_escapes_html():
+    from autogis.adapters.gui.app import _colorize_output
+    out = _colorize_output("weird <tag> & stuff")
+    assert "&lt;tag&gt;" in out and "&amp;" in out
+    assert "<tag>" not in out                      # raw markup can't slip through
+
+
+def test_output_pane_is_rich_text_and_colored(qapp, monkeypatch):
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: StepResult(
+            Decision.HALT, "QA FAIL: bad", exit_code=1, stdout="[ERROR] x: y"))
+    win = MainWindow()
+    _fill_required_fields(win, _first_runnable(win))
+    win._on_run()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert "#d32f2f" in win._output.toHtml()       # HALT/FAIL/ERROR rendered red
+    assert "QA FAIL" in win._output.toPlainText()  # plain text still readable
+
+
+def test_failure_message_is_colorized_and_escaped(qapp, monkeypatch):
+    # The failure pane is the same lower panel -- it must colorize (an
+    # exception name reads red) and escape markup, not render raw.
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: (_ for _ in ()).throw(ValueError("boom <x>")))
+    win = MainWindow()
+    _fill_required_fields(win, _first_runnable(win))
+    win._on_run()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert "#d32f2f" in win._output.toHtml()         # "ValueError" -> red
+    assert "boom <x>" in win._output.toPlainText()   # escaped, then round-trips
+    assert win._status.text() == "Failed to run"
+
+
 def test_run_button_disabled_while_in_flight_then_reenabled(qapp, monkeypatch):
     release = threading.Event()
 
@@ -511,6 +591,80 @@ def test_single_run_finishes_and_clears_run_state(qapp, monkeypatch):
     assert "CONTINUE" in win._status.text()   # single-run keeps decision label
     assert win._runner is None                # run finished, state cleared
     assert win._job_root is None              # shared job dir cleaned up
+
+
+# --- single Run honors pause-on-warning (#205) -------------------------------
+
+def test_single_run_passes_pause_on_warning_from_checkbox(qapp, monkeypatch):
+    # The checkbox next to Run must reach a single Run's Step, not only steps
+    # added to a workflow (the silent-ignore the screenshot in #205 showed).
+    captured = {}
+
+    def fake_run_step(step, job_dir, **kw):
+        captured["pause"] = step.pause_on_warning
+        return StepResult(Decision.CONTINUE, "ok", exit_code=0)
+
+    monkeypatch.setattr(runner_mod, "run_step", fake_run_step)
+    win = MainWindow()
+    _fill_required_fields(win, _first_runnable(win))
+    win._pause_on_warning.setChecked(True)
+    win._on_run()
+    _pump_until(lambda: win._run_button.isEnabled())
+    assert captured["pause"] is True
+
+
+def test_single_run_pauses_on_warning_and_resumes(qapp, monkeypatch):
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: StepResult(
+            Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0))
+    win = MainWindow()
+    _fill_required_fields(win, _first_runnable(win))
+    win._pause_on_warning.setChecked(True)
+    win._on_run()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    assert win._runner is not None                 # paused, NOT finished
+    assert "PAUSED" in win._status.text()
+    win._on_resume()                                # 1-step workflow -> DONE
+    _pump_until(lambda: win._runner is None)
+    assert "complete" in win._status.text().lower()
+
+
+def test_single_run_cancel_while_paused_ends_run(qapp, monkeypatch):
+    monkeypatch.setattr(
+        runner_mod, "run_step",
+        lambda step, job_dir, **kw: StepResult(
+            Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0))
+    win = MainWindow()
+    _fill_required_fields(win, _first_runnable(win))
+    win._pause_on_warning.setChecked(True)
+    win._on_run()
+    _pump_until(lambda: win._resume_button.isEnabled())
+    win._on_cancel()
+    _pump_until(lambda: win._runner is None)
+    assert "Cancelled" in win._status.text()
+    assert win._job_root is None                   # job dir cleaned on cancel
+
+
+def test_single_run_cancel_while_running_shows_cancelled(qapp, monkeypatch):
+    # Enabling Cancel for single Run (#205 C) makes mid-flight cancel reachable;
+    # a deferred cancel lets the step finish, so the status must read "Cancelled",
+    # not the completed step's decision label.
+    release = threading.Event()
+
+    def fake(step, job_dir, **kw):
+        release.wait(timeout=5)
+        return StepResult(Decision.CONTINUE, "ok", exit_code=0)
+
+    monkeypatch.setattr(runner_mod, "run_step", fake)
+    win = MainWindow()
+    _fill_required_fields(win, _first_runnable(win))
+    win._on_run()
+    QTest.qWait(50)                                # step in flight
+    win._on_cancel()                                # deferred: step still running
+    release.set()
+    _pump_until(lambda: win._runner is None)
+    assert "Cancelled" in win._status.text()
 
 
 # --- workflow builder: authoring (Task 2, ADR-0063) --------------------------
