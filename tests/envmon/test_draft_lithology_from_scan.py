@@ -31,3 +31,14 @@ def test_map_columns_is_case_and_punctuation_insensitive():
     assert result[0] == "boring_id"
     assert result[1] == "top_depth"
     assert result[2] == "bottom_depth"
+
+
+def test_map_columns_anchors_short_aliases_and_maps_secondary_material():
+    # "Total Depth" must NOT false-match the bare "to" alias; a genuine bare
+    # "To"/"From" column still must; "Secondary Material" routes to
+    # secondary_material, not primary_material.
+    result = map_columns(["Total Depth", "Secondary Material", "To", "From"])
+    assert 0 not in result
+    assert result[1] == "secondary_material"
+    assert result[2] == "bottom_depth"
+    assert result[3] == "top_depth"

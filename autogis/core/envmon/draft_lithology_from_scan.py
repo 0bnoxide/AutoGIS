@@ -73,6 +73,7 @@ HEADER_ALIASES: dict[str, list[str]] = {
     "color": ["color", "colour"],
     "moisture": ["moisture", "moisture content"],
     "primary_material": ["material", "soil type", "primary material"],
+    "secondary_material": ["secondary material", "secondary soil type"],
 }
 
 
@@ -83,21 +84,42 @@ def _normalize_header(text: str) -> str:
     return " ".join(cleaned.split())
 
 
+def _alias_matches(alias_tokens: list[str], header_tokens: list[str]) -> bool:
+    """True if *alias_tokens* appear as a contiguous run within *header_tokens*
+    (whole-token match, so the alias "to" matches a "To" column but not
+    "Total")."""
+    n = len(alias_tokens)
+    if not n:
+        return False
+    return any(header_tokens[i:i + n] == alias_tokens
+               for i in range(len(header_tokens) - n + 1))
+
+
 def map_columns(header_row: list[str]) -> dict[int, str]:
     """Fuzzy-match header cells to LithologyInterval field names.
 
-    First alias match wins per column; a column matching no known alias is
-    omitted from the result (its data is preserved in the row but not mapped
-    onto any LithologyInterval field).
+    Matching is on whole normalized tokens (see _normalize_header), not raw
+    substrings, so a short alias like "to" matches a column literally headed
+    "To" but never bleeds into "Total". When several aliases match one column,
+    the alias with the most tokens wins ("secondary material" beats the bare
+    "material"), tie-broken by declaration order in HEADER_ALIASES. A column
+    matching no alias is omitted (its data is preserved in the row but mapped
+    to no LithologyInterval field).
     """
     mapped: dict[int, str] = {}
     for index, raw in enumerate(header_row):
-        normalized = _normalize_header(raw)
-        if not normalized:
+        header_tokens = _normalize_header(raw).split()
+        if not header_tokens:
             continue
+        best_field: Optional[str] = None
+        best_len = 0
         for field_name, aliases in HEADER_ALIASES.items():
-            if any(normalized == alias or alias in normalized
-                   for alias in aliases):
-                mapped[index] = field_name
-                break
+            for alias in aliases:
+                alias_tokens = alias.split()
+                if _alias_matches(alias_tokens, header_tokens) and \
+                        len(alias_tokens) > best_len:
+                    best_field = field_name
+                    best_len = len(alias_tokens)
+        if best_field is not None:
+            mapped[index] = best_field
     return mapped
