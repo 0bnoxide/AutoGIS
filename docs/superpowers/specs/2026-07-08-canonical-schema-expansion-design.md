@@ -1,7 +1,7 @@
 # Canonical Envmon Schema Expansion + Key Redesign — Design (Step 1 of 3)
 
-**Date:** 2026-07-08
-**Status:** Proposed
+**Date:** 2026-07-08 (Step-1 scope frozen 2026-07-09)
+**Status:** Proposed — paper mapping complete, Step-1 scope **FROZEN** (see the AMENDMENT section immediately below, which is authoritative where it differs from the design body)
 **Program:** discipline-agnostic, multi-format lab-data ingestion (environmental only
 for now — see Non-goals). This is **step 1 of 3**:
 
@@ -20,6 +20,70 @@ Ordering is **strictly sequential, not parallelizable**, for reasons given below
 Steps 2 and 3 are out of scope for this document except where their requirements
 constrain what this step must freeze now (additive-only migration means schema/key
 names get exactly one shot — see Approach).
+
+---
+
+## AMENDMENT 2026-07-09 — paper-mapping outcome + MINIMAL Step-1 freeze (AUTHORITATIVE)
+
+The required paper mapping is **done** — a 6-format extraction Workflow + Fable synthesis, recorded in
+[`2026-07-09-edd-paper-mapping-outcome.md`](2026-07-09-edd-paper-mapping-outcome.md) (5/6 formats;
+NYSDEC v5 stalled on read-volume and is deferred to Step 3 — see that doc). It **confirmed the proposed
+key + fraction/method fields against real data** and surfaced concrete amendments. The user then set the
+**Step-1 freeze boundary to MINIMAL**: freeze only what Step 2 (WQX) needs; defer everything with no
+Step-1/Step-2 producer to Step 3, where real EQuIS data verifies it (additive-only ⇒ a new table or a
+nullable column carries zero rename/rekey risk). **Where this section differs from the design body below,
+this section wins.**
+
+### Frozen now (Step 1) — `Env_AnalyticalResults`
+
+New columns (all optional; text/code key parts default `""`, never `None`; all WQX-populated in Step 2):
+`ResultFraction`, `QCType`, `MethodDilutionKey` (the three key discriminators), `MethodID`,
+`MethodName`, `AnalysisDate`, `LimitType`, `LabName`, `PrepMethodID`, `PrepDate`, `ResultBasis`,
+`MethodSpeciation`.
+
+Unique key — **11 components, frozen (never widened again):**
+`SiteID, Matrix, LocationID, SampleID, SampleDate, AnalyteCanonicalName, DepthIntervalText, SourceCell,
+ResultFraction, QCType, MethodDilutionKey`.
+
+Conventions frozen now (no schema change):
+- **`MethodDilutionKey`** is a deterministic load-time composite. Step 1 defines the WQX composition
+  (dilution factor) and **folds `ResultBasis` (wet/dry) into it** — `ResultBasis` is a data column, **not**
+  a 12th key component (user decision, open-Q#5). Step 3 extends the recipe with EQuIS
+  `column_number`/`test_type`; extending a per-reader *value recipe* is safe — the frozen things are the
+  key composition and the column names, not the recipe.
+- **`Qualifier` = final/interpreted qualifier** (user decision, open-Q#4); `IsEstimated` derivation reads
+  it. A separate `InterpretedQualifier` may be added later (additive) if validated-data workflows need it.
+- **Limit units:** convert detection/reporting limits to result units at load, QA-WARN on unconvertible
+  mismatch (no `DetectionLimitUnits` column; deferrable additively — open-Q#6).
+
+Also frozen now, unchanged from the design body: `compute_unique_key()` extraction (§4), the `value_maps`
+generalization (§5 — needed to normalize `QCType`/`ResultFraction`/`Matrix` into the key), the
+`run_edd_import` schema-ensure fix (§6), and the canonical-read helper (Read-side impact) — its
+**fraction-resolution + QC-exclusion** behavior ships now; its **rerun disambiguation via `IsReportable`
+defers to Step 3** with that column.
+
+`SCHEMA_VERSION` `2.1 → 2.2` covers exactly this frozen set. Step 3 bumps again for the deferred items.
+
+### Deferred to Step 3 (additive-safe — no Step-1/Step-2 producer)
+
+- **`Env_QCResults` table in its entirety** (**supersedes §2**). WQX has no lab-QC/batch concept, so
+  nothing in Step 1/2 produces a QC row. The finalized field list + proposed `UNIQUE_KEYS` are recorded
+  in the mapping-outcome doc for Step 3 to create and verify against real EQuIS QC data. New table ⇒ no
+  rename risk.
+- **VI fields** (**supersedes §7**). The synthesis **regrained** building-survey attributes off
+  `Env_Samples` — they are `(building_code, inspection_date)`-grain → a future additive
+  `Env_VIBuildingSurveys` table (Step 3). The VI sample/duration fields (`SampleEndDate`,
+  `SampleDuration`, `AirVolume`, …) also defer (no Step-2 producer). Finalized VI list is in the
+  mapping-outcome doc.
+- **EQuIS-only result columns:** `CASNumber`, `QuantitationLimit` (the third concurrent limit — MDL + RL
+  + PQL — that two limit columns can't hold), and `IsReportable` (rerun disambiguation) — no WQX
+  producer; added in Step 3 with the EQuIS reader.
+
+### Testing (adjusts the Testing-plan section below)
+
+Step-1 key-distinctness tests exercise `ResultFraction`/`QCType`/`MethodDilutionKey` (all reachable via
+WQX-shaped synthetic rows) through `compute_unique_key()`. The `Env_QCResults` round-trip and the VI
+tests move to Step 3 with those additions. Everything else in the Testing plan stands.
 
 ---
 
@@ -401,6 +465,14 @@ to validate itself — it ships its own synthetic test suite:
 ---
 
 ## Required pre-implementation step: the paper mapping
+
+> **DONE 2026-07-09.** Complete — see
+> [`2026-07-09-edd-paper-mapping-outcome.md`](2026-07-09-edd-paper-mapping-outcome.md) and the
+> AMENDMENT section at the top of this spec. 5 of 6 formats reconciled (NYSDEC v5 stalled on
+> read-volume, deferred to Step 3). The outcome moved this spec to a **MINIMAL Step-1 freeze**: the
+> `Env_QCResults` table and VI fields defer to Step 3; only the `Env_AnalyticalResults` key + the
+> WQX-populated field names are frozen now. The prose below is retained as original (pre-mapping)
+> rationale.
 
 Because the additive-only migration model means every field/table name and key
 composition frozen here is permanent, **before this spec's field names are
