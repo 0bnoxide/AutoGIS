@@ -2806,6 +2806,46 @@ def import_boring_logs_cmd(input_dir, gdb, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+def _require_ocr_extra() -> None:
+    """Surface the missing `ocr` extra as a clean click error, not a
+    mid-pipeline traceback. Checked via find_spec (no heavy import) so this
+    guard doesn't itself require torch/transformers to be importable."""
+    import importlib.util
+    missing = [mod for mod in ("torch", "transformers", "PIL", "fitz")
+               if importlib.util.find_spec(mod) is None]
+    if missing:
+        raise click.ClickException(
+            f"Missing OCR dependencies: {', '.join(missing)}. "
+            f"Install with: pip install autogis[ocr]")
+
+
+@envmon.command("draft-lithology-from-scan")
+@click.argument("scan_path", metavar="SCAN_PATH",
+                type=click.Path(exists=True, dir_okay=False))
+@click.option("--out-dir", "out_dir", required=True, type=click.Path(file_okay=False),
+              help="Directory to write the draft lithology.csv into.")
+@click.option("--handwritten", is_flag=True, default=False,
+              help="Use the handwritten TrOCR model instead of the printed one.")
+@qa_report_options
+def draft_lithology_from_scan_cmd(scan_path, out_dir, handwritten, report, fail_on):
+    """DRAFT: OCR a scanned/PDF boring log into a draft lithology.csv (headless).
+
+    DRAFT TOOL: no real scanned sample has validated this pipeline. Output is
+    an unreviewed draft, never authoritative — review every row against the
+    original scan, then run 'autogis envmon validate-boring-logs OUT_DIR'
+    before anything downstream uses it. Requires the ocr extra
+    (pip install autogis[ocr]).
+    """
+    _require_ocr_extra()
+    from autogis.core.envmon.draft_lithology_from_scan import (
+        draft_lithology, write_draft_csv)
+    result = draft_lithology(Path(scan_path), handwritten=handwritten)
+    out_path = write_draft_csv(result.rows, Path(out_dir) / "lithology.csv")
+    click.echo(f"DRAFT: wrote {out_path} ({len(result.rows)} row(s)). "
+               f"Review against the scan before running validate-boring-logs.")
+    _render_qa(result.qa, report, fail_on)
+
+
 @envmon.command("survey-to-well-elevation")
 @click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
 @click.option("--site", "site_id", required=True,
