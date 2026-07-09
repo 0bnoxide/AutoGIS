@@ -57,6 +57,7 @@ TOOLS: dict[str, Runtime] = {
     "generate-job-queue": Runtime.CLOUD,  # tool 10.4 headless JSON manifest
     "register-source-doc": Runtime.CLOUD,      # tool 2.5 headless registry
     "validate-boring-logs": Runtime.CLOUD,     # tool 8.0b headless validate
+    "draft-lithology-from-scan": Runtime.CLOUD,  # tool headless OCR draft
     "import-boring-logs": Runtime.LOCAL,       # tool 8.0b GDB write
     "create-boring-log-db": Runtime.CLOUD,     # tool 8.0a headless SQLite scaffold
     "gen-boring-logs": Runtime.CLOUD,          # tool 8.0c headless Markdown/CSV logs
@@ -271,6 +272,8 @@ _REGISTRY_SEED = [
      "field", "Import drone deliverables into the GDB raster catalog"),
     ("validate-boring-logs", "ImportFieldBoringLogs", "8.0b", "CLOUD", "stable",
      "intake", "Validate a boring-log CSV package (headless)"),
+    ("draft-lithology-from-scan", "DraftLithologyFromScan", "", "CLOUD", "draft",
+     "intake", "DRAFT: OCR a scanned boring log into a draft lithology.csv (headless)"),
     ("import-boring-logs", "ImportFieldBoringLogs", "8.0b", "LOCAL", "stable",
      "intake", "Import a boring-log CSV package into the GDB"),
     ("survey-to-well-elevation", "SurveyToWellElevationUpdate", "8.5", "LOCAL",
