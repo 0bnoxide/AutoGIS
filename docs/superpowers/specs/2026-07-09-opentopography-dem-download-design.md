@@ -59,13 +59,32 @@ Three layers with clean seams, following the project's established pattern
 Ease of use is the driving constraint, expressed concretely as:
 
 - **One `--dataset` param auto-routes** to `/globaldem` vs `/usgsdem`; the user
-  never needs to know which endpoint a dataset lives on.
+  never needs to know which endpoint a dataset lives on. Lookup is
+  case-insensitive and, on an unknown code, suggests the nearest match via
+  stdlib `difflib` ("unknown dataset `usgs10`; did you mean `USGS10m`?").
 - **Default dataset `USGS10m`** (USGS 3DEP ~10m, seamless US coverage) when
   unspecified — no fallback logic (YAGNI).
 - **`--list-datasets`** prints codes + resolution + coverage.
+- **`--dry-run`** resolves the AOI, dataset→endpoint routing, a redacted URL,
+  and an estimated area (km²) / pixel dimensions, then stops — catches a wrong
+  AOI before spending a subscription fetch.
+- **Area pre-flight warning** — the same estimator used by `--dry-run` warns
+  *before* the request when an AOI looks large enough to breach a dataset's area
+  limit (heuristic only; the API's own 400 stays the authoritative backstop).
+- **Overwrite guard** — if `--out` already exists, refuse unless `--overwrite`
+  is passed (data-loss prevention).
 - **Auto-derived output filename** when `--out` is omitted.
+- **Download progress** — a running byte count against `Content-Length` on the
+  fetch, so large rasters don't look hung.
+- **Provenance/citation sidecar** — on success, write `<out>.json` next to the
+  GeoTIFF capturing dataset code, WGS84 bbox, UTC timestamp, source URL, and
+  OpenTopography's required citation/attribution string. OpenTopography's terms
+  require dataset citation, so this is compliance *and* provenance for a few
+  lines. (Exact attribution text verified against OT docs at implementation.)
 - **Actionable errors** for every failure mode.
-- **In Pro:** defaults AOI to the current map extent and auto-adds the result.
+- **In Pro:** defaults AOI to the current map extent, auto-adds the result,
+  zooms to it, and offers an *optional* reproject-to-map-CRS step (default off,
+  since resampling a DEM is lossy).
 
 ## Architecture
 
@@ -166,8 +185,10 @@ pass `--bbox` in WGS84.
 | `--bbox W S E N` | WGS84 bounding box (mutually exclusive with `--aoi`) |
 | `--aoi PATH` | shapefile or GeoJSON AOI |
 | `--out PATH` | output GeoTIFF; auto-derived if omitted |
+| `--overwrite` | allow overwriting an existing `--out` (else refuse) |
 | `--format` | `GTiff` (default) / `AAIGrid` / `HFA` |
 | `--api-key` | overrides `$OPENTOPOGRAPHY_API_KEY` |
+| `--dry-run` | resolve + print bbox/routing/redacted URL/area estimate, then exit |
 | `--list-datasets` | print registry and exit |
 
 Emits the standard QA summary. Exit non-zero on error (missing key, empty AOI,
@@ -178,8 +199,11 @@ oversized bbox, etc.).
 Toolbox tool "Download OpenTopography DEM" (in the existing `.pyt`). Parameters:
 dataset (dropdown from registry), **AOI source** (Active map extent [default] /
 Selected features / Feature layer / Manual bbox), output raster path, "Add to
-map" checkbox (default on). Resolves AOI via `arcpy`, calls core `download_dem`,
-and on success adds the raster to the active map. The `arcpy` add-to-map step is
+map" checkbox (default on), "Reproject to map CRS" checkbox (default **off** —
+resampling a DEM is lossy; opt-in only). Resolves AOI via `arcpy`, calls core
+`download_dem`, and on success adds the raster to the active map and zooms to
+it; if reproject is checked, runs `arcpy` Project Raster into the map's CRS
+first. The `arcpy` extent-resolution, add-to-map, zoom, and reproject steps are
 isolated behind a small seam so the testable logic stays arcpy-free.
 
 ## Dependency scope
@@ -190,6 +214,10 @@ isolated behind a small seam so the testable logic stays arcpy-free.
   soft-imported inside `resolve_bbox`, needed only to reproject a non-WGS84 AOI
   file in headless mode. Mirrors the `ocr` extra precedent (lazy import; module
   stays importable with the extra absent).
+- API key: `$OPENTOPOGRAPHY_API_KEY` set once at the user/OS level *is* the
+  "enter it once" persistence — it carries across both CLI and Pro sessions.
+  No QSettings/registry secret storage is added (avoids a plaintext-secret
+  surface); `--api-key` / the `.pyt` field remain per-run overrides.
 
 ## Error handling
 
@@ -203,10 +231,12 @@ isolated behind a small seam so the testable logic stays arcpy-free.
 | 400 Bad Request | QA error surfacing the API message (commonly bbox too large / invalid); note per-dataset area limits |
 | 500 / other | QA error: server-side failure, retry later |
 | Non-WGS84 AOI, no pyproj | `RuntimeError` with install guidance |
-| Empty/oversized bbox pre-check | optional soft warn before the request |
+| Oversized bbox pre-check | heuristic soft warn before the request (see area pre-flight); not a hard block — the API 400 is authoritative |
+| `--out` exists, no `--overwrite` | refuse before fetching (data-loss guard) |
 
 Partial downloads are written to a temp path and renamed on success so a failed
-request never leaves a truncated `.tif`.
+request never leaves a truncated `.tif`. The provenance sidecar is written only
+after the rename succeeds.
 
 ## Test strategy (arcpy-free, no network)
 
@@ -219,6 +249,13 @@ request never leaves a truncated `.tif`.
   returning 200-bytes / 401 / 204 / 400 — asserts QA severities and that a
   truncated file is never left behind.
 - Output-filename derivation.
+- Overwrite guard: existing `--out` without `--overwrite` refuses before fetch.
+- Dataset fuzzy-match: case-insensitive hit; unknown code yields a
+  `difflib`-suggested nearest match.
+- Area estimator: bbox → km²/pixel estimate feeds both `--dry-run` output and
+  the pre-flight warn (assert the warn fires past a threshold, not below).
+- Provenance sidecar: on a faked success, `<out>.json` exists with the expected
+  keys (dataset, bbox, timestamp, url, citation).
 - The `.pyt`/`arcpy` extent-resolution and add-to-map path is untestable
   headless; isolated behind a seam and excluded like other LOCAL-tool surfaces.
 
@@ -235,3 +272,9 @@ request never leaves a truncated `.tif`.
 - `/API/otCatalog` dataset discovery and `/v1/elevation` point lookups.
 - Batch/tiled downloads for AOIs exceeding a single dataset's area limit.
 - Symbology/hillshade styling of the added raster in Pro.
+- `--buffer <dist>` AOI padding (needs unit/CRS handling — cleaner once a CRS
+  helper exists).
+- Skip-if-cached reuse of a prior dataset+bbox download (adds a cache dir to
+  reason about).
+- Transient-retry with backoff on 500/timeout.
+- Persisted API key in QSettings (env var already covers "enter once").
