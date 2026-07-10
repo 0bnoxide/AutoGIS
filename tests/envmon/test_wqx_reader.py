@@ -421,6 +421,35 @@ def test_batch_import_surfaces_wqx_reader_qa(tmp_path):
     assert "wqx_rejected_row_skipped" in _categories(qa)
 
 
+def test_run_edd_import_caller_collector_gets_wqx_reader_qa(tmp_path, monkeypatch):
+    # Reconciliation with PR #225 (review finding on #226): run_edd_import
+    # accepts a caller-owned QACollector, initializes it BEFORE the read so
+    # WQX reader warnings land in it, and the SAME collector reaches the GDB
+    # QA write.
+    import autogis.core.envmon.edd_importer as mod
+
+    seen = {}
+    monkeypatch.setattr(mod, "create_or_update_gdb_schema", lambda g, qa=None: None)
+    monkeypatch.setattr(mod, "create_edd_import_batch",
+                        lambda *a, **k: "BATCH-001")
+    monkeypatch.setattr(mod, "append_records_idempotent",
+                        lambda g, t, r, qa, b: None)
+    monkeypatch.setattr(mod, "finalize_batch", lambda g, b, qa, c, s: None)
+    monkeypatch.setattr(mod, "write_qa_to_gdb",
+                        lambda g, qa, b: seen.setdefault("qa", qa))
+
+    path = _write_csv(tmp_path, [_row(ResultStatusIdentifier="Rejected"),
+                                 _row()])
+    caller_qa = QACollector()
+    batch_id = mod.run_edd_import(
+        edd_path=path, profile=PROFILE, gdb_path=tmp_path / "t.gdb",
+        site_id="S1", analyte_dictionary=ANALYTES, screening_levels={},
+        qa=caller_qa)
+    assert batch_id == "BATCH-001"
+    assert "wqx_rejected_row_skipped" in _categories(caller_qa)
+    assert seen["qa"] is caller_qa               # same object, GDB-written
+
+
 def test_speciated_alias_must_map_to_speciated_canonical():
     # Guard for the D6 dictionary rule: an alias that strips speciation
     # ("Nitrate as N" -> "Nitrate") would recreate the as-N/as-NO3 key

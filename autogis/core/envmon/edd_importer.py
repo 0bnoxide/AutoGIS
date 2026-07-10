@@ -371,6 +371,8 @@ def run_edd_import(
 
     Pass ``qa`` to also receive the QA records caller-side (e.g. for a
     ``--report`` file); the same records are still written to the GDB.
+    Reader-level warnings (wqx_csv load transforms) land in it too — the
+    collector is initialized before the read (PR #225/#226 reconciliation).
     """
     edd_path = Path(edd_path)
     gdb_path = Path(gdb_path)
