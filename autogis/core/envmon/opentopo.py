@@ -355,6 +355,8 @@ def _map_http_error(qa: QACollector, status: int, dataset: DemDataset,
                "OpenTopography rejected the API key (401) — check "
                "$OPENTOPOGRAPHY_API_KEY / --api-key")
     elif status == 204:
+        for _ in chunks:
+            pass    # drain to close the underlying response (real path only)
         qa.add(SEV_ERROR, "no_data",
                f"no data for this AOI in dataset {dataset.code!r} (204) — "
                f"try a global dataset or check the bbox")
@@ -445,7 +447,24 @@ def download_dem(
     except BaseException:
         part.unlink(missing_ok=True)   # never leave a truncated raster
         raise
-    os.replace(part, out)
+
+    if total is not None and written != total:
+        part.unlink(missing_ok=True)
+        qa.add(SEV_ERROR, "truncated",
+               f"download stopped at {written:,}/{total:,} bytes for {out} "
+               f"— server closed the connection early; retry the download")
+        return DownloadResult(out_path=out, dataset=ds.code, bbox=box,
+                              bytes_written=0, qa=qa)
+
+    try:
+        os.replace(part, out)
+    except OSError as err:
+        part.unlink(missing_ok=True)
+        qa.add(SEV_ERROR, "write_failed",
+               f"could not finalize {out} ({err}) — is the file open in "
+               f"ArcGIS Pro or another program? close it and retry")
+        return DownloadResult(out_path=out, dataset=ds.code, bbox=box,
+                              bytes_written=0, qa=qa)
     sidecar = _write_sidecar(out, ds, box,
                              build_url(ds, box, "REDACTED", output_format))
     qa.add(SEV_INFO, "download_dem",

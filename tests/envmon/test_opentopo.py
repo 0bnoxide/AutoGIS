@@ -401,3 +401,89 @@ def test_small_aoi_no_preflight_warn(tmp_path, api_key_env):
     result = download_dem("USGS10m", bbox=BBOX, out_path=tmp_path / "d.tif",
                           http_get=fake_get(200, b"x"))
     assert not [r for r in result.qa.records if r.category == "large_aoi"]
+
+
+# --------------------------------------------------- download_dem hardening
+def test_download_truncated_content_length_mismatch(tmp_path, api_key_env):
+    out = tmp_path / "dem.tif"
+
+    def truncated(url):
+        return 200, {"Content-Length": "9999"}, iter([b"too short"])
+
+    result = download_dem("USGS10m", bbox=BBOX, out_path=out,
+                          http_get=truncated)
+    assert result.bytes_written == 0
+    assert not out.exists(), "truncated download must never leave a final .tif"
+    assert not list(tmp_path.glob("*.part"))
+    assert not (tmp_path / "dem.tif.json").exists(), "no sidecar on failure"
+    errors = [r for r in result.qa.records if r.severity == "ERROR"]
+    assert len(errors) == 1
+    assert errors[0].category == "truncated"
+
+
+def test_download_success_without_content_length_is_noop(tmp_path, api_key_env):
+    out = tmp_path / "dem.tif"
+
+    def no_content_length(url):
+        return 200, {}, iter([b"bytes-with-no-length-header"])
+
+    result = download_dem("USGS10m", bbox=BBOX, out_path=out,
+                          http_get=no_content_length)
+    assert result.bytes_written == len(b"bytes-with-no-length-header")
+    assert out.exists()
+    assert not [r for r in result.qa.records if r.severity == "ERROR"]
+
+
+def test_download_rename_failure_cleans_up_part(tmp_path, api_key_env,
+                                                 monkeypatch):
+    out = tmp_path / "dem.tif"
+
+    def boom(*_args, **_kwargs):
+        raise PermissionError("file in use")
+
+    monkeypatch.setattr("autogis.core.envmon.opentopo.os.replace", boom)
+    result = download_dem("USGS10m", bbox=BBOX, out_path=out,
+                          http_get=fake_get(200, b"some bytes"))
+    assert result.bytes_written == 0
+    assert not out.exists()
+    assert not list(tmp_path.glob("*.part")), "rename failure must not orphan .part"
+    assert not (tmp_path / "dem.tif.json").exists(), "no sidecar on failure"
+    errors = [r for r in result.qa.records if r.severity == "ERROR"]
+    assert len(errors) == 1
+    assert errors[0].category == "write_failed"
+
+
+def test_download_204_drains_and_closes_response(tmp_path, api_key_env):
+    closed = {"flag": False}
+
+    def gen():
+        try:
+            return
+            yield  # pragma: no cover - makes this a generator
+        finally:
+            closed["flag"] = True
+
+    def no_data(url):
+        return 204, {}, gen()
+
+    download_dem("USGS10m", bbox=BBOX, out_path=tmp_path / "d.tif",
+                 http_get=no_data)
+    assert closed["flag"], "204 response generator must be drained/closed"
+
+
+def test_download_rename_failure_preserves_preexisting_file(tmp_path,
+                                                             api_key_env,
+                                                             monkeypatch):
+    out = tmp_path / "dem.tif"
+    out.write_bytes(b"original data")
+
+    def boom(*_args, **_kwargs):
+        raise PermissionError("file in use")
+
+    monkeypatch.setattr("autogis.core.envmon.opentopo.os.replace", boom)
+    result = download_dem("USGS10m", bbox=BBOX, out_path=out, overwrite=True,
+                          http_get=fake_get(200, b"new bytes"))
+    assert result.bytes_written == 0
+    assert out.read_bytes() == b"original data", \
+        "rename failure must never delete/corrupt a pre-existing out file"
+    assert not list(tmp_path.glob("*.part"))
