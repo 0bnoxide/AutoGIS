@@ -261,3 +261,66 @@ def test_broadwater_real_fixture_12_points():
     assert mw5r.description == "MW-5R"
     assert mw5r.easting == pytest.approx(558281.5482)
     assert mw5r.northing == pytest.approx(2206038.3110)
+
+
+# --------------------------------------------------------------------------
+# import_rtk_survey() GDB writes, via a fake arcpy (2026-07-10: the real bug
+# was a silent no-op when the tables were missing while the CLI still
+# printed "Imported N points").
+# --------------------------------------------------------------------------
+
+class _FakeCursor:
+    def __init__(self, sink):
+        self._sink = sink
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def insertRow(self, row):
+        self._sink.append(row)
+
+
+def _install_fake_arcpy(monkeypatch, existing_tables):
+    """sys.modules['arcpy'] fake; returns (raw_rows, qa_rows) sinks."""
+    import sys
+    import types
+    raw_rows, qa_rows = [], []
+    fake = types.ModuleType("arcpy")
+    fake.Exists = lambda path: Path(path).name in existing_tables
+    fake.da = types.SimpleNamespace(
+        InsertCursor=lambda table, fields: _FakeCursor(
+            raw_rows if Path(table).name == "SurveyPoints_Raw" else qa_rows))
+    monkeypatch.setitem(sys.modules, "arcpy", fake)
+    return raw_rows, qa_rows
+
+
+def test_import_rtk_survey_raises_when_tables_missing(tmp_path, monkeypatch):
+    from autogis.core.envmon.import_rtk_survey import import_rtk_survey
+    _install_fake_arcpy(monkeypatch, existing_tables=set())
+    points = parse_rtk_csv(_write_csv(tmp_path))
+    with pytest.raises(RuntimeError, match="upgrade-schema"):
+        import_rtk_survey(str(tmp_path / "x.gdb"), "SITE", "B1", points)
+
+
+def test_import_rtk_survey_missing_error_names_both_tables(tmp_path, monkeypatch):
+    from autogis.core.envmon.import_rtk_survey import import_rtk_survey
+    _install_fake_arcpy(monkeypatch, existing_tables={"SurveyPoints_Raw"})
+    points = parse_rtk_csv(_write_csv(tmp_path))
+    with pytest.raises(RuntimeError, match="SurveyPoints_QA"):
+        import_rtk_survey(str(tmp_path / "x.gdb"), "SITE", "B1", points)
+
+
+def test_import_rtk_survey_writes_raw_and_qa_rows(tmp_path, monkeypatch):
+    from autogis.core.envmon.import_rtk_survey import import_rtk_survey
+    raw_rows, qa_rows = _install_fake_arcpy(
+        monkeypatch, existing_tables={"SurveyPoints_Raw", "SurveyPoints_QA"})
+    points = parse_rtk_csv(_write_csv(tmp_path))
+    import_rtk_survey(str(tmp_path / "x.gdb"), "SITE", "B1", points)
+    assert len(raw_rows) == 3
+    assert len(qa_rows) == 3
+    statuses = {row[0]: row[1] for row in qa_rows}
+    assert statuses["MW-01"] == "PASS"       # clean RTK_FIXED point
+    assert statuses["INV001"] == "FAIL"      # AUTONOMOUS fix + bad RMS
