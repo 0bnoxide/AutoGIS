@@ -107,7 +107,7 @@ def export_event_snapshot(   # pragma: no cover
         where = build_where(site_id, event_id, has_site, has_event)
         dst = str(Path(out_gdb) / tbl_name)
         if where:
-            arcpy.conversion.TableToTable(src, out_gdb, tbl_name, where)
+            arcpy.conversion.ExportTable(src, dst, where)
         else:
             arcpy.management.Copy(src, dst)
         copied.append(tbl_name)
@@ -122,7 +122,7 @@ def export_event_snapshot(   # pragma: no cover
         where = f"SiteID = '{site_id}'" if has_site else None
         dst = str(Path(out_gdb) / fc_name)
         if where:
-            arcpy.conversion.FeatureClassToFeatureClass(src, out_gdb, fc_name, where)
+            arcpy.conversion.ExportFeatures(src, dst, where)
         else:
             arcpy.management.Copy(src, dst)
         fc_copied.append(fc_name)
