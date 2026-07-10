@@ -126,3 +126,129 @@ def test_pixel_warn_threshold_separates_small_from_huge():
     assert estimate_pixels(get_dataset("USGS10m"), BBOX) < PIXEL_WARN_THRESHOLD
     huge = (-110.0, 35.0, -100.0, 45.0)
     assert estimate_pixels(get_dataset("USGS1m"), huge) > PIXEL_WARN_THRESHOLD
+
+
+# ---------------------------------------------------------------- resolve_bbox
+import json as _json
+import struct as _struct
+import sys
+
+from autogis.core.envmon.opentopo import resolve_bbox
+
+WGS84_PRJ = (
+    'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",'
+    '6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],'
+    'UNIT["Degree",0.0174532925199433]]'
+)
+UTM13N_PRJ = (
+    'PROJCS["NAD_1983_UTM_Zone_13N",GEOGCS["GCS_North_American_1983",'
+    'DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,'
+    '298.257222101]],PRIMEM["Greenwich",0.0],'
+    'UNIT["Degree",0.0174532925199433]],'
+    'PROJECTION["Transverse_Mercator"],'
+    'PARAMETER["False_Easting",500000.0],'
+    'PARAMETER["False_Northing",0.0],'
+    'PARAMETER["Central_Meridian",-105.0],'
+    'PARAMETER["Scale_Factor",0.9996],'
+    'PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]'
+)
+
+
+def _write_shp(shp_path, bbox, prj_text=None):
+    """Minimal valid 100-byte .shp header (ESRI spec): big-endian file code
+    9994 at byte 0, little-endian version/shape-type at 28/32, bbox doubles
+    at 36. No records needed — resolve_bbox reads the header only."""
+    west, south, east, north = bbox
+    header = _struct.pack(">i", 9994) + b"\x00" * 20 + _struct.pack(">i", 50)
+    header += _struct.pack("<ii", 1000, 5)                    # version, polygon
+    header += _struct.pack("<4d", west, south, east, north)   # bbox at offset 36
+    header += _struct.pack("<4d", 0.0, 0.0, 0.0, 0.0)         # zmin/zmax/mmin/mmax
+    shp_path.write_bytes(header)
+    if prj_text is not None:
+        shp_path.with_suffix(".prj").write_text(prj_text, encoding="utf-8")
+
+
+def test_resolve_bbox_explicit_passthrough():
+    assert resolve_bbox(bbox=BBOX) == BBOX
+
+
+def test_resolve_bbox_rejects_both_and_neither(tmp_path):
+    geojson = tmp_path / "aoi.geojson"
+    geojson.write_text('{"type":"Point","coordinates":[-106.25,39.65]}')
+    with pytest.raises(ValueError, match="not both"):
+        resolve_bbox(bbox=BBOX, aoi_path=geojson)
+    with pytest.raises(ValueError, match="bbox or an AOI"):
+        resolve_bbox()
+
+
+def test_resolve_bbox_rejects_invalid_wgs84_box():
+    with pytest.raises(ValueError, match="not a valid WGS84"):
+        resolve_bbox(bbox=(-106.20, 39.60, -106.30, 39.70))   # W > E
+    with pytest.raises(ValueError, match="not a valid WGS84"):
+        resolve_bbox(bbox=(400000.0, 4400000.0, 410000.0, 4410000.0))  # meters
+
+
+def test_resolve_bbox_geojson_feature_collection(tmp_path):
+    aoi = tmp_path / "aoi.geojson"
+    aoi.write_text(_json.dumps({
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature", "properties": {},
+            "geometry": {"type": "Polygon", "coordinates": [[
+                [-106.30, 39.60], [-106.20, 39.60], [-106.20, 39.70],
+                [-106.30, 39.70], [-106.30, 39.60]]]},
+        }],
+    }))
+    assert resolve_bbox(aoi_path=aoi) == pytest.approx(BBOX)
+
+
+def test_resolve_bbox_geojson_without_coordinates_raises(tmp_path):
+    aoi = tmp_path / "empty.geojson"
+    aoi.write_text('{"type": "FeatureCollection", "features": []}')
+    with pytest.raises(ValueError, match="no coordinates"):
+        resolve_bbox(aoi_path=aoi)
+
+
+def test_resolve_bbox_shapefile_header_wgs84(tmp_path):
+    shp = tmp_path / "aoi.shp"
+    _write_shp(shp, BBOX, prj_text=WGS84_PRJ)
+    assert resolve_bbox(aoi_path=shp) == pytest.approx(BBOX)
+
+
+def test_resolve_bbox_shapefile_missing_prj_assumed_wgs84(tmp_path):
+    shp = tmp_path / "noprj.shp"
+    _write_shp(shp, BBOX, prj_text=None)
+    assert resolve_bbox(aoi_path=shp) == pytest.approx(BBOX)
+
+
+def test_resolve_bbox_rejects_non_shapefile(tmp_path):
+    bogus = tmp_path / "bogus.shp"
+    bogus.write_bytes(b"not a shapefile at all, way too short")
+    with pytest.raises(ValueError, match="not a shapefile"):
+        resolve_bbox(aoi_path=bogus)
+
+
+def test_resolve_bbox_rejects_unknown_extension(tmp_path):
+    other = tmp_path / "aoi.gpkg"
+    other.write_bytes(b"\x00")
+    with pytest.raises(ValueError, match="shapefile or GeoJSON"):
+        resolve_bbox(aoi_path=other)
+
+
+def test_resolve_bbox_non_wgs84_without_pyproj_raises_guidance(tmp_path, monkeypatch):
+    shp = tmp_path / "utm.shp"
+    _write_shp(shp, (400000.0, 4400000.0, 410000.0, 4410000.0),
+               prj_text=UTM13N_PRJ)
+    monkeypatch.setitem(sys.modules, "pyproj", None)  # force ImportError
+    with pytest.raises(RuntimeError, match=r"autogis\[opentopo\]"):
+        resolve_bbox(aoi_path=shp)
+
+
+def test_resolve_bbox_reprojects_utm_shapefile(tmp_path):
+    pytest.importorskip("pyproj")
+    shp = tmp_path / "utm.shp"
+    _write_shp(shp, (400000.0, 4400000.0, 410000.0, 4410000.0),
+               prj_text=UTM13N_PRJ)
+    west, south, east, north = resolve_bbox(aoi_path=shp)
+    assert -107.0 < west < east < -105.0
+    assert 39.0 < south < north < 40.5

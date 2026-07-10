@@ -194,3 +194,126 @@ def estimate_pixels(dataset: DemDataset,
                     bbox: tuple[float, float, float, float]) -> int:
     area_m2 = estimate_area_km2(bbox) * 1_000_000.0
     return int(area_m2 / (dataset.res_m ** 2))
+
+
+# ---------------------------------------------------------------- AOI -> bbox
+def _validate_wgs84_bbox(bbox: tuple[float, float, float, float],
+                         source: str) -> tuple[float, float, float, float]:
+    west, south, east, north = bbox
+    if not (-180.0 <= west < east <= 180.0 and -90.0 <= south < north <= 90.0):
+        raise ValueError(
+            f"{source}: (W={west}, S={south}, E={east}, N={north}) is not a "
+            f"valid WGS84 bbox — expected W < E in [-180, 180] and S < N in "
+            f"[-90, 90] decimal degrees; check coordinate order and CRS "
+            f"(an empty/degenerate AOI also fails this check)")
+    return (float(west), float(south), float(east), float(north))
+
+
+def _geojson_bounds(obj) -> tuple[float, float, float, float]:
+    """Bounds of any GeoJSON object (GeoJSON is WGS84/CRS84 by spec)."""
+    lons: list[float] = []
+    lats: list[float] = []
+
+    def collect(coords) -> None:
+        if isinstance(coords, (list, tuple)):
+            if (len(coords) >= 2
+                    and isinstance(coords[0], (int, float))
+                    and isinstance(coords[1], (int, float))):
+                lons.append(float(coords[0]))
+                lats.append(float(coords[1]))
+            else:
+                for item in coords:
+                    collect(item)
+
+    def walk(node) -> None:
+        if not isinstance(node, dict):
+            return
+        if node.get("coordinates") is not None:
+            collect(node["coordinates"])
+        if isinstance(node.get("geometry"), dict):
+            walk(node["geometry"])
+        for key in ("features", "geometries"):
+            for child in node.get(key) or []:
+                walk(child)
+
+    walk(obj)
+    if not lons:
+        raise ValueError("AOI GeoJSON contains no coordinates (empty AOI)")
+    return (min(lons), min(lats), max(lons), max(lats))
+
+
+def _read_shp_header_bbox(path: Path) -> tuple[float, float, float, float]:
+    """Native-CRS bbox straight from the 100-byte .shp header (ESRI spec:
+    file code 9994 big-endian at byte 0; xmin/ymin/xmax/ymax little-endian
+    doubles at byte 36). No fiona/geopandas needed."""
+    header = path.read_bytes()[:100]
+    if len(header) < 68 or struct.unpack(">i", header[:4])[0] != 9994:
+        raise ValueError(f"{path} is not a shapefile (bad .shp header)")
+    xmin, ymin, xmax, ymax = struct.unpack("<4d", header[36:68])
+    return (xmin, ymin, xmax, ymax)
+
+
+def _prj_is_wgs84(prj_text: str) -> bool:
+    head = prj_text.strip().upper()
+    return (head.startswith(("GEOGCS", "GEOGCRS"))
+            and ("WGS_1984" in head or "WGS 84" in head or "WGS84" in head))
+
+
+def _reproject_bbox_to_wgs84(
+        native_bbox: tuple[float, float, float, float],
+        prj_text: str,
+        source: str) -> tuple[float, float, float, float]:
+    try:
+        from pyproj import CRS, Transformer
+    except ImportError:
+        raise RuntimeError(
+            f"{source}: AOI shapefile is not WGS84 and reprojection needs "
+            f"pyproj — install it with `pip install autogis[opentopo]`, or "
+            f"pass --bbox W S E N in WGS84 instead") from None
+    crs = CRS.from_wkt(prj_text)
+    if crs.to_epsg() == 4326:
+        return native_bbox
+    transformer = Transformer.from_crs(crs, CRS.from_epsg(4326),
+                                       always_xy=True)
+    xmin, ymin, xmax, ymax = native_bbox
+    xs = (xmin, (xmin + xmax) / 2.0, xmax)
+    ys = (ymin, (ymin + ymax) / 2.0, ymax)
+    # ponytail: 9-point (corners + edge midpoints) envelope, not true edge
+    # densification — fine at AOI scale; densify if a polar/oblique CRS shows up.
+    points = [transformer.transform(x, y) for x in xs for y in ys]
+    lons = [p[0] for p in points]
+    lats = [p[1] for p in points]
+    return (min(lons), min(lats), max(lons), max(lats))
+
+
+def resolve_bbox(
+    bbox: Optional[tuple[float, float, float, float]] = None,
+    aoi_path: "str | Path | None" = None,
+) -> tuple[float, float, float, float]:
+    """Return a validated WGS84 (W, S, E, N) bbox from an explicit bbox or an
+    AOI file (GeoJSON = WGS84 by spec; shapefile = .shp-header bbox,
+    reprojected from .prj via pyproj only when the native CRS is not WGS84;
+    a missing .prj is assumed WGS84)."""
+    if bbox is not None and aoi_path is not None:
+        raise ValueError("pass an explicit bbox or an AOI file, not both")
+    if bbox is not None:
+        return _validate_wgs84_bbox(tuple(bbox), "--bbox")
+    if aoi_path is None:
+        raise ValueError("an AOI is required: pass a bbox or an AOI file path")
+
+    path = Path(aoi_path)
+    suffix = path.suffix.lower()
+    if suffix in (".geojson", ".json"):
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        return _validate_wgs84_bbox(_geojson_bounds(obj), str(path))
+    if suffix == ".shp":
+        native = _read_shp_header_bbox(path)
+        prj = path.with_suffix(".prj")
+        if prj.exists():
+            prj_text = prj.read_text(encoding="utf-8")
+            if not _prj_is_wgs84(prj_text):
+                native = _reproject_bbox_to_wgs84(native, prj_text, str(path))
+        return _validate_wgs84_bbox(native, str(path))
+    raise ValueError(
+        f"unsupported AOI file {path.name!r}: expected a shapefile or GeoJSON "
+        f"(.shp, .geojson, or .json)")
