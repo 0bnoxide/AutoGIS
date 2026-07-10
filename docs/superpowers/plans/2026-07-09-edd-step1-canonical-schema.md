@@ -1,6 +1,13 @@
 # EDD Expansion Step 1 — Canonical Schema + Key Redesign Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **⚠️ HISTORICAL — DO NOT EXECUTE (superseded 2026-07-10).** Every task in this
+> plan already shipped in **PR #212** (merged to main, 258f0a8) and its durable
+> record is **[ADR-0075](../../adr/0075-canonical-schema-expansion-step1.md)** —
+> **NOT ADR-0074**, which was taken by DraftLithologyFromScan (PR #210). All
+> `0074` references below (planned filenames, example commit messages, code
+> comments) are stale pre-execution guesses: read every one as **ADR-0075**.
+> Do not create any ADR or re-run any task from this document — it is kept
+> verbatim only as the planning record for the Step-1 build.
 
 **Spec:** `docs/superpowers/specs/2026-07-08-canonical-schema-expansion-design.md` — the **AMENDMENT section at the top is authoritative** (MINIMAL Step-1 freeze). Paper-mapping record: `docs/superpowers/specs/2026-07-09-edd-paper-mapping-outcome.md`.
 
@@ -29,7 +36,7 @@
 ## File Map
 
 **Created:**
-- `docs/adr/0074-canonical-schema-expansion-step1.md` — the ADR (verify 0074 is still free at execution — see Task 1)
+- `docs/adr/0074-canonical-schema-expansion-step1.md` — the ADR *(stale: shipped as `0075-canonical-schema-expansion-step1.md`; 0074 went to the lithology ADR — see banner)*
 - `autogis/core/envmon/canonical_read.py` — `canonical_result_rows()` shared read policy
 - `tests/envmon/test_gdb_schema_keys.py` — `compute_unique_key` + key-distinctness + backward-compat tests
 - `tests/envmon/test_canonical_read.py`
