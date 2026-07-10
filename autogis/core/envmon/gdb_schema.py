@@ -344,7 +344,9 @@ UNIQUE_KEYS = {
     "Env_Samples": ["SiteID", "Matrix", "SampleID", "SampleDate"],
     "Env_AnalyticalResults": ["SiteID", "Matrix", "LocationID", "SampleID",
                               "SampleDate", "AnalyteCanonicalName",
-                              "DepthIntervalText", "SourceCell"],
+                              "DepthIntervalText", "SourceCell",
+                              "ResultFraction", "QCType",
+                              "MethodDilutionKey"],
     "Env_RPDResults": ["SiteID", "EventDate", "ParentLocationID",
                        "AnalyteName"],
 }

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import textwrap
 from dataclasses import asdict
+from pathlib import Path
 
 from autogis.core.envmon.gdb_schema import (
     UNIQUE_KEYS, compute_unique_key, TABLE_SCHEMAS, AnalyticalResultRecord,
@@ -104,3 +106,136 @@ def test_field_projection_round_trip_every_new_field():
     projected = dict(zip(schema_names, row))
     for f in _NEW_FIELDS:
         assert projected[f] == d[f], f
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — frozen 11-component key + distinctness + backward compat
+# ---------------------------------------------------------------------------
+
+def test_unique_key_is_the_frozen_11():
+    assert UNIQUE_KEYS["Env_AnalyticalResults"] == [
+        "SiteID", "Matrix", "LocationID", "SampleID", "SampleDate",
+        "AnalyteCanonicalName", "DepthIntervalText", "SourceCell",
+        "ResultFraction", "QCType", "MethodDilutionKey",
+    ]
+
+
+def _key(**ov):
+    d = _result_dict(ResultFraction="", QCType="", MethodDilutionKey="")
+    d.update(ov)
+    return compute_unique_key(d, "Env_AnalyticalResults")
+
+
+def test_fraction_pair_is_distinct():
+    # WQX Total vs Dissolved of the same sample/analyte — the collision that
+    # motivated this whole spec — must produce distinct keys.
+    assert _key(ResultFraction="Total") != _key(ResultFraction="Dissolved")
+
+
+def test_qc_flagged_row_distinct_from_parent():
+    assert _key(QCType="") != _key(QCType="FIELD_DUP")
+
+
+def test_dilution_rerun_distinct():
+    assert _key(MethodDilutionKey="") != _key(MethodDilutionKey="D5")
+
+
+def test_legacy_shape_key_unchanged():
+    # Records in today's shape (discriminators absent -> defaulted "") must
+    # produce the OLD 8-part key extended by three "" parts — same relative
+    # uniqueness, so re-imports of pre-2.2 data still dedup identically.
+    legacy = compute_unique_key(_result_dict(), "Env_AnalyticalResults")
+    explicit = _key()
+    # _result_dict has no discriminator keys -> None; records always carry ""
+    assert explicit[:8] == legacy[:8]
+    assert explicit[8:] == ("", "", "")
+
+
+_TA_PROFILE_YAML = textwrap.dedent("""
+    profile_id: test_lab
+    lab_name: Test Lab
+    format: flat_csv
+    date_format: "%m/%d/%Y"
+    encoding: utf-8
+    columns:
+      sample_id:       SysLocCode
+      location_id:     SysLocCode
+      event_date:      CollDate
+      matrix:          Medium
+      analyte:         Chemical
+      result:          Result
+      units:           Unit
+      qualifier:       Qualifier
+      reporting_limit: RL
+      method:          AnalytMeth
+      lab_sample_id:   LabID
+    matrix_map:
+      WS: GW
+      SO: SOIL
+    nondetect_qualifiers:
+      - U
+      - UJ
+""").strip()
+
+_TA_FIXTURE_CSV = (Path(__file__).parent / "fixtures" / "edd"
+                   / "testamerica_simple.csv")
+
+_TA_ANALYTES = {
+    "Benzene": {
+        "aliases": ["benzene"],
+        "abbreviation": "BNZ",
+        "analytical_group": "VOC",
+        "method_group": "EPA8260",
+        "default_units_by_matrix": {"GW": "ug/L"},
+    },
+    "Toluene": {
+        "aliases": ["toluene"],
+        "abbreviation": "TOL",
+        "analytical_group": "VOC",
+        "method_group": "EPA8260",
+    },
+}
+
+_TA_SCREENING = {
+    "GW": {
+        "Benzene": {"value": 1.0, "units": "ug/L", "source": "USEPA MCL"},
+    }
+}
+
+
+def _normalize_testamerica_fixture(tmp_path):
+    # Reuse the exact fixture-loading pattern established in
+    # tests/envmon/test_edd_importer.py (same profile shape, same CSV,
+    # same analyte/screening fixtures).
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.edd_importer import read_edd_file, normalize_edd_rows
+    from autogis.core.envmon.edd_profile import LabEDDProfile
+
+    profile_path = tmp_path / "test_lab.yaml"
+    profile_path.write_text(_TA_PROFILE_YAML, encoding="utf-8")
+    profile = LabEDDProfile.load(profile_path)
+
+    rows = read_edd_file(_TA_FIXTURE_CSV, profile)
+    qa = QACollector()
+    samples, results = normalize_edd_rows(
+        rows, profile,
+        site_id="H281", batch_id="B001",
+        analyte_dictionary=dict(_TA_ANALYTES),
+        screening_levels=_TA_SCREENING,
+        qa=qa,
+    )
+    return samples, results
+
+
+def test_backward_compat_testamerica_fixture_dedup_identical(tmp_path):
+    # Run the existing TestAmerica EDD fixture through the real normalizer
+    # and the widened key: every record must carry "" discriminators, and
+    # distinct-key count must equal the record count (no new collisions,
+    # no new splits).
+    from dataclasses import asdict as _as
+
+    samples, results = _normalize_testamerica_fixture(tmp_path)
+    keys = [compute_unique_key(_as(r), "Env_AnalyticalResults")
+            for r in results]
+    assert len(set(keys)) == len(keys)
+    assert all(k[8:] == ("", "", "") for k in keys)
