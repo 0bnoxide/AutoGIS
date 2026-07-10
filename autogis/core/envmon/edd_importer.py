@@ -20,17 +20,23 @@ from .result_parser import (
 # File reading
 # ---------------------------------------------------------------------------
 
-def read_edd_file(path: Path, profile: LabEDDProfile) -> list[dict]:
+def read_edd_file(path: Path, profile: LabEDDProfile,
+                  qa: Optional[QACollector] = None) -> list[dict]:
     """Read EDD file and return a flat list of row dicts.
 
     For two_tab_xlsx, sample-sheet metadata is merged onto each result row
     before returning, so the output is the same shape regardless of format.
+    ``qa`` is optional (back-compat); readers with load-time transforms
+    (wqx_csv) emit warnings through it.
     """
     path = Path(path)
     if profile.format == "flat_csv":
         return _read_flat_csv(path, profile)
     if profile.format == "two_tab_xlsx":
         return _read_two_tab_xlsx(path, profile)
+    if profile.format == "wqx_csv":
+        from .wqx_reader import read_wqx_csv
+        return read_wqx_csv(path, profile, qa)
     raise ValueError(f"Unknown EDD format '{profile.format}'")
 
 
@@ -204,6 +210,16 @@ def normalize_edd_rows(
             except (ValueError, AttributeError):
                 pass
 
+        # detection limit column (format-agnostic; mirrors the RL override —
+        # WQX routes MDL-typed limits here, Step-3 EQuIS formats carry
+        # method_detection_limit natively)
+        dl_raw = profile.resolve_column(row, "detection_limit")
+        if dl_raw:
+            try:
+                parsed.detection_limit = float(dl_raw.replace(",", ""))
+            except (ValueError, AttributeError):
+                pass
+
         # --- analyte dictionary entry ---
         entry = ({k: v for k, v in analyte_dictionary.items()
                   if not k.startswith("_")}.get(canonical) or {})
@@ -361,9 +377,9 @@ def run_edd_import(
         gdb_path, edd_path, site_id, profile.lab_name, profile.profile_id,
     )
 
-    rows = read_edd_file(edd_path, profile)
-
     qa = qa if qa is not None else QACollector()
+    rows = read_edd_file(edd_path, profile, qa)
+
     samples, results = normalize_edd_rows(
         rows=rows,
         profile=profile,
