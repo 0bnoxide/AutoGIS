@@ -1,7 +1,27 @@
 from __future__ import annotations
 
+import dataclasses
+
 from autogis.core.common.qa import QACollector
-from autogis.core.envmon.canonical_read import canonical_result_rows
+from autogis.core.envmon.canonical_read import (
+    canonical_records, canonical_result_rows,
+)
+
+
+@dataclasses.dataclass
+class _Rec:
+    # Minimal stand-in for AnalyticalResultRecord: the group-key fields plus
+    # the two discriminators the policy reads. asdict() must expose these names.
+    SiteID: str = "S1"
+    Matrix: str = "GW"
+    LocationID: str = "MW-1"
+    SampleID: str = "MW-1-0626"
+    SampleDate: str = "2026-06-26"
+    AnalyteCanonicalName: str = "Arsenic"
+    DepthIntervalText: str = ""
+    ResultFraction: str = ""
+    QCType: str = ""
+    ResultNumeric: float = 1.0
 
 
 def _row(**ov) -> dict:
@@ -88,6 +108,43 @@ def test_different_matrices_not_merged_across_fractions():
     out = canonical_result_rows(rows, qa)
     assert len(out) == 2
     assert not any(r.category == "fraction_resolved" for r in qa.records)
+
+
+def test_canonical_records_returns_same_objects_order_preserved():
+    # Record-aware adapter: returns the SAME record instances (not copies),
+    # order preserved — consumers rely on identity / dataclasses.replace.
+    qa = QACollector()
+    a = _Rec(AnalyteCanonicalName="Arsenic")
+    b = _Rec(AnalyteCanonicalName="Lead")
+    out = canonical_records([a, b], qa)
+    assert out[0] is a and out[1] is b
+    assert not qa.records
+
+
+def test_canonical_records_drops_qc():
+    qa = QACollector()
+    real = _Rec()
+    qc = _Rec(QCType="TRIP_BLANK")
+    out = canonical_records([real, qc], qa)
+    assert out == [real]
+    assert any(r.category == "qc_rows_excluded" for r in qa.records)
+
+
+def test_canonical_records_resolves_fraction_keeps_preferred_record():
+    qa = QACollector()
+    total = _Rec(ResultFraction="Total", ResultNumeric=2.0)
+    diss = _Rec(ResultFraction="Dissolved", ResultNumeric=1.5)
+    out = canonical_records([total, diss], qa)
+    assert out == [total]                      # Total preferred, same object
+    assert any(r.category == "fraction_resolved" for r in qa.records)
+
+
+def test_canonical_records_legacy_passthrough():
+    qa = QACollector()
+    recs = [_Rec(), _Rec(AnalyteCanonicalName="Lead")]
+    out = canonical_records(recs, qa)
+    assert out == recs
+    assert not qa.records
 
 
 def test_pivot_no_longer_drops_or_double_counts_fractions():
