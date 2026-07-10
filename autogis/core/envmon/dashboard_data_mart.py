@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from ..common.logging import get_logger
+from ..common.qa import QACollector
+from .canonical_read import canonical_result_rows
 
 LOG = get_logger(__name__)
 
@@ -307,6 +309,14 @@ def build_dashboard_data_mart(  # pragma: no cover - requires arcpy
     qa_errors = [r for r in qa_rows if r.get("Severity") in ("ERROR", "CRITICAL")]
     samples = _read("Env_Samples")
     results = _read("Env_AnalyticalResults")
+    # Canonical-read policy before the exceedance filter and the analyte-pivoting
+    # Dash_* builders (ADR-0075): drop QC rows + resolve fraction pairs so the
+    # mart never double-counts. No qa channel in this orchestrator, so surface
+    # the drop/resolve messages via the module logger (never write-only).
+    _mart_qa = QACollector()
+    results = canonical_result_rows(results, _mart_qa)
+    for _rec in _mart_qa.records:
+        LOG.info("[canonical-read] %s", _rec.message)
     wl = _read("Env_CurrentWaterLevelEvent")
     prior_wl = (select_prior_water_levels(_read("Env_WaterLevels"), wl,
                                           prior_event_id)

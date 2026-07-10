@@ -12,6 +12,7 @@ from datetime import date
 from typing import List, Optional
 
 from .gdb_schema import AnalyticalResultRecord
+from .canonical_read import canonical_records
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 
 
@@ -72,6 +73,7 @@ def compare_events(
     series. See ADR-0026 for locked design decisions.
     """
     # 1. Detect mixed-matrix locations — locations that appear under >1 matrix.
+    results = canonical_records(results, qa)
     loc_matrices: dict[str, set] = defaultdict(set)
     for r in results:
         loc_matrices[r.LocationID].add(r.Matrix)

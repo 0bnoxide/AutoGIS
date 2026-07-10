@@ -11,6 +11,7 @@ from datetime import date
 from typing import Dict, List, Optional
 
 from .gdb_schema import AnalyticalResultRecord
+from .canonical_read import canonical_records
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING, SEV_ERROR
 
 _SEV = {
@@ -72,6 +73,8 @@ def identify_data_gaps(
 
     # 1. Filter results into the event window.
     window_results = [r for r in results if _in_window(r, event_date, window_days)]
+
+    window_results = canonical_records(window_results, qa)
 
     # 2. Index: LocationID -> set of AnalyteCanonicalName
     loc_analytes: dict[str, set] = defaultdict(set)

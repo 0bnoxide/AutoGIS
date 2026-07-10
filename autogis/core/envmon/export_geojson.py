@@ -13,6 +13,7 @@ from typing import Dict, List, Tuple
 
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .gdb_schema import AnalyticalResultRecord
+from .canonical_read import canonical_records
 
 
 def load_well_coords(path: Path) -> Dict[str, Tuple[float, float]]:
@@ -43,6 +44,8 @@ def build_geojson(
     Returns:
         GeoJSON FeatureCollection dict (serialise with json.dumps).
     """
+    results = canonical_records(results, qa)
+
     # Group by location
     by_loc: Dict[str, List[AnalyticalResultRecord]] = defaultdict(list)
     for r in results:

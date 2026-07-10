@@ -12,6 +12,7 @@ arcpy-free: operates on plain row dicts.
 """
 from __future__ import annotations
 
+import dataclasses
 from collections import defaultdict
 from typing import Dict, List, Sequence, Tuple
 
@@ -74,3 +75,22 @@ def canonical_result_rows(
            if _group_key(r) not in chosen
            or (r.get("ResultFraction") or "") == chosen[_group_key(r)]]
     return out
+
+
+def canonical_records(
+    records: Sequence,
+    qa: QACollector,
+    fraction_preference: Sequence[str] = DEFAULT_FRACTION_PREFERENCE,
+) -> List:
+    """Record-aware adapter for consumers that hold `AnalyticalResultRecord`
+    dataclasses (from `read_records_csv`) rather than dicts. Applies the exact
+    same policy as `canonical_result_rows` and returns the SAME record objects,
+    order preserved — callers rely on identity / `dataclasses.replace`.
+
+    `AnalyticalResultRecord` is flat (no nested dataclasses/lists), so `asdict`
+    is safe and its field names already match `_group_key`; an `_i` sentinel
+    survives the pure filter and maps surviving rows back to their records.
+    """
+    rows = [{**dataclasses.asdict(r), "_i": i} for i, r in enumerate(records)]
+    kept = canonical_result_rows(rows, qa, fraction_preference)
+    return [records[row["_i"]] for row in kept]
