@@ -121,6 +121,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [EvaluateGroundwaterSurfaceModels](autogis/core/envmon/evaluate_gw_models.py) | `envmon evaluate-gw-models` | Cross-validate interpolation model predictions against observed values |
 | [ExportSurveyToCADGIS](autogis/core/envmon/export_survey_cad.py) | `envmon export-survey-cad` | Export RTK survey points to feature-code-mapped CSV/GeoJSON/LandXML layers (headless; `--landxml` per ADR-0071) |
 | [GenerateWellInspectionReports](autogis/core/envmon/well_inspection_report.py) | `envmon well-inspection-report` | Generate Markdown well inspection reports + a site summary (headless) |
+| [DownloadOpenTopographyDEM](autogis/core/envmon/opentopo.py) | `envmon download-dem` | Download an OpenTopography DEM GeoTIFF for an AOI (HYBRID — headless CLI + `.pyt` add-to-map; `opentopo` extra for non-WGS84 reprojection) |
 
 </details>
 
@@ -329,6 +330,7 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon export-survey-cad` | CLOUD | `core/envmon/export_survey_cad.py` |
 | `autogis envmon well-inspection-report` | CLOUD | `core/envmon/well_inspection_report.py` |
 | `autogis envmon generate-inspection-report` | CLOUD | `core/envmon/well_inspection_photo_report.py` (photo embedding needs Pillow) |
+| `autogis envmon download-dem` | CLOUD | `core/envmon/opentopo.py` (`.pyt` add-to-map/reproject path is LOCAL) |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
@@ -452,6 +454,7 @@ autogis envmon validate-boring-logs <input_dir>
 autogis envmon validate-drone-products --manifest <products.csv> --flight-id <id>
 autogis envmon create-boring-log-db <boring.sqlite>                # --validate to check an existing DB
 autogis envmon index-field-attachments <manifest.csv> --db <envmon.sqlite>
+autogis envmon download-dem --dataset USGS10m --bbox <W> <S> <E> <N> --out <dem.tif>
 
 # Batch intake & planning
 autogis envmon draft-parser-profile <workbook.xlsx> --output <profile.yaml>

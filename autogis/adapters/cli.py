@@ -2877,6 +2877,94 @@ def draft_lithology_from_scan_cmd(scan_path, out_dir, handwritten, report, fail_
     _render_qa(result.qa, report, fail_on)
 
 
+@envmon.command("download-dem")
+@click.option("--dataset", default="USGS10m", show_default=True,
+              help="DEM dataset code (case-insensitive); see --list-datasets.")
+@click.option("--bbox", nargs=4, type=float, default=None,
+              metavar="W S E N",
+              help="WGS84 bounding box (mutually exclusive with --aoi).")
+@click.option("--aoi", default=None,
+              type=click.Path(exists=True, dir_okay=False),
+              help="AOI shapefile (.shp) or GeoJSON; non-WGS84 shapefiles "
+                   "need the opentopo extra (pip install autogis[opentopo]).")
+@click.option("--out", "out_path", default=None, type=click.Path(),
+              help="Output raster path; auto-derived from dataset+bbox if omitted.")
+@click.option("--overwrite", is_flag=True, default=False,
+              help="Allow overwriting an existing --out (refused otherwise).")
+@click.option("--format", "output_format", default="GTiff", show_default=True,
+              type=click.Choice(["GTiff", "AAIGrid", "HFA"]),
+              help="OpenTopography output format.")
+@click.option("--api-key", default=None,
+              help="Overrides $OPENTOPOGRAPHY_API_KEY for this run.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Resolve AOI/routing, print a redacted URL + area estimate, "
+                   "and exit without downloading.")
+@click.option("--list-datasets", "list_datasets_flag", is_flag=True,
+              default=False, help="Print the dataset registry and exit.")
+@qa_report_options
+def download_dem_cmd(dataset, bbox, aoi, out_path, overwrite, output_format,
+                     api_key, dry_run, list_datasets_flag, report, fail_on):
+    """Download an OpenTopography DEM GeoTIFF for an AOI (headless).
+
+    Auto-routes the dataset code to /API/globaldem or /API/usgsdem, resolves
+    the AOI to a WGS84 bbox, streams the raster to disk, and writes a
+    provenance/citation .json sidecar. Requires an OpenTopography API key
+    ($OPENTOPOGRAPHY_API_KEY or --api-key) except for --dry-run and
+    --list-datasets.
+    """
+    from autogis.core.envmon import opentopo
+
+    if list_datasets_flag:
+        for ds in opentopo.list_datasets():
+            click.echo(f"{ds.code:<16} {ds.endpoint:<9} "
+                       f"{ds.resolution:<32} {ds.coverage}")
+        return
+    if bbox and aoi:
+        raise click.UsageError("--bbox and --aoi are mutually exclusive.")
+    if not bbox and not aoi:
+        raise click.UsageError(
+            "an AOI is required: pass --bbox W S E N or --aoi PATH "
+            "(or use --list-datasets).")
+
+    try:
+        if dry_run:
+            ds = opentopo.get_dataset(dataset)
+            box = opentopo.resolve_bbox(bbox=bbox or None, aoi_path=aoi)
+            click.echo(f"dataset : {ds.code} -> /API/{ds.endpoint} "
+                       f"({ds.param}) [{ds.resolution}, {ds.coverage}]")
+            click.echo(f"bbox    : W={box[0]} S={box[1]} E={box[2]} N={box[3]} "
+                       f"(WGS84)")
+            click.echo(f"area    : ~{opentopo.estimate_area_km2(box):,.1f} km2 "
+                       f"(~{opentopo.estimate_pixels(ds, box):,} px "
+                       f"at {ds.res_m:g} m)")
+            click.echo(f"url     : "
+                       f"{opentopo.build_url(ds, box, 'REDACTED', output_format)}")
+            click.echo("dry run: nothing downloaded.")
+            return
+
+        last_step = [0]
+
+        def on_progress(done, total):
+            step = done // (10 * 2 ** 20)      # one line per 10 MiB
+            if step != last_step[0]:
+                last_step[0] = step
+                suffix = (f" / {total / 2 ** 20:,.0f} MiB" if total
+                          else " MiB")
+                click.echo(f"  downloaded {done / 2 ** 20:,.0f}{suffix}")
+
+        result = opentopo.download_dem(
+            dataset, bbox=bbox or None, aoi_path=aoi, out_path=out_path,
+            api_key=api_key, output_format=output_format,
+            overwrite=overwrite, on_progress=on_progress)
+    except (ValueError, RuntimeError, OSError) as err:  # OSError covers FileExistsError
+        raise click.ClickException(str(err))
+
+    if result.bytes_written:
+        click.echo(f"Wrote {result.out_path} ({result.bytes_written:,} bytes) "
+                   f"+ provenance sidecar {result.out_path.name}.json")
+    _render_qa(result.qa, report, fail_on)
+
+
 @envmon.command("survey-to-well-elevation")
 @click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
 @click.option("--site", "site_id", required=True,
