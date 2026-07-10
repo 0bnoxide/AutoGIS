@@ -71,6 +71,7 @@ class Toolbox(object):
             ReconcileSampleLocations,
             ConditionDEM,
             CompareDroneSurfaces,
+            DownloadOpenTopoDEM,     # OpenTopography DEM fetch + add-to-map
         ]
 
 
@@ -790,3 +791,135 @@ class CompareDroneSurfaces(object):
         messages.addMessage(
             f"{summary.change_count}/{summary.count} cell(s) changed "
             f"(max {summary.max_diff_ft:.2f} ft, mean {summary.mean_diff_ft:.2f} ft).")
+
+
+class DownloadOpenTopoDEM(object):
+    """Download OpenTopography DEM — resolve a Pro AOI to WGS84, fetch the
+    DEM via the arcpy-free core (autogis.core.envmon.opentopo), then add the
+    raster to the active map. arcpy is used only for AOI resolution and the
+    map steps."""
+
+    def __init__(self):
+        self.label = "Download OpenTopography DEM"
+        self.description = (
+            "Download a DEM GeoTIFF from OpenTopography for an AOI (active "
+            "map extent, a feature layer honoring any selection, or a manual "
+            "WGS84 bbox) and optionally add it to the active map. Requires "
+            "an OpenTopography API key ($OPENTOPOGRAPHY_API_KEY or the "
+            "API-key parameter). Writes a provenance/citation .json sidecar.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        from autogis.core.envmon.opentopo import DEFAULT_DATASET, DEM_DATASETS
+        return [
+            _param("dataset", "DEM dataset", "GPString",
+                   default=DEFAULT_DATASET, domain=sorted(DEM_DATASETS)),
+            _param("aoi_source", "AOI source", "GPString",
+                   default="Active map extent",
+                   domain=("Active map extent",
+                           "Feature layer (selection if any)",
+                           "Manual bbox")),
+            _param("aoi_layer", "AOI feature layer", "GPFeatureLayer",
+                   required=False),
+            _param("manual_bbox", "Manual bbox (W S E N, WGS84)", "GPString",
+                   required=False),
+            _param("out_raster", "Output raster (.tif)", "DEFile",
+                   direction="Output"),
+            _param("api_key", "API key (blank = $OPENTOPOGRAPHY_API_KEY)",
+                   "GPString", required=False),
+            _param("add_to_map", "Add result to active map", "GPBoolean",
+                   required=False, default=True),
+            _param("reproject", "Reproject to map CRS (lossy resample)",
+                   "GPBoolean", required=False, default=False),
+        ]
+
+    # ---- arcpy AOI resolution (Pro-only; untestable headless) ------------
+    @staticmethod
+    def _to_wgs84(extent):
+        projected = extent.projectAs(arcpy.SpatialReference(4326))
+        return (projected.XMin, projected.YMin,
+                projected.XMax, projected.YMax)
+
+    def _resolve_aoi_wgs84(self, source, p):
+        if source == "Manual bbox":
+            parts = (p["manual_bbox"].valueAsText or "").split()
+            if len(parts) != 4:
+                raise ValueError(
+                    "Manual bbox must be 'W S E N' in WGS84 decimal degrees.")
+            west, south, east, north = (float(v) for v in parts)
+            return (west, south, east, north)
+
+        if source.startswith("Feature layer"):
+            layer = p["aoi_layer"].value
+            if layer is None:
+                raise ValueError(
+                    "AOI source is 'Feature layer' but no layer was chosen.")
+            xmin = ymin = float("inf")
+            xmax = ymax = float("-inf")
+            sr = None
+            # SearchCursor honors the layer's selection automatically, which
+            # is why 'Selected features' needs no separate option.
+            with arcpy.da.SearchCursor(layer, ["SHAPE@"]) as cursor:
+                for (shape,) in cursor:
+                    if shape is None:
+                        continue
+                    e = shape.extent
+                    sr = sr or e.spatialReference
+                    xmin, ymin = min(xmin, e.XMin), min(ymin, e.YMin)
+                    xmax, ymax = max(xmax, e.XMax), max(ymax, e.YMax)
+            if sr is None:
+                raise ValueError("AOI layer has no (selected) features.")
+            return self._to_wgs84(arcpy.Extent(xmin, ymin, xmax, ymax,
+                                               spatial_reference=sr))
+
+        # Active map extent (default)
+        view = arcpy.mp.ArcGISProject("CURRENT").activeView
+        if view is None or not hasattr(view, "camera"):
+            raise ValueError(
+                "No active map view — open a map, or choose another AOI source.")
+        return self._to_wgs84(view.camera.getExtent())
+
+    def execute(self, parameters, messages):
+        from autogis.core.envmon.opentopo import download_dem
+        p = {q.name: q for q in parameters}
+        try:
+            bbox = self._resolve_aoi_wgs84(
+                p["aoi_source"].valueAsText or "Active map extent", p)
+        except ValueError as err:
+            messages.addErrorMessage(str(err))
+            return
+
+        out = Path(p["out_raster"].valueAsText)
+        try:
+            # overwrite=True: Pro's own output-parameter overwrite handling
+            # already fronts this tool; the CLI keeps the strict guard.
+            result = download_dem(
+                p["dataset"].valueAsText, bbox=bbox, out_path=out,
+                api_key=p["api_key"].valueAsText or None, overwrite=True)
+        except (ValueError, RuntimeError, OSError) as err:
+            messages.addErrorMessage(str(err))
+            return
+        _msg(messages, result.qa)
+        if not result.bytes_written:
+            return
+        messages.addMessage(
+            f"Wrote {result.out_path} ({result.bytes_written:,} bytes) + "
+            f"provenance sidecar {result.out_path.name}.json")
+
+        aprx = arcpy.mp.ArcGISProject("CURRENT")
+        active_map = aprx.activeMap
+        add_path = result.out_path
+        if bool(p["reproject"].value) and active_map is not None:
+            map_sr = active_map.spatialReference
+            projected = out.with_name(
+                f"{out.stem}_epsg{map_sr.factoryCode or 'map'}{out.suffix}")
+            arcpy.management.ProjectRaster(str(out), str(projected), map_sr)
+            add_path = projected
+            messages.addMessage(f"Reprojected to {map_sr.name}: {projected}")
+        if bool(p["add_to_map"].value) and active_map is not None:
+            layer = active_map.addDataFromPath(str(add_path))
+            view = aprx.activeView
+            if view is not None and hasattr(view, "camera"):
+                view.camera.setExtent(view.getLayerExtent(layer))
+            messages.addMessage(f"Added {add_path} to map "
+                                f"'{active_map.name}' and zoomed to it.")
