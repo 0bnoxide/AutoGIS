@@ -57,6 +57,68 @@ def test_guard_refused_local_tool_writes_error_record(tmp_path, monkeypatch):
     assert rec.message
 
 
+def test_nested_command_records_canonical_tool_and_site(tmp_path, monkeypatch):
+    rh = tmp_path / "rh.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(rh))
+
+    with patch("autogis.adapters.cli.require_runtime"), patch(
+        "autogis.core.envmon.manage_callout_overrides.load_overrides",
+        return_value={},
+    ):
+        result = CliRunner().invoke(autogis, [
+            "envmon", "manage-callout-overrides", "list", str(tmp_path),
+            "--site", "S1", "--spec", "FIG-1",
+        ])
+
+    assert result.exit_code == 0
+    rec = _records(rh)[0]
+    assert rec.tool_name == "manage-callout-overrides"
+    assert rec.site_id == "S1"
+
+
+def test_site_config_command_records_site_id(tmp_path, monkeypatch):
+    rh = tmp_path / "rh.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(rh))
+    cfg = tmp_path / "site.yaml"
+    cfg.write_text("site_id: S1\n", encoding="utf-8")
+    figure = tmp_path / "figure.yaml"
+    figure.write_text("x", encoding="utf-8")
+
+    with patch("autogis.adapters.cli.require_runtime"):
+        result = CliRunner().invoke(
+            autogis, ["envmon", "build-callouts", str(cfg), str(figure)])
+
+    assert result.exit_code == 1
+    rec = _records(rh)[0]
+    assert rec.tool_name == "build-callouts"
+    assert rec.site_id == "S1"
+
+
+def test_site_path_dest_command_records_site_id(tmp_path, monkeypatch):
+    # build-survey-form / create-sampling-event / build-fieldmaps take the
+    # site config under the dest `site_path` (not `site_config`); readiness
+    # must still see a resolved site_id (ADR-0076).
+    rh = tmp_path / "rh.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(rh))
+    cfg = tmp_path / "site.yaml"
+    cfg.write_text("site_id: S1\n", encoding="utf-8")
+    empty = tmp_path / "empty.yaml"
+    empty.write_text("{}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(autogis, [
+        "envmon", "build-survey-form",
+        "--site", str(cfg), "--analytes", str(empty),
+        "--event", str(empty), "--out", str(tmp_path / "form.xlsx"),
+    ])
+
+    # command may pass or fail downstream; either way a record is written and
+    # the site identity resolves from the site_path config.
+    assert result.exit_code in (0, 1)
+    rec = _records(rh)[0]
+    assert rec.tool_name == "build-survey-form"
+    assert rec.site_id == "S1"
+
+
 def test_qa_fail_records_error_with_counts(tmp_path, monkeypatch):
     # AUTOGIS_RUN_HISTORY target is deliberately a DIFFERENT file than the
     # --run-history argument the tool itself reads.

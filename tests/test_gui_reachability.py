@@ -19,7 +19,11 @@ def test_class2_executable_local_tools_are_not_marked():
     labels = {f.label for f in introspect_cli()}
     for label in ("envmon import-edd", "envmon validate-db",
                   "envmon upgrade-schema", "agol sync-to-gdb",
-                  "envmon survey-to-well-elevation", "envmon update-layout-text"):
+                  "envmon survey-to-well-elevation", "envmon update-layout-text",
+                  "envmon manage-callout-overrides list",
+                  "envmon manage-callout-overrides clear",
+                  "envmon manage-callout-overrides lock",
+                  "envmon manage-callout-overrides unlock"):
         # a mistyped label would vacuously pass "not in UNREACHABLE"
         # (sync-to-gdb sat here as "envmon sync-to-gdb" -- wrong group)
         assert label in labels, f"not a live command: {label!r}"
@@ -31,6 +35,5 @@ def test_class1_redirect_only_tools_are_marked():
                   "envmon build-callouts", "envmon gw-contours",
                   "envmon export-figures", "envmon full-pipeline",
                   "envmon optimize-callouts",
-                  "envmon manage-callout-overrides lock",
                   "envmon build-cad-package"):
         assert label in UNREACHABLE

@@ -9,7 +9,7 @@ import click
 import yaml
 
 from autogis.adapters.guard import require_runtime, RuntimeUnavailable
-from autogis.core.common.config import HarvestConfig
+from autogis.core.common.config import HarvestConfig, load_config
 from autogis.runtime.sessions import agol_from_profile
 
 
@@ -73,6 +73,36 @@ _QA_COUNTS_META_KEY = "autogis.qa_counts"
 _SELF_LOGGING_COMMANDS = {"promote"}
 
 
+def _record_tool_name(ctx) -> str:
+    """Return the registry-level command name for a Click leaf context."""
+    names = []
+    current = ctx
+    while current.parent is not None:
+        if current.info_name:
+            names.append(current.info_name)
+        current = current.parent
+    names.reverse()
+    return names[1] if len(names) > 1 else (names[0] if names else "")
+
+
+def _record_site_id(params: dict) -> str:
+    """Resolve the site's audit identity from common CLI parameter shapes."""
+    site_id = params.get("site_id") or params.get("site")
+    if site_id:
+        return str(site_id)
+    # Path-shaped site configs: `site_config` (build-fieldmaps uses the dest
+    # `site_path`) and the `--site <path>` commands (build-survey-form,
+    # create-sampling-event) that also land on `site_path`. Extract site_id
+    # so readiness can match these runs too (ADR-0076).
+    site_config = params.get("site_config") or params.get("site_path")
+    if site_config:
+        try:
+            return str(load_config(Path(site_config)).get("site_id") or "")
+        except Exception:
+            pass
+    return ""
+
+
 def _classify_exit(exc):
     """Map an exit path to a RunRecord status; None means write no record."""
     if exc is None:
@@ -114,7 +144,8 @@ class RecordingCommand(click.Command):
             dest = os.environ.get("AUTOGIS_RUN_HISTORY", "")
             if dest.lower() == "off":
                 return
-            if ctx.info_name in _SELF_LOGGING_COMMANDS:
+            tool_name = _record_tool_name(ctx) or ctx.info_name or self.name or ""
+            if tool_name in _SELF_LOGGING_COMMANDS:
                 return
             status = _classify_exit(exc)
             if status is None:
@@ -125,8 +156,8 @@ class RecordingCommand(click.Command):
             RunHistory(Path(dest) if dest else Path.cwd() / "run_history.csv").write(
                 RunRecord(
                     run_id=str(uuid.uuid4()),
-                    tool_name=ctx.info_name or self.name or "",
-                    site_id=str(ctx.params.get("site_id") or ""),
+                    tool_name=tool_name,
+                    site_id=_record_site_id(ctx.params),
                     event_id=(str(ctx.params["event_id"])
                               if ctx.params.get("event_id") else None),
                     started_at=started,
