@@ -722,7 +722,7 @@ class ConditionDEM(object):
             _param("fill_voids_max_pixels", "Fill-voids max pixels", "GPLong",
                    required=False, default=9),
             _param("smooth", "Smooth method", "GPString", required=False,
-                   domain=("", "median")),
+                   domain=("median",)),
             _param("with_slope", "Derive slope", "GPBoolean",
                    required=False, default=False),
             _param("with_contours", "Derive contours", "GPBoolean",
