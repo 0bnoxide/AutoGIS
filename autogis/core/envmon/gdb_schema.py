@@ -62,7 +62,14 @@ TABLE_SCHEMAS = {
         ("IsNotAnalyzed", SH, None), ("IsNotSampled", SH, None),
         ("IsNotMeasured", SH, None), ("ScreeningLevel", D, None),
         ("ScreeningLevelSource", T, 64), ("ExceedsScreeningLevel", SH, None),
-        ("DisplayText", T, 64), ("DisplayColorClass", T, 16)] + _SRC,
+        ("DisplayText", T, 64), ("DisplayColorClass", T, 16),
+        # --- Step-1 canonical expansion (ADR-0075, SCHEMA_VERSION 2.2) ---
+        ("ResultFraction", T, 32), ("QCType", T, 32),
+        ("MethodDilutionKey", T, 64), ("MethodID", T, 64),
+        ("MethodName", T, 128), ("AnalysisDate", DT, None),
+        ("LimitType", T, 32), ("LabName", T, 128),
+        ("PrepMethodID", T, 64), ("PrepDate", DT, None),
+        ("ResultBasis", T, 16), ("MethodSpeciation", T, 32)] + _SRC,
     "Env_RPDResults": [
         ("ImportBatchID", T, 64), ("SiteID", T, 32), ("EventDate", DT, None),
         ("ParentLocationID", T, 32), ("DuplicateLocationID", T, 32),
@@ -406,6 +413,20 @@ class AnalyticalResultRecord:
     DisplayText: str; DisplayColorClass: str
     SourceWorkbook: str; SourceSheet: str; SourceRow: int
     SourceColumn: str; SourceCell: str
+    # --- Step-1 canonical expansion (ADR-0075). Key discriminators default
+    # "" (never None — idempotency); dates are not key parts, default None.
+    ResultFraction: str = ""
+    QCType: str = ""
+    MethodDilutionKey: str = ""
+    MethodID: str = ""
+    MethodName: str = ""
+    AnalysisDate: Optional[date] = None
+    LimitType: str = ""
+    LabName: str = ""
+    PrepMethodID: str = ""
+    PrepDate: Optional[date] = None
+    ResultBasis: str = ""
+    MethodSpeciation: str = ""
 
 
 @dataclass
