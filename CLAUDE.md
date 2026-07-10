@@ -73,6 +73,14 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
   `core/harvest/models.py` for back-compat.
 - Screening levels and the H281 parser profile are pre-production stubs — do not
   remove DRAFT banners or `_TODO` markers until verified against real data.
+- **arcpy calls MUST be doc-verified before shipping** (ADR-0077). Any new or
+  edited arcpy call — including `.pyt` parameter/filter objects and reviewer-
+  proposed fixes — gets its signature, keywords/enums, and deprecation status
+  checked against current Esri docs (pro.arcgis.com tool reference) in the same
+  session that writes it; cite the pages in the PR. Compliance floor is ArcGIS
+  Pro **3.5** (prefer 3.6/3.7): anything deprecated at 3.5 is banned. Training-
+  data recall of arcpy signatures is not evidence — the suite cannot catch these
+  (arcpy seams are `pragma: no cover`), which is how #174/#214 shipped.
 
 ## Deferred tool groups — do not build without a phase-gate decision
 

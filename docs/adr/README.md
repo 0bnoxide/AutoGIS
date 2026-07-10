@@ -89,6 +89,7 @@ Each ADR follows this structure:
 | [073](0073-gui-report-plumbing-and-single-run-pause-parity.md) | GUI: copy the executor's qa.csv out to the user's `--report` path (extends ADR-0053), single Run honors "pause on warning" (extends ADR-0063), and color-code the output pane (blue INFO / green PASS) | Accepted | 2026-07-09 |
 | [075](0075-canonical-schema-expansion-step1.md) | Canonical envmon schema expansion Step 1 — 12 new `Env_AnalyticalResults` columns, frozen 11-component unique key, `MethodDilutionKey`/`Qualifier`/limit-units conventions, `SCHEMA_VERSION` 2.1→2.2, reader-seam boundaries, Step-2 merge gate, `Env_QCResults`/VI fields deferred to Step 3 | Accepted | 2026-07-09 |
 | [076](0076-run-history-canonical-tool-site-identity.md) | Canonical tool/site identity in CLI run history; restore GUI override reachability | Accepted | 2026-07-09 |
+| [077](0077-arcpy-api-currency-policy.md) | arcpy API-currency policy — every new/changed arcpy call (incl. `.pyt` parameter/filter objects) must be verified against current Esri docs before shipping; compliance floor ArcGIS Pro 3.5, prefer 3.6/3.7; deprecated-at-3.5 calls banned | Accepted | 2026-07-10 |
 | [078](0078-opentopography-dem-download.md) | OpenTopography DEM download tool — hybrid CLI/`.pyt`, arcpy-free core, dataset auto-routing, new `opentopo` (`pyproj`) optional extra | Accepted | 2026-07-10 |
 
 ## File naming
