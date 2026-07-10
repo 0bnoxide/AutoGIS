@@ -66,11 +66,6 @@ def test_schema_version_constant():
     assert SCHEMA_VERSION == "2.2"
 
 
-def test_schema_version_is_2_2():
-    from autogis.core.envmon.upgrade_schema import SCHEMA_VERSION
-    assert SCHEMA_VERSION == "2.2"
-
-
 def test_table_upgrade_status_attributes():
     s = TableUpgradeStatus("MyTable", "CREATED", 5)
     assert s.table_name == "MyTable"

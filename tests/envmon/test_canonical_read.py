@@ -33,6 +33,7 @@ def test_single_fraction_untouched_even_if_unpreferred():
     qa = QACollector()
     rows = [_row(ResultFraction="Dissolved")]
     assert canonical_result_rows(rows, qa) == rows
+    assert not qa.records
 
 
 def test_unpreferred_multi_fraction_falls_back_deterministically():

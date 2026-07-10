@@ -8,9 +8,9 @@ nothing is ever deleted.
 from __future__ import annotations
 
 import datetime as _dt
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from datetime import date
-from typing import List, Optional
+from typing import Optional
 
 # field tuples: (name, esri_type, length_or_None)
 T = "TEXT"; D = "DOUBLE"; L = "LONG"; DT = "DATE"; SH = "SHORT"
