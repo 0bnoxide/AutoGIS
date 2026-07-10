@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
+from autogis.core.envmon.canonical_read import canonical_result_rows
 
 
 class ChangeType:
@@ -100,6 +101,14 @@ def generate_event_changelog(
         summary counts. The embedded ``qa`` collector holds any warnings.
     """
     qa = QACollector()
+
+    # Canonical-read before the (LocationID, AnalyteName) diff maps: drop QC rows
+    # and resolve fraction pairs so a Step-2 export carrying Total/Dissolved
+    # splits or QC rows can't let an arbitrary row win the last-wins map and
+    # corrupt the change classification (ADR-0075). No-op on legacy/pre-2.2 CSVs
+    # (no QCType/ResultFraction columns -> nothing dropped or resolved).
+    prior_rows = canonical_result_rows(prior_rows, qa)
+    current_rows = canonical_result_rows(current_rows, qa)
 
     def _key(row: dict) -> Tuple[str, str]:
         return row.get("LocationID", ""), row.get("AnalyteName", "")
