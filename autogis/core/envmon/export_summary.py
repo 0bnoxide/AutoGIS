@@ -7,12 +7,14 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import asdict, fields as dc_fields
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
+from ..common.qa import QACollector
+from .canonical_read import canonical_result_rows
 from .gdb_schema import AnalyticalResultRecord, SampleRecord
 
 _HEADER_FILL = PatternFill("solid", fgColor="4472C4")
@@ -37,13 +39,18 @@ def export_analytical_summary(
     output_path: Path,
     site_id: str,
     event_id: str = "",
+    qa: Optional[QACollector] = None,
 ) -> Path:
     """Write a four-sheet Excel summary and return the written path."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    qa = qa or QACollector()
 
     result_fields = [f.name for f in dc_fields(AnalyticalResultRecord)]
-    all_rows = [asdict(r) for r in results]
+    # Canonical-read policy: drop QC rows + resolve fraction pairs before the
+    # analyte counts (and every sheet) so a summary never double-counts a
+    # Total/Dissolved pair or tallies a QC blank as a detection (ADR-0075).
+    all_rows = canonical_result_rows([asdict(r) for r in results], qa)
     det_rows = [r for r in all_rows if r.get("IsDetected")]
     exc_rows = [r for r in all_rows if r.get("ExceedsScreeningLevel")]
 

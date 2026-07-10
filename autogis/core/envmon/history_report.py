@@ -5,6 +5,7 @@ import statistics
 from datetime import date
 from typing import List, Optional
 from .gdb_schema import AnalyticalResultRecord
+from .canonical_read import canonical_records
 from ..common.qa import QACollector, SEV_INFO
 
 _STABLE_PCT = 10.0
@@ -37,6 +38,7 @@ def build_history_report(
     """Summarise monitoring history by location / analyte / matrix."""
     from collections import defaultdict
 
+    results = canonical_records(results, qa)
     groups: dict[tuple, list[AnalyticalResultRecord]] = defaultdict(list)
     for r in results:
         if r.IsNotAnalyzed:

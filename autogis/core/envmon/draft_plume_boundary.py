@@ -25,6 +25,7 @@ from typing import Optional
 import numpy as np
 
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
+from autogis.core.envmon.canonical_read import canonical_result_rows
 from autogis.core.common.numpy_geom import convex_hull, concave_hull
 from autogis.core.envmon.export_geojson import load_well_coords
 
@@ -114,7 +115,10 @@ def filter_results_to_exceedance_points(
     seen: set[str] = set()
     pts: list[ExceedancePoint] = []
     with Path(results_path).open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
+        # Canonical-read before the per-well exceedance dedup: resolve fraction
+        # pairs and drop QC rows so a well exceeding only on the non-preferred
+        # fraction (or in a QC blank) never seeds a plume vertex (ADR-0075).
+        for row in canonical_result_rows(list(csv.DictReader(fh)), qa):
             if str(row.get("ExceedsScreeningLevel", "0")).strip() != "1":
                 continue
             a = row.get("AnalyteCanonicalName", "").strip()

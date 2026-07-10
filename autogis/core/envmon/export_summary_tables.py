@@ -14,6 +14,7 @@ from openpyxl.styles import Font, PatternFill
 from ..common.logging import get_logger
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .gdb_schema import AnalyticalResultRecord
+from .canonical_read import canonical_records
 
 LOG = get_logger(__name__)
 
@@ -148,6 +149,7 @@ def export_summary_tables(
     output_path = Path(output_path)
     if site_id:
         records = [r for r in records if r.SiteID == site_id]
+    records = canonical_records(records, qa)
 
     builders = []
     if include_current_event:

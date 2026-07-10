@@ -27,6 +27,7 @@ from typing import Dict, List, Optional
 
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .gdb_schema import AnalyticalResultRecord
+from .canonical_read import canonical_records
 
 
 @dataclasses.dataclass
@@ -84,6 +85,8 @@ def compare_schedule_vs_actual(
             r for r in results
             if r.SampleDate and start <= r.SampleDate <= event_date
         ]
+
+    filtered = canonical_records(filtered, qa)
 
     # Build lookup: location -> set of analyte canonical names sampled
     sampled: Dict[str, set] = defaultdict(set)

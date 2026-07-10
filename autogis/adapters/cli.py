@@ -448,6 +448,7 @@ def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
     """Tool: export Env_AnalyticalResults to a four-sheet Excel summary."""
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
     from autogis.core.common.records_csv import read_records_csv
+    from autogis.core.common.qa import QACollector
     from autogis.core.envmon.export_summary import export_analytical_summary
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
@@ -455,8 +456,13 @@ def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
                if samples_csv else [])
     if not site_id and results:
         site_id = results[0].SiteID
-    out = export_analytical_summary(samples, results, Path(output), site_id, event_id)
+    qa = QACollector()
+    out = export_analytical_summary(samples, results, Path(output), site_id,
+                                    event_id, qa=qa)
     click.echo(f"Written: {out}  ({len(results)} result(s))")
+    for rec in qa.records:
+        if rec.category in ("qc_rows_excluded", "fraction_resolved"):
+            click.echo(f"  [canonical-read] {rec.message}")
 
 
 @envmon.command("export-report-format-summary-tables")
