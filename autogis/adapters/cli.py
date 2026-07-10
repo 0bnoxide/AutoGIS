@@ -121,6 +121,20 @@ def _classify_exit(exc):
 class RecordingCommand(click.Command):
     """Leaf command that best-effort writes a RunRecord for every run."""
 
+    def parse_args(self, ctx, args):
+        # Windows "Copy as path" pastes '"C:\...\x.gdb"', and a trailing
+        # backslash escapes the closing quote in PowerShell ('C:\x\' -> 'C:\x"').
+        # Strip such quotes before click validates paths (2026-07-10 QA
+        # session: CreateFileGDB crashed on a quote-prefixed folder) -- but
+        # ONLY when the value has no interior quote, so SQL --where clauses
+        # ('"EditDate" > ...') pass through untouched. ponytail: a --where
+        # that is nothing but one quoted field name would still be stripped;
+        # that's not a meaningful clause, ceiling accepted.
+        args = [inner if (inner := a.strip('"')) != a and inner
+                and '"' not in inner else a
+                for a in args]
+        return super().parse_args(ctx, args)
+
     def invoke(self, ctx):
         # ponytail: `_dt` alias, not `datetime` -- when this module runs as
         # `__main__` (arcgispro-py3 `python -m autogis.adapters.cli`, the
@@ -2395,7 +2409,10 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
         raise click.ClickException(str(exc))
     for rec in qa.records:
         click.echo(f"[{rec.severity}] {rec.category}: {rec.message}")
-    import_rtk_survey(gdb, site_id, bid, points, hrms_threshold, vrms_threshold)
+    try:
+        import_rtk_survey(gdb, site_id, bid, points, hrms_threshold, vrms_threshold)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc))
     passes = sum(1 for p in points if not assign_qa_flags(p, hrms_threshold, vrms_threshold))
     click.echo(f"Imported {len(points)} points: {passes} QA pass, {len(points)-passes} QA fail.")
 

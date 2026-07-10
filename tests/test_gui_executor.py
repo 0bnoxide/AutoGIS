@@ -330,3 +330,24 @@ def test_run_step_ignores_stale_qa_csv_from_reused_job_dir(tmp_path, monkeypatch
     assert res.decision is Decision.CONTINUE
     assert res.qa_rows == ()
     assert "stale" not in res.reason
+
+
+def test_run_step_child_env_forces_utf8(tmp_path, monkeypatch):
+    """Without PYTHONIOENCODING a Windows child encodes stdout as cp1252, so
+    a non-ASCII report character raised UnicodeEncodeError -> spurious HALT
+    (2026-07-10: upgrade-schema's '→' arrow)."""
+    import autogis.adapters.gui.executor as ex
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(ex.subprocess, "run", fake_run)
+    res = ex.run_step(Step(command=("envmon", "reconcile-locations")),
+                      job_dir=tmp_path / "job")
+    assert res.decision is Decision.CONTINUE
+    assert seen["env"]["PYTHONIOENCODING"] == "utf-8"
+    # the parent environment is inherited, not replaced
+    import os
+    assert len(seen["env"]) > 1 and all(k in seen["env"] for k in os.environ)

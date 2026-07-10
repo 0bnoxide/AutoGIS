@@ -296,7 +296,7 @@ def assign_qa_flags(
     return flags
 
 
-def import_rtk_survey(    # pragma: no cover
+def import_rtk_survey(
     gdb_path: str,
     site_id: str,
     batch_id: str,
@@ -304,8 +304,13 @@ def import_rtk_survey(    # pragma: no cover
     hrms_threshold_ft: float = 0.03,
     vrms_threshold_ft: float = 0.05,
 ) -> None:
-    """Write RTKPoint list to SurveyPoints_Raw and SurveyPoints_QA (ArcGIS Pro)."""
-    import arcpy
+    """Write RTKPoint list to SurveyPoints_Raw and SurveyPoints_QA (ArcGIS Pro).
+
+    Raises RuntimeError when either target table is missing: silently skipping
+    the write while the CLI still printed "Imported N points" turned a wrong
+    --gdb into false success (2026-07-10 QA session).
+    """
+    import json
     from pathlib import Path as _P
     from ...runtime.sessions import arcpy_env as _arcpy
     _ax = _arcpy()
@@ -313,24 +318,31 @@ def import_rtk_survey(    # pragma: no cover
 
     raw_table = str(_P(gdb) / "SurveyPoints_Raw")
     qa_table = str(_P(gdb) / "SurveyPoints_QA")
-    import json
 
-    if _ax.Exists(raw_table):
-        with _ax.da.InsertCursor(raw_table,
-                                 ["PointID", "Northing", "Easting", "Elevation_ft",
-                                  "FeatureCode", "Description", "HRMS_ft", "VRMS_ft",
-                                  "PDOP", "Satellites",
-                                  "FixType", "CollectedAt", "Operator"]) as cur:
-            for pt in points:
-                cur.insertRow([pt.point_id, pt.northing, pt.easting, pt.elevation_ft,
-                               pt.feature_code, pt.description, pt.hrms_ft, pt.vrms_ft,
-                               pt.pdop, pt.satellites,
-                               pt.fix_type, pt.collected_at, pt.operator])
+    missing = [name for name, table in (("SurveyPoints_Raw", raw_table),
+                                        ("SurveyPoints_QA", qa_table))
+               if not _ax.Exists(table)]
+    if missing:
+        # ASCII only: this message crosses a cp1252 subprocess boundary.
+        raise RuntimeError(
+            f"{' and '.join(missing)} not found in {gdb} -- run "
+            f"`autogis envmon upgrade-schema --gdb {gdb}` first, then re-import."
+        )
 
-    if _ax.Exists(qa_table):
-        with _ax.da.InsertCursor(qa_table,
-                                 ["PointID", "QAStatus", "QAFlags", "Approved"]) as cur:
-            for pt in points:
-                flags = assign_qa_flags(pt, hrms_threshold_ft, vrms_threshold_ft)
-                status = "FAIL" if flags else "PASS"
-                cur.insertRow([pt.point_id, status, json.dumps(flags), 0])
+    with _ax.da.InsertCursor(raw_table,
+                             ["PointID", "Northing", "Easting", "Elevation_ft",
+                              "FeatureCode", "Description", "HRMS_ft", "VRMS_ft",
+                              "PDOP", "Satellites",
+                              "FixType", "CollectedAt", "Operator"]) as cur:
+        for pt in points:
+            cur.insertRow([pt.point_id, pt.northing, pt.easting, pt.elevation_ft,
+                           pt.feature_code, pt.description, pt.hrms_ft, pt.vrms_ft,
+                           pt.pdop, pt.satellites,
+                           pt.fix_type, pt.collected_at, pt.operator])
+
+    with _ax.da.InsertCursor(qa_table,
+                             ["PointID", "QAStatus", "QAFlags", "Approved"]) as cur:
+        for pt in points:
+            flags = assign_qa_flags(pt, hrms_threshold_ft, vrms_threshold_ft)
+            status = "FAIL" if flags else "PASS"
+            cur.insertRow([pt.point_id, status, json.dumps(flags), 0])

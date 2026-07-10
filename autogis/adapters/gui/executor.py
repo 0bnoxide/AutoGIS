@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import csv
 import dataclasses
+import os
 import shutil
 import subprocess
 import sys
@@ -298,8 +299,12 @@ def run_step(step: Step, job_dir: str | Path, *,
     qa_csv.unlink(missing_ok=True)
     argv = build_argv(command, step.values, python=python,
                       report_path=qa_csv, fail_on=step.fail_on)
+    # PYTHONIOENCODING: without it a Windows child encodes stdout as cp1252
+    # and any non-ASCII character in a report (e.g. the '->' arrow in
+    # upgrade-schema's) raises UnicodeEncodeError -> spurious HALT.
     proc = subprocess.run(argv, capture_output=True, encoding="utf-8",
-                          errors="replace", timeout=timeout)
+                          errors="replace", timeout=timeout,
+                          env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     result = decide(proc.returncode, qa_csv,
                     pause_on_warning=step.pause_on_warning,
                     stdout=proc.stdout, stderr=proc.stderr)
