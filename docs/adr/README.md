@@ -86,6 +86,7 @@ Each ADR follows this structure:
 | [065](0065-gui-site-config-builder.md) | GUI Site Config Builder — guided harvest `config.yaml` dialog; live sublayer lookup resolves the pick to `layer.url`; validation round-trips through `HarvestConfig.load` | Accepted | 2026-07-06 |
 | [066](0066-harvest-layer-index-combined-sublayers.md) | `HarvestConfig.layer_index` — harvest sublayer selection over the combined layers+tables list (AGOL `?sublayer=N` numbering); out-of-range raises `ConfigError`; fixes hardcoded `layers[0]` | Accepted | 2026-07-06 |
 | [072](0072-harvest-all-sublayers-mode.md) | `HarvestConfig.all_sublayers` — harvest every attachment-bearing layer/table of an item in one run, each under its own subfolder; mutually exclusive with `url`/`layer_index`/`incremental`; GUI checkbox in the Site Config Builder | Accepted | 2026-07-08 |
+| [073](0073-gui-report-plumbing-and-single-run-pause-parity.md) | GUI: copy the executor's qa.csv out to the user's `--report` path (extends ADR-0053), single Run honors "pause on warning" (extends ADR-0063), and color-code the output pane (blue INFO / green PASS) | Accepted | 2026-07-09 |
 
 ## File naming
 

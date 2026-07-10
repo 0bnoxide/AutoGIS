@@ -201,6 +201,111 @@ def test_run_step_end_to_end_with_stub(tmp_path, monkeypatch):
     assert "stub stdout" in res.stdout
 
 
+def test_export_report_copies_qa_csv_to_user_path(tmp_path):
+    from autogis.adapters.gui.executor import _export_report
+    src = tmp_path / "job" / "qa.csv"
+    src.parent.mkdir()
+    src.write_text("run_id,severity\nr,INFO\n", encoding="utf-8")
+    dest = tmp_path / "out" / "REPORT_CLEAN"  # parent dir does not exist yet
+    out, err = _export_report(src, str(dest))
+    assert err == ""
+    assert out == str(dest)
+    # copied verbatim, and the parent dir was created (matches QACollector.write_csv)
+    assert dest.read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
+
+
+def test_export_report_returns_error_when_dest_unwritable(tmp_path):
+    from autogis.adapters.gui.executor import _export_report
+    src = tmp_path / "qa.csv"
+    src.write_text("run_id,severity\n", encoding="utf-8")
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")   # a FILE where a dir is needed
+    dest = blocker / "sub" / "qa.csv"            # mkdir(parents=True) must fail
+    out, err = _export_report(src, str(dest))
+    assert out == ""                             # distinguishable from success
+    assert "could not write report" in err
+
+
+def test_export_report_noop_when_no_dest_or_no_source(tmp_path):
+    from autogis.adapters.gui.executor import _export_report
+    src = tmp_path / "qa.csv"
+    src.write_text("h\n", encoding="utf-8")
+    assert _export_report(src, None) == ("", "")          # no export requested
+    assert _export_report(src, "") == ("", "")            # blank field
+    missing = tmp_path / "missing.csv"
+    assert _export_report(missing, str(tmp_path / "d.csv")) == ("", "")  # nothing to copy
+
+
+def test_run_step_exports_report_to_user_path(tmp_path, monkeypatch):
+    """End-to-end: a user-supplied --report value survives as a copy at that
+    path even though the executor injects its own qa.csv for gating."""
+    import autogis.adapters.gui.executor as ex
+    stub = tmp_path / "stub.py"
+    stub.write_text(STUB, encoding="utf-8")
+    dest = tmp_path / "exports" / "REPORT_CLEAN"
+
+    def stub_argv(path, values, *, python=None, report_path=None, fail_on=None):
+        return [sys.executable, str(stub), "0", str(report_path), "INFO"]
+
+    monkeypatch.setattr(ex, "build_argv", stub_argv)
+    res = ex.run_step(
+        Step(command=("envmon", "validate-rtk-survey"),
+             values={"report": str(dest)}),
+        job_dir=tmp_path / "job")
+    assert res.report_out == str(dest)
+    assert res.report_error == ""
+    assert dest.exists()
+
+
+def test_run_step_exports_report_even_on_halt(tmp_path, monkeypatch):
+    """The report is the user's regardless of QA verdict: a HALT (blocking rows,
+    exit 1) must still copy the report out (ADR-0073) -- pins the documented
+    'export even on HALT' behavior against a future CONTINUE-only guard."""
+    import autogis.adapters.gui.executor as ex
+    stub = tmp_path / "stub.py"
+    stub.write_text(STUB, encoding="utf-8")
+    dest = tmp_path / "exports" / "REPORT_FAIL"
+
+    def stub_argv(path, values, *, python=None, report_path=None, fail_on=None):
+        return [sys.executable, str(stub), "1", str(report_path), "ERROR"]
+
+    monkeypatch.setattr(ex, "build_argv", stub_argv)
+    res = ex.run_step(
+        Step(command=("envmon", "validate-rtk-survey"),
+             values={"report": str(dest)}),
+        job_dir=tmp_path / "job")
+    assert res.decision is Decision.HALT     # blocking row + exit 1
+    assert res.report_out == str(dest)       # exported anyway
+    assert dest.exists()
+
+
+def test_form_report_field_reaches_exported_file(tmp_path, monkeypatch):
+    """End-to-end guard for the whole form -> build_step -> run_step -> export
+    chain (#205): a typed `report` field on a real command's form must survive
+    build_step and land as a file. Guards against a future report-filter in
+    forms.py/introspect.py leaving every stubbed test green while silently
+    killing the feature (the coverage seam the review flagged)."""
+    import autogis.adapters.gui.executor as ex
+    from autogis.adapters.gui.forms import build_step
+    from autogis.adapters.gui.introspect import introspect_cli
+
+    form = {f.label: f for f in introspect_cli()}["envmon validate-rtk-survey"]
+    dest = tmp_path / "out" / "REPORT"
+    step = build_step(form, {"csv_path": "x.csv", "report": str(dest)})
+    assert step.values.get("report") == str(dest)   # survived introspect+build_step
+
+    stub = tmp_path / "stub.py"
+    stub.write_text(STUB, encoding="utf-8")
+
+    def stub_argv(path, values, *, python=None, report_path=None, fail_on=None):
+        return [sys.executable, str(stub), "0", str(report_path), "INFO"]
+
+    monkeypatch.setattr(ex, "build_argv", stub_argv)
+    res = ex.run_step(step, job_dir=tmp_path / "job")
+    assert res.report_out == str(dest)
+    assert dest.exists()
+
+
 def test_run_step_ignores_stale_qa_csv_from_reused_job_dir(tmp_path, monkeypatch):
     """A prior step's qa.csv left in a reused job_dir must not leak into
     this step's verdict (a job_dir isn't guaranteed fresh on retry)."""

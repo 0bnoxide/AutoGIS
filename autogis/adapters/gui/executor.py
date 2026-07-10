@@ -35,6 +35,8 @@ per-record detail source.
 from __future__ import annotations
 
 import csv
+import dataclasses
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -87,6 +89,8 @@ class StepResult:
     qa_rows: tuple[dict, ...] = ()  # parsed qa.csv rows; () when no report
     stdout: str = ""
     stderr: str = ""
+    report_out: str = ""    # where the qa.csv was copied for the user (#205)
+    report_error: str = ""  # copy-out failure message; kept distinct from success
 
 
 def _resolve_command(path: Sequence[str]) -> click.Command:
@@ -184,6 +188,31 @@ def _read_qa_rows(qa_csv: str | Path | None) -> tuple[dict, ...]:
         return tuple(csv.DictReader(fh))
 
 
+def _export_report(qa_csv: str | Path, dest: object) -> tuple[str, str]:
+    """Copy the executor-owned ``qa.csv`` out to a user-requested ``--report``
+    path. Returns ``(destination, "")`` on success, ``("", error)`` on failure,
+    and ``("", "")`` when no export was asked for or there is nothing to copy.
+
+    ``build_argv`` redirects the child's ``--report`` to the job-dir qa.csv for
+    gating, discarding the user's value (#205); this restores the user's intent
+    by copying that qa.csv to the path they typed. Parents are created to match
+    ``QACollector.write_csv`` (so the GUI path behaves like the CLI's own
+    ``--report``). A failed copy never changes the QA verdict -- it is surfaced,
+    not raised.
+    """
+    if not dest:
+        return "", ""
+    src, dest = Path(qa_csv), Path(str(dest))
+    if dest == src or not src.exists():
+        return "", ""
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+    except OSError as exc:
+        return "", f"could not write report to {dest}: {exc}"
+    return str(dest), ""
+
+
 def _row_lines(rows: Sequence[dict]) -> list[str]:
     ordered = sorted(rows, key=lambda r: _SEV_ORDER.get(r.get("severity", ""), 9))
     lines = [f"[{r.get('severity', '?')}] {r.get('category', '')}: "
@@ -271,6 +300,14 @@ def run_step(step: Step, job_dir: str | Path, *,
                       report_path=qa_csv, fail_on=step.fail_on)
     proc = subprocess.run(argv, capture_output=True, encoding="utf-8",
                           errors="replace", timeout=timeout)
-    return decide(proc.returncode, qa_csv,
-                  pause_on_warning=step.pause_on_warning,
-                  stdout=proc.stdout, stderr=proc.stderr)
+    result = decide(proc.returncode, qa_csv,
+                    pause_on_warning=step.pause_on_warning,
+                    stdout=proc.stdout, stderr=proc.stderr)
+    # Honor a user-supplied --report: copy the gating qa.csv out to their path
+    # before the caller removes the job dir (#205). Export failure is surfaced,
+    # not raised -- it must not change the QA verdict just decided.
+    report_out, report_error = _export_report(qa_csv, step.values.get("report"))
+    if report_out or report_error:
+        result = dataclasses.replace(
+            result, report_out=report_out, report_error=report_error)
+    return result
