@@ -23,7 +23,13 @@ DEFAULT_FRACTION_PREFERENCE: tuple[str, ...] = ("Total", "Dissolved")
 
 
 def _group_key(r: dict) -> Tuple:
-    return (r.get("LocationID"), r.get("SampleID"), str(r.get("SampleDate")),
+    # SiteID and Matrix included: this is the shared policy for consumers that
+    # read the analytical table broadly, several of which do NOT pre-filter by
+    # site/matrix. Two otherwise-identical sample/analyte rows from different
+    # sites or matrices are distinct grains and must not resolve into one
+    # (ADR-0075 P1).
+    return (r.get("SiteID"), r.get("Matrix"),
+            r.get("LocationID"), r.get("SampleID"), str(r.get("SampleDate")),
             r.get("AnalyteCanonicalName"),
             str(r.get("DepthIntervalText") or ""))
 
@@ -57,11 +63,12 @@ def canonical_result_rows(
         pick = next((p for p in fraction_preference if p in fracs),
                     sorted(fracs)[0])
         chosen[key] = pick
+        location_id, analyte_name = key[2], key[5]
         qa.add(SEV_WARNING if pick not in fraction_preference else SEV_INFO,
                "fraction_resolved",
-               f"{key[0]} {key[3]}: fractions {sorted(fracs)} resolved to "
-               f"'{pick}' by the canonical-read policy.",
-               location_id=key[0], analyte_name=key[3])
+               f"{location_id} {analyte_name}: fractions {sorted(fracs)} "
+               f"resolved to '{pick}' by the canonical-read policy.",
+               location_id=location_id, analyte_name=analyte_name)
 
     out = [r for r in kept
            if _group_key(r) not in chosen

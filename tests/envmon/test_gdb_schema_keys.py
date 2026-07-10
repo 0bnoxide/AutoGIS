@@ -37,12 +37,21 @@ def test_compute_unique_key_normalizes_like_append():
     assert "2026-06-26" in a
 
 
-def test_compute_unique_key_missing_field_yields_none_part():
-    # d.get(k) semantics preserved: absent key -> None passes through.
-    d = _result_dict()
-    del d["SourceCell"]
-    key = compute_unique_key(d, "Env_AnalyticalResults")
-    assert None in key
+def test_null_discriminators_dedup_against_empty_string():
+    # An existing pre-2.2 GDB row read back after the self-heal AddField
+    # upgrade carries NULL in the new discriminators (arcpy -> None); a
+    # freshly normalized record of the SAME source carries defaulted "".
+    # They must produce the identical key or the legacy source re-imports
+    # as a duplicate (ADR-0075 P1). Also covers a missing key entirely.
+    legacy_gdb_row = _result_dict(
+        ResultFraction=None, QCType=None, MethodDilutionKey=None)
+    del legacy_gdb_row["SourceCell"]           # NULL non-discriminator too
+    normalized = _result_dict(
+        ResultFraction="", QCType="", MethodDilutionKey="", SourceCell="")
+    a = compute_unique_key(legacy_gdb_row, "Env_AnalyticalResults")
+    b = compute_unique_key(normalized, "Env_AnalyticalResults")
+    assert a == b
+    assert None not in a                       # NULL collapses to ""
 
 
 def test_record_to_row_is_gone():

@@ -67,6 +67,29 @@ def test_groups_are_independent():
     assert len(out) == 2
 
 
+def test_different_sites_not_merged_across_fractions():
+    # The reusable helper must NOT collapse two same-location/analyte rows
+    # from different SITES into one group — otherwise differing fractions
+    # resolve to one and the other is silently dropped (ADR-0075 P1). No
+    # caller pre-filter is assumed here.
+    qa = QACollector()
+    rows = [_row(SiteID="S1", ResultFraction="Total"),
+            _row(SiteID="S2", ResultFraction="Dissolved")]
+    out = canonical_result_rows(rows, qa)
+    assert len(out) == 2
+    assert not any(r.category == "fraction_resolved" for r in qa.records)
+
+
+def test_different_matrices_not_merged_across_fractions():
+    # Same guard on the Matrix dimension.
+    qa = QACollector()
+    rows = [_row(Matrix="GW", ResultFraction="Total"),
+            _row(Matrix="SOIL", ResultFraction="Dissolved")]
+    out = canonical_result_rows(rows, qa)
+    assert len(out) == 2
+    assert not any(r.category == "fraction_resolved" for r in qa.records)
+
+
 def test_pivot_no_longer_drops_or_double_counts_fractions():
     from autogis.core.envmon.build_current_event import build_wide_rows
     qa = QACollector()

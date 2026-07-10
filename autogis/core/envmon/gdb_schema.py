@@ -353,7 +353,15 @@ UNIQUE_KEYS = {
 
 
 def _norm_key_part(v):
-    """Normalize one key part exactly as the idempotent-append dedup does."""
+    """Normalize one key part exactly as the idempotent-append dedup does.
+
+    NULL and empty-string collapse to the same key part: an existing GDB row
+    read back with a NULL discriminator (arcpy yields ``None``) must dedup
+    against a freshly normalized record whose defaulted discriminator is
+    ``""`` — otherwise a self-heal schema upgrade re-imports the same legacy
+    source as a duplicate (ADR-0075)."""
+    if v is None:
+        return ""
     if isinstance(v, (_dt.datetime, _dt.date)):
         return v.strftime("%Y-%m-%d")
     if isinstance(v, float) and v.is_integer():
