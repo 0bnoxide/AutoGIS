@@ -131,7 +131,7 @@ def run_batch_import(
 
         try:
             profile = LabEDDProfile.load(prof_path)
-            raw_rows = read_edd_file(wb_path, profile)
+            raw_rows = read_edd_file(wb_path, profile, qa)
             samples, results = normalize_edd_rows(
                 raw_rows, profile, site_id, batch_id,
                 analyte_dictionary or {}, screening_levels or {},

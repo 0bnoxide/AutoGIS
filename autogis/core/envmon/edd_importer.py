@@ -20,17 +20,23 @@ from .result_parser import (
 # File reading
 # ---------------------------------------------------------------------------
 
-def read_edd_file(path: Path, profile: LabEDDProfile) -> list[dict]:
+def read_edd_file(path: Path, profile: LabEDDProfile,
+                  qa: Optional[QACollector] = None) -> list[dict]:
     """Read EDD file and return a flat list of row dicts.
 
     For two_tab_xlsx, sample-sheet metadata is merged onto each result row
     before returning, so the output is the same shape regardless of format.
+    ``qa`` is optional (back-compat); readers with load-time transforms
+    (wqx_csv) emit warnings through it.
     """
     path = Path(path)
     if profile.format == "flat_csv":
         return _read_flat_csv(path, profile)
     if profile.format == "two_tab_xlsx":
         return _read_two_tab_xlsx(path, profile)
+    if profile.format == "wqx_csv":
+        from .wqx_reader import read_wqx_csv
+        return read_wqx_csv(path, profile, qa)
     raise ValueError(f"Unknown EDD format '{profile.format}'")
 
 
@@ -94,6 +100,12 @@ def normalize_edd_rows(
     seen_sample_keys: set[tuple] = set()
 
     for row_num, row in enumerate(rows, start=2):  # 2 = data starts after header
+        # Readers that filter rows at load (wqx_csv) stamp the true source row
+        # so provenance doesn't drift after a skipped row.
+        try:
+            row_num = int(row.get("__source_row") or row_num)
+        except (TypeError, ValueError):
+            pass
 
         # --- extract required fields ---
         sample_id   = profile.resolve_column(row, "sample_id")
@@ -201,6 +213,16 @@ def normalize_edd_rows(
         if rl_raw:
             try:
                 parsed.reporting_limit = float(rl_raw.replace(",", ""))
+            except (ValueError, AttributeError):
+                pass
+
+        # detection limit column (format-agnostic; mirrors the RL override —
+        # WQX routes MDL-typed limits here, Step-3 EQuIS formats carry
+        # method_detection_limit natively)
+        dl_raw = profile.resolve_column(row, "detection_limit")
+        if dl_raw:
+            try:
+                parsed.detection_limit = float(dl_raw.replace(",", ""))
             except (ValueError, AttributeError):
                 pass
 
@@ -349,6 +371,8 @@ def run_edd_import(
 
     Pass ``qa`` to also receive the QA records caller-side (e.g. for a
     ``--report`` file); the same records are still written to the GDB.
+    Reader-level warnings (wqx_csv load transforms) land in it too — the
+    collector is initialized before the read (PR #225/#226 reconciliation).
     """
     edd_path = Path(edd_path)
     gdb_path = Path(gdb_path)
@@ -361,9 +385,9 @@ def run_edd_import(
         gdb_path, edd_path, site_id, profile.lab_name, profile.profile_id,
     )
 
-    rows = read_edd_file(edd_path, profile)
-
     qa = qa if qa is not None else QACollector()
+    rows = read_edd_file(edd_path, profile, qa)
+
     samples, results = normalize_edd_rows(
         rows=rows,
         profile=profile,

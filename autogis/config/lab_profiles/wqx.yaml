@@ -1,0 +1,86 @@
+# autogis/config/lab_profiles/wqx.yaml
+# EPA WQX / Water Quality Portal physical-chemical result CSV (Step 2, ADR-0080).
+#
+# *** DRAFT — verify against a production WQP pull before first real import ***
+# Column names are verified (2026-07-09 paper mapping); the VOCABULARIES below
+# (detection_condition, limit_type_route, qc_type, matrix_map) are seeded from
+# the WQX domain lists and are _TODO: confirm against real data, then remove
+# this banner. Unmapped values fail safe: unknown ActivityTypeCode imports
+# QC-flagged (hidden from canonical reads) + QA-WARN; unknown limit type
+# routes to ReportingLimit + QA-WARN; unknown detection condition + empty
+# result imports as not-analyzed + QA-WARN.
+#
+# __wqx_* columns are synthesized by wqx_reader.py at load time — they are not
+# in the source file. See the Step-2 spec for the transform definitions.
+profile_id: wqx
+lab_name: "WQX/WQP"
+format: wqx_csv
+date_format: "%Y-%m-%d"
+encoding: "utf-8-sig"
+
+columns:
+  sample_id:         "ActivityIdentifier"
+  location_id:       "MonitoringLocationIdentifier"
+  event_date:        "ActivityStartDate"
+  matrix:            "__wqx_matrix"
+  analyte:           "__wqx_analyte"
+  result:            "__wqx_result"
+  units:             "__wqx_units"
+  qualifier:         "MeasureQualifierCode"
+  reporting_limit:   "__wqx_reporting_limit"
+  detection_limit:   "__wqx_detection_limit"
+  result_fraction:   "ResultSampleFractionText"
+  qc_type:           "ActivityTypeCode"
+  dilution_factor:   "__wqx_method_dilution_key"
+  method:            "ResultAnalyticalMethod/MethodIdentifier"
+  method_name:       "ResultAnalyticalMethod/MethodName"
+  analysis_date:     "AnalysisStartDate"
+  limit_type:        "DetectionQuantitationLimitTypeName"
+  lab_name:          "LaboratoryName"
+  prep_method:       "LabSamplePreparationMethod/MethodIdentifier"
+  prep_date:         "PreparationStartDate"
+  result_basis:      "ResultWeightBasisText"
+  method_speciation: "MethodSpeciationName"
+  lab_sample_id:     "SampleContainerLabelName"
+
+# Minimal, unambiguous mappings only; everything else passes through as-is
+# with the existing edd_unknown_matrix warning.
+matrix_map:
+  Groundwater: GW
+  Soil: SOIL
+
+nondetect_qualifiers: ["U", "UJ"]
+
+value_maps:
+  # ResultDetectionConditionText -> "ND" (synthesize non-detect) or "" (a
+  # detection / not an ND — explicitly recorded so it doesn't warn).
+  detection_condition:
+    "Not Detected": "ND"
+    "Not Present": "ND"
+    "Below Detection Limit": "ND"
+    "Below Method Detection Limit": "ND"
+    "Detected Not Quantified": ""   # a detection, deliberately NOT an ND
+  # DetectionQuantitationLimitTypeName -> RL | DL (limit-value routing).
+  limit_type_route:
+    "Reporting Limit": "RL"
+    "Lower Reporting Limit": "RL"
+    "Minimum Reporting Level": "RL"
+    "Practical Quantitation Limit": "RL"
+    "Lower Quantitation Limit": "RL"
+    "Method Detection Level": "DL"
+    "Instrument Detection Level": "DL"
+    "Estimated Detection Level": "DL"   # EDL -> DetectionLimit per the paper mapping
+  # ActivityTypeCode -> QCType ("" = routine/not QC; truthy = QC-flagged,
+  # dropped by the canonical-read policy). ActivityTypeCode is WQX's ONLY QC
+  # discriminator — unmapped codes import QC-flagged + QA-WARN (fail-safe).
+  qc_type:
+    "Sample-Routine": ""
+    "Field Msr/Obs": ""
+    "Field Msr/Obs-Portable Data Logger": ""
+    "Sample-Composite Without Parents": ""
+    "Sample-Integrated Vertical Profile": ""
+    "Quality Control Sample-Field Replicate": "FIELD_DUP"
+    "Quality Control Sample-Field Blank": "FIELD_BLANK"
+    "Quality Control Sample-Trip Blank": "TRIP_BLANK"
+    "Quality Control Sample-Equipment Blank": "EQUIPMENT_BLANK"
+    "Quality Control Sample-Lab Blank": "LAB_BLANK"

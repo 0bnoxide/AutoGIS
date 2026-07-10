@@ -12,14 +12,14 @@ _REQUIRED_COLUMNS = {
     "sample_id", "location_id", "event_date", "matrix",
     "analyte", "result", "units", "qualifier", "reporting_limit",
 }
-_VALID_FORMATS = {"flat_csv", "two_tab_xlsx"}
+_VALID_FORMATS = {"flat_csv", "two_tab_xlsx", "wqx_csv"}
 
 
 @dataclass
 class LabEDDProfile:
     profile_id: str
     lab_name: str
-    format: str                              # "flat_csv" | "two_tab_xlsx"
+    format: str                              # "flat_csv" | "two_tab_xlsx" | "wqx_csv"
     date_format: str
     encoding: str
     columns: dict[str, str | list[str]]     # field_name -> col_name(s)
