@@ -317,3 +317,139 @@ def resolve_bbox(
     raise ValueError(
         f"unsupported AOI file {path.name!r}: expected a shapefile or GeoJSON "
         f"(.shp, .geojson, or .json)")
+
+
+# ---------------------------------------------------------------- download
+def _default_http_get(url: str):
+    """The real fetch behind the injectable seam.
+
+    Returns (status_code, headers, chunk_iterator). urllib raises HTTPError
+    for 4xx/5xx; normalize that to the same tuple shape so download_dem has
+    one code path. OpenTopography DEM jobs can take a while server-side —
+    generous timeout."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(url, headers={"User-Agent": "autogis"})
+    try:
+        response = urllib.request.urlopen(request, timeout=600)
+    except urllib.error.HTTPError as err:
+        body = err.read() or b""
+        return err.code, dict(err.headers or {}), iter([body])
+
+    def chunks(resp=response):
+        with resp:
+            while True:
+                chunk = resp.read(256 * 1024)
+                if not chunk:
+                    return
+                yield chunk
+
+    return response.status, dict(response.headers), chunks()
+
+
+def _map_http_error(qa: QACollector, status: int, dataset: DemDataset,
+                    chunks: Iterator[bytes]) -> None:
+    if status == 401:
+        qa.add(SEV_ERROR, "unauthorized",
+               "OpenTopography rejected the API key (401) — check "
+               "$OPENTOPOGRAPHY_API_KEY / --api-key")
+    elif status == 204:
+        qa.add(SEV_ERROR, "no_data",
+               f"no data for this AOI in dataset {dataset.code!r} (204) — "
+               f"try a global dataset or check the bbox")
+    elif status == 400:
+        detail = b"".join(chunks)[:500].decode("utf-8", "replace").strip()
+        qa.add(SEV_ERROR, "bad_request",
+               f"OpenTopography rejected the request (400): "
+               f"{detail or 'no detail'} — commonly the bbox exceeds the "
+               f"dataset's area limit; shrink the AOI or use a coarser dataset")
+    else:
+        qa.add(SEV_ERROR, "server_error",
+               f"OpenTopography returned HTTP {status} — server-side "
+               f"failure, retry later")
+
+
+def _write_sidecar(out_path: Path, dataset: DemDataset,
+                   bbox: tuple[float, float, float, float],
+                   redacted_url: str) -> Path:
+    """Provenance + citation sidecar (<out>.json). Written only after the
+    downloaded raster has been renamed into place."""
+    west, south, east, north = bbox
+    sidecar = out_path.with_name(out_path.name + ".json")
+    sidecar.write_text(json.dumps({
+        "dataset": dataset.code,
+        "endpoint": dataset.endpoint,
+        "resolution": dataset.resolution,
+        "bbox_wgs84": {"west": west, "south": south,
+                       "east": east, "north": north},
+        "downloaded_utc": datetime.now(timezone.utc).isoformat(),
+        "source_url": redacted_url,
+        "citation": CITATION,
+    }, indent=2), encoding="utf-8")
+    return sidecar
+
+
+def download_dem(
+    dataset: str = DEFAULT_DATASET,
+    *,
+    bbox: Optional[tuple[float, float, float, float]] = None,
+    aoi_path: "str | Path | None" = None,
+    out_path: "str | Path | None" = None,
+    api_key: Optional[str] = None,
+    output_format: str = "GTiff",
+    overwrite: bool = False,
+    http_get: Optional[HttpGetFn] = None,
+    on_progress: Optional[ProgressFn] = None,
+) -> DownloadResult:
+    """Resolve dataset/AOI/key, fetch the DEM, stream to a temp file, rename
+    on success, write the provenance sidecar. HTTP failures become QA errors
+    (bytes_written == 0); input problems raise before any request is made."""
+    qa = QACollector()
+    ds = get_dataset(dataset)
+    box = resolve_bbox(bbox=bbox, aoi_path=aoi_path)
+    key = resolve_api_key(api_key)
+    out = Path(out_path) if out_path else Path(derive_out_name(
+        ds, box, output_format))
+    if out.exists() and not overwrite:
+        raise FileExistsError(
+            f"{out} already exists; pass --overwrite to replace it")
+
+    estimated_px = estimate_pixels(ds, box)
+    if estimated_px > PIXEL_WARN_THRESHOLD:
+        qa.add(SEV_WARNING, "large_aoi",
+               f"AOI is ~{estimate_area_km2(box):,.0f} km2 "
+               f"(~{estimated_px:,} px at {ds.res_m:g} m) — this may exceed "
+               f"the dataset's area limit; proceeding (the API will reject "
+               f"with 400 if so)")
+
+    url = build_url(ds, box, key, output_format)
+    fetch = http_get or _default_http_get
+    status, headers, chunks = fetch(url)
+    if status != 200:
+        _map_http_error(qa, status, ds, chunks)
+        return DownloadResult(out_path=out, dataset=ds.code, bbox=box,
+                              bytes_written=0, qa=qa)
+
+    total = int(headers.get("Content-Length") or 0) or None
+    out.parent.mkdir(parents=True, exist_ok=True)
+    part = out.with_name(out.name + ".part")
+    written = 0
+    try:
+        with part.open("wb") as fh:
+            for chunk in chunks:
+                fh.write(chunk)
+                written += len(chunk)
+                if on_progress is not None:
+                    on_progress(written, total)
+    except BaseException:
+        part.unlink(missing_ok=True)   # never leave a truncated raster
+        raise
+    os.replace(part, out)
+    sidecar = _write_sidecar(out, ds, box,
+                             build_url(ds, box, "REDACTED", output_format))
+    qa.add(SEV_INFO, "download_dem",
+           f"wrote {out} ({written:,} bytes, dataset {ds.code}); "
+           f"provenance sidecar {sidecar.name}")
+    return DownloadResult(out_path=out, dataset=ds.code, bbox=box,
+                          bytes_written=written, qa=qa)

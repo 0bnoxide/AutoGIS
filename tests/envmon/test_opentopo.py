@@ -252,3 +252,152 @@ def test_resolve_bbox_reprojects_utm_shapefile(tmp_path):
     west, south, east, north = resolve_bbox(aoi_path=shp)
     assert -107.0 < west < east < -105.0
     assert 39.0 < south < north < 40.5
+
+
+# ---------------------------------------------------------------- download_dem
+from autogis.core.envmon.opentopo import download_dem
+
+
+def fake_get(status, body=b"", headers=None, calls=None):
+    """Injectable http_get: records calls, returns a canned response."""
+    def _get(url):
+        if calls is not None:
+            calls.append(url)
+        base = {"Content-Length": str(len(body))} if status == 200 else {}
+        base.update(headers or {})
+        return status, base, iter([body[:10], body[10:]] if len(body) > 10
+                                  else [body])
+    return _get
+
+
+@pytest.fixture
+def api_key_env(monkeypatch):
+    monkeypatch.setenv("OPENTOPOGRAPHY_API_KEY", "TESTKEY")
+
+
+def test_download_success_writes_file_and_sidecar(tmp_path, api_key_env):
+    out = tmp_path / "dem.tif"
+    body = b"GEOTIFFBYTES" * 4
+    result = download_dem("USGS10m", bbox=BBOX, out_path=out,
+                          http_get=fake_get(200, body))
+    assert out.read_bytes() == body
+    assert result.bytes_written == len(body)
+    assert result.dataset == "USGS10m"
+    assert not list(tmp_path.glob("*.part")), "temp file must not remain"
+    sidecar = _json.loads((tmp_path / "dem.tif.json").read_text())
+    assert sidecar["dataset"] == "USGS10m"
+    assert sidecar["bbox_wgs84"] == {"west": BBOX[0], "south": BBOX[1],
+                                     "east": BBOX[2], "north": BBOX[3]}
+    assert "TESTKEY" not in sidecar["source_url"]
+    assert "REDACTED" in sidecar["source_url"]
+    assert "opentopography" in sidecar["citation"].lower()
+    assert sidecar["downloaded_utc"]  # ISO timestamp present
+
+
+def test_download_url_uses_key_and_routing(tmp_path, api_key_env):
+    calls = []
+    download_dem("COP30", bbox=BBOX, out_path=tmp_path / "d.tif",
+                 http_get=fake_get(200, b"x", calls=calls))
+    assert "/API/globaldem?" in calls[0]
+    assert "demtype=COP30" in calls[0]
+    assert "API_Key=TESTKEY" in calls[0]
+
+
+@pytest.mark.parametrize("status,category,needle", [
+    (401, "unauthorized", "rejected the API key"),
+    (204, "no_data", "no data for this AOI"),
+    (400, "bad_request", "area limit"),
+    (500, "server_error", "retry later"),
+])
+def test_download_http_errors_map_to_qa(tmp_path, api_key_env,
+                                        status, category, needle):
+    out = tmp_path / "dem.tif"
+    result = download_dem("USGS10m", bbox=BBOX, out_path=out,
+                          http_get=fake_get(status, b"API detail message"))
+    assert result.bytes_written == 0
+    assert not out.exists()
+    assert not list(tmp_path.glob("*.part"))
+    errors = [r for r in result.qa.records if r.severity == "ERROR"]
+    assert len(errors) == 1
+    assert errors[0].category == category
+    assert needle in errors[0].message
+
+
+def test_download_400_surfaces_api_body(tmp_path, api_key_env):
+    result = download_dem("USGS10m", bbox=BBOX, out_path=tmp_path / "d.tif",
+                          http_get=fake_get(400, b"bbox exceeds max area"))
+    (error,) = [r for r in result.qa.records if r.severity == "ERROR"]
+    assert "bbox exceeds max area" in error.message
+
+
+def test_overwrite_guard_refuses_before_fetch(tmp_path, api_key_env):
+    out = tmp_path / "dem.tif"
+    out.write_bytes(b"existing data")
+
+    def must_not_fetch(url):
+        raise AssertionError("http_get called despite overwrite guard")
+
+    with pytest.raises(FileExistsError, match="--overwrite"):
+        download_dem("USGS10m", bbox=BBOX, out_path=out,
+                     http_get=must_not_fetch)
+    assert out.read_bytes() == b"existing data"
+
+
+def test_overwrite_flag_replaces_existing(tmp_path, api_key_env):
+    out = tmp_path / "dem.tif"
+    out.write_bytes(b"old")
+    result = download_dem("USGS10m", bbox=BBOX, out_path=out, overwrite=True,
+                          http_get=fake_get(200, b"new bytes"))
+    assert out.read_bytes() == b"new bytes"
+    assert result.bytes_written == len(b"new bytes")
+
+
+def test_auto_out_name_when_out_path_omitted(tmp_path, api_key_env, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = download_dem("USGS10m", bbox=BBOX, http_get=fake_get(200, b"x"))
+    assert result.out_path.name == \
+        "USGS10m_W-106.3000_S39.6000_E-106.2000_N39.7000.tif"
+    assert result.out_path.exists()
+
+
+def test_failed_stream_leaves_no_partial_file(tmp_path, api_key_env):
+    out = tmp_path / "dem.tif"
+
+    def broken_stream(url):
+        def chunks():
+            yield b"first chunk"
+            raise IOError("connection dropped")
+        return 200, {"Content-Length": "9999"}, chunks()
+
+    with pytest.raises(IOError):
+        download_dem("USGS10m", bbox=BBOX, out_path=out,
+                     http_get=broken_stream)
+    assert not out.exists()
+    assert not list(tmp_path.glob("*.part")), "truncated temp must be removed"
+    assert not (tmp_path / "dem.tif.json").exists(), "no sidecar on failure"
+
+
+def test_progress_callback_sees_bytes_and_total(tmp_path, api_key_env):
+    seen = []
+    body = b"0123456789ABCDEF"  # split into 2 chunks by fake_get
+    download_dem("USGS10m", bbox=BBOX, out_path=tmp_path / "d.tif",
+                 http_get=fake_get(200, body),
+                 on_progress=lambda done, total: seen.append((done, total)))
+    assert seen[-1] == (len(body), len(body))
+    assert [done for done, _ in seen] == sorted(done for done, _ in seen)
+
+
+def test_large_aoi_preflight_warns(tmp_path, api_key_env):
+    huge = (-110.0, 35.0, -100.0, 45.0)
+    result = download_dem("USGS1m", bbox=huge, out_path=tmp_path / "d.tif",
+                          http_get=fake_get(200, b"x"))
+    warns = [r for r in result.qa.records
+             if r.severity == "WARNING" and r.category == "large_aoi"]
+    assert len(warns) == 1, "heuristic warn must fire, but never block"
+    assert result.bytes_written > 0, "warn is soft — download still ran"
+
+
+def test_small_aoi_no_preflight_warn(tmp_path, api_key_env):
+    result = download_dem("USGS10m", bbox=BBOX, out_path=tmp_path / "d.tif",
+                          http_get=fake_get(200, b"x"))
+    assert not [r for r in result.qa.records if r.category == "large_aoi"]
