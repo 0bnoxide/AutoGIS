@@ -11,17 +11,10 @@ __pycache__/
 /harvest/
 .superpowers/
 
-# headroom runtime artifacts (defense-in-depth; relocated to $HOME by the hook)
-.headroom/
-headroom_memory.db
-# headroom --learn writes personal learnings to CLAUDE.local.md (issue #1072).
-# It is untracked, so without this line `?? CLAUDE.local.md` dirties the main
-# tree and silently blocks SessionStart's clean-only ff-pull → main drift.
-# Claude Code still loads CLAUDE.local.md as personal memory regardless of git.
+# Claude Code personal memory — untracked by design. Kept ignored so a stray
+# `?? CLAUDE.local.md` can't dirty the main tree and silently block
+# SessionStart's clean-only ff-pull → main drift.
 CLAUDE.local.md
-# Insurance: repo-root file only the non-Claude GenericMemoryWriter would emit
-# (the Claude path writes ~/.claude/.../memory/MEMORY.md instead). Cheap guard.
-HEADROOM_MEMORY.md
 
 # transient agent memory state — never commit
 .claude/agent-memory-local/
