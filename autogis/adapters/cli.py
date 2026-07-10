@@ -1706,13 +1706,15 @@ def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fa
               help="Screening levels YAML (optional).")
 @click.option("--event-date", default=None,
               help="Override event date ISO8601 (YYYY-MM-DD).")
+@qa_report_options
 def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
-                   analytes, screening, event_date):
+                   analytes, screening, event_date, report, fail_on):
     """Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro)."""
     _guard("import-edd")
     from autogis.core.envmon.edd_profile import LabEDDProfile
     from autogis.core.envmon.edd_importer import run_edd_import
     from autogis.core.common.config import load_config
+    from autogis.core.common.qa import QACollector
 
     profile = LabEDDProfile.load(Path(profile_path))
     analyte_dictionary = load_config(Path(analytes)) if analytes else {}
@@ -1728,6 +1730,7 @@ def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
                 f"Invalid date '{event_date}'; use YYYY-MM-DD",
                 param_hint="--event-date")
 
+    qa = QACollector()
     batch_id = run_edd_import(
         edd_path=Path(edd_path),
         profile=profile,
@@ -1736,8 +1739,10 @@ def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
         analyte_dictionary=analyte_dictionary,
         screening_levels=screening_levels,
         event_date_override=override,
+        qa=qa,
     )
     click.echo(f"Import complete. Batch ID: {batch_id}")
+    _render_qa(qa, report, fail_on)
 
 
 @envmon.command("upgrade-schema")

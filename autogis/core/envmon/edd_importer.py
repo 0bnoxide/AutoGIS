@@ -340,11 +340,15 @@ def run_edd_import(
     analyte_dictionary: dict,
     screening_levels: dict,
     event_date_override: Optional[date] = None,
+    qa: Optional[QACollector] = None,
 ) -> str:
     """Run a full EDD import. Returns the import batch_id.
 
     Follows the same lifecycle as import_to_gdb.run_import():
       create_edd_import_batch -> normalize -> append -> finalize -> write_qa
+
+    Pass ``qa`` to also receive the QA records caller-side (e.g. for a
+    ``--report`` file); the same records are still written to the GDB.
     """
     edd_path = Path(edd_path)
     gdb_path = Path(gdb_path)
@@ -359,7 +363,7 @@ def run_edd_import(
 
     rows = read_edd_file(edd_path, profile)
 
-    qa = QACollector()
+    qa = qa if qa is not None else QACollector()
     samples, results = normalize_edd_rows(
         rows=rows,
         profile=profile,

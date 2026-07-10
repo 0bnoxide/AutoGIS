@@ -135,7 +135,10 @@ def normalize_gw_table_2(workbook_path, profile: ParserProfile, site_id: str,
                          ) -> Tuple[List[WaterLevelRecord],
                                     List[SampleRecord],
                                     List[AnalyticalResultRecord]]:
-    """Normalize all GW_ANALYTICAL_AND_WATER_LEVEL sheets in the profile."""
+    """Normalize all GW_ANALYTICAL_AND_WATER_LEVEL, GW_WATER_LEVEL_ONLY and
+    GW_ANALYTICAL sheets in the profile. GW_ANALYTICAL sheets carry analyte
+    columns but no MPE/DTW/GWE, so water-level extraction is skipped for them
+    (running it would emit a spurious QA warning per row)."""
     reader = reader or ProfileWorkbookReader(workbook_path, profile, qa)
     water_levels: List[WaterLevelRecord] = []
     samples: List[SampleRecord] = []
@@ -144,13 +147,15 @@ def normalize_gw_table_2(workbook_path, profile: ParserProfile, site_id: str,
     rng = profile.data.get("plausible_gwe_range_ft")
     if rng and len(rng) == 2:
         gwe_range = (float(rng[0]), float(rng[1]))
-    for sheet in profile.sheets_of_type("GW_ANALYTICAL_AND_WATER_LEVEL") + \
-            profile.sheets_of_type("GW_WATER_LEVEL_ONLY"):
+    for sheet in (profile.sheets_of_type("GW_ANALYTICAL_AND_WATER_LEVEL")
+                  + profile.sheets_of_type("GW_WATER_LEVEL_ONLY")
+                  + profile.sheets_of_type("GW_ANALYTICAL")):
         if not reader.require_sheet(sheet):
             continue
-        for row in reader.iter_data_rows(sheet):
-            water_levels.append(_water_level_for_row(
-                reader, sheet, row, site_id, batch_id, qa, gwe_range))
+        if sheet.data_type != "GW_ANALYTICAL":
+            for row in reader.iter_data_rows(sheet):
+                water_levels.append(_water_level_for_row(
+                    reader, sheet, row, site_id, batch_id, qa, gwe_range))
         if sheet.analyte_columns:
             s, r = normalize_matrix_table(
                 reader, sheet, matrix="GW", analytical_group="VPH_EPH_VOC",
