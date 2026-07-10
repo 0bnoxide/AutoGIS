@@ -365,6 +365,7 @@ LONG_FIELD_MAP = [
     ("ResultNumeric", "NumericValue"), ("DisplayText", "DisplayText"),
     ("DisplayColorClass", "DisplayColorClass"), ("Units", "Units"),
     ("ScreeningLevel", "ScreeningLevelValue"),
+    ("ResultFraction", "ResultFraction"), ("QCType", "QCType"),
 ]
 
 
@@ -400,6 +401,8 @@ def build_current_event_wide(
     analytes = spec.analyte_list(analyte_dictionary)
 
     rows = read_long_results(gdb, site_id, matrix)
+    from .canonical_read import canonical_result_rows
+    rows = canonical_result_rows(rows, qa)
     if not rows:
         qa.add(QARecord(severity=SEV_ERROR, category="no_results_for_figure",
                         message=f"No {matrix} results for {site_id}; "
