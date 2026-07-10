@@ -345,6 +345,33 @@ def test_run_edd_import_ensures_schema_first(tmp_path, monkeypatch):
     assert "batch" in calls and "append" in calls
 
 
+def test_run_edd_import_uses_caller_qa_collector(tmp_path, monkeypatch):
+    """A caller-supplied QACollector must be the one used throughout (so the
+    CLI can render/--report the same records that went to the GDB)."""
+    import autogis.core.envmon.edd_importer as mod
+    from autogis.core.common.qa import QACollector
+
+    seen = {}
+    monkeypatch.setattr(mod, "create_or_update_gdb_schema", lambda gdb, qa=None: None)
+    monkeypatch.setattr(mod, "create_edd_import_batch", lambda *a, **k: "BATCH-001")
+    monkeypatch.setattr(mod, "append_records_idempotent", lambda *a, **k: (0, 0))
+    monkeypatch.setattr(mod, "finalize_batch", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "write_qa_to_gdb",
+                        lambda gdb, qa, batch_id: seen.setdefault("qa", qa))
+
+    mine = QACollector()
+    mod.run_edd_import(
+        edd_path=FIXTURE_CSV,
+        profile=_profile(tmp_path),
+        gdb_path=tmp_path / "test.gdb",
+        site_id="H281",
+        analyte_dictionary=ANALYTES,
+        screening_levels=SCREENING,
+        qa=mine,
+    )
+    assert seen["qa"] is mine
+
+
 # ---------------------------------------------------------------------------
 # Step-1 canonical expansion (ADR-0075) — 12 new optional fields
 # ---------------------------------------------------------------------------
