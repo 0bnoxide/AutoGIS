@@ -7,6 +7,7 @@ nothing is ever deleted.
 """
 from __future__ import annotations
 
+import datetime as _dt
 from dataclasses import dataclass, field, asdict
 from datetime import date
 from typing import List, Optional
@@ -342,6 +343,24 @@ UNIQUE_KEYS = {
 }
 
 
+def _norm_key_part(v):
+    """Normalize one key part exactly as the idempotent-append dedup does."""
+    if isinstance(v, (_dt.datetime, _dt.date)):
+        return v.strftime("%Y-%m-%d")
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    if isinstance(v, str):
+        return v.strip().upper()
+    return v
+
+
+def compute_unique_key(record_dict: dict, table_name: str) -> tuple:
+    """The exact key append_records_idempotent dedups on. Pure, arcpy-free —
+    the load-bearing seam the synthetic key-distinctness tests exercise."""
+    return tuple(_norm_key_part(record_dict.get(k))
+                 for k in UNIQUE_KEYS[table_name])
+
+
 # ---------------------------------------------------------------------------
 # Record dataclasses produced by normalizers (field names == schema names)
 # ---------------------------------------------------------------------------
@@ -399,11 +418,6 @@ class RPDRecord:
     RPDValue: Optional[float]; RL: Optional[float]
     FiveTimesRL: Optional[float]; RPDStatus: str; CalculationError: str
     SourceWorkbook: str; SourceSheet: str; SourceRow: int
-
-
-def record_to_row(record, field_names: List[str]) -> list:
-    d = asdict(record) if not isinstance(record, dict) else record
-    return [d.get(f) for f in field_names]
 
 
 # ---------------------------------------------------------------------------

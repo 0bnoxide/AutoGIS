@@ -27,7 +27,7 @@ from ..common.logging import get_logger
 from ..common.qa import QACollector, SEV_ERROR, SEV_INFO
 from ..common.config import ParserProfile, SiteConfig, load_analyte_dictionary, load_screening_levels
 from .excel_profile_reader import ProfileWorkbookReader
-from .gdb_schema import TABLE_SCHEMAS, UNIQUE_KEYS, create_or_update_gdb_schema
+from .gdb_schema import TABLE_SCHEMAS, UNIQUE_KEYS, create_or_update_gdb_schema, compute_unique_key, _norm_key_part
 from .normalize_groundwater import normalize_gw_table_2
 from .normalize_soil import normalize_soil_table
 from .normalize_metals import normalize_metals_table
@@ -111,16 +111,6 @@ def _existing_key_set(table_path: str, key_fields: Sequence[str]) -> set:
     return keys
 
 
-def _norm_key_part(v):
-    if isinstance(v, (_dt.datetime, _dt.date)):
-        return v.strftime("%Y-%m-%d")
-    if isinstance(v, float) and v.is_integer():
-        return int(v)
-    if isinstance(v, str):
-        return v.strip().upper()
-    return v
-
-
 def append_records_idempotent(
     gdb: Path,
     table_name: str,
@@ -149,7 +139,7 @@ def append_records_idempotent(
         for rec in records:
             d = _as_dict(rec)
             d.setdefault("ImportBatchID", batch_id)
-            key = tuple(_norm_key_part(d.get(k)) for k in key_fields)
+            key = compute_unique_key(d, table_name)
             if not allow_duplicate_records and key in existing:
                 skipped += 1
                 qa.add(SEV_INFO, "duplicate_key_skipped",
