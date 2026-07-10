@@ -27,7 +27,19 @@ class LabEDDProfile:
     nondetect_qualifiers: list[str]
     sample_sheet: str = "Samples"            # two_tab_xlsx only
     result_sheet: str = "Results"            # two_tab_xlsx only
+    value_maps: dict[str, dict[str, str]] = field(default_factory=dict)
     path: Optional[Path] = field(default=None, compare=False)
+
+    def __post_init__(self) -> None:
+        # matrix_map is the legacy spelling of value_maps["matrix"]; merge it
+        # so all value lookups go through one place. matrix_map itself is
+        # kept untouched for backward compatibility.
+        if self.matrix_map and "matrix" not in self.value_maps:
+            self.value_maps["matrix"] = self.matrix_map
+
+    def map_value(self, field: str, raw: str) -> str:
+        """Canonicalize a raw code via value_maps; pass through if unmapped."""
+        return self.value_maps.get(field, {}).get(raw, raw)
 
     @classmethod
     def load(cls, path: Path) -> "LabEDDProfile":
@@ -44,6 +56,7 @@ class LabEDDProfile:
             nondetect_qualifiers=data.get("nondetect_qualifiers", ["U", "UJ"]),
             sample_sheet=data.get("sample_sheet", "Samples"),
             result_sheet=data.get("result_sheet", "Results"),
+            value_maps=data.get("value_maps", {}),
             path=path,
         )
 

@@ -130,8 +130,8 @@ def normalize_edd_rows(
                        source_sheet=source_name, source_row=row_num)
 
         # --- matrix ---
-        matrix = profile.matrix_map.get(matrix_raw, matrix_raw)
-        if matrix_raw and matrix_raw not in profile.matrix_map:
+        matrix = profile.map_value("matrix", matrix_raw)
+        if matrix_raw and matrix_raw not in profile.value_maps.get("matrix", {}):
             qa.add(SEV_WARNING, "edd_unknown_matrix",
                    f"Row {row_num}: matrix '{matrix_raw}' not in profile "
                    f"matrix_map; using as-is",

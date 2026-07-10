@@ -122,6 +122,36 @@ def test_validate_edd_profile_bad_format(tmp_path):
     assert any(r.severity == SEV_ERROR and "format" in r.message for r in qa.records)
 
 
+def test_value_maps_defaults_empty_and_maps_pass_through(tmp_path):
+    p = _write_yaml(tmp_path, MINIMAL_YAML)
+    prof = LabEDDProfile.load(p)
+    assert prof.map_value("qc_type", "TB") == "TB"        # unmapped: pass-through
+    assert prof.map_value("result_fraction", "") == ""
+
+
+def test_matrix_map_merged_into_value_maps(tmp_path):
+    p = _write_yaml(tmp_path, MINIMAL_YAML)
+    prof = LabEDDProfile.load(p)
+    assert prof.value_maps["matrix"] == prof.matrix_map
+    assert prof.map_value("matrix", next(iter(prof.matrix_map))) \
+        == prof.matrix_map[next(iter(prof.matrix_map))]
+
+
+def test_value_maps_loaded_from_yaml(tmp_path):
+    yaml_text = MINIMAL_YAML + textwrap.dedent("""
+        value_maps:
+          qc_type:
+            "TB": "TRIP_BLANK"
+          result_fraction:
+            "T": "Total"
+        """)
+    p = _write_yaml(tmp_path, yaml_text)
+    prof = LabEDDProfile.load(p)
+    assert prof.map_value("qc_type", "TB") == "TRIP_BLANK"
+    assert prof.map_value("result_fraction", "T") == "Total"
+    assert prof.value_maps["matrix"]          # matrix_map still merged in
+
+
 def test_validate_edd_profile_missing_required_column(tmp_path):
     yaml = textwrap.dedent("""
     profile_id: test_lab
