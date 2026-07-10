@@ -100,6 +100,12 @@ def normalize_edd_rows(
     seen_sample_keys: set[tuple] = set()
 
     for row_num, row in enumerate(rows, start=2):  # 2 = data starts after header
+        # Readers that filter rows at load (wqx_csv) stamp the true source row
+        # so provenance doesn't drift after a skipped row.
+        try:
+            row_num = int(row.get("__source_row") or row_num)
+        except (TypeError, ValueError):
+            pass
 
         # --- extract required fields ---
         sample_id   = profile.resolve_column(row, "sample_id")

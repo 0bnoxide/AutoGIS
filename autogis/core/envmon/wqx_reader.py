@@ -46,6 +46,8 @@ def _get(row: dict, col: str) -> str:
 
 def read_wqx_csv(path: Path, profile, qa: Optional[QACollector] = None) -> list[dict]:
     """Read a WQP result CSV and return transformed flat row dicts."""
+    # qa-less callers (e.g. the sample-roster preview) intentionally drop the
+    # reader warnings; every import path threads its collector through.
     qa = qa if qa is not None else QACollector()
     with Path(path).open(newline="", encoding=profile.encoding) as fh:
         rows = list(csv.DictReader(fh))
@@ -66,6 +68,9 @@ def transform_wqx_rows(rows: list[dict], profile, qa: QACollector) -> list[dict]
                    source_row=row_num)
             continue
         row = dict(src)
+        # True source row for provenance — the normalizer re-enumerates the
+        # (filtered) list, which drifts after a skipped row.
+        row["__source_row"] = row_num
         _fold_analyte(row)
         _coalesce_matrix(row)
         _synthesize_result(row, profile, qa, row_num)
@@ -105,19 +110,30 @@ def _synthesize_result(row: dict, profile, qa: QACollector, row_num: int) -> Non
                    source_row=row_num)
         row["__wqx_result"] = "ND"
         return
-    if condition and mapped is None and not value:
-        # Unmapped condition + empty value would parse BLANK -> IsNotAnalyzed=1
-        # with zero trace; the normalizer never surfaces parse warnings.
-        qa.add(SEV_WARNING, "wqx_unmapped_detection_condition",
-               f"Row {row_num}: ResultDetectionConditionText '{condition}' not "
-               f"in the profile detection_condition map and no result value — "
-               f"row will import as not-analyzed; verify and extend the map",
+    if condition and not value:
+        # Any non-ND condition with an empty value parses BLANK ->
+        # IsNotAnalyzed=1; the normalizer never surfaces parse warnings, so it
+        # must never happen silently — whether the condition is unmapped or
+        # mapped to "" (a detection, e.g. Detected Not Quantified).
+        category = ("wqx_unmapped_detection_condition" if mapped is None
+                    else "wqx_condition_without_result")
+        qa.add(SEV_WARNING, category,
+               f"Row {row_num}: ResultDetectionConditionText '{condition}' "
+               f"with no result value — row will import as not-analyzed; "
+               f"verify the detection_condition map",
                source_row=row_num)
     # mapped == "" (explicit not-an-ND) or no condition: the value stands.
     row["__wqx_result"] = value
 
 
 def _route_limit(row: dict, profile, qa: QACollector, row_num: int) -> None:
+    limit_unit = _get(row, _COL_LIMIT_UNIT)
+    result_unit = _get(row, _COL_RESULT_UNIT)
+    # Units for the record: result unit, else the limit's unit — WQP ND rows
+    # commonly carry no result unit, and storing an unconverted limit while
+    # Units falls back to ""/analyte-default would silently break the
+    # "limits are in result units" invariant (ADR-0075 decision 5).
+    row["__wqx_units"] = result_unit or limit_unit
     row["__wqx_reporting_limit"] = ""
     row["__wqx_detection_limit"] = ""
     raw = _get(row, _COL_LIMIT_VALUE)
@@ -132,8 +148,6 @@ def _route_limit(row: dict, profile, qa: QACollector, row_num: int) -> None:
         return
 
     # Convert-at-load policy (ADR-0075 decision 5): limit in result units.
-    limit_unit = _get(row, _COL_LIMIT_UNIT)
-    result_unit = _get(row, _COL_RESULT_UNIT)
     # Same-unit short-circuit — unregistered-but-equal units (pH, deg C, NTU)
     # need no conversion and must not warn. Empty limit unit = result units.
     if limit_unit and result_unit and limit_unit.casefold() != result_unit.casefold():

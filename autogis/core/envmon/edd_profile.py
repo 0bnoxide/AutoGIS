@@ -19,7 +19,7 @@ _VALID_FORMATS = {"flat_csv", "two_tab_xlsx", "wqx_csv"}
 class LabEDDProfile:
     profile_id: str
     lab_name: str
-    format: str                              # "flat_csv" | "two_tab_xlsx"
+    format: str                              # "flat_csv" | "two_tab_xlsx" | "wqx_csv"
     date_format: str
     encoding: str
     columns: dict[str, str | list[str]]     # field_name -> col_name(s)

@@ -110,6 +110,15 @@ def test_detected_not_quantified_is_a_detection():
     assert _categories(qa) == []
 
 
+def test_mapped_non_nd_condition_with_empty_value_warns():
+    # DNQ (a detection) with an EMPTY value imports as not-analyzed — that must
+    # never be silent (cold review F2).
+    out, qa = _transform(_row(ResultMeasureValue="",
+                              ResultDetectionConditionText="Detected Not Quantified"))
+    assert out[0]["__wqx_result"] == ""
+    assert "wqx_condition_without_result" in _categories(qa)
+
+
 # ---------------------------------------------------------------------------
 # Limit routing + unit policy (D4)
 # ---------------------------------------------------------------------------
@@ -178,6 +187,27 @@ def test_unconvertible_limit_unit_keeps_raw_and_warns():
            "DetectionQuantitationLimitMeasure/MeasureUnitCode": "NTU"}))
     assert out[0]["__wqx_reporting_limit"] == "0.4"   # raw kept
     assert "wqx_limit_unit_mismatch" in _categories(qa)
+
+
+def test_units_prefer_result_unit():
+    out, _ = _transform(_row())
+    assert out[0]["__wqx_units"] == "ug/L"
+
+
+def test_nd_row_units_fall_back_to_limit_unit_unconverted():
+    # WQP ND rows commonly carry no result unit; the record's Units must then
+    # be the limit's unit and the limit value must stay in that unit
+    # (cold review F3 — otherwise "limits in result units" silently breaks).
+    out, qa = _transform(_row(
+        **{"ResultMeasure/MeasureUnitCode": "",
+           "ResultMeasureValue": "",
+           "ResultDetectionConditionText": "Not Detected",
+           "DetectionQuantitationLimitTypeName": "Reporting Limit",
+           "DetectionQuantitationLimitMeasure/MeasureValue": "200",
+           "DetectionQuantitationLimitMeasure/MeasureUnitCode": "ng/L"}))
+    assert out[0]["__wqx_units"] == "ng/L"
+    assert out[0]["__wqx_reporting_limit"] == "200.0"
+    assert _categories(qa) == []
 
 
 def test_bad_limit_value_dropped_with_warn():
@@ -253,6 +283,13 @@ def test_rejected_row_skipped_with_warn():
     assert "wqx_rejected_row_skipped" in _categories(qa)
 
 
+def test_source_rows_survive_a_skipped_row():
+    qa = QACollector()
+    out = transform_wqx_rows(
+        [_row(ResultStatusIdentifier="Rejected"), _row()], PROFILE, qa)
+    assert out[0]["__source_row"] == 3        # true source row, not re-numbered
+
+
 def test_unmapped_activity_type_warns():
     out, qa = _transform(_row(
         ActivityTypeCode="Quality Control Sample-Reference Material"))
@@ -295,10 +332,12 @@ def test_end_to_end_wqp_csv(tmp_path):
         # Field replicate -> QCType=FIELD_DUP
         _row(ActivityTypeCode="Quality Control Sample-Field Replicate",
              ResultMeasureValue="4.8"),
-        # Non-detect with a DL-typed limit in ng/L (unit-converted to ug/L)
+        # Non-detect the way WQP really emits it: no result value AND no
+        # result unit — Units must fall back to the limit's unit, unconverted.
         _row(ResultMeasureValue="",
              ResultDetectionConditionText="Not Detected",
-             **{"DetectionQuantitationLimitTypeName": "Method Detection Level",
+             **{"ResultMeasure/MeasureUnitCode": "",
+                "DetectionQuantitationLimitTypeName": "Method Detection Level",
                 "DetectionQuantitationLimitMeasure/MeasureValue": "200",
                 "DetectionQuantitationLimitMeasure/MeasureUnitCode": "ng/L"}),
         # Rejected row — must not import
@@ -339,11 +378,16 @@ def test_end_to_end_wqp_csv(tmp_path):
     assert dup.QCType == "FIELD_DUP"
     assert total.QCType == ""
 
-    # ND: synthesized token + DL-routed, unit-converted limit
+    # ND: synthesized token + DL-routed limit; with no result unit the record's
+    # Units is the limit's unit and the value stays in it (consistent pair).
     assert nd.IsNonDetect == 1
     assert nd.ResultNumeric is None
-    assert nd.DetectionLimit == 0.2             # 200 ng/L -> 0.2 ug/L
+    assert nd.DetectionLimit == 200.0
+    assert nd.Units == "ng/L"
     assert nd.LimitType == "Method Detection Level"
+
+    # Provenance: the record AFTER the rejected row keeps its true source row.
+    assert nitrate.SourceRow == 7               # not re-numbered to 6
 
     # Speciation fold reaches the canonical name (key safety)
     assert nitrate.AnalyteCanonicalName == "Nitrate as N"
@@ -359,6 +403,22 @@ def test_end_to_end_wqp_csv(tmp_path):
     key_dup = compute_unique_key(dataclasses.asdict(dup),
                                  "Env_AnalyticalResults")
     assert key_dup not in (key_total, key_dissolved)
+
+
+def test_batch_import_surfaces_wqx_reader_qa(tmp_path):
+    # Regression (cold review F1): run_batch_import must thread its collector
+    # into read_edd_file, or every reader warning vanishes silently.
+    from autogis.core.envmon.batch_workbook_importer import run_batch_import
+
+    path = _write_csv(tmp_path, [_row(ResultStatusIdentifier="Rejected"),
+                                 _row()])
+    qa = QACollector()
+    result = run_batch_import(
+        [{"workbook_path": str(path), "profile_path": str(PROFILE_PATH),
+          "site_id": "S1"}],
+        analyte_dictionary=ANALYTES, qa=qa)
+    assert len(result.all_results) == 1
+    assert "wqx_rejected_row_skipped" in _categories(qa)
 
 
 def test_speciated_alias_must_map_to_speciated_canonical():

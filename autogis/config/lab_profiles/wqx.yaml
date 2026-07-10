@@ -25,7 +25,7 @@ columns:
   matrix:            "__wqx_matrix"
   analyte:           "__wqx_analyte"
   result:            "__wqx_result"
-  units:             "ResultMeasure/MeasureUnitCode"
+  units:             "__wqx_units"
   qualifier:         "MeasureQualifierCode"
   reporting_limit:   "__wqx_reporting_limit"
   detection_limit:   "__wqx_detection_limit"
