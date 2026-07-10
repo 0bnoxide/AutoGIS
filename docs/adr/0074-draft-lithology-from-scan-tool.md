@@ -1,15 +1,8 @@
-# ADR-XXXX: DraftLithologyFromScan — headless boring-log OCR tool + the `ocr` heavy-ML optional extra
+# ADR-0074: DraftLithologyFromScan — headless boring-log OCR tool + the `ocr` heavy-ML optional extra
 
 **Status:** Accepted
 
 **Date:** 2026-07-09
-
-> **Numbering:** filed as an `XXXX-` placeholder per `docs/adr/README.md` ("File
-> naming" — collision-prone parallel-branch case). Assign the real next-free
-> number **at merge**, after scanning `docs/adr/` *and* every open PR's files.
-> At authoring time `0072` is the highest merged number and `0073` is already
-> taken by open PR #209 (`0073-gui-report-plumbing-and-single-run-pause-parity.md`),
-> so `0074` is the apparent next-free — re-confirm before renaming.
 
 ## Context
 
@@ -164,7 +157,7 @@ does not reopen that gate.
    the whole point of matching the existing parser. `secondary_material` stays a
    mapping sink instead.
 4. **Guess the next ADR number (`0074`) now.** Rejected in favor of the repo's
-   documented `XXXX-` placeholder convention (assign at merge), because open PR
+   documented placeholder convention (assign at merge), because open PR
    #209 already holds `0073` and a second number guessed pre-merge can still
    3-way-collide — the exact failure mode `tests/test_adr_numbering.py` exists to
    catch (ADR-0034, 0061/0062 history).
