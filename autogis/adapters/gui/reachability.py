@@ -20,7 +20,7 @@ pure. ``introspect_cli(unreachable=UNREACHABLE)`` stamps the reason onto the
 matching ``CommandForm``s; ``app.py`` greys them. A workflow builder wanting to
 exclude never-runnable steps can reuse the same map.
 
-# ponytail: a hand-curated 12-entry list, not derived -- the redirect-vs-execute
+# ponytail: a hand-curated 8-entry list, not derived -- the redirect-vs-execute
 # split is encoded nowhere programmatic (both classes share the same LOCAL
 # Runtime + _guard call), so a curated list cross-checked against the CLI bodies
 # and ADR-0006/0039 is the honest source. test_gui_reachability guards drift.
@@ -41,19 +41,12 @@ _PRO_ONLY = (
 )
 _PRO_REASON = "Runs in ArcGIS Pro only; use the .pyt toolbox (ADR-0006)."
 
-# ADR-0039: scoped dead ends -- no standalone CLI *or* .pyt implementation.
-_DEAD_END_REASON = "No standalone CLI or .pyt implementation (ADR-0039)."
-_DEAD_ENDS = (
-    "optimize-callouts",
-    "manage-callout-overrides list",
-    "manage-callout-overrides clear",
-    "manage-callout-overrides lock",
-    "manage-callout-overrides unlock",
-)
-
 UNREACHABLE: dict[str, str] = {
     **{f"envmon {name}": _PRO_REASON for name in _PRO_ONLY},
-    **{f"envmon {name}": _DEAD_END_REASON for name in _DEAD_ENDS},
+    # ADR-0070: compatibility alias; the real implementation is the
+    # BuildCallouts .pyt parameter, so this standalone leaf still redirects.
+    "envmon optimize-callouts":
+        "Folded into BuildCallouts 'Use hull collision (numpy)' (ADR-0070).",
     # arcpy Export-to-CAD call not wired yet (planned) -- issue #105.
     "envmon build-cad-package":
         "CAD export (arcpy Export-to-CAD) not wired yet; see issue #105.",
