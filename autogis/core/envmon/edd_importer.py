@@ -323,6 +323,11 @@ def write_qa_to_gdb(gdb_path, qa, batch_id):  # pragma: no cover
     return _f(gdb_path, qa, batch_id)
 
 
+def create_or_update_gdb_schema(gdb_path, qa=None):  # pragma: no cover
+    from autogis.core.envmon.gdb_schema import create_or_update_gdb_schema as _f
+    return _f(gdb_path, qa=qa)
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator (calls import_to_gdb stubs above — arcpy required for GDB writes)
 # ---------------------------------------------------------------------------
@@ -343,6 +348,10 @@ def run_edd_import(
     """
     edd_path = Path(edd_path)
     gdb_path = Path(gdb_path)
+
+    # Self-heal the GDB schema (mirrors run_import in import_to_gdb.py): the
+    # widened key columns must exist before _existing_key_set reads them.
+    create_or_update_gdb_schema(gdb_path)
 
     batch_id = create_edd_import_batch(
         gdb_path, edd_path, site_id, profile.lab_name, profile.profile_id,

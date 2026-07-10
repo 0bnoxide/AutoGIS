@@ -281,6 +281,10 @@ def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
     def fake_write_qa(gdb_path, qa, batch_id):
         calls.append("write_qa")
 
+    def fake_schema(gdb_path, qa=None):
+        calls.append("schema")
+
+    monkeypatch.setattr(mod, "create_or_update_gdb_schema", fake_schema)
     monkeypatch.setattr(mod, "create_edd_import_batch", fake_create)
     monkeypatch.setattr(mod, "append_records_idempotent", fake_append)
     monkeypatch.setattr(mod, "finalize_batch", fake_finalize)
@@ -299,13 +303,46 @@ def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
     )
 
     assert batch_id == "BATCH-001"
-    assert calls[0] == "create"
+    assert calls[0] == "schema"
+    assert calls[1] == "create"
     assert "append:Env_Samples" in calls
     assert "append:Env_AnalyticalResults" in calls
     assert "finalize" in calls
     assert "write_qa" in calls
     assert calls.index("finalize") > calls.index("append:Env_Samples")
     assert calls.index("finalize") > calls.index("append:Env_AnalyticalResults")
+
+
+def test_run_edd_import_ensures_schema_first(tmp_path, monkeypatch):
+    """run_edd_import must self-heal the GDB schema before anything else."""
+    import autogis.core.envmon.edd_importer as mod
+
+    calls = []
+
+    monkeypatch.setattr(mod, "create_or_update_gdb_schema",
+                        lambda gdb, qa=None: calls.append("schema"))
+    monkeypatch.setattr(mod, "create_edd_import_batch",
+                        lambda *a, **k: (calls.append("batch"), "BATCH-001")[1])
+    monkeypatch.setattr(mod, "append_records_idempotent",
+                        lambda *a, **k: (calls.append("append"), (0, 0))[1])
+    monkeypatch.setattr(mod, "finalize_batch", lambda *a, **k: calls.append("finalize"))
+    monkeypatch.setattr(mod, "write_qa_to_gdb", lambda *a, **k: calls.append("write_qa"))
+
+    profile = _profile(tmp_path)
+    gdb = tmp_path / "test.gdb"
+
+    batch_id = mod.run_edd_import(
+        edd_path=FIXTURE_CSV,
+        profile=profile,
+        gdb_path=gdb,
+        site_id="H281",
+        analyte_dictionary=ANALYTES,
+        screening_levels=SCREENING,
+    )
+
+    assert batch_id == "BATCH-001"
+    assert calls[0] == "schema"
+    assert "batch" in calls and "append" in calls
 
 
 # ---------------------------------------------------------------------------
