@@ -246,7 +246,8 @@ def _read_shp_header_bbox(path: Path) -> tuple[float, float, float, float]:
     """Native-CRS bbox straight from the 100-byte .shp header (ESRI spec:
     file code 9994 big-endian at byte 0; xmin/ymin/xmax/ymax little-endian
     doubles at byte 36). No fiona/geopandas needed."""
-    header = path.read_bytes()[:100]
+    with path.open("rb") as fh:          # only the 100-byte header, not the whole .shp
+        header = fh.read(100)
     if len(header) < 68 or struct.unpack(">i", header[:4])[0] != 9994:
         raise ValueError(f"{path} is not a shapefile (bad .shp header)")
     xmin, ymin, xmax, ymax = struct.unpack("<4d", header[36:68])

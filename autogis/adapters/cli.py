@@ -2956,7 +2956,7 @@ def download_dem_cmd(dataset, bbox, aoi, out_path, overwrite, output_format,
             dataset, bbox=bbox or None, aoi_path=aoi, out_path=out_path,
             api_key=api_key, output_format=output_format,
             overwrite=overwrite, on_progress=on_progress)
-    except (ValueError, FileExistsError, RuntimeError, OSError) as err:
+    except (ValueError, RuntimeError, OSError) as err:  # OSError covers FileExistsError
         raise click.ClickException(str(err))
 
     if result.bytes_written:

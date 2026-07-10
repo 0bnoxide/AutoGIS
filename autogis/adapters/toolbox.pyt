@@ -913,13 +913,18 @@ class DownloadOpenTopoDEM(object):
             map_sr = active_map.spatialReference
             projected = out.with_name(
                 f"{out.stem}_epsg{map_sr.factoryCode or 'map'}{out.suffix}")
-            arcpy.management.ProjectRaster(str(out), str(projected), map_sr)
+            # BILINEAR (not the ProjectRaster NEAREST default) — a DEM is
+            # continuous elevation; nearest-neighbour resampling stair-steps it.
+            arcpy.management.ProjectRaster(
+                str(out), str(projected), map_sr, "BILINEAR")
             add_path = projected
             messages.addMessage(f"Reprojected to {map_sr.name}: {projected}")
         if bool(p["add_to_map"].value) and active_map is not None:
             layer = active_map.addDataFromPath(str(add_path))
             view = aprx.activeView
-            if view is not None and hasattr(view, "camera"):
+            zoomed = view is not None and hasattr(view, "camera")
+            if zoomed:
                 view.camera.setExtent(view.getLayerExtent(layer))
-            messages.addMessage(f"Added {add_path} to map "
-                                f"'{active_map.name}' and zoomed to it.")
+            messages.addMessage(
+                f"Added {add_path} to map '{active_map.name}'"
+                + (" and zoomed to it." if zoomed else "."))

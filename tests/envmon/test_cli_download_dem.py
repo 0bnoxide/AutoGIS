@@ -3,8 +3,6 @@
 The download path is exercised by monkeypatching the core module's
 _default_http_get seam; no test touches the network.
 """
-import json
-
 import pytest
 from click.testing import CliRunner
 
