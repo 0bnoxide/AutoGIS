@@ -30,6 +30,7 @@ from autogis.core.envmon import (
     export_summary,
     draft_plume_boundary,
     event_changelog,
+    generate_event_report,
 )
 
 _D = dt.date(2026, 6, 26)
@@ -145,6 +146,23 @@ def test_export_summary_total_count_is_one(tmp_path):
     total = next(r[1] for r in ws.iter_rows(min_row=2, values_only=True)
                  if r[0] == "Benzene")
     assert total == 1                            # not 3
+
+
+def test_generate_event_report_summary_counts_are_canonical(tmp_path):
+    # Executive-summary counts must not tally QC rows or both fractions. One
+    # grain: Total (not exceeding) + Dissolved + a QC row stamped as exceeding.
+    # Canonical => 1 result, 0 exceedances; without it => 3 results, 1 exceedance.
+    results_path = tmp_path / "results.csv"
+    write_records_csv(
+        [_full_record(ResultFraction="Total", ExceedsScreeningLevel=0),
+         _full_record(ResultFraction="Dissolved", ExceedsScreeningLevel=0),
+         _full_record(QCType="FIELD_BLANK", ExceedsScreeningLevel=1)],
+        results_path, record_class=AnalyticalResultRecord)
+
+    md = generate_event_report.generate_event_report(
+        "S1", "2026Q2", results_csv=results_path, qa=QACollector())
+    assert "| Total analytical results | 1 |" in md          # not 3
+    assert "| Screening level exceedances | 0 |" in md        # QC exceedance dropped
 
 
 def test_event_changelog_qc_row_does_not_flip_classification():

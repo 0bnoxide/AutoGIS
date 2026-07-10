@@ -91,7 +91,7 @@ Each ADR follows this structure:
 | [076](0076-run-history-canonical-tool-site-identity.md) | Canonical tool/site identity in CLI run history; restore GUI override reachability | Accepted | 2026-07-09 |
 | [077](0077-arcpy-api-currency-policy.md) | arcpy API-currency policy — every new/changed arcpy call (incl. `.pyt` parameter/filter objects) must be verified against current Esri docs before shipping; compliance floor ArcGIS Pro 3.5, prefer 3.6/3.7; deprecated-at-3.5 calls banned | Accepted | 2026-07-10 |
 | [078](0078-opentopography-dem-download.md) | OpenTopography DEM download tool — hybrid CLI/`.pyt`, arcpy-free core, dataset auto-routing, new `opentopo` (`pyproj`) optional extra | Accepted | 2026-07-10 |
-| [079](0079-close-canonical-read-merge-gate.md) | Close the ADR-0075 canonical-read merge gate — `canonical_records` adapter + 10 consumers converted; canonical-consumer boundary defined by value/flag columns (not table/analyte name); `apply_screening`/`evaluate_rpd_qa`/`validate_database` SPECIAL (keep QC); legacy field-name island out of scope; Step-2/3 follow-ups | Accepted | 2026-07-10 |
+| [079](0079-close-canonical-read-merge-gate.md) | Close the ADR-0075 canonical-read merge gate — `canonical_records` adapter + 11 consumers converted; canonical-consumer boundary defined by value/flag columns (not table/analyte name); `apply_screening`/`evaluate_rpd_qa`/`validate_database` SPECIAL (keep QC); legacy field-name island out of scope; Step-2/3 follow-ups | Accepted | 2026-07-10 |
 
 ## File naming
 

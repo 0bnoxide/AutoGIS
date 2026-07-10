@@ -42,9 +42,15 @@ the canonical and the legacy vocabularies, so it does not distinguish them.
 analyte pivot/count/screen): `compare_events`, `history_report`,
 `export_summary_tables`, `export_geojson`, `schedule_vs_actual`, `data_gaps`,
 `export_summary`, `draft_plume_boundary`, `dashboard_data_mart`,
-`event_changelog` — plus `build_current_event` (the ADR-0075 reference). For
-`draft_plume_boundary` fraction resolution is load-bearing (a well exceeding
-only on the non-preferred fraction must not seed a plume vertex).
+`event_changelog`, `generate_event_report` — plus `build_current_event` (the
+ADR-0075 reference). For `draft_plume_boundary` fraction resolution is
+load-bearing (a well exceeding only on the non-preferred fraction must not seed
+a plume vertex). `generate_event_report` is a count consumer (it tallies
+`n_results`/`n_exceedances` over the raw `--results-csv`); because
+`apply_screening` stamps `ExceedsScreeningLevel` on every raw row including QC,
+that flag alone is not exceedance-count-safe, so the raw results are
+canonicalized before the executive-summary counts (its other inputs are
+already-canonical tool outputs).
 `dashboard_data_mart` is arcpy-gated (`pragma: no cover`); it surfaces the
 drop/resolve messages via the module logger. Every headless conversion has a
 regression test in `tests/envmon/test_merge_gate_canonical.py`.

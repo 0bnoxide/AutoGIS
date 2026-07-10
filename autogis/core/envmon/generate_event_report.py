@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from autogis.core.common.qa import QACollector, SEV_INFO
+from autogis.core.envmon.canonical_read import canonical_result_rows
 
 
 def _load_csv(path: Optional[Path]) -> list:
@@ -72,6 +73,12 @@ def generate_event_report(
     generated = (generated_date or date.today()).isoformat()
 
     results = _load_csv(results_csv)
+    # Canonical-read the raw results before the executive-summary counts so QC
+    # rows and Total/Dissolved pairs don't inflate n_results / n_exceedances
+    # (ADR-0079). apply_screening stamps ExceedsScreeningLevel on every raw row,
+    # so that flag alone is not exceedance-count-safe. The other inputs are
+    # already-canonical tool outputs. No-op on legacy CSVs lacking discriminators.
+    results = canonical_result_rows(results, qa)
     comparisons = _load_csv(comparison_csv)
     history = _load_csv(history_csv)
     gaps = _load_csv(gaps_csv)
