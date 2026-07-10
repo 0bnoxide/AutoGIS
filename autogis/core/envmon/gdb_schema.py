@@ -7,9 +7,10 @@ nothing is ever deleted.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+import datetime as _dt
+from dataclasses import dataclass
 from datetime import date
-from typing import List, Optional
+from typing import Optional
 
 # field tuples: (name, esri_type, length_or_None)
 T = "TEXT"; D = "DOUBLE"; L = "LONG"; DT = "DATE"; SH = "SHORT"
@@ -61,7 +62,14 @@ TABLE_SCHEMAS = {
         ("IsNotAnalyzed", SH, None), ("IsNotSampled", SH, None),
         ("IsNotMeasured", SH, None), ("ScreeningLevel", D, None),
         ("ScreeningLevelSource", T, 64), ("ExceedsScreeningLevel", SH, None),
-        ("DisplayText", T, 64), ("DisplayColorClass", T, 16)] + _SRC,
+        ("DisplayText", T, 64), ("DisplayColorClass", T, 16),
+        # --- Step-1 canonical expansion (ADR-0075, SCHEMA_VERSION 2.2) ---
+        ("ResultFraction", T, 32), ("QCType", T, 32),
+        ("MethodDilutionKey", T, 64), ("MethodID", T, 64),
+        ("MethodName", T, 128), ("AnalysisDate", DT, None),
+        ("LimitType", T, 32), ("LabName", T, 128),
+        ("PrepMethodID", T, 64), ("PrepDate", DT, None),
+        ("ResultBasis", T, 16), ("MethodSpeciation", T, 32)] + _SRC,
     "Env_RPDResults": [
         ("ImportBatchID", T, 64), ("SiteID", T, 32), ("EventDate", DT, None),
         ("ParentLocationID", T, 32), ("DuplicateLocationID", T, 32),
@@ -336,10 +344,38 @@ UNIQUE_KEYS = {
     "Env_Samples": ["SiteID", "Matrix", "SampleID", "SampleDate"],
     "Env_AnalyticalResults": ["SiteID", "Matrix", "LocationID", "SampleID",
                               "SampleDate", "AnalyteCanonicalName",
-                              "DepthIntervalText", "SourceCell"],
+                              "DepthIntervalText", "SourceCell",
+                              "ResultFraction", "QCType",
+                              "MethodDilutionKey"],
     "Env_RPDResults": ["SiteID", "EventDate", "ParentLocationID",
                        "AnalyteName"],
 }
+
+
+def _norm_key_part(v):
+    """Normalize one key part exactly as the idempotent-append dedup does.
+
+    NULL and empty-string collapse to the same key part: an existing GDB row
+    read back with a NULL discriminator (arcpy yields ``None``) must dedup
+    against a freshly normalized record whose defaulted discriminator is
+    ``""`` — otherwise a self-heal schema upgrade re-imports the same legacy
+    source as a duplicate (ADR-0075)."""
+    if v is None:
+        return ""
+    if isinstance(v, (_dt.datetime, _dt.date)):
+        return v.strftime("%Y-%m-%d")
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    if isinstance(v, str):
+        return v.strip().upper()
+    return v
+
+
+def compute_unique_key(record_dict: dict, table_name: str) -> tuple:
+    """The exact key append_records_idempotent dedups on. Pure, arcpy-free —
+    the load-bearing seam the synthetic key-distinctness tests exercise."""
+    return tuple(_norm_key_part(record_dict.get(k))
+                 for k in UNIQUE_KEYS[table_name])
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +423,20 @@ class AnalyticalResultRecord:
     DisplayText: str; DisplayColorClass: str
     SourceWorkbook: str; SourceSheet: str; SourceRow: int
     SourceColumn: str; SourceCell: str
+    # --- Step-1 canonical expansion (ADR-0075). Key discriminators default
+    # "" (never None — idempotency); dates are not key parts, default None.
+    ResultFraction: str = ""
+    QCType: str = ""
+    MethodDilutionKey: str = ""
+    MethodID: str = ""
+    MethodName: str = ""
+    AnalysisDate: Optional[date] = None
+    LimitType: str = ""
+    LabName: str = ""
+    PrepMethodID: str = ""
+    PrepDate: Optional[date] = None
+    ResultBasis: str = ""
+    MethodSpeciation: str = ""
 
 
 @dataclass
@@ -399,11 +449,6 @@ class RPDRecord:
     RPDValue: Optional[float]; RL: Optional[float]
     FiveTimesRL: Optional[float]; RPDStatus: str; CalculationError: str
     SourceWorkbook: str; SourceSheet: str; SourceRow: int
-
-
-def record_to_row(record, field_names: List[str]) -> list:
-    d = asdict(record) if not isinstance(record, dict) else record
-    return [d.get(f) for f in field_names]
 
 
 # ---------------------------------------------------------------------------

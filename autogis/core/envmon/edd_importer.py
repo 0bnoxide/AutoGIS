@@ -130,8 +130,8 @@ def normalize_edd_rows(
                        source_sheet=source_name, source_row=row_num)
 
         # --- matrix ---
-        matrix = profile.matrix_map.get(matrix_raw, matrix_raw)
-        if matrix_raw and matrix_raw not in profile.matrix_map:
+        matrix = profile.map_value("matrix", matrix_raw)
+        if matrix_raw and matrix_raw not in profile.value_maps.get("matrix", {}):
             qa.add(SEV_WARNING, "edd_unknown_matrix",
                    f"Row {row_num}: matrix '{matrix_raw}' not in profile "
                    f"matrix_map; using as-is",
@@ -168,6 +168,25 @@ def normalize_edd_rows(
         rl_raw  = profile.resolve_column(row, "reporting_limit")
         method  = profile.resolve_column(row, "method") or ""
         lab_sid = profile.resolve_column(row, "lab_sample_id") or ""
+        fraction   = profile.map_value(
+            "result_fraction", profile.resolve_column(row, "result_fraction") or "")
+        qc_type    = profile.map_value(
+            "qc_type", profile.resolve_column(row, "qc_type") or "")
+        # Step-1 composition: the mapped dilution_factor column verbatim.
+        # Readers with richer run discriminators (Step 2/3) precompose a
+        # value and map method_dilution_key-equivalent columns to it via the
+        # profile — deterministic from source either way (ADR-0075).
+        dilution   = (profile.resolve_column(row, "dilution_factor") or "").strip()
+        method_name = profile.resolve_column(row, "method_name") or ""
+        analysis_date = parse_excel_date(
+            profile.resolve_column(row, "analysis_date") or "")
+        limit_type = profile.resolve_column(row, "limit_type") or ""
+        lab_name   = profile.resolve_column(row, "lab_name") or ""
+        prep_method = profile.resolve_column(row, "prep_method") or ""
+        prep_date  = parse_excel_date(
+            profile.resolve_column(row, "prep_date") or "")
+        result_basis = profile.resolve_column(row, "result_basis") or ""
+        speciation = profile.resolve_column(row, "method_speciation") or ""
         try:
             dt = float(profile.resolve_column(row, "depth_top_ft") or "")
         except (ValueError, TypeError):
@@ -262,6 +281,18 @@ def normalize_edd_rows(
             SourceRow=row_num,
             SourceColumn="",
             SourceCell="",
+            ResultFraction=fraction,
+            QCType=qc_type,
+            MethodDilutionKey=dilution,
+            MethodID=method,
+            MethodName=method_name,
+            AnalysisDate=analysis_date,
+            LimitType=limit_type,
+            LabName=lab_name,
+            PrepMethodID=prep_method,
+            PrepDate=prep_date,
+            ResultBasis=result_basis,
+            MethodSpeciation=speciation,
         ))
 
     return samples, results
@@ -292,6 +323,11 @@ def write_qa_to_gdb(gdb_path, qa, batch_id):  # pragma: no cover
     return _f(gdb_path, qa, batch_id)
 
 
+def create_or_update_gdb_schema(gdb_path, qa=None):  # pragma: no cover
+    from autogis.core.envmon.gdb_schema import create_or_update_gdb_schema as _f
+    return _f(gdb_path, qa=qa)
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator (calls import_to_gdb stubs above — arcpy required for GDB writes)
 # ---------------------------------------------------------------------------
@@ -312,6 +348,10 @@ def run_edd_import(
     """
     edd_path = Path(edd_path)
     gdb_path = Path(gdb_path)
+
+    # Self-heal the GDB schema (mirrors run_import in import_to_gdb.py): the
+    # widened key columns must exist before _existing_key_set reads them.
+    create_or_update_gdb_schema(gdb_path)
 
     batch_id = create_edd_import_batch(
         gdb_path, edd_path, site_id, profile.lab_name, profile.profile_id,

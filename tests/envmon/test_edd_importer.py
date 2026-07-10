@@ -281,6 +281,10 @@ def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
     def fake_write_qa(gdb_path, qa, batch_id):
         calls.append("write_qa")
 
+    def fake_schema(gdb_path, qa=None):
+        calls.append("schema")
+
+    monkeypatch.setattr(mod, "create_or_update_gdb_schema", fake_schema)
     monkeypatch.setattr(mod, "create_edd_import_batch", fake_create)
     monkeypatch.setattr(mod, "append_records_idempotent", fake_append)
     monkeypatch.setattr(mod, "finalize_batch", fake_finalize)
@@ -299,10 +303,123 @@ def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
     )
 
     assert batch_id == "BATCH-001"
-    assert calls[0] == "create"
+    assert calls[0] == "schema"
+    assert calls[1] == "create"
     assert "append:Env_Samples" in calls
     assert "append:Env_AnalyticalResults" in calls
     assert "finalize" in calls
     assert "write_qa" in calls
     assert calls.index("finalize") > calls.index("append:Env_Samples")
     assert calls.index("finalize") > calls.index("append:Env_AnalyticalResults")
+
+
+def test_run_edd_import_ensures_schema_first(tmp_path, monkeypatch):
+    """run_edd_import must self-heal the GDB schema before anything else."""
+    import autogis.core.envmon.edd_importer as mod
+
+    calls = []
+
+    monkeypatch.setattr(mod, "create_or_update_gdb_schema",
+                        lambda gdb, qa=None: calls.append("schema"))
+    monkeypatch.setattr(mod, "create_edd_import_batch",
+                        lambda *a, **k: (calls.append("batch"), "BATCH-001")[1])
+    monkeypatch.setattr(mod, "append_records_idempotent",
+                        lambda *a, **k: (calls.append("append"), (0, 0))[1])
+    monkeypatch.setattr(mod, "finalize_batch", lambda *a, **k: calls.append("finalize"))
+    monkeypatch.setattr(mod, "write_qa_to_gdb", lambda *a, **k: calls.append("write_qa"))
+
+    profile = _profile(tmp_path)
+    gdb = tmp_path / "test.gdb"
+
+    batch_id = mod.run_edd_import(
+        edd_path=FIXTURE_CSV,
+        profile=profile,
+        gdb_path=gdb,
+        site_id="H281",
+        analyte_dictionary=ANALYTES,
+        screening_levels=SCREENING,
+    )
+
+    assert batch_id == "BATCH-001"
+    assert calls[0] == "schema"
+    assert "batch" in calls and "append" in calls
+
+
+# ---------------------------------------------------------------------------
+# Step-1 canonical expansion (ADR-0075) — 12 new optional fields
+# ---------------------------------------------------------------------------
+
+_BASE_COLUMNS = {
+    "sample_id": "SysLocCode", "location_id": "SysLocCode",
+    "event_date": "CollDate", "matrix": "Medium", "analyte": "Chemical",
+    "result": "Result", "units": "Unit", "qualifier": "Qualifier",
+    "reporting_limit": "RL",
+}
+
+_BASE_ROW = {
+    "SysLocCode": "MW-1", "CollDate": "06/26/2026", "Medium": "GW",
+    "Chemical": "Benzene", "Result": "0.5", "Unit": "ug/L",
+    "Qualifier": "", "RL": "",
+}
+
+
+def _make_profile(columns: dict, value_maps: dict | None = None) -> LabEDDProfile:
+    return LabEDDProfile(
+        profile_id="test_lab", lab_name="Test Lab", format="flat_csv",
+        date_format="%m/%d/%Y", encoding="utf-8", columns=columns,
+        matrix_map={}, nondetect_qualifiers=["U", "UJ"],
+        value_maps=value_maps or {},
+    )
+
+
+def _normalize(rows, profile):
+    qa = QACollector()
+    return normalize_edd_rows(
+        rows, profile, site_id="S1", batch_id="B1",
+        analyte_dictionary=dict(ANALYTES), screening_levels=SCREENING, qa=qa,
+    )
+
+
+def test_normalize_edd_rows_populates_new_fields():
+    profile = _make_profile(
+        columns={
+            **_BASE_COLUMNS,
+            "result_fraction": "Fraction", "qc_type": "QC",
+            "dilution_factor": "Dil", "method": "Method",
+            "method_name": "MethodName", "analysis_date": "AnalDate",
+            "limit_type": "LimType", "lab_name": "Lab",
+            "prep_method": "PrepMeth", "prep_date": "PrepDate",
+            "result_basis": "Basis", "method_speciation": "Speciation",
+        },
+        value_maps={"result_fraction": {"T": "Total"},
+                    "qc_type": {"TB": "TRIP_BLANK"}},
+    )
+    row = {**_BASE_ROW, "Fraction": "T", "QC": "TB", "Dil": "5",
+           "Method": "EPA 8260", "MethodName": "VOCs by GC/MS",
+           "AnalDate": "06/27/2026", "LimType": "MDL", "Lab": "Pace",
+           "PrepMeth": "5030B", "PrepDate": "06/26/2026", "Basis": "DRY",
+           "Speciation": "as N"}
+    _, results = _normalize([row], profile)
+    r = results[0]
+    assert r.ResultFraction == "Total"          # value-mapped
+    assert r.QCType == "TRIP_BLANK"             # value-mapped
+    assert r.MethodDilutionKey == "5"
+    assert r.MethodID == "EPA 8260"
+    assert r.MethodName == "VOCs by GC/MS"
+    assert r.AnalysisDate is not None
+    assert r.LimitType == "MDL"
+    assert r.LabName == "Pace"
+    assert r.PrepMethodID == "5030B"
+    assert r.PrepDate is not None
+    assert r.ResultBasis == "DRY"
+    assert r.MethodSpeciation == "as N"
+
+
+def test_normalize_edd_rows_unmapped_new_columns_default_empty():
+    # A profile with NO new column mappings (today's TestAmerica shape)
+    # must produce "" discriminators / None dates — bit-identical dedup.
+    profile = _make_profile(columns=_BASE_COLUMNS)
+    _, results = _normalize([dict(_BASE_ROW)], profile)
+    r = results[0]
+    assert (r.ResultFraction, r.QCType, r.MethodDilutionKey) == ("", "", "")
+    assert r.AnalysisDate is None and r.PrepDate is None
