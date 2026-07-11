@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 
 from autogis.core.common.qa import QACollector
-from autogis.core.envmon.generate_event_report import generate_event_report
+from autogis.core.envmon.generate_event_report import (
+    generate_event_report, generate_event_report_html, _gather_event_data,
+)
 
 
 def test_minimal_report():
@@ -152,3 +154,41 @@ def test_nonexistent_csv_ignored(tmp_path):
         generated_date=date(2026, 6, 28),
     )
     assert "# Monitoring Event Report" in md  # report still generated
+
+
+def _results_csv(tmp_path):
+    p = tmp_path / "results.csv"
+    p.write_text(
+        "LocationID,AnalyteCanonicalName,DisplayText,ScreeningLevel,"
+        "ExceedsScreeningLevel,DisplayColorClass\n"
+        "MW-1,Benzene,5.5,5.0,1,EXCEED\n"
+        "MW-2,Benzene,<1.0,5.0,0,OK\n",
+        encoding="utf-8")
+    return p
+
+
+def test_event_html_has_kpi_and_exceedance_badge(tmp_path):
+    qa = QACollector()
+    html = generate_event_report_html(
+        "S", "2026Q2", results_csv=_results_csv(tmp_path), qa=qa)
+    assert html.startswith("<!doctype html>")
+    assert 'class="kpi-row"' in html
+    assert "EXCEED" in html and "tone-bad" in html
+
+
+def test_md_and_html_agree_on_exceedance_count(tmp_path):
+    qa1, qa2 = QACollector(), QACollector()
+    md = generate_event_report("S", "2026Q2", results_csv=_results_csv(tmp_path), qa=qa1)
+    data = _gather_event_data("S", "2026Q2", results_csv=_results_csv(tmp_path), qa=qa2)
+    # exec-summary row order: [total, exceedances, gaps, rpd]
+    assert data["summary_rows"][1][1] == 1
+    assert "Screening level exceedances | 1" in md.replace("  ", " ")
+
+
+def test_badge_tone_falls_back_when_colorclass_missing(tmp_path):
+    p = tmp_path / "r.csv"
+    p.write_text("LocationID,AnalyteCanonicalName,DisplayText,ScreeningLevel,"
+                 "ExceedsScreeningLevel\nMW-9,Lead,20,15,1\n", encoding="utf-8")
+    qa = QACollector()
+    html = generate_event_report_html("S", "E", results_csv=p, qa=qa)
+    assert "tone-bad" in html  # fell back to ExceedsScreeningLevel=1
