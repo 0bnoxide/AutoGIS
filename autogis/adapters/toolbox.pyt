@@ -279,6 +279,7 @@ class ImportToGdb(object):
                    "GPBoolean", required=False, default=False),
         ]
 
+    @toolbox_core.record_pyt_run("import-gdb")
     def execute(self, parameters, messages):
         from autogis.adapters.guard import require_runtime
         require_runtime("import-gdb")
@@ -323,6 +324,7 @@ class BuildCurrentEvent(object):
                    "GPString", required=False),
         ]
 
+    @toolbox_core.record_pyt_run("build-event")
     def execute(self, parameters, messages):
         from autogis.adapters.guard import require_runtime
         require_runtime("build-event")
@@ -366,6 +368,7 @@ class BuildCallouts(object):
                    "GPBoolean", required=False, default=False),
         ]
 
+    @toolbox_core.record_pyt_run("build-callouts")
     def execute(self, parameters, messages):
         from autogis.adapters.guard import require_runtime
         require_runtime("build-callouts")
@@ -421,6 +424,7 @@ class GroundwaterContours(object):
                    "DEFeatureClass", required=False),
         ]
 
+    @toolbox_core.record_pyt_run("gw-contours")
     def execute(self, parameters, messages):
         from autogis.adapters.guard import require_runtime
         require_runtime("gw-contours")
@@ -466,6 +470,7 @@ class ExportFigures(object):
                    required=False, default=False),
         ]
 
+    @toolbox_core.record_pyt_run("export-figures")
     def execute(self, parameters, messages):
         from autogis.adapters.guard import require_runtime
         require_runtime("export-figures")
@@ -558,6 +563,7 @@ class FullPipeline(object):
                    required=False, default=False),
         ]
 
+    @toolbox_core.record_pyt_run("full-pipeline")
     def execute(self, parameters, messages):
         from autogis.adapters.guard import require_runtime
         require_runtime("full-pipeline")
@@ -669,6 +675,7 @@ class ReconcileSampleLocations(object):
                    required=False, default=0.8),
         ]
 
+    @toolbox_core.record_pyt_run("reconcile-locations")
     def execute(self, parameters, messages):
         from autogis.runtime.sessions import arcpy_env
         from autogis.core.envmon.reconcile_locations import (
@@ -729,6 +736,7 @@ class ConditionDEM(object):
                    required=False, default=False),
         ]
 
+    @toolbox_core.record_pyt_run("condition-dem", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.core.envmon.dem_conditioning import (
             build_config, condition_dem, validate_config)
@@ -775,6 +783,7 @@ class CompareDroneSurfaces(object):
                    required=False, default=0.2),
         ]
 
+    @toolbox_core.record_pyt_run("compare-drone-surfaces", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.core.envmon.compare_drone_surfaces import (
             compare_surfaces, validate_baseline_args)

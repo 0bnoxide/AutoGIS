@@ -4,6 +4,9 @@
 
 **Date:** 2026-07-06
 
+> **Accepted update (2026-07-10):** The user approved the destination
+> precedence below and implementation is now authorized.
+
 > **Placeholder number.** Parallel ADR streams collide on real numbers
 > (ADR-0034 collision, PR #127; 0061/0062→0063 double collision). Assign the
 > next free number at merge time, checking every open PR's files, not just
@@ -48,7 +51,7 @@ Two adjacent facts a reviewer needs:
   (Windows/msvcrt — and Pro is Windows-only), so a `.pyt` writer can run
   concurrently with CLI/GUI writers on a shared drive.
 
-## Proposed decision
+## Decision
 
 1. **Add an arcpy-free recording helper to `adapters/toolbox_core.py`** —
    the module that exists precisely so `.pyt` logic can be unit-tested
