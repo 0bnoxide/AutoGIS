@@ -394,7 +394,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 2084 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # 2101 tests (see: python -m pytest --collect-only -q)
 ```
 
 ---
@@ -682,7 +682,7 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **2084 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: **2101 tests** (`python -m pytest --collect-only -q`). All core logic is
 arcpy-free and CI-able.
 
 ```bash
