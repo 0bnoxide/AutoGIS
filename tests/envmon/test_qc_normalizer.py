@@ -137,3 +137,46 @@ def test_missing_sample_id_skips_with_error():
     recs, qa = _run([_qc_row(**{"#sys_sample_code": ""})])
     assert recs == []
     assert any(r.severity == SEV_ERROR for r in qa.records)
+
+
+def test_run_edd_import_splits_qc_stream(monkeypatch, tmp_path):
+    from autogis.core.envmon import edd_importer
+
+    seen = {"appends": []}
+    monkeypatch.setattr(edd_importer, "create_or_update_gdb_schema",
+                        lambda gdb, qa=None: None)
+    monkeypatch.setattr(edd_importer, "create_edd_import_batch",
+                        lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(
+        edd_importer, "append_records_idempotent",
+        lambda gdb, table, records, qa, batch: seen["appends"].append(
+            (table, len(records))))
+    monkeypatch.setattr(edd_importer, "finalize_batch",
+                        lambda gdb, batch, qa, counts, status:
+                        seen.update(counts=counts))
+    monkeypatch.setattr(edd_importer, "write_qa_to_gdb",
+                        lambda *a, **k: None)
+
+    field_row = {"sid": "S1", "loc": "MW-1", "dt": "01/02/2026", "mx": "GW",
+                 "an": "Lead", "res": "1.2", "un": "ug/l", "q": "", "rl": ""}
+    qc_row = dict(_qc_row())
+    monkeypatch.setattr(edd_importer, "read_edd_file",
+                        lambda path, profile, qa=None: [field_row, qc_row])
+
+    from autogis.core.envmon.edd_profile import LabEDDProfile
+    profile = LabEDDProfile(
+        profile_id="p", lab_name="l", format="equis_xls",
+        date_format="%m/%d/%Y", encoding="utf-8",
+        columns={"sample_id": ["sid", "#sys_sample_code"],
+                 "location_id": "loc", "event_date": "dt", "matrix": "mx",
+                 "analyte": ["an", "chemical_name"], "result": "res",
+                 "units": "un", "qualifier": "q", "reporting_limit": "rl"},
+        matrix_map={}, nondetect_qualifiers=[])
+
+    edd_importer.run_edd_import(
+        tmp_path / "f.xls", profile, tmp_path / "g.gdb", "SITE1", {}, {})
+
+    tables = dict(seen["appends"])
+    assert tables["Env_AnalyticalResults"] == 1   # QC row not in analytical
+    assert tables["Env_QCResults"] == 1
+    assert seen["counts"]["qc_results"] == 1

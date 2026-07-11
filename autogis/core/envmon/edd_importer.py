@@ -525,8 +525,13 @@ def run_edd_import(
     qa = qa if qa is not None else QACollector()
     rows = read_edd_file(edd_path, profile, qa)
 
+    # Step-3 QC fork: readers with a QC concept (equis_xls) tag lab-QC rows;
+    # untagged formats pass through unchanged.
+    qc_rows = [r for r in rows if r.get("__equis_stream") == "qc"]
+    data_rows = [r for r in rows if r.get("__equis_stream") != "qc"]
+
     samples, results = normalize_edd_rows(
-        rows=rows,
+        rows=data_rows,
         profile=profile,
         site_id=site_id,
         batch_id=batch_id,
@@ -536,14 +541,21 @@ def run_edd_import(
         event_date_override=event_date_override,
     )
 
+    qc_records = []
+    if qc_rows:
+        qc_records = normalize_qc_rows(
+            qc_rows, profile, site_id, batch_id, analyte_dictionary, qa)
+
     append_records_idempotent(gdb_path, "Env_Samples", samples, qa, batch_id)
     append_records_idempotent(gdb_path, "Env_AnalyticalResults", results, qa, batch_id)
+    if qc_records:
+        append_records_idempotent(gdb_path, "Env_QCResults", qc_records, qa, batch_id)
 
     finalize_batch(
         gdb_path,
         batch_id,
         qa,
-        {"analytical_results": len(results)},
+        {"analytical_results": len(results), "qc_results": len(qc_records)},
         "ERROR" if qa.has_blocking() else "PASS",
     )
 
