@@ -95,6 +95,7 @@ Each ADR follows this structure:
 | [079](0079-close-canonical-read-merge-gate.md) | Close the ADR-0075 canonical-read merge gate — `canonical_records` adapter + 11 consumers converted; canonical-consumer boundary defined by value/flag columns (not table/analyte name); `apply_screening`/`evaluate_rpd_qa`/`validate_database` SPECIAL (keep QC); legacy field-name island out of scope; Step-2/3 follow-ups | Accepted | 2026-07-10 |
 | [080](0080-wqx-step2-import.md) | WQX Step-2 import — `wqx_csv` reader + DRAFT profile on the frozen EDD seam; ND synthesis, limit routing/convert-at-load, unconditional MethodDilutionKey fold, speciation fold; merged after the ADR-0079 gate (PR #223) | Accepted | 2026-07-10 |
 | [081](0081-lab-edd-profile-drafter.md) | LabEDD profile drafter — `draft-edd-profile` (2.3a) synonym-matching heuristic + `validate-lab-profile` (2.3b); NEEDS_REVIEW fields omitted so validation flags them; closes the two-profile-system disconnect (spec Slice 1, trimmed) | Accepted | 2026-07-10 |
+| [082](0082-edd-step3-equis-wmrd-slice1.md) | EDD Step 3 slice 1 — EQuIS WMRD `.xls` reader + `Env_QCResults` table (33 cols); xlrd required dep, D5 no-pivot reversal on real-file evidence, IsReportable-aware canonical-read reruns (closes ADR-0079 follow-up #3); key-collision limitation recorded, fix deferred | Accepted | 2026-07-10 |
 
 ## File naming
 
