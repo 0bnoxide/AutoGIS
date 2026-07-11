@@ -55,13 +55,18 @@ One canonical stylesheet, `autogis/core/common/report_assets/report.css`, is con
 2. **Python render layer** (`report_html.py`) → inlines that same file into every
    self-contained HTML report.
 
-Because both read the same CSS, the design in claude.ai/design and the reports the tools
-emit stay in lockstep.
+Shared CSS pins *styles*, but hand-authored previews could still drift from builder markup
+(class names / DOM). So the previews are **generated from the render layer**, not hand-authored
+(see §A) — closing the drift at the markup level too.
 
 ### § A — DesignSync component library
 
-A local bundle (built in the worktree, pushed via the `DesignSync` tool) of preview HTMLs,
-each carrying a first-line `<!-- @dsCard group="…" -->` marker. Groups:
+A local bundle **generated from the `report_html.py` builders** with small fixture data (a
+generator script calls `kpi_row`/`table`/`card`/`photo_grid`/etc. and wraps each in a preview
+page). This makes the "cannot drift" claim literally true and doubles as a render-layer smoke
+test. The bundle is **committed at `docs/design/report-templates/`** (generator +
+generated previews); the `DesignSync` tool pushes it. Each preview HTML carries a first-line
+`<!-- @dsCard group="…" -->` marker. Groups:
 
 - **Foundations** — neutral palette + one accent, system-font stack, type scale, spacing
   tokens. Report canvas is **always light** (documents print on white); DesignSync
@@ -94,34 +99,65 @@ photo_grid(images: list[tuple[str, str]]) -> str           # (data_uri_or_src, c
 ```
 
 - `tone` ∈ `{ok, warn, bad, info, neutral}`.
-- CSS is read once from `report_assets/report.css` and inlined into `<style>` so the output
-  is a single portable file (email/archive/print).
+- CSS is read once via `importlib.resources.files("autogis.core.common.report_assets")
+  .joinpath("report.css").read_text()` and inlined into `<style>` so the output is a single
+  portable file (email/archive/print). **`pyproject.toml` must add
+  `[tool.setuptools.package-data]` for `report_assets/*.css`** — otherwise the file is absent
+  in a non-editable/wheel install and `render_document` crashes. A test asserts the resource
+  resolves.
+- **Escaping convention (binding):** only params suffixed `*_html` (e.g. `card(title,
+  body_html)`, `section(heading, body_html)`) accept caller-supplied raw HTML; every other
+  value is `html.escape`-d. Attribute contexts (photo `src`/`data:` URI, captions,
+  `title` text placed in attributes) use `html.escape(..., quote=True)` so a `"` cannot break
+  out of the attribute. Tests cover **both** text-context and attribute-context injection.
 - **No new runtime dependency** for the core. The **photo-embedding path** reuses the
-  **existing `autogis[report]` extra** (Pillow, lazy-imported) — no *new* dep; no-photo
-  reports need nothing.
+  **existing `autogis[report]` extra** (`Pillow>=9.0`, lazy-imported) — no *new* dep; no-photo
+  reports need nothing. Thumbnail box is **300×225, JPEG q80** (matching the XLSX tool's
+  default) to keep per-well HTML small (~20–55 KB/photo after base64); pinned so nobody
+  embeds multi-MB originals.
 
 ### § C — Integration (both tools, additive)
 
+**Data/render split (binding).** Both tools embed *policy*, not just formatting — the event
+report runs the ADR-0079 `canonical_result_rows(...)` dedup before counting exceedances
+(`generate_event_report.py:81`) plus trend aggregation and 10/20-row caps. To keep the MD and
+HTML reports from ever disagreeing on counts, refactor each tool to **one gather-data function
+returning a plain structure, consumed by two thin renderers** (`_render_md`, `_render_html`).
+No data policy is re-implemented in the HTML path.
+
 **`well_inspection_report.py`**
-- Add `generate_well_report_html(...)`, `generate_site_summary_html(...)`.
-- `build_well_inspection_reports` gains `emit_html: bool` and optional photo inputs
-  (`manifest_path`, `harvest_dir`). Photos **reuse the existing pipeline**:
-  `match_photos_to_wells(manifest_rows, harvest_dir)` groups harvested photos by well ID;
-  `_prepared_image_bytes(path, box)` returns EXIF-corrected RGB JPEG thumbnails →
-  base64 `data:` URI → `photo_grid`. Same **pilot assumption** (well_id = first path
-  component of `saved_path`) and same QA tripwires (`wells_without_photos`,
-  `photos_without_record`) as the XLSX tool, inherited by reuse.
-- **Markdown stays the default**; HTML is additive.
+- Extract the per-well/summary assembly into a gather step; add `_render_html` for it.
+- `build_well_inspection_reports` gains `fmt: str = "md"` (driven by the CLI choice — a single
+  output format per run, **not** both) and optional photo inputs (`manifest_path`,
+  `harvest_dir`). Photos **reuse the existing pipeline**:
+  `match_photos_to_wells(manifest_rows, harvest_dir)` groups harvested photos by well ID; a
+  **promoted-public** `prepare_image_bytes(path, box)` (rename of the current sibling-private
+  `_prepared_image_bytes`) returns EXIF-corrected RGB JPEG thumbnails → base64 `data:` URI →
+  `photo_grid`. Same **pilot assumption** (well_id = first path component of `saved_path`) and
+  same QA tripwires (`wells_without_photos`, `photos_without_record`) as the XLSX tool,
+  inherited by reuse.
+- **Fail-fast on Pillow:** because reports are written per-well incrementally
+  (`well_inspection_report.py:198-215`), a mid-run `ImportError` would leave a half-written
+  output dir. When `--manifest`/`--harvest-dir` are supplied, probe Pillow availability
+  **before writing any file** and raise a clean error up front.
+- HTML output filenames mirror the MD stems: `<safe_well_id>.html`, `SiteSummary.html`.
+- **Markdown stays the default** (`fmt="md"`).
 
 **`generate_event_report.py`**
-- Add `generate_event_report_html(...)`. Reuse the existing `DisplayColorClass`
-  ("EXCEED"/"OK") → badge/tone mapping.
+- Extract a gather step (post-`canonical_result_rows`) returning the exec-summary / trend /
+  history / gaps / RPD structures; add `_render_html`. Output `<...>.html`.
+- **Badge tone** derives from `DisplayColorClass` (stamped by `apply_screening.py:65`, values
+  `EXCEED`/`OK`/`UNKNOWN`). Map `EXCEED→bad`, `OK→ok`; on `UNKNOWN` **or a missing column**
+  (legacy CSVs), fall back to the same `ExceedsScreeningLevel` parse the count logic uses
+  (`generate_event_report.py:98-101`).
 
 **CLI (`autogis/adapters/cli.py`)**
-- Add `--format {md,html}` (default `md`) to `generate-event-report` (line ~1261) and
-  `well-inspection-report` (line ~1306). For well-inspection HTML, add optional
+- Add `--format {md,html}` (default `md`, choices-style matching the `run-history`
+  convention) to `generate-event-report` (~line 1261) and `well-inspection-report`
+  (~line 1306) — one format per invocation. For well-inspection HTML, add optional
   `--manifest` / `--harvest-dir` to enable the photo grid (omitted → photoless HTML,
-  pure-stdlib). No existing behavior changes.
+  pure-stdlib). Update the `--output` help text (currently "Output Markdown (.md) file
+  path"). No existing behavior changes.
 
 ### § D — ADR
 
@@ -133,21 +169,39 @@ explicitly deferred; photo embedding reuses the existing `autogis[report]` extra
 
 ### § E — Testing (stdlib-only, no network/arcpy)
 
-- **Render layer**: XSS/escaping (a `<script>` cell renders inert), `table`/`kpi_row`/
-  `badge`/`photo_grid` structure, **self-contained** assertion (zero external `http(s)://`
-  or external `href`/`src` refs), deterministic output for fixed input.
+- **Render layer**: XSS/escaping in **both** contexts — a `<script>` **cell** renders inert
+  *and* a caption/`src` containing `"` cannot break out of its attribute; `table`/`kpi_row`/
+  `badge`/`photo_grid` structure; **self-contained** assertion (zero external `http(s)://` or
+  external `href`/`src` refs); deterministic output for fixed input; **CSS resource resolves**
+  via `importlib.resources` (guards the package-data gap).
 - **Tool HTML paths**: well-inspection HTML contains each well ID, the history table, and
-  `<img data:...>` when a manifest+harvest_dir with a matching photo is supplied; event HTML
-  contains the exec-summary KPI row and exceedance badges. No-photo path imports/runs with
-  neither Pillow nor arcpy installed.
+  `<img ... src="data:...">` when a manifest+harvest_dir with a matching photo is supplied;
+  event HTML contains the exec-summary KPI row and exceedance badges. **Gather/render parity:**
+  MD and HTML paths report identical exceedance/summary counts from the same input (guards the
+  data/render split). No-photo path imports/runs with neither Pillow nor arcpy installed; the
+  Pillow fail-fast raises before any file is written.
 
 ## Build order
 
-1. `report.css` + `report_html.py` render layer + its unit tests.
-2. DesignSync bundle (preview HTMLs sharing `report.css`) → `create_project` → push.
-3. Wire both tools + `--format html` CLI + tests.
+1. `report.css` + `report_html.py` render layer + `pyproject.toml` package-data + unit tests
+   (escaping both contexts, resource resolution, self-contained, determinism).
+2. Preview-bundle generator (imports the builders) → `docs/design/report-templates/` →
+   `create_project` ("AutoGIS Report Templates") → `DesignSync` push.
+3. Wire both tools: data/render split, `prepare_image_bytes` promotion, Pillow fail-fast,
+   `--format {md,html}` CLI + `--manifest`/`--harvest-dir` + tests (incl. gather/render parity).
 4. ADR-0082 + README count refresh.
 5. Cold `pr-reviewer` + `envmon-spec-checker` → PR (draft), closes #163.
+
+## Review incorporated (Fable, 2026-07-11, medium)
+
+Verdict SOUND-WITH-CHANGES; all findings verified against the worktree and adopted:
+generate previews from the render layer (§A); mandate data/render split so MD/HTML can't
+disagree on ADR-0079 counts (§C); `report.css` package-data + `importlib.resources` load (§B);
+promote `_prepared_image_bytes` public + Pillow fail-fast before incremental writes (§C);
+`DisplayColorClass` corrected to `apply_screening.py:65` with UNKNOWN/absent →
+`ExceedsScreeningLevel` fallback (§C); escaping convention pinned incl. attribute context, with
+tests (§B/§E); thumbnail box pinned 300×225 q80 (§B); resolved `--format` = one format per run,
+HTML filenames stated (§C).
 
 ## Invariants honored
 
