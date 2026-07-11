@@ -229,6 +229,20 @@ def normalize_edd_rows(
             except (ValueError, AttributeError):
                 pass
 
+        # Step-3 EQuIS additions — format-agnostic like detection_limit
+        # (every EQuIS dialect carries cas_rn / quantitation_limit /
+        # reportable_result natively; other formats simply don't map them).
+        cas_number = profile.resolve_column(row, "cas_number") or ""
+        quantitation_limit = None
+        ql_raw = profile.resolve_column(row, "quantitation_limit")
+        if ql_raw:
+            try:
+                quantitation_limit = float(ql_raw.replace(",", ""))
+            except (ValueError, AttributeError):
+                pass
+        rep_raw = (profile.resolve_column(row, "is_reportable") or "").strip()
+        is_reportable = int(rep_raw) if rep_raw in ("0", "1") else None
+
         # --- analyte dictionary entry ---
         entry = ({k: v for k, v in analyte_dictionary.items()
                   if not k.startswith("_")}.get(canonical) or {})
@@ -318,6 +332,9 @@ def normalize_edd_rows(
             PrepDate=prep_date,
             ResultBasis=result_basis,
             MethodSpeciation=speciation,
+            CASNumber=cas_number,
+            QuantitationLimit=quantitation_limit,
+            IsReportable=is_reportable,
         ))
 
     return samples, results
