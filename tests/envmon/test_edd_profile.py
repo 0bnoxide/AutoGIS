@@ -179,3 +179,33 @@ def test_validate_edd_profile_missing_required_column(tmp_path):
     qa = QACollector()
     validate_edd_profile(profile, qa)
     assert any(r.severity == SEV_ERROR and "sample_id" in r.message for r in qa.records)
+
+
+def test_equis_xls_is_valid_format():
+    profile = LabEDDProfile(
+        profile_id="p", lab_name="l", format="equis_xls",
+        date_format="%m/%d/%Y", encoding="utf-8",
+        columns={c: "x" for c in ("sample_id", "location_id", "event_date",
+                                  "matrix", "analyte", "result", "units",
+                                  "qualifier", "reporting_limit")},
+        matrix_map={}, nondetect_qualifiers=[],
+    )
+    qa = QACollector()
+    validate_edd_profile(profile, qa)
+    assert not qa.has_blocking()
+
+
+def test_batch_sheet_defaults_empty_and_loads(tmp_path):
+    p = tmp_path / "prof.yaml"
+    p.write_text(
+        "profile_id: p\nformat: equis_xls\n"
+        "sample_sheet: Sample_v1\nresult_sheet: TestResultQC_v1\n"
+        "batch_sheet: Batch_v1\ncolumns: {}\n",
+        encoding="utf-8")
+    prof = LabEDDProfile.load(p)
+    assert prof.batch_sheet == "Batch_v1"
+    assert LabEDDProfile(
+        profile_id="p", lab_name="l", format="equis_xls",
+        date_format="%m/%d/%Y", encoding="utf-8", columns={},
+        matrix_map={}, nondetect_qualifiers=[],
+    ).batch_sheet == ""

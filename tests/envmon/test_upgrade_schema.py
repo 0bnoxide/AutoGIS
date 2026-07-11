@@ -38,8 +38,8 @@ def test_all_new_tables_in_schema():
 
 
 def test_total_table_count():
-    assert len(TABLE_SCHEMAS) == 37, (
-        f"Expected 37 tables (9 existing + 28 new), got {len(TABLE_SCHEMAS)}"
+    assert len(TABLE_SCHEMAS) == 38, (
+        f"Expected 38 tables (9 existing + 29 new), got {len(TABLE_SCHEMAS)}"
     )
 
 
@@ -63,7 +63,7 @@ from autogis.core.envmon.upgrade_schema import (  # noqa: E402
 
 
 def test_schema_version_constant():
-    assert SCHEMA_VERSION == "2.2"
+    assert SCHEMA_VERSION == "2.3"
 
 
 def test_table_upgrade_status_attributes():
