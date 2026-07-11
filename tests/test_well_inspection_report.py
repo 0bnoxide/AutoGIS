@@ -4,6 +4,7 @@ from autogis.core.envmon.well_inspection_report import (
     build_well_inspection_reports,
     generate_site_summary,
     generate_well_report,
+    generate_well_report_html,
 )
 
 
@@ -125,3 +126,82 @@ def test_duplicate_well_id_does_not_silently_overwrite(tmp_path):
     assert len(well_reports) == 1
     assert "North" in (out_dir / "MW-1.md").read_text(encoding="utf-8")
     assert any(r.category == "duplicate_well_id" for r in qa.records)
+
+
+def _wells_csv(tmp_path):
+    p = tmp_path / "wells.csv"
+    p.write_text("WellID,Owner\nMW-1,ACME\n", encoding="utf-8")
+    return p
+
+
+def test_generate_well_report_html_contains_id_and_history():
+    html = generate_well_report_html(
+        "MW-1", {"WellID": "MW-1", "Owner": "ACME"},
+        [{"InspectionDate": "2026-04-01", "Condition": "GOOD", "Notes": "ok"}],
+    )
+    assert "MW-1" in html and "2026-04-01" in html and "<table" in html
+
+
+def test_build_writes_html_when_fmt_html(tmp_path):
+    qa = QACollector()
+    written = build_well_inspection_reports(
+        _wells_csv(tmp_path), tmp_path / "out", site_id="S", fmt="html", qa=qa,
+    )
+    assert any(str(p).endswith("MW-1.html") for p in written)
+    assert any(str(p).endswith("SiteSummary.html") for p in written)
+    body = (tmp_path / "out" / "MW-1.html").read_text(encoding="utf-8")
+    assert body.startswith("<!doctype html>")
+    assert "http://" not in body and "https://" not in body   # self-contained
+
+
+def test_photo_grid_embeds_matching_photo(tmp_path):
+    # Positive path (spec §E): a real JPEG under harvest/MW-1/ with an ABSOLUTE
+    # saved_path must land as an inline <img src="data:..."> in MW-1.html.
+    # TRAP: match_photos_to_wells does Path(saved).relative_to(harvest_dir);
+    # a RELATIVE saved_path against an absolute harvest_dir is silently dropped,
+    # so the saved_path here MUST be absolute or the test passes vacuously.
+    pytest = __import__("pytest")
+    Image = pytest.importorskip("PIL.Image")  # Pillow-gated
+    harvest = tmp_path / "harvest"
+    (harvest / "MW-1").mkdir(parents=True)
+    img_path = harvest / "MW-1" / "wellhead.jpg"
+    Image.new("RGB", (32, 24), (120, 140, 160)).save(img_path, "JPEG")
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "attachment_id,original_name,saved_path,disposition\n"
+        f"1,wellhead.jpg,{img_path},downloaded\n", encoding="utf-8")
+    out = tmp_path / "out"
+    qa = QACollector()
+    build_well_inspection_reports(
+        _wells_csv(tmp_path), out, site_id="S", fmt="html",
+        manifest_path=manifest, harvest_dir=harvest, qa=qa,
+    )
+    body = (out / "MW-1.html").read_text(encoding="utf-8")
+    assert 'src="data:image/jpeg;base64,' in body
+    assert "wellhead.jpg" in body  # caption
+
+
+def test_photo_inputs_without_pillow_fail_fast(tmp_path, monkeypatch):
+    # Simulate Pillow missing: the probe must raise BEFORE any file is written.
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "PIL" or name.startswith("PIL."):
+            raise ImportError("no pillow")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("attachment_id,saved_path,disposition\n1,harv/MW-1/a.jpg,downloaded\n",
+                        encoding="utf-8")
+    (tmp_path / "harv" / "MW-1").mkdir(parents=True)
+    out = tmp_path / "out"
+    qa = QACollector()
+    import pytest
+    with pytest.raises(ImportError):
+        build_well_inspection_reports(
+            _wells_csv(tmp_path), out, site_id="S", fmt="html",
+            manifest_path=manifest, harvest_dir=tmp_path / "harv", qa=qa,
+        )
+    assert not out.exists() or not list(out.glob("*.html"))

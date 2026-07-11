@@ -10,12 +10,14 @@ No arcpy dependency. No openpyxl. Pure stdlib.
 """
 from __future__ import annotations
 
+import base64
 import csv
 import re
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from autogis.core.common import report_html as rh
 from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 
 _PASSING_CONDITIONS = {"GOOD", "OK", "PASS", "SATISFACTORY"}
@@ -107,6 +109,104 @@ def generate_well_report(
     return "\n".join(lines)
 
 
+def generate_well_report_html(
+    well_id: str,
+    well_row: dict,
+    inspections: List[dict],
+    *,
+    generated_date: Optional[date] = None,
+    photos: "list[tuple[str, str]]" = (),
+) -> str:
+    """Self-contained HTML report for one well (mirror of generate_well_report).
+
+    photos: (data-URI, caption) pairs; empty -> no photo section.
+    """
+    generated = (generated_date or date.today()).isoformat()
+    meta = {k: v for k, v in well_row.items() if k != "WellID"}
+    sections: List[str] = []
+    if inspections:
+        latest = inspections[0]
+        cond = latest.get("Condition", "")
+        tone = "ok" if cond.strip().upper() in _PASSING_CONDITIONS else "warn"
+        latest_html = (
+            f'<p>Date: {rh.esc(latest.get("InspectionDate", ""))} · '
+            f'Condition: {rh.badge(cond or "—", tone)} · '
+            f'Notes: {rh.esc(latest.get("Notes", ""))}</p>'
+        )
+        sections.append(rh.section("Latest Inspection", latest_html))
+        hist = rh.table(
+            ["Date", "Condition", "Notes"],
+            [[i.get("InspectionDate", ""), i.get("Condition", ""),
+              i.get("Notes", "")] for i in inspections],
+        )
+        sections.append(rh.section("Inspection History", hist))
+    else:
+        sections.append(rh.section("Inspection History",
+                                   "<p><em>No inspection records on file.</em></p>"))
+    if photos:
+        sections.append(rh.section("Field Photos", rh.photo_grid(photos)))
+    return rh.render_document(
+        title=f"Well Inspection Report — {well_id}",
+        meta=meta, sections=sections, generated=generated,
+    )
+
+
+def generate_site_summary_html(
+    wells: List[dict],
+    inspections_by_well: Dict[str, List[dict]],
+    *,
+    site_id: str,
+    generated_date: Optional[date] = None,
+    qa: QACollector,
+) -> str:
+    """HTML site summary (mirror of generate_site_summary; same QA emits)."""
+    generated = (generated_date or date.today()).isoformat()
+    never, attention, rows = [], [], []
+    for w in wells:
+        wid = w.get("WellID", "")
+        history = inspections_by_well.get(wid, [])
+        if not history:
+            never.append(wid)
+            cond, dt = "NEVER INSPECTED", ""
+        else:
+            cond = history[0].get("Condition", "")
+            dt = history[0].get("InspectionDate", "")
+            if cond.strip().upper() not in _PASSING_CONDITIONS:
+                attention.append(wid)
+        rows.append([wid, dt, cond])
+
+    def tone_of(i, j):
+        if j != 2:
+            return None
+        c = rows[i][2].strip().upper()
+        if c == "NEVER INSPECTED":
+            return "warn"
+        return "ok" if c in _PASSING_CONDITIONS else "bad"
+
+    kpi = rh.kpi_row([
+        ("Total wells", len(wells), "neutral"),
+        ("Never inspected", len(never), "warn" if never else "ok"),
+        ("Needs attention", len(attention), "bad" if attention else "ok"),
+    ])
+    tbl = rh.table(["WellID", "Latest Inspection", "Condition"], rows, tone_of=tone_of)
+    body = rh.render_document(
+        title=f"Well Inspection Site Summary — {site_id}",
+        sections=[rh.section("Summary", kpi), rh.section("Well Status", tbl)],
+        generated=generated,
+    )
+    if never:
+        qa.add(SEV_WARNING, "wells_never_inspected",
+               f"{len(never)} well(s) have no inspection history: {', '.join(never)}")
+    if attention:
+        qa.add(SEV_WARNING, "wells_need_attention",
+               f"{len(attention)} well(s) have a non-passing latest condition: "
+               f"{', '.join(attention)}")
+    qa.add(SEV_INFO, "well_inspection_summary_complete",
+           f"Site summary: {len(wells)} well(s), {len(never)} never inspected, "
+           f"{len(attention)} need attention")
+    return body
+
+
 def generate_site_summary(
     wells: List[dict],
     inspections_by_well: Dict[str, List[dict]],
@@ -173,11 +273,19 @@ def build_well_inspection_reports(
     site_id: str,
     maintenance_log_csv: Optional[Path] = None,
     generated_date: Optional[date] = None,
+    fmt: str = "md",
+    manifest_path: Optional[Path] = None,
+    harvest_dir: Optional[Path] = None,
     qa: QACollector,
 ) -> List[Path]:
-    """Load inputs and write one Markdown file per well plus a site summary.
+    """Load inputs and write one report file per well plus a site summary.
 
-    Returns the list of Markdown file paths written (wells first, summary last).
+    fmt: "md" (default) writes Markdown; "html" writes self-contained HTML.
+    manifest_path/harvest_dir: optional harvester manifest + harvest root,
+        reused (fmt="html" only) to embed a per-well photo grid via
+        well_inspection_photo_report's matching/thumbnail pipeline.
+
+    Returns the list of file paths written (wells first, summary last).
     """
     wells = _load_csv(wells_csv)
     inspections = _load_csv(maintenance_log_csv)
@@ -189,6 +297,39 @@ def build_well_inspection_reports(
         # Newest first; ISO date strings sort lexically.
         inspections_by_well[wid].sort(
             key=lambda r: r.get("InspectionDate", ""), reverse=True)
+
+    # Photo grid (HTML only): reuse the harvester pipeline. Fail fast on a
+    # missing Pillow BEFORE writing any file (reports are written per-well).
+    photos_by_well: Dict[str, list] = {}
+    if fmt == "html" and manifest_path and harvest_dir:
+        from autogis.core.envmon.index_field_attachments import load_manifest
+        from autogis.core.envmon.well_inspection_photo_report import (
+            match_photos_to_wells, prepare_image_bytes,
+        )
+        try:
+            import PIL  # noqa: F401  (fail-fast capability probe)
+        except ImportError as exc:
+            raise ImportError('Pillow is required to embed photos. Install with: '
+                              'pip install "autogis[report]"') from exc
+        manifest_rows = load_manifest(Path(manifest_path))
+        photo_map = match_photos_to_wells(manifest_rows, Path(harvest_dir), qa=qa)
+        missing: List[str] = []
+        for wid, entries in photo_map.items():
+            imgs = []
+            for e in entries:
+                data = prepare_image_bytes(e.get("saved_path", ""), (300, 225))
+                if data is None:
+                    missing.append(e.get("original_name") or e.get("saved_path", ""))
+                    continue
+                uri = "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
+                imgs.append((uri, e.get("original_name") or ""))
+            if imgs:
+                photos_by_well[wid] = imgs
+        if missing:
+            # Parity with the XLSX tool's photo_files_missing WARNING.
+            qa.add(SEV_WARNING, "photo_files_missing",
+                   f"{len(missing)} manifest photo(s) not found on disk: "
+                   f"{', '.join(missing)}")
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -205,20 +346,35 @@ def build_well_inspection_reports(
         seen_well_ids.add(wid)
         deduped_wells.append(well_row)
 
-        content = generate_well_report(
-            wid, well_row, inspections_by_well.get(wid, []),
-            generated_date=generated_date,
-        )
         safe_wid = _sanitize_well_id(wid, qa=qa)
-        path = output_dir / f"{safe_wid}.md"
+        if fmt == "html":
+            content = generate_well_report_html(
+                wid, well_row, inspections_by_well.get(wid, []),
+                generated_date=generated_date,
+                photos=photos_by_well.get(wid, ()),
+            )
+            path = output_dir / f"{safe_wid}.html"
+        else:
+            content = generate_well_report(
+                wid, well_row, inspections_by_well.get(wid, []),
+                generated_date=generated_date,
+            )
+            path = output_dir / f"{safe_wid}.md"
         path.write_text(content, encoding="utf-8")
         written.append(path)
 
-    summary_content = generate_site_summary(
-        deduped_wells, inspections_by_well, site_id=site_id,
-        generated_date=generated_date, qa=qa,
-    )
-    summary_path = output_dir / "SiteSummary.md"
+    if fmt == "html":
+        summary_content = generate_site_summary_html(
+            deduped_wells, inspections_by_well, site_id=site_id,
+            generated_date=generated_date, qa=qa,
+        )
+        summary_path = output_dir / "SiteSummary.html"
+    else:
+        summary_content = generate_site_summary(
+            deduped_wells, inspections_by_well, site_id=site_id,
+            generated_date=generated_date, qa=qa,
+        )
+        summary_path = output_dir / "SiteSummary.md"
     summary_path.write_text(summary_content, encoding="utf-8")
     written.append(summary_path)
 
