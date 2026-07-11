@@ -20,6 +20,14 @@ module per the harvester's pattern, so it becomes unit-testable outside
 Pro instead of only discoverable by running the tool inside ArcGIS Pro.
 See issue #108 / the fable-architecture-review finding M2.
 """
+import json
+import os
+import uuid
+from contextlib import contextmanager
+from datetime import datetime
+from functools import wraps
+from pathlib import Path
+
 from autogis.core.harvest.models import HarvestConfig, AttachmentResult
 
 
@@ -72,3 +80,106 @@ def run_harvest(config: HarvestConfig, session) -> list[AttachmentResult]:
 
     summary = harvest(session, config)
     return list(summary.results)
+
+
+def _pyt_run_history_path(dest_hint: Path | None) -> Path | None:
+    """Resolve the Pro-safe run-history destination (ADR-0068)."""
+    dest = os.environ.get("AUTOGIS_RUN_HISTORY", "")
+    if dest.lower() == "off":
+        return None
+    if dest:
+        return Path(dest)
+    if dest_hint:
+        return Path(dest_hint) / "run_history.csv"
+    return Path.cwd() / "run_history.csv"
+
+
+def _site_id_from_config(path: str | None) -> str:
+    if not path:
+        return ""
+    try:
+        from autogis.core.common.config import load_config
+        return str(load_config(Path(path)).get("site_id") or "")
+    except Exception:
+        return ""
+
+
+class _CountingMessages:
+    """Forward Pro messages while retaining their severity for run history."""
+    def __init__(self, messages):
+        self._messages = messages
+        self.counts = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+
+    def addErrorMessage(self, *args, **kwargs):
+        self.counts["ERROR"] += 1
+        return self._messages.addErrorMessage(*args, **kwargs)
+
+    def addWarningMessage(self, *args, **kwargs):
+        self.counts["WARNING"] += 1
+        return self._messages.addWarningMessage(*args, **kwargs)
+
+    def addMessage(self, *args, **kwargs):
+        self.counts["INFO"] += 1
+        return self._messages.addMessage(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._messages, name)
+
+
+@contextmanager
+def recording_pyt_run(tool_name: str, *, inputs: dict, dest_hint: Path | None,
+                      site_id: str = "", event_id: str | None = None,
+                      qa_counts: dict | None = None):
+    """Best-effort run-history recording around one `.pyt` execution."""
+    started = datetime.now()
+    exc = None
+    try:
+        yield
+    except BaseException as err:
+        exc = err
+        raise
+    finally:
+        try:
+            path = _pyt_run_history_path(dest_hint)
+            if path is not None:
+                from autogis.core.common.run_history import RunHistory, RunRecord
+                counts = qa_counts or {}
+                status = "cancelled" if isinstance(exc, KeyboardInterrupt) else (
+                    "error" if exc is not None or counts.get("ERROR", 0)
+                    else "success")
+                message = ("" if exc is None
+                           else f"{type(exc).__name__}: {exc}")
+                if not message and counts.get("ERROR", 0):
+                    message = f"{counts['ERROR']} error QA message(s)"
+                RunHistory(path).write(RunRecord(
+                    run_id=str(uuid.uuid4()), tool_name=tool_name, site_id=site_id,
+                    event_id=event_id, started_at=started, finished_at=datetime.now(),
+                    status=status, inputs=json.loads(json.dumps(inputs, default=str)),
+                    outputs={}, qa_count_error=counts.get("ERROR", 0),
+                    qa_count_warning=counts.get("WARNING", 0),
+                    qa_count_info=counts.get("INFO", 0), message=message,
+                ))
+        except Exception:
+            pass  # observability must not change a Pro tool's outcome
+
+
+def record_pyt_run(tool_name: str, *, gdb_param: str = "gdb",
+                   site_config_param: str | None = "site_config",
+                   event_param: str = "event_date"):
+    """Decorate a thin `.pyt` execute method with the shared recorder."""
+    def decorator(execute):
+        @wraps(execute)
+        def wrapped(self, parameters, messages):
+            inputs = {p.name: p.valueAsText for p in parameters}
+            gdb = inputs.get(gdb_param)
+            recording_messages = _CountingMessages(messages)
+            with recording_pyt_run(
+                tool_name, inputs=inputs,
+                dest_hint=Path(gdb).parent if gdb else None,
+                site_id=_site_id_from_config(inputs.get(site_config_param)),
+                event_id=inputs.get(event_param) or None,
+                qa_counts=recording_messages.counts,
+            ):
+                return execute(self, parameters, recording_messages)
+        return wrapped
+    return decorator

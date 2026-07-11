@@ -47,3 +47,13 @@ AND every open PR's files before writing (this repo has collided on ADR numbers
 repeatedly).
 **Reasoning:** The vocabulary boundary, the three deliberate non-conversions, and
 the enforcement posture are decisions, not mere execution of 0075.
+
+## Record `.pyt` runs at the shared toolbox seam
+**Decision:** Implement ADR-0068 after the user confirmed its proposed
+destination precedence: `AUTOGIS_RUN_HISTORY`, then the target GDB's parent,
+then the current directory. Decorate only the nine redirect-only Pro tools.
+**Reasoning:** Their CLI paths do not execute the work, so CLI-seam recording
+cannot make readiness satisfiable. A decorator leaves each untestable `execute()`
+body unchanged apart from one line while keeping record construction headless-tested.
+**Revisit if:** a `.pyt` tool starts shelling out to the CLI; add a skip-list to
+avoid duplicate records, mirroring ADR-0054.

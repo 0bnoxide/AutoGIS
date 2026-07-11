@@ -1,13 +1,8 @@
 # ADR-0068: Record run history for `.pyt` toolbox executions via a toolbox_core helper
 
-**Status:** Proposed (draft — do not implement without review)
+**Status:** Accepted
 
-**Date:** 2026-07-06
-
-> **Placeholder number.** Parallel ADR streams collide on real numbers
-> (ADR-0034 collision, PR #127; 0061/0062→0063 double collision). Assign the
-> next free number at merge time, checking every open PR's files, not just
-> `ls docs/adr/`.
+**Date:** 2026-07-11
 
 ## Context
 
@@ -48,7 +43,7 @@ Two adjacent facts a reviewer needs:
   (Windows/msvcrt — and Pro is Windows-only), so a `.pyt` writer can run
   concurrently with CLI/GUI writers on a shared drive.
 
-## Proposed decision
+## Decision
 
 1. **Add an arcpy-free recording helper to `adapters/toolbox_core.py`** —
    the module that exists precisely so `.pyt` logic can be unit-tested
@@ -60,10 +55,11 @@ Two adjacent facts a reviewer needs:
        ...  # the existing execute() body
    ```
 
-   It owns timing, status classification (clean exit → `success`;
-   `KeyboardInterrupt` → `cancelled`; any exception → `error`, re-raised
-   unchanged), input sanitization (`json.dumps(..., default=str)`, same as
-   `RecordingCommand._record`), and the best-effort `RunHistory.write()`.
+   It owns timing, status classification (an error-level Pro message or any
+   exception → `error`; `KeyboardInterrupt` → `cancelled`; warnings retain
+   `success`, matching the CLI's default `fail-on=error`), input sanitization
+   (`json.dumps(..., default=str)`, same as `RecordingCommand._record`), and
+   the best-effort `RunHistory.write()`.
    Fully pytest-able with no arcpy present.
 
 2. **Each `.pyt` `execute()` wraps its body in the context manager** — one
@@ -97,11 +93,9 @@ Two adjacent facts a reviewer needs:
    ever changes, mirror ADR-0054's `_SELF_LOGGING_COMMANDS` skip-list
    approach.
 
-6. **Implementation gate**: per ADR-0039's discipline ("don't build
-   untestable arcpy-only plumbing under an architecture-cleanup change"),
-   the `.pyt`-side wiring ships only with a functional QA pass inside a real
-   ArcGIS Pro session (same class as issues #173/#178), verifying a record
-   actually lands where `evaluate-readiness --run-history` reads it.
+6. **Implementation gate**: the required functional QA pass inside a real
+   ArcGIS Pro session is tracked in #231. It must verify that a record lands
+   where `evaluate-readiness --run-history` reads it.
 
 ## Consequences
 
