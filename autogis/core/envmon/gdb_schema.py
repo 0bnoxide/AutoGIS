@@ -69,7 +69,27 @@ TABLE_SCHEMAS = {
         ("MethodName", T, 128), ("AnalysisDate", DT, None),
         ("LimitType", T, 32), ("LabName", T, 128),
         ("PrepMethodID", T, 64), ("PrepDate", DT, None),
-        ("ResultBasis", T, 16), ("MethodSpeciation", T, 32)] + _SRC,
+        ("ResultBasis", T, 16), ("MethodSpeciation", T, 32),
+        # --- Step-3 EQuIS additions (slice-1 spec 2026-07-10) ---
+        ("CASNumber", T, 32), ("QuantitationLimit", D, None),
+        ("IsReportable", SH, None)] + _SRC,
+    # Lab-QC results (blanks, LCS/LCSD, MS/MSD, surrogates, CCV/ICV...) —
+    # Step-3 slice 1; field list finalized by the 2026-07-09 paper mapping.
+    "Env_QCResults": [
+        ("ImportBatchID", T, 64), ("SiteID", T, 32), ("Matrix", T, 16),
+        ("PrepBatchID", T, 64), ("AnalysisBatchID", T, 64),
+        ("QCType", T, 32), ("SampleID", T, 64), ("ParentSampleID", T, 64),
+        ("LabSampleID", T, 64), ("AnalyteName", T, 128),
+        ("AnalyteCanonicalName", T, 128), ("CASNumber", T, 32),
+        ("MethodID", T, 64), ("ResultFraction", T, 32),
+        ("MethodDilutionKey", T, 64), ("AnalysisDate", DT, None),
+        ("ResultRawText", T, 64), ("ResultNumeric", D, None),
+        ("Units", T, 16), ("ReportingLimit", D, None),
+        ("DetectionLimit", D, None), ("Qualifier", T, 16),
+        ("IsNonDetect", SH, None), ("SpikeAmount", D, None),
+        ("OriginalConcentration", D, None), ("PercentRecovery", D, None),
+        ("RecoveryLowerLimit", D, None), ("RecoveryUpperLimit", D, None),
+        ("RPD", D, None), ("RPDControlLimit", D, None)] + _SRC[:3],
     "Env_RPDResults": [
         ("ImportBatchID", T, 64), ("SiteID", T, 32), ("EventDate", DT, None),
         ("ParentLocationID", T, 32), ("DuplicateLocationID", T, 32),
@@ -273,6 +293,9 @@ TABLE_SCHEMAS = {
         ("OverallReady", SH, None), ("LastUpdated", T, 32)],
 }
 
+# Alias for backward compatibility and test imports
+TABLE_FIELDS = TABLE_SCHEMAS
+
 FEATURE_SCHEMAS = {
     # name: (geometry_type, fields). MonitoringWells/SoilBorings are usually
     # pre-existing site layers; created as placeholders + QA when missing.
@@ -347,6 +370,9 @@ UNIQUE_KEYS = {
                               "DepthIntervalText", "SourceCell",
                               "ResultFraction", "QCType",
                               "MethodDilutionKey"],
+    "Env_QCResults": ["SiteID", "Matrix", "AnalysisBatchID", "SampleID",
+                      "QCType", "AnalyteCanonicalName", "ResultFraction",
+                      "MethodID", "MethodDilutionKey"],
     "Env_RPDResults": ["SiteID", "EventDate", "ParentLocationID",
                        "AnalyteName"],
 }
@@ -437,6 +463,10 @@ class AnalyticalResultRecord:
     PrepDate: Optional[date] = None
     ResultBasis: str = ""
     MethodSpeciation: str = ""
+    # --- Step-3 EQuIS additions (slice-1 spec 2026-07-10) ---
+    CASNumber: str = ""
+    QuantitationLimit: Optional[float] = None
+    IsReportable: Optional[int] = None
 
 
 @dataclass
@@ -449,6 +479,41 @@ class RPDRecord:
     RPDValue: Optional[float]; RL: Optional[float]
     FiveTimesRL: Optional[float]; RPDStatus: str; CalculationError: str
     SourceWorkbook: str; SourceSheet: str; SourceRow: int
+
+
+@dataclass
+class QCResultRecord:
+    """Lab-QC result row (Env_QCResults). Field names == schema names.
+
+    Key discriminators default "" (never None — idempotency, ADR-0075);
+    numeric/date data fields default None."""
+    ImportBatchID: str; SiteID: str; Matrix: str
+    SampleID: str; QCType: str
+    AnalyteName: str; AnalyteCanonicalName: str
+    SourceWorkbook: str; SourceSheet: str; SourceRow: int
+    PrepBatchID: str = ""
+    AnalysisBatchID: str = ""
+    ParentSampleID: str = ""
+    LabSampleID: str = ""
+    CASNumber: str = ""
+    MethodID: str = ""
+    ResultFraction: str = ""
+    MethodDilutionKey: str = ""
+    AnalysisDate: Optional[date] = None
+    ResultRawText: str = ""
+    ResultNumeric: Optional[float] = None
+    Units: str = ""
+    ReportingLimit: Optional[float] = None
+    DetectionLimit: Optional[float] = None
+    Qualifier: str = ""
+    IsNonDetect: int = 0
+    SpikeAmount: Optional[float] = None
+    OriginalConcentration: Optional[float] = None
+    PercentRecovery: Optional[float] = None
+    RecoveryLowerLimit: Optional[float] = None
+    RecoveryUpperLimit: Optional[float] = None
+    RPD: Optional[float] = None
+    RPDControlLimit: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
