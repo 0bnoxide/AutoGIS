@@ -12,14 +12,14 @@ _REQUIRED_COLUMNS = {
     "sample_id", "location_id", "event_date", "matrix",
     "analyte", "result", "units", "qualifier", "reporting_limit",
 }
-_VALID_FORMATS = {"flat_csv", "two_tab_xlsx", "wqx_csv"}
+_VALID_FORMATS = {"flat_csv", "two_tab_xlsx", "wqx_csv", "equis_xls"}
 
 
 @dataclass
 class LabEDDProfile:
     profile_id: str
     lab_name: str
-    format: str                              # "flat_csv" | "two_tab_xlsx" | "wqx_csv"
+    format: str                              # "flat_csv" | "two_tab_xlsx" | "wqx_csv" | "equis_xls"
     date_format: str
     encoding: str
     columns: dict[str, str | list[str]]     # field_name -> col_name(s)
@@ -27,6 +27,7 @@ class LabEDDProfile:
     nondetect_qualifiers: list[str]
     sample_sheet: str = "Samples"            # two_tab_xlsx only
     result_sheet: str = "Results"            # two_tab_xlsx only
+    batch_sheet: str = ""                    # equis_xls only; "" = no batch sheet
     value_maps: dict[str, dict[str, str]] = field(default_factory=dict)
     path: Optional[Path] = field(default=None, compare=False)
 
@@ -56,6 +57,7 @@ class LabEDDProfile:
             nondetect_qualifiers=data.get("nondetect_qualifiers", ["U", "UJ"]),
             sample_sheet=data.get("sample_sheet", "Samples"),
             result_sheet=data.get("result_sheet", "Results"),
+            batch_sheet=data.get("batch_sheet", ""),
             value_maps=data.get("value_maps", {}),
             path=path,
         )
