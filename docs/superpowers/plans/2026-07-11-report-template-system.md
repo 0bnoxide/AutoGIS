@@ -268,6 +268,17 @@ def _tone_class(tone: Optional[str]) -> str:
     return f"tone-{t}"
 
 
+# Public aliases — the DesignSync generator (Task 7) and report tools (Task 4)
+# consume these; keep the underscored names for internal call sites.
+esc = _esc
+attr = _attr
+
+
+def css() -> str:
+    """The canonical report stylesheet text (single source of truth)."""
+    return _css()
+
+
 def badge(text, tone: str = "neutral") -> str:
     return f'<span class="badge {_tone_class(tone)}">{_esc(text)}</span>'
 
@@ -465,7 +476,35 @@ def test_build_writes_html_when_fmt_html(tmp_path):
     assert any(str(p).endswith("MW-1.html") for p in written)
     assert any(str(p).endswith("SiteSummary.html") for p in written)
     body = (tmp_path / "out" / "MW-1.html").read_text(encoding="utf-8")
-    assert body.startswith("<!doctype html>") and "http" not in body.split("Generated")[0].replace("https", "")
+    assert body.startswith("<!doctype html>")
+    assert "http://" not in body and "https://" not in body   # self-contained
+
+
+def test_photo_grid_embeds_matching_photo(tmp_path):
+    # Positive path (spec §E): a real JPEG under harvest/MW-1/ with an ABSOLUTE
+    # saved_path must land as an inline <img src="data:..."> in MW-1.html.
+    # TRAP: match_photos_to_wells does Path(saved).relative_to(harvest_dir);
+    # a RELATIVE saved_path against an absolute harvest_dir is silently dropped,
+    # so the saved_path here MUST be absolute or the test passes vacuously.
+    pytest = __import__("pytest")
+    Image = pytest.importorskip("PIL.Image")  # Pillow-gated
+    harvest = tmp_path / "harvest"
+    (harvest / "MW-1").mkdir(parents=True)
+    img_path = harvest / "MW-1" / "wellhead.jpg"
+    Image.new("RGB", (32, 24), (120, 140, 160)).save(img_path, "JPEG")
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "attachment_id,original_name,saved_path,disposition\n"
+        f"1,wellhead.jpg,{img_path},downloaded\n", encoding="utf-8")
+    out = tmp_path / "out"
+    qa = QACollector()
+    build_well_inspection_reports(
+        _wells_csv(tmp_path), out, site_id="S", fmt="html",
+        manifest_path=manifest, harvest_dir=harvest, qa=qa,
+    )
+    body = (out / "MW-1.html").read_text(encoding="utf-8")
+    assert 'src="data:image/jpeg;base64,' in body
+    assert "wellhead.jpg" in body  # caption
 
 
 def test_photo_inputs_without_pillow_fail_fast(tmp_path, monkeypatch):
@@ -531,9 +570,9 @@ def generate_well_report_html(
         cond = latest.get("Condition", "")
         tone = "ok" if cond.strip().upper() in _PASSING_CONDITIONS else "warn"
         latest_html = (
-            f'<p>Date: {rh._esc(latest.get("InspectionDate", ""))} · '
+            f'<p>Date: {rh.esc(latest.get("InspectionDate", ""))} · '
             f'Condition: {rh.badge(cond or "—", tone)} · '
-            f'Notes: {rh._esc(latest.get("Notes", ""))}</p>'
+            f'Notes: {rh.esc(latest.get("Notes", ""))}</p>'
         )
         sections.append(rh.section("Latest Inspection", latest_html))
         hist = rh.table(
@@ -632,16 +671,23 @@ is built and before the write loop:
                               'pip install "autogis[report]"') from exc
         manifest_rows = load_manifest(Path(manifest_path))
         photo_map = match_photos_to_wells(manifest_rows, Path(harvest_dir), qa=qa)
+        missing: List[str] = []
         for wid, entries in photo_map.items():
             imgs = []
             for e in entries:
                 data = prepare_image_bytes(e.get("saved_path", ""), (300, 225))
                 if data is None:
+                    missing.append(e.get("original_name") or e.get("saved_path", ""))
                     continue
                 uri = "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
                 imgs.append((uri, e.get("original_name") or ""))
             if imgs:
                 photos_by_well[wid] = imgs
+        if missing:
+            # Parity with the XLSX tool's photo_files_missing WARNING.
+            qa.add(SEV_WARNING, "photo_files_missing",
+                   f"{len(missing)} manifest photo(s) not found on disk: "
+                   f"{', '.join(missing)}")
 ```
 
 Then in the per-well write loop, replace the Markdown-only write with a format
@@ -1135,6 +1181,12 @@ def well_inspection_report_cmd(wells_csv, site_id, output_dir,
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.well_inspection_report import build_well_inspection_reports
 
+    # Guard against silently-ignored photo inputs (photos need both, HTML only).
+    if (manifest_path or harvest_dir) and not (manifest_path and harvest_dir):
+        raise click.UsageError("--manifest and --harvest-dir must be given together.")
+    if (manifest_path or harvest_dir) and fmt != "html":
+        raise click.UsageError("--manifest/--harvest-dir require --format html.")
+
     qa = QACollector()
     written = build_well_inspection_reports(
         Path(wells_csv), Path(output_dir),
@@ -1182,7 +1234,8 @@ git commit -m "feat(report): --format html on event + well-inspection CLIs (#163
 import importlib.util
 from pathlib import Path
 
-BUNDLE = Path("docs/design/report-templates")
+# Anchor to the repo, not the pytest cwd.
+BUNDLE = Path(__file__).resolve().parents[1] / "docs" / "design" / "report-templates"
 
 
 def _load_builder():
@@ -1229,7 +1282,7 @@ from autogis.core.common import report_html as rh  # noqa: E402
 
 
 def _preview(group: str, title: str, body_html: str) -> str:
-    css = rh._css()
+    css = rh.css()
     return (f'<!-- @dsCard group="{group}" -->\n'
             "<!doctype html>\n"
             f'<html lang="en"><head><meta charset="utf-8"/><title>{title}</title>'
@@ -1393,3 +1446,23 @@ After Task 8, before opening the PR:
 - **Pillow fail-fast before writes / public helper:** Tasks 3, 4. ✓
 - **Type consistency:** `fmt` (str "md"/"html"), `photos: list[(str,str)]`, `tone_of(i,j)->str|None`, `_gather_event_data(...)->dict` used identically across Tasks 4–6. ✓
 - **No new dependency; arcpy-free:** render layer stdlib; Pillow lazy via existing extra. ✓
+
+## Plan review incorporated (Fable, 2026-07-11, medium)
+
+Verdict EXECUTE-WITH-FIXES; MD refactor confirmed **byte-identical** (existing
+`tests/test_generate_event_report.py` stays green — verified section-by-section).
+Fixes folded in:
+- **B1 (blocking):** added `test_photo_grid_embeds_matching_photo` (Task 4) — a
+  Pillow-gated positive path with an **absolute** `saved_path` (a relative one is
+  silently dropped by `match_photos_to_wells`' `relative_to`, so a naïve test
+  would pass vacuously).
+- Exported public `esc()`/`css()` from `report_html` (no cross-module private use
+  in Tasks 4/7).
+- Photo `photo_files_missing` QA WARNING for parity with the XLSX tool (Task 4).
+- CLI `UsageError` when `--manifest`/`--harvest-dir` are given apart or without
+  `--format html` (Task 6).
+- Anchored the Task 7 bundle test path to the repo, not the pytest cwd.
+- Tightened the self-containment assertion in the well-report HTML test.
+
+Deferred (non-blocking, optional at execution): assert committed previews equal a
+fresh regen (Task 7); filter the photo pre-pass to deduped well ids (perf only).
