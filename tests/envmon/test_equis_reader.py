@@ -224,3 +224,38 @@ def test_source_row_stamped():
     r2["__sheet_row"] = 9
     rows, _ = _run([_sample()], [r1, r2], [])
     assert [r["__source_row"] for r in rows] == [7, 9]
+
+
+def test_read_edd_file_dispatches_equis_xls(monkeypatch, tmp_path):
+    from autogis.core.envmon import edd_importer
+    from autogis.core.envmon import equis_reader
+    seen = {}
+
+    def fake(path, profile, qa=None):
+        seen["args"] = (path, profile, qa)
+        return [{"ok": "1"}]
+
+    monkeypatch.setattr(equis_reader, "read_equis_xls", fake)
+    prof = _profile()
+    from autogis.core.common.qa import QACollector
+    qa = QACollector()
+    rows = edd_importer.read_edd_file(tmp_path / "f.xls", prof, qa)
+    assert rows == [{"ok": "1"}]
+    assert seen["args"][2] is qa
+
+
+def test_cell_text_normalization():
+    import xlrd
+    from autogis.core.envmon.equis_reader import _cell_text
+
+    class Cell:
+        def __init__(self, ctype, value):
+            self.ctype, self.value = ctype, value
+
+    assert _cell_text(Cell(xlrd.XL_CELL_NUMBER, 438175.0), 0) == "438175"
+    assert _cell_text(Cell(xlrd.XL_CELL_NUMBER, 0.5), 0) == "0.5"
+    assert _cell_text(Cell(xlrd.XL_CELL_TEXT, "  Lead "), 0) == "Lead"
+    assert _cell_text(Cell(xlrd.XL_CELL_EMPTY, ""), 0) == ""
+    # 2025-03-11 09:54 as an Excel serial (1900 datemode)
+    serial = 45727.0 + (9 * 60 + 54) / (24 * 60)
+    assert _cell_text(Cell(xlrd.XL_CELL_DATE, serial), 0) == "03/11/2025 09:54"

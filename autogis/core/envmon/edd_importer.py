@@ -27,7 +27,7 @@ def read_edd_file(path: Path, profile: LabEDDProfile,
     For two_tab_xlsx, sample-sheet metadata is merged onto each result row
     before returning, so the output is the same shape regardless of format.
     ``qa`` is optional (back-compat); readers with load-time transforms
-    (wqx_csv) emit warnings through it.
+    (wqx_csv, equis_xls) emit warnings through it.
     """
     path = Path(path)
     if profile.format == "flat_csv":
@@ -37,6 +37,9 @@ def read_edd_file(path: Path, profile: LabEDDProfile,
     if profile.format == "wqx_csv":
         from .wqx_reader import read_wqx_csv
         return read_wqx_csv(path, profile, qa)
+    if profile.format == "equis_xls":
+        from .equis_reader import read_equis_xls
+        return read_equis_xls(path, profile, qa)
     raise ValueError(f"Unknown EDD format '{profile.format}'")
 
 

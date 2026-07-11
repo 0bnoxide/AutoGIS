@@ -3,7 +3,7 @@ name = "autogis"
 version = "0.1.0"
 description = "Automation tools for ArcGIS Pro and ArcGIS Online / Survey123"
 requires-python = ">=3.10"
-dependencies = ["PyYAML", "click>=8.0", "openpyxl", "numpy>=1.24"]   # click>=8.0: introspect.py's _field() calls param.to_info_dict()
+dependencies = ["PyYAML", "click>=8.0", "openpyxl", "numpy>=1.24", "xlrd>=2.0"]   # click>=8.0: introspect.py's _field() calls param.to_info_dict(); xlrd: legacy .xls EQuIS EDDs (lazy import in equis_reader)
 
 [project.optional-dependencies]
 dev = ["pytest", "Pillow>=9.0", "matplotlib>=3.7", "pyproj"]   # Pillow/matplotlib/pyproj so the importorskip-gated tests actually run
