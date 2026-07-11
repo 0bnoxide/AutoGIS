@@ -111,11 +111,15 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
             sample_index[key] = s
 
     # (sample, method, fraction, column, test_type) -> {"Prep": id, ...}
+    # test_type is casefolded: the real WMRD export carries "initial" on
+    # Batch_v1 vs "INITIAL" on TestResultQC_v1 (verified against the real
+    # B25030623 export 2026-07-10) — case carries no meaning here, and a
+    # case-sensitive join flooded every row with equis_missing_batch.
     batch_index: dict[tuple, dict] = {}
     for b in batch_rows:
         key = (_get_sample_id(b, profile), _get(b, _COL_METHOD),
                _get(b, _COL_FRACTION), _get(b, _COL_COLUMN_NUM),
-               _get(b, _COL_TEST_TYPE))
+               _get(b, _COL_TEST_TYPE).casefold())
         batch_index.setdefault(key, {})[_get(b, _COL_BATCH_TYPE)] = \
             _get(b, _COL_BATCH_ID)
 
@@ -259,7 +263,7 @@ def _attach_batches(row: dict, batch_index: dict, batch_rows: list[dict],
                     sample_id: str, profile, qa: QACollector,
                     row_num: int) -> None:
     key = (sample_id, _get(row, _COL_METHOD), _get(row, _COL_FRACTION),
-           _get(row, _COL_COLUMN_NUM), _get(row, _COL_TEST_TYPE))
+           _get(row, _COL_COLUMN_NUM), _get(row, _COL_TEST_TYPE).casefold())
     hit = batch_index.get(key, {})
     row["__equis_prep_batch"] = hit.get("Prep", "")
     row["__equis_analysis_batch"] = hit.get("Analysis", "")

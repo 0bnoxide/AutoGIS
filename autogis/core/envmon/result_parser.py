@@ -206,7 +206,7 @@ def parse_result_value(raw_value, screening_context: bool = False) -> ParsedResu
 # ---------------------------------------------------------------------------
 _DATE_FORMATS = ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%d-%b-%Y", "%d-%b-%y",
                  "%b %d, %Y", "%B %d, %Y", "%m-%d-%Y", "%Y/%m/%d",
-                 "%m/%d/%Y %H:%M")
+                 "%m/%d/%Y %H:%M", "%m/%d/%Y %H:%M:%S")
 
 
 def parse_excel_date(value, workbook_date_system: str = "1900") -> Optional[date]:
