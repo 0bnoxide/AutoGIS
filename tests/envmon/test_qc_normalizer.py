@@ -160,6 +160,7 @@ def test_run_edd_import_splits_qc_stream(monkeypatch, tmp_path):
     field_row = {"sid": "S1", "loc": "MW-1", "dt": "01/02/2026", "mx": "GW",
                  "an": "Lead", "res": "1.2", "un": "ug/l", "q": "", "rl": ""}
     qc_row = dict(_qc_row())
+    qc_row["loc"] = "MW-9"   # satisfy location_id so the leak assertion bites
     monkeypatch.setattr(edd_importer, "read_edd_file",
                         lambda path, profile, qa=None: [field_row, qc_row])
 
