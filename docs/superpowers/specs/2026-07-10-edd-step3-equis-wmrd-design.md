@@ -56,25 +56,38 @@ YAML-only exercise later.
   .xlsx conversion (permanent manual step on every lab deliverable).
 - **D2 — one parameterized family reader**, `equis_reader.py`, format id
   `equis_xls`. The reader knows the EQuIS v1 *shape* (sample sheet + result/QC
-  sheet + batch sheet joined on composite keys); every sheet name comes from a new
-  small `equis:` profile section and every field mapping stays in the standard
-  `columns:` map pointing at real or synthesized `__equis_*` keys — the ADR-0080
-  synthesized-columns pattern. Rejected: per-dialect readers (known duplication —
-  3 more dialects are already on the roadmap), declarative join engine (the "new
-  abstraction layer" ADR-0075 explicitly rejected).
+  sheet + batch sheet joined on composite keys); sheet names come from the
+  profile's **existing** `sample_sheet`/`result_sheet` keys (two_tab_xlsx
+  precedent) plus one new `batch_sheet` key, and every field mapping stays in
+  the standard `columns:` map pointing at real or synthesized `__equis_*` keys —
+  the ADR-0080 synthesized-columns pattern. Rejected: per-dialect readers (known
+  duplication — 3 more dialects are already on the roadmap), declarative join
+  engine (the "new abstraction layer" ADR-0075 explicitly rejected), a new
+  `equis:` profile section (the sheet-name keys already exist).
 - **D3 — QC rows ride the same read, then fork.** The reader tags flattened rows
   with `__equis_stream` = `"qc"` when the parent sample is `sample_source=LAB`
   (casefold) **or** the row is `result_type_code=SUR`; `run_edd_import` splits the
   tagged rows before `normalize_edd_rows`, so the analytical path never sees QC
   rows and `read_edd_file`'s signature is unchanged.
-- **D4 — Env_QCResults ships the paper-mapping list verbatim** (~30 columns, see
+- **D4 — Env_QCResults ships the paper-mapping list verbatim** (33 columns, see
   Schema below) with the proposed 9-part unique key. New `QCResultRecord`
-  dataclass + `normalize_qc_rows(rows, profile, qa)` + `write_qc_results_to_gdb`
-  (arcpy seam, `pragma: no cover`, doc-verified per ADR-0077).
-- **D5 — wide-column QC pivot.** A QC row with populated `qc_dup_*` columns emits
-  a second QCResultRecord (QCType MSD when base is MS, LCSD when base is LCS)
-  reusing the `qc_dup_*` spike/recovery values; `qc_rpd`/`qc_rpd_cl` land on both
-  rows. `qc_spike_status`/`qc_dup_spike_status`/`qc_rpd_status` are **dropped**
+  dataclass + `normalize_qc_rows(...)`; **no new writer** — the existing
+  table-generic `append_records_idempotent(gdb, "Env_QCResults", ...)` seam
+  covers it (it keys dedup off `UNIQUE_KEYS[table_name]`, which gains the
+  Env_QCResults entry).
+- **D5 — one QC record per source row; NO wide-column pivot.** Verified against
+  the real WMRD file 2026-07-10: MSD/LCSD are their **own samples with their own
+  result rows**, and on those rows `qc_dup_*` merely echoes the row's own values
+  (`qc_spike_recovery == qc_dup_spike_recovery` on every populated pair). A
+  pivot that synthesized a second record from `qc_dup_*` would double-count
+  every MSD/LCSD. Per-field rule instead: SpikeAmount/PercentRecovery/
+  OriginalConcentration read `qc_spike_added`/`qc_spike_recovery`/
+  `qc_original_conc`, falling back per-field to the `qc_dup_*` twin when the
+  primary is empty; RPD/RPDControlLimit land on the row they appear on. The
+  dictionary-documented dup-as-columns pivot is a **later-slice** question for
+  formats that truly report the dup only in columns (evaluate at the
+  sxsamp/mining slice against their real data).
+  `qc_spike_status`/`qc_dup_spike_status`/`qc_rpd_status` are **dropped**
   (deterministically derivable from recovery vs stored control limits — paper
   mapping's own drop list).
 - **D6 — ND synthesis from detect_flag.** `__equis_result` = `"ND"` when
@@ -152,8 +165,9 @@ read_equis_xls(path, profile, qa=None)
 ```
 
 1. `import xlrd` (lazy, function-level). Open workbook; fetch the three sheets
-   named by `profile.equis` (`sample_sheet`, `result_sheet`, `batch_sheet`;
-   batch_sheet optional — absent means no batch ids). Each sheet → list of dicts
+   named by `profile.sample_sheet` / `profile.result_sheet` /
+   `profile.batch_sheet` (batch_sheet optional — empty means no batch ids).
+   Each sheet → list of dicts
    keyed by header row (row 0), values `str(cell.value).strip()`; xlrd float
    artifacts (`438175.0` for text-ish numerics) normalized via a small
    `_cell_text` helper (int-valued floats render without `.0`).
@@ -167,7 +181,6 @@ read_equis_xls(path, profile, qa=None)
    - synthesize: `__equis_stream` (D3), `__equis_qc_type` (value_map
      `qc_sample_type` over sample_type_code; SUR rows → `SURROGATE`),
      `__equis_result` (D6), `__equis_qualifier` (D7),
-     `__equis_matrix` (matrix_map over sample_matrix_code),
      `__equis_method_dilution_key` (D8), `__equis_units` (result_unit, else
      detection_limit_unit), converted `__equis_reporting_limit` /
      `__equis_detection_limit` / `__equis_quantitation_limit` (D11),
@@ -180,8 +193,9 @@ sample_id: sys_sample_code, location_id: sys_loc_code, event_date: sample_date,
 lab_sample_id: lab_sample_id, analyte: chemical_name, cas_number: cas_rn,
 method_id: lab_anl_method_name, fraction: fraction, analysis_date: analysis_date,
 prep_method: prep_method, prep_date: prep_date, lab_name: lab_name_code,
-basis: basis, result/units/limits/qualifier/matrix/qc_type/dilution_factor →
-their `__equis_*` keys. `value_maps.qc_sample_type`: N→"" , QC-LCS→LCS,
+basis: basis, matrix: sample_matrix_code (real column — WMRD needs no
+coalesce; matrix_map canonicalizes), result/units/limits/qualifier/qc_type/
+dilution_factor → their `__equis_*` keys. `value_maps.qc_sample_type`: N→"" , QC-LCS→LCS,
 QC-LCSD→LCSD, QC-LMS→MS, QC-LMSD→MSD, QC-LB→LAB_BLANK, QC-LD→LAB_DUP,
 QC-LCCV→CCV, QC-LICV→ICV, QC-PDS→PDS, QC-LIFC→IFC, SRM→SRM, CRA→CRA.
 `matrix_map`: SOLID→SOIL, WQ→GW, SQ-CONTROL/WQ-CONTROL kept as-is on QC rows.
@@ -195,25 +209,32 @@ not DRAFT, but note the single-lab provenance).
   and `is_reportable` columns, mirroring the existing `detection_limit` pattern
   (ADR-0080 §6). Format-agnostic: every EQuIS dialect carries them natively.
 - `run_edd_import`: split `__equis_stream=="qc"` rows → `normalize_qc_rows` →
-  `write_qc_results_to_gdb`; analytical rows continue unchanged. Formats that
-  never tag (flat_csv, two_tab_xlsx, wqx_csv) see zero behavior change.
-- `edd_profile.py`: `_VALID_FORMATS` += `equis_xls`; new optional `equis:`
-  section (sheet names) with validation.
+  `append_records_idempotent(gdb, "Env_QCResults", qc_records, qa, batch_id)`;
+  analytical rows continue unchanged. Formats that never tag (flat_csv,
+  two_tab_xlsx, wqx_csv) see zero behavior change.
+- `edd_profile.py`: `_VALID_FORMATS` += `equis_xls`; new `batch_sheet: str = ""`
+  profile field (sheet names reuse the existing `sample_sheet`/`result_sheet`).
 
 ## QC normalization (`normalize_qc_rows`)
 
-Maps tagged flat rows → `QCResultRecord` (fields = Env_QCResults columns).
-ResultNumeric parses `__equis_result` (ND → IsNonDetect=1, ResultNumeric NULL);
-spike rows additionally receive `qc_spike_measured` into ResultNumeric when
-result_value is empty (documented convention from the paper mapping). D5 pivot
-emits the dup record. AnalyteCanonicalName reuses the existing canonicalization
-helper the analytical path uses (same dictionary; speciation fold rule applies).
+Maps tagged flat rows → `QCResultRecord` (fields = Env_QCResults columns), one
+record per source row (D5). ResultNumeric parses `__equis_result` via the
+existing `parse_result_value` (ND → IsNonDetect=1, ResultNumeric NULL); spike
+rows additionally receive `qc_spike_measured` into ResultNumeric when
+result_value is empty (documented convention from the paper mapping). The
+`qc_*` source columns resolve through profile `columns:` mappings
+(qc_spike_added, qc_original_conc, qc_spike_recovery, qc_spike_lcl,
+qc_spike_ucl, qc_rpd, qc_rpd_cl + their qc_dup_* twins), keeping the
+normalizer format-agnostic. AnalyteCanonicalName reuses `normalize_analyte_name`
+(same dictionary the analytical path uses; a speciated dialect points its
+`analyte` mapping at a reader-folded column, so the fold rule still applies).
 
 ## Testing (arcpy-free)
 
 - Transform-level tests on plain dict rows (pattern of `test_wqx_reader.py`):
-  QC routing incl. SUR-on-field-sample, D5 pivot, D6 conflict WARN, D7 qualifier
-  precedence, D8 NA-normalized fold, D10 miss paths, D11 conversion+short-circuit.
+  QC routing incl. SUR-on-field-sample, D5 per-field qc_dup_* fallback (no
+  second record synthesized), D6 conflict WARN, D7 qualifier precedence,
+  D8 NA-normalized fold, D10 miss paths, D11 conversion+short-circuit.
 - One committed synthetic `.xls` fixture (~20 rows, 3 sheets, junk column
   included) drives the end-to-end test: read → split → normalize both streams →
   `compute_unique_key` distinctness on both tables. Fixture built once offline by
