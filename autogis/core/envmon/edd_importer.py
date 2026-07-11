@@ -9,7 +9,7 @@ from typing import Optional
 from ..common.config import screening_for
 from ..common.qa import QACollector, SEV_ERROR, SEV_WARNING
 from .edd_profile import LabEDDProfile
-from .gdb_schema import SampleRecord, AnalyticalResultRecord
+from .gdb_schema import SampleRecord, AnalyticalResultRecord, QCResultRecord
 from .result_parser import (
     apply_qualifiers, classify_display, evaluate_screening,
     normalize_analyte_name, parse_excel_date, parse_result_value,
@@ -338,6 +338,123 @@ def normalize_edd_rows(
         ))
 
     return samples, results
+
+
+def _qc_float(profile: LabEDDProfile, row: dict, field: str) -> Optional[float]:
+    raw = profile.resolve_column(row, field)
+    if not raw:
+        return None
+    try:
+        return float(str(raw).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def normalize_qc_rows(
+    rows: list[dict],
+    profile: LabEDDProfile,
+    site_id: str,
+    batch_id: str,
+    analyte_dictionary: dict,
+    qa: QACollector,
+) -> list[QCResultRecord]:
+    """Convert reader-tagged lab-QC rows to QCResultRecord lists (spec D4/D5).
+
+    One record per source row — MSD/LCSD are their own rows in EQuIS v1 and
+    qc_dup_* merely echoes the row's own values (verified against the real
+    WMRD export), so spike fields read the primary qc_* columns with a
+    per-field qc_dup_* fallback. No second record is ever synthesized.
+    """
+    source_name = profile.profile_id
+    records: list[QCResultRecord] = []
+    for row_num, row in enumerate(rows, start=2):
+        try:
+            row_num = int(row.get("__source_row") or row_num)
+        except (TypeError, ValueError):
+            pass
+
+        sample_id = profile.resolve_column(row, "sample_id")
+        analyte_raw = profile.resolve_column(row, "analyte") or ""
+        if not sample_id or not analyte_raw:
+            qa.add(SEV_ERROR, "edd_qc_missing_required_field",
+                   f"Row {row_num}: QC row missing "
+                   f"{'sample_id' if not sample_id else 'analyte'} — skipped",
+                   site_id=site_id, import_batch_id=batch_id,
+                   source_sheet=source_name, source_row=row_num)
+            continue
+
+        canonical = normalize_analyte_name(analyte_raw, analyte_dictionary)
+        if canonical is None:
+            qa.add(SEV_WARNING, "edd_unknown_analyte",
+                   f"Row {row_num}: QC analyte '{analyte_raw}' not in the "
+                   f"analyte dictionary; using raw name",
+                   site_id=site_id, sample_id=sample_id,
+                   import_batch_id=batch_id,
+                   source_sheet=source_name, source_row=row_num)
+            canonical = analyte_raw
+
+        parsed = parse_result_value(profile.resolve_column(row, "result"))
+
+        result_numeric = parsed.result_numeric
+        sm = _qc_float(profile, row, "qc_spike_measured")
+        spike_measured = sm if sm is not None \
+            else _qc_float(profile, row, "qc_dup_spike_measured")
+        if result_numeric is None and not parsed.is_nondetect \
+                and spike_measured is not None:
+            # spike rows report the measured spike in qc_spike_measured, not
+            # result_value (documented convention, paper mapping)
+            result_numeric = spike_measured
+
+        def _fallback(primary: str, dup: str) -> Optional[float]:
+            v = _qc_float(profile, row, primary)
+            return v if v is not None else _qc_float(profile, row, dup)
+
+        records.append(QCResultRecord(
+            ImportBatchID=batch_id,
+            SiteID=site_id,
+            Matrix=profile.map_value(
+                "matrix", profile.resolve_column(row, "matrix") or ""),
+            SampleID=sample_id,
+            QCType=profile.resolve_column(row, "qc_type") or "",
+            AnalyteName=analyte_raw,
+            AnalyteCanonicalName=canonical,
+            SourceWorkbook=source_name,
+            SourceSheet=profile.result_sheet,
+            SourceRow=row_num,
+            PrepBatchID=profile.resolve_column(row, "prep_batch_id") or "",
+            AnalysisBatchID=profile.resolve_column(
+                row, "analysis_batch_id") or "",
+            ParentSampleID=profile.resolve_column(
+                row, "parent_sample_id") or "",
+            LabSampleID=profile.resolve_column(row, "lab_sample_id") or "",
+            CASNumber=profile.resolve_column(row, "cas_number") or "",
+            MethodID=profile.resolve_column(row, "method") or "",
+            ResultFraction=profile.map_value(
+                "result_fraction",
+                profile.resolve_column(row, "result_fraction") or ""),
+            MethodDilutionKey=(profile.resolve_column(
+                row, "dilution_factor") or "").strip(),
+            AnalysisDate=parse_excel_date(
+                profile.resolve_column(row, "analysis_date") or ""),
+            ResultRawText=parsed.raw_text,
+            ResultNumeric=result_numeric,
+            Units=profile.resolve_column(row, "units") or "",
+            ReportingLimit=_qc_float(profile, row, "reporting_limit"),
+            DetectionLimit=_qc_float(profile, row, "detection_limit"),
+            Qualifier=parsed.qualifier or
+                (profile.resolve_column(row, "qualifier") or ""),
+            IsNonDetect=int(parsed.is_nondetect),
+            SpikeAmount=_fallback("qc_spike_added", "qc_dup_spike_added"),
+            OriginalConcentration=_fallback("qc_original_conc",
+                                            "qc_dup_original_conc"),
+            PercentRecovery=_fallback("qc_spike_recovery",
+                                      "qc_dup_spike_recovery"),
+            RecoveryLowerLimit=_qc_float(profile, row, "qc_spike_lcl"),
+            RecoveryUpperLimit=_qc_float(profile, row, "qc_spike_ucl"),
+            RPD=_qc_float(profile, row, "qc_rpd"),
+            RPDControlLimit=_qc_float(profile, row, "qc_rpd_cl"),
+        ))
+    return records
 
 
 # ---------------------------------------------------------------------------
