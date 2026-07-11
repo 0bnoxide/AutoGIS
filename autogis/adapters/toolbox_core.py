@@ -104,9 +104,32 @@ def _site_id_from_config(path: str | None) -> str:
         return ""
 
 
+class _CountingMessages:
+    """Forward Pro messages while retaining their severity for run history."""
+    def __init__(self, messages):
+        self._messages = messages
+        self.counts = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+
+    def addErrorMessage(self, *args, **kwargs):
+        self.counts["ERROR"] += 1
+        return self._messages.addErrorMessage(*args, **kwargs)
+
+    def addWarningMessage(self, *args, **kwargs):
+        self.counts["WARNING"] += 1
+        return self._messages.addWarningMessage(*args, **kwargs)
+
+    def addMessage(self, *args, **kwargs):
+        self.counts["INFO"] += 1
+        return self._messages.addMessage(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._messages, name)
+
+
 @contextmanager
 def recording_pyt_run(tool_name: str, *, inputs: dict, dest_hint: Path | None,
-                      site_id: str = "", event_id: str | None = None):
+                      site_id: str = "", event_id: str | None = None,
+                      qa_counts: dict | None = None):
     """Best-effort run-history recording around one `.pyt` execution."""
     started = datetime.now()
     exc = None
@@ -120,15 +143,21 @@ def recording_pyt_run(tool_name: str, *, inputs: dict, dest_hint: Path | None,
             path = _pyt_run_history_path(dest_hint)
             if path is not None:
                 from autogis.core.common.run_history import RunHistory, RunRecord
-                status = "success" if exc is None else (
-                    "cancelled" if isinstance(exc, KeyboardInterrupt) else "error")
+                counts = qa_counts or {}
+                status = "cancelled" if isinstance(exc, KeyboardInterrupt) else (
+                    "error" if exc is not None or counts.get("ERROR", 0)
+                    else "success")
+                message = ("" if exc is None
+                           else f"{type(exc).__name__}: {exc}")
+                if not message and counts.get("ERROR", 0):
+                    message = f"{counts['ERROR']} error QA message(s)"
                 RunHistory(path).write(RunRecord(
                     run_id=str(uuid.uuid4()), tool_name=tool_name, site_id=site_id,
                     event_id=event_id, started_at=started, finished_at=datetime.now(),
                     status=status, inputs=json.loads(json.dumps(inputs, default=str)),
-                    outputs={}, qa_count_error=0, qa_count_warning=0,
-                    qa_count_info=0,
-                    message="" if exc is None else f"{type(exc).__name__}: {exc}",
+                    outputs={}, qa_count_error=counts.get("ERROR", 0),
+                    qa_count_warning=counts.get("WARNING", 0),
+                    qa_count_info=counts.get("INFO", 0), message=message,
                 ))
         except Exception:
             pass  # observability must not change a Pro tool's outcome
@@ -143,12 +172,14 @@ def record_pyt_run(tool_name: str, *, gdb_param: str = "gdb",
         def wrapped(self, parameters, messages):
             inputs = {p.name: p.valueAsText for p in parameters}
             gdb = inputs.get(gdb_param)
+            recording_messages = _CountingMessages(messages)
             with recording_pyt_run(
                 tool_name, inputs=inputs,
                 dest_hint=Path(gdb).parent if gdb else None,
                 site_id=_site_id_from_config(inputs.get(site_config_param)),
                 event_id=inputs.get(event_param) or None,
+                qa_counts=recording_messages.counts,
             ):
-                return execute(self, parameters, messages)
+                return execute(self, parameters, recording_messages)
         return wrapped
     return decorator
