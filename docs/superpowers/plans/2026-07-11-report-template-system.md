@@ -16,7 +16,7 @@
 - **Escaping (binding):** only params suffixed `*_html` accept caller-supplied raw HTML; every other value is `html.escape`-d; attribute contexts use `html.escape(..., quote=True)`.
 - Markdown remains the **default** output on both tools; HTML is additive; the existing XLSX photo tool is untouched.
 - Thumbnail box **300×225, JPEG q80** (matches the XLSX tool).
-- ADR number: **verify `ls docs/adr/ | tail` AND `gh pr list` at commit time** before finalizing `0082` (this repo has a history of ADR-number collisions).
+- ADR number: **verify `ls docs/adr/ | tail` AND `gh pr list` at commit time** before finalizing `0083` — 0082 is already taken by PR #229 (EDD Step-3); this repo has a history of ADR-number collisions, so re-check for 0083 too.
 - Python `requires-python = ">=3.10"` — `importlib.resources.files()` is available (3.9+); do not use `importlib.resources.read_text` (deprecated).
 
 ---
@@ -1359,22 +1359,22 @@ git commit -m "feat(report): DesignSync preview bundle generated from render lay
 
 ---
 
-### Task 8: ADR-0082, README refresh, full-suite gate
+### Task 8: ADR-0083, README refresh, full-suite gate
 
 **Files:**
-- Create: `docs/adr/0082-report-template-system.md` (verify the number first)
+- Create: `docs/adr/0083-report-template-system.md` (0082 taken by PR #229 — verify 0083 is still free)
 - Modify: `README.md` (test count / tool notes if the README tracks them)
 - Test: full suite
 
 - [ ] **Step 1: Verify the ADR number is still free**
 
 Run: `ls docs/adr/ | grep -E '^[0-9]{4}-' | sort | tail -3 && gh pr list --state open --json files --jq '.[].files[].path' | grep -i 'docs/adr/' || echo "no open-PR ADRs"`
-Expected: highest is `0081-…`; if a `0082-…` appears in any open PR, use the next free number and update every reference in this task.
+Expected: 0082 is claimed by PR #229 (`0082-edd-step3-equis-wmrd-slice1.md`); confirm no other open PR has grabbed `0083-…` before using it.
 
 - [ ] **Step 2: Write the ADR**
 
 ```markdown
-# ADR-0082: Report template system — self-contained HTML + shared DesignSync design
+# ADR-0083: Report template system — self-contained HTML + shared DesignSync design
 
 **Status:** Accepted
 **Date:** 2026-07-11
@@ -1424,8 +1424,8 @@ Expected: all pass (baseline + new tests). Investigate any failure before procee
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/adr/0082-report-template-system.md README.md
-git commit -m "docs(adr): ADR-0082 report template system; closes #163"
+git add docs/adr/0083-report-template-system.md README.md
+git commit -m "docs(adr): ADR-0083 report template system; closes #163"
 ```
 
 ---
