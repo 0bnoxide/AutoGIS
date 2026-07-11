@@ -147,6 +147,40 @@ def test_canonical_records_legacy_passthrough():
     assert not qa.records
 
 
+def _rerun_row(mdk, reportable, value):
+    return {"SiteID": "s", "Matrix": "SOIL", "LocationID": "MW-1",
+            "SampleID": "S1", "SampleDate": "2026-01-02",
+            "AnalyteCanonicalName": "Arsenic", "DepthIntervalText": "",
+            "ResultFraction": "Total", "QCType": "",
+            "MethodDilutionKey": mdk, "IsReportable": reportable,
+            "ResultNumeric": value}
+
+
+def test_isreportable_resolves_rerun_groups():
+    qa = QACollector()
+    rows = [_rerun_row("", 1, 2.0), _rerun_row("5|DILUTION", 0, 2.2)]
+    out = canonical_result_rows(rows, qa)
+    assert len(out) == 1
+    assert out[0]["ResultNumeric"] == 2.0
+    assert any(r.category == "rerun_resolved" for r in qa.records)
+
+
+def test_null_isreportable_reruns_unchanged():
+    # pre-Step-3 imports: flag NULL everywhere -> both rows pass (pinned
+    # legacy behavior; do NOT guess among reruns without the flag)
+    qa = QACollector()
+    rows = [_rerun_row("", None, 2.0), _rerun_row("5|DILUTION", None, 2.2)]
+    out = canonical_result_rows(rows, qa)
+    assert len(out) == 2
+
+
+def test_single_run_groups_untouched_by_reportable_zero():
+    qa = QACollector()
+    rows = [_rerun_row("", 0, 2.0)]        # one run, flagged not-reportable
+    out = canonical_result_rows(rows, qa)
+    assert len(out) == 1                   # never drop a group's only run
+
+
 def test_pivot_no_longer_drops_or_double_counts_fractions():
     from autogis.core.envmon.build_current_event import build_wide_rows
     qa = QACollector()
