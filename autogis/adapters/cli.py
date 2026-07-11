@@ -1269,7 +1269,7 @@ def generate_event_changelog_cmd(
 @click.option("--event", "event_id", required=True,
               help="Event identifier (e.g. 2026Q2).")
 @click.option("--output", required=True, type=click.Path(),
-              help="Output Markdown (.md) file path.")
+              help="Output file path (.md or .html per --format).")
 @click.option("--results-csv", default=None, type=click.Path(),
               help="Analytical results CSV (absent file -> empty section).")
 @click.option("--comparison-csv", default=None, type=click.Path(),
@@ -1280,20 +1280,25 @@ def generate_event_changelog_cmd(
               help="identify-data-gaps output CSV (absent file -> empty section).")
 @click.option("--rpd-qa-csv", default=None, type=click.Path(),
               help="evaluate-rpd-qa output CSV (absent file -> empty section).")
+@click.option("--format", "fmt", type=click.Choice(["md", "html"]),
+              default="md", show_default=True, help="Output format.")
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
               show_default=True)
 def generate_event_report_cmd(
-    site_id, event_id, output,
+    site_id, event_id, output, fmt,
     results_csv, comparison_csv, history_csv, gaps_csv, rpd_qa_csv,
     report, fail_on,
 ):
-    """Assemble a Markdown monitoring event report from CSV tool outputs (post-roadmap extra; not a numbered roadmap tool)."""
+    """Assemble a monitoring event report (Markdown or HTML) from CSV tool outputs (post-roadmap extra; not a numbered roadmap tool)."""
     from autogis.core.common.qa import QACollector
-    from autogis.core.envmon.generate_event_report import generate_event_report
+    from autogis.core.envmon.generate_event_report import (
+        generate_event_report, generate_event_report_html,
+    )
 
     qa = QACollector()
-    content = generate_event_report(
+    render = generate_event_report_html if fmt == "html" else generate_event_report
+    content = render(
         site_id, event_id,
         results_csv=Path(results_csv) if results_csv else None,
         comparison_csv=Path(comparison_csv) if comparison_csv else None,
@@ -1318,21 +1323,38 @@ def generate_event_report_cmd(
 @click.option("--maintenance-log-csv", default=None, type=click.Path(),
               help="Optional maintenance log CSV (WellID, InspectionDate, "
                    "Condition, Notes). Absent file -> no inspection history.")
+@click.option("--format", "fmt", type=click.Choice(["md", "html"]),
+              default="md", show_default=True,
+              help="Output format for each per-well file + the site summary.")
+@click.option("--manifest", "manifest_path", default=None, type=click.Path(),
+              help="Attachment harvester manifest (.csv/.json); HTML only, enables photos.")
+@click.option("--harvest-dir", default=None, type=click.Path(),
+              help="Harvest output dir (photo saved_path root); HTML only, enables photos.")
 @qa_report_options
 def well_inspection_report_cmd(wells_csv, site_id, output_dir,
-                               maintenance_log_csv, report, fail_on):
-    """Generate Markdown well inspection reports + a site summary (headless)."""
+                               maintenance_log_csv, fmt, manifest_path,
+                               harvest_dir, report, fail_on):
+    """Generate well inspection reports + a site summary (Markdown or HTML) (headless)."""
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.well_inspection_report import build_well_inspection_reports
+
+    # Guard against silently-ignored photo inputs (photos need both, HTML only).
+    if (manifest_path or harvest_dir) and not (manifest_path and harvest_dir):
+        raise click.UsageError("--manifest and --harvest-dir must be given together.")
+    if (manifest_path or harvest_dir) and fmt != "html":
+        raise click.UsageError("--manifest/--harvest-dir require --format html.")
 
     qa = QACollector()
     written = build_well_inspection_reports(
         Path(wells_csv), Path(output_dir),
         site_id=site_id,
         maintenance_log_csv=Path(maintenance_log_csv) if maintenance_log_csv else None,
+        fmt=fmt,
+        manifest_path=Path(manifest_path) if manifest_path else None,
+        harvest_dir=Path(harvest_dir) if harvest_dir else None,
         qa=qa,
     )
-    click.echo(f"Written {len(written)} Markdown file(s) to {output_dir}")
+    click.echo(f"Written {len(written)} {fmt.upper()} file(s) to {output_dir}")
     _render_qa(qa, report, fail_on)
 
 
