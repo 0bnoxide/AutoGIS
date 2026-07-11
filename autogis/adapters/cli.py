@@ -4096,6 +4096,66 @@ def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
         _render_qa(qa, None, "error")
 
 
+@envmon.command("draft-edd-profile")
+@click.argument("sample_file", type=click.Path(exists=True))
+@click.option("--output", required=True, type=click.Path(),
+              help="Path to write the draft LabEDD profile YAML.")
+@click.option("--profile-id", default="DRAFT", show_default=True,
+              help="Profile ID embedded in the output YAML.")
+@click.option("--lab-name", default=None,
+              help="Lab name for the profile (default: sample file stem).")
+def draft_edd_profile_cmd(sample_file, output, profile_id, lab_name):
+    """Tool 2.3a: inspect a sample lab EDD and write a draft LabEDD profile
+    YAML (headless). Counterpart to draft-parser-profile for flat lab EDDs."""
+    import yaml as _yaml
+    from autogis.core.envmon.edd_profile_draft import (
+        REQUIRED_FIELDS,
+        draft_edd_profile,
+        drafted_profile_to_yaml_dict,
+    )
+
+    try:
+        drafted = draft_edd_profile(Path(sample_file))
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    profile_dict = drafted_profile_to_yaml_dict(
+        drafted, profile_id=profile_id,
+        lab_name=lab_name or Path(sample_file).stem)
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_yaml.dump(profile_dict, allow_unicode=True,
+                              sort_keys=False),
+                   encoding="utf-8")
+    # count only actionable review items (required unmapped or ambiguous),
+    # not optional fields simply absent from the export
+    review = sum(1 for f in drafted.fields if f.status == "NEEDS_REVIEW"
+                 and (f.candidates or f.canonical_name in REQUIRED_FIELDS))
+    click.echo(f"Draft profile written: {out}  "
+               f"({review} field(s) need review — REVIEW BEFORE USE)")
+    click.echo("Next: edit the _TODO mappings, then test headlessly with "
+               "'autogis envmon batch-import-workbooks' before import-edd.")
+
+
+@envmon.command("validate-lab-profile")
+@click.argument("profile_yaml", type=click.Path(exists=True))
+@qa_report_options
+def validate_lab_profile_cmd(profile_yaml, report, fail_on):
+    """Validate a LabEDD profile YAML is well-formed (headless)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.edd_profile import (
+        LabEDDProfile,
+        validate_edd_profile,
+    )
+
+    try:
+        profile = LabEDDProfile.load(Path(profile_yaml))
+    except Exception as exc:  # noqa: BLE001 — surface load failure cleanly
+        raise click.ClickException(f"Cannot load profile: {exc}")
+    qa = QACollector()
+    validate_edd_profile(profile, qa)
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("batch-import-workbooks")
 @click.option("--manifest", default=None, type=click.Path(exists=True),
               help="CSV with columns: workbook_path, profile_path, site_id. "

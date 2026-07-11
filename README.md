@@ -116,6 +116,8 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ValidateFieldDataCompleteness](autogis/core/envmon/field_completeness_validator.py) | `envmon validate-field-completeness` | Compare sampling plan vs. lab results for completeness (headless) |
 | [ExportComparisonExcel](autogis/core/envmon/export_comparison_excel.py) | `envmon export-comparison-excel` | Tool 4.8: export comparison results to a formatted Excel workbook (headless) |
 | [DraftParserProfileFromWorkbook](autogis/core/envmon/excel_workbook_inspector.py) | `envmon draft-parser-profile` | Tool 2.1: inspect a workbook and write a draft parser profile YAML (headless) |
+| [DraftEDDProfile](autogis/core/envmon/edd_profile_draft.py) | `envmon draft-edd-profile` | Tool 2.3a: inspect a sample lab EDD and write a draft LabEDD profile YAML (headless) |
+| [ValidateLabProfile](autogis/core/envmon/edd_profile.py) | `envmon validate-lab-profile` | Tool 2.3b: validate a LabEDD profile YAML is well-formed (headless) |
 | [RTKControlCheckReport](autogis/core/envmon/rtk_control_check.py) | `envmon rtk-control-check` | Compare RTK-surveyed control shots to published benchmarks (headless) |
 | [GeneratePortfolioMetrics](autogis/core/envmon/portfolio_metrics.py) | `envmon portfolio-metrics` | Roll up per-site report readiness across a multi-site run history |
 | [EvaluateGroundwaterSurfaceModels](autogis/core/envmon/evaluate_gw_models.py) | `envmon evaluate-gw-models` | Cross-validate interpolation model predictions against observed values |
@@ -302,6 +304,8 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon batch-import-workbooks` | CLOUD | `core/envmon/batch_workbook_importer.py` |
 | `autogis envmon migrate-legacy-data` | CLOUD | `core/envmon/legacy_migrator.py` |
 | `autogis envmon draft-parser-profile` | CLOUD | `core/envmon/excel_workbook_inspector.py` |
+| `autogis envmon draft-edd-profile` | CLOUD | `core/envmon/edd_profile_draft.py` |
+| `autogis envmon validate-lab-profile` | CLOUD | `core/envmon/edd_profile.py` |
 | `autogis envmon create-sampling-plan` | CLOUD | `core/envmon/sampling_plan.py` |
 | `autogis envmon reconcile-field-lab` | CLOUD | `core/envmon/field_lab_reconciler.py` |
 | `autogis envmon build-report-appendix` | CLOUD | `core/envmon/report_appendix_builder.py` |
@@ -458,6 +462,8 @@ autogis envmon download-dem --dataset USGS10m --bbox <W> <S> <E> <N> --out <dem.
 
 # Batch intake & planning
 autogis envmon draft-parser-profile <workbook.xlsx> --output <profile.yaml>
+autogis envmon draft-edd-profile <sample_edd.csv> --output <lab_profile.yaml>
+autogis envmon validate-lab-profile <lab_profile.yaml>
 autogis envmon batch-import-workbooks --manifest <manifest.csv> --output-dir <out>
 autogis envmon migrate-legacy-data --input-csv <legacy.csv> --output <out.csv>
 autogis envmon register-source-doc --file <doc.pdf> --site <id> --event <id> --tool <name>

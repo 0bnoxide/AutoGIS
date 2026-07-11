@@ -313,3 +313,15 @@ design pass. This document is kept as a record of the narrower Slice 1 design an
 its review; it is NOT yet approved or superseded — that decision is pending the
 broader-scope brainstorm. Do not begin implementation from this spec until scope is
 reconciled with the new direction.
+
+## 2026-07-10 update — implemented (trimmed) as ADR-0081
+
+The broader scope landed as the ADR-0075 Step-1/2/3 ingestion program (Steps 1–2
+shipped, PRs #212/#226) and kept this spec's target seam — `LabEDDProfile.columns`
+synonym-mappable per lab — unchanged, so the scope hold above is resolved. Core
+drafter + `draft-edd-profile` + `validate-lab-profile` implemented per this spec
+(field set widened to the post-ADR-0075 resolver set; NEEDS_REVIEW fields omitted
+from `columns` rather than written empty, so validation flags them). Deliberately
+NOT shipped, pending demand: `list-lab-profiles`, the `lab_profiles/<lab>/`
+directory restructure + sample fixtures, Slice 2 GUI. See
+`docs/adr/0081-lab-edd-profile-drafter.md`.
