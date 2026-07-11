@@ -433,7 +433,7 @@ def test_run_edd_import_caller_collector_gets_wqx_reader_qa(tmp_path, monkeypatc
     monkeypatch.setattr(mod, "create_edd_import_batch",
                         lambda *a, **k: "BATCH-001")
     monkeypatch.setattr(mod, "append_records_idempotent",
-                        lambda g, t, r, qa, b: None)
+                        lambda g, t, r, qa, b: (len(r), 0))
     monkeypatch.setattr(mod, "finalize_batch", lambda g, b, qa, c, s: None)
     monkeypatch.setattr(mod, "write_qa_to_gdb",
                         lambda g, qa, b: seen.setdefault("qa", qa))

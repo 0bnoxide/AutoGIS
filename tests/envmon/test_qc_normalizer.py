@@ -149,8 +149,9 @@ def test_run_edd_import_splits_qc_stream(monkeypatch, tmp_path):
                         lambda *a, **k: "BATCH1")
     monkeypatch.setattr(
         edd_importer, "append_records_idempotent",
-        lambda gdb, table, records, qa, batch: seen["appends"].append(
-            (table, len(records))))
+        lambda gdb, table, records, qa, batch: (
+            seen["appends"].append((table, len(records))),
+            (len(records), 0))[1])
     monkeypatch.setattr(edd_importer, "finalize_batch",
                         lambda gdb, batch, qa, counts, status:
                         seen.update(counts=counts))

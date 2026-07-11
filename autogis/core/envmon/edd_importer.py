@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import dataclasses
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -9,7 +10,9 @@ from typing import Optional
 from ..common.config import screening_for
 from ..common.qa import QACollector, SEV_ERROR, SEV_WARNING
 from .edd_profile import LabEDDProfile
-from .gdb_schema import SampleRecord, AnalyticalResultRecord, QCResultRecord
+from .gdb_schema import (
+    SampleRecord, AnalyticalResultRecord, QCResultRecord, compute_unique_key,
+)
 from .result_parser import (
     apply_qualifiers, classify_display, evaluate_screening,
     normalize_analyte_name, parse_excel_date, parse_result_value,
@@ -457,6 +460,46 @@ def normalize_qc_rows(
     return records
 
 
+def detect_within_file_key_collisions(
+    records: list,
+    table_name: str,
+    qa: QACollector,
+    batch_id: str,
+) -> int:
+    """Blocking guard: rows from ONE file that share an idempotent-dedup key.
+
+    append_records_idempotent skips the later row of such a pair as a mere
+    INFO record, so without this guard the batch stores fewer rows than it
+    reports and still finalizes PASS — silent data loss. Known real-data
+    trigger (issue #230): the frozen unique keys under-discriminate
+    (Env_AnalyticalResults lacks MethodID; Env_QCResults surrogate reruns
+    lack a run-instance component). Until the key redesign lands, a
+    within-file collision is a blocking ERROR. Returns the surplus
+    (would-be-dropped) row count.
+    """
+    by_key: dict[tuple, list] = {}
+    for rec in records:
+        key = compute_unique_key(dataclasses.asdict(rec), table_name)
+        by_key.setdefault(key, []).append(rec)
+    surplus = 0
+    for key, group in by_key.items():
+        if len(group) < 2:
+            continue
+        surplus += len(group) - 1
+        rows = ", ".join(str(getattr(r, "SourceRow", "?")) for r in group)
+        qa.add(SEV_ERROR, "edd_key_collision",
+               f"{table_name}: {len(group)} rows in this file share the "
+               f"dedup key {key} (source rows {rows}); all but the first "
+               f"would be silently dropped by the idempotent append. "
+               f"Distinct results are colliding under the current unique "
+               f"key (issue #230) — batch marked ERROR.",
+               import_batch_id=batch_id,
+               recommended_action="Inspect the colliding source rows; see "
+                                  "issue #230 for the key redesign.",
+               source_row=getattr(group[0], "SourceRow", None))
+    return surplus
+
+
 # ---------------------------------------------------------------------------
 # Module-level stubs — monkeypatchable in tests; forward to import_to_gdb
 # at call time so this module is importable without arcpy.
@@ -546,16 +589,33 @@ def run_edd_import(
         qc_records = normalize_qc_rows(
             qc_rows, profile, site_id, batch_id, analyte_dictionary, qa)
 
-    append_records_idempotent(gdb_path, "Env_Samples", samples, qa, batch_id)
-    append_records_idempotent(gdb_path, "Env_AnalyticalResults", results, qa, batch_id)
+    # Safe boundary for issue #230 (PR #229 review): rows colliding under the
+    # frozen keys would be dropped by the writer while the batch reported
+    # PASS. Blocking QA before the append so the loss can never be silent.
+    detect_within_file_key_collisions(
+        results, "Env_AnalyticalResults", qa, batch_id)
     if qc_records:
-        append_records_idempotent(gdb_path, "Env_QCResults", qc_records, qa, batch_id)
+        detect_within_file_key_collisions(
+            qc_records, "Env_QCResults", qa, batch_id)
 
+    ins_s, skip_s = append_records_idempotent(
+        gdb_path, "Env_Samples", samples, qa, batch_id)
+    ins_a, skip_a = append_records_idempotent(
+        gdb_path, "Env_AnalyticalResults", results, qa, batch_id)
+    ins_q = skip_q = 0
+    if qc_records:
+        ins_q, skip_q = append_records_idempotent(
+            gdb_path, "Env_QCResults", qc_records, qa, batch_id)
+
+    # Counts reflect what actually landed (inserted/skipped), not the
+    # pre-dedup record-list lengths (PR #229 review).
     finalize_batch(
         gdb_path,
         batch_id,
         qa,
-        {"analytical_results": len(results), "qc_results": len(qc_records)},
+        {"analytical_results": ins_a, "analytical_skipped": skip_a,
+         "samples": ins_s, "samples_skipped": skip_s,
+         "qc_results": ins_q, "qc_skipped": skip_q},
         "ERROR" if qa.has_blocking() else "PASS",
     )
 

@@ -274,6 +274,7 @@ def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
 
     def fake_append(gdb_path, table_name, records, qa, batch_id):
         calls.append(f"append:{table_name}")
+        return len(records), 0
 
     def fake_finalize(gdb_path, batch_id, qa, counts, status):
         calls.append("finalize")
