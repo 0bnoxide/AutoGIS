@@ -130,6 +130,19 @@ def test_two_tab_xlsx_fallback_sheet_order_is_flagged(tmp_path):
     assert any("VERIFY" in n for n in drafted.notes)
 
 
+def test_two_tab_xlsx_recognized_sheet_keeps_its_role(tmp_path):
+    """Regression (PR #227 review): a workbook ordered Data, Samples must not
+    reverse roles — the recognized 'Samples' name wins; only the missing
+    result role is guessed from the remaining sheets."""
+    p = _xlsx(tmp_path, {
+        "Data": ["Sample ID", "Analyte", "Result"],
+        "Samples": ["Sample ID", "Collection Date"],
+    })
+    drafted = draft_edd_profile(p)
+    assert (drafted.sample_sheet, drafted.result_sheet) == ("Samples", "Data")
+    assert any("VERIFY" in n for n in drafted.notes)
+
+
 def test_single_sheet_xlsx_identity_merge(tmp_path):
     p = _xlsx(tmp_path, {"Export": ["Sample ID", "Analyte", "Result"]})
     drafted = draft_edd_profile(p)
@@ -172,6 +185,29 @@ def test_full_draft_round_trips_and_validates(tmp_path):
     validate_edd_profile(profile, qa)
     assert not qa.has_blocking(), [r.message for r in qa.records]
     assert set(REQUIRED_FIELDS) <= set(profile.columns)
+
+
+def test_detection_limit_drafts_and_flows_to_normalization(tmp_path):
+    """Regression (PR #227 review): an export with an MDL column must draft a
+    detection_limit mapping and carry the value through normalize_edd_rows to
+    DetectionLimit — not silently drop it."""
+    from autogis.core.envmon.edd_importer import normalize_edd_rows, read_edd_file
+
+    p = tmp_path / "mdl.csv"
+    p.write_text(TESTAMERICA_HEADER.rstrip("\n") + ",MDL\n"
+                 "MW-1,01/02/2026,WG,Benzene,5,ug/L,,1,8260,L1,,,0.25\n",
+                 encoding="utf-8")
+    drafted = draft_edd_profile(p)
+    assert _field(drafted, "detection_limit").matched_column == "MDL"
+
+    d = drafted_profile_to_yaml_dict(drafted, "DRAFT_mdl", "Acme")
+    out = tmp_path / "profile.yaml"
+    out.write_text(yaml.dump(d, sort_keys=False), encoding="utf-8")
+    profile = LabEDDProfile.load(out)
+    qa = QACollector()
+    _samples, results = normalize_edd_rows(
+        read_edd_file(p, profile), profile, "H272", "B1", {}, {}, qa)
+    assert results[0].DetectionLimit == 0.25
 
 
 # ---------------------------------------------------------------------------

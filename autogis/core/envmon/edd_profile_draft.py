@@ -32,7 +32,7 @@ REQUIRED_FIELDS = (
     "analyte", "result", "units", "qualifier", "reporting_limit",
 )
 OPTIONAL_FIELDS = (
-    "method", "lab_sample_id", "depth_top_ft", "depth_bot_ft",
+    "method", "lab_sample_id", "detection_limit", "depth_top_ft", "depth_bot_ft",
     "result_fraction", "qc_type", "dilution_factor", "method_name",
     "analysis_date", "limit_type", "lab_name", "prep_method", "prep_date",
     "result_basis", "method_speciation",
@@ -58,6 +58,8 @@ _SYNONYMS: dict[str, tuple[str, ...]] = {
                   "flags", "validationqualifier"),
     "reporting_limit": ("reportinglimit", "rl", "pql", "quantitationlimit",
                         "loq", "reportingdetectionlimit"),
+    "detection_limit": ("detectionlimit", "mdl", "methoddetectionlimit",
+                        "dl", "lod", "limitofdetection"),
     "method": ("method", "analytmeth", "analysismethod", "methodcode",
                "analyticalmethod", "labmeth"),
     "lab_sample_id": ("labsampleid", "labid", "labsampid", "labsamplenumber",
@@ -174,18 +176,24 @@ def draft_edd_profile(sample_path: Path) -> DraftedProfile:
         sample_sheet = by_norm.get("samples") or by_norm.get("sample")
         result_sheet = by_norm.get("results") or by_norm.get("result")
         if sample_sheet is None or result_sheet is None:
-            names = list(populated)
-            if len(names) >= 2:
-                sample_sheet, result_sheet = names[0], names[1]
+            # any recognized role is preserved; only the missing role(s) are
+            # guessed from the remaining populated sheets, in workbook order
+            others = [n for n in populated
+                      if n not in (sample_sheet, result_sheet)]
+            if sample_sheet is None and others:
+                sample_sheet = others.pop(0)
+            if result_sheet is None and others:
+                result_sheet = others.pop(0)
+            if sample_sheet is not None and result_sheet is not None:
                 notes.append(
-                    f"Default Samples/Results sheet names not found; guessed "
-                    f"sample_sheet={sample_sheet!r}, "
-                    f"result_sheet={result_sheet!r} from sheet order — VERIFY")
+                    f"Default Samples/Results sheet names not (both) found; "
+                    f"guessed sample_sheet={sample_sheet!r}, "
+                    f"result_sheet={result_sheet!r} — VERIFY")
             else:
                 # ponytail: single-sheet xlsx has no dedicated flat format;
                 # two_tab_xlsx with both sheets set to the same name is an
                 # identity merge in _read_two_tab_xlsx, so it reads correctly.
-                sample_sheet = result_sheet = names[0]
+                sample_sheet = result_sheet = sample_sheet or result_sheet
                 notes.append(
                     f"Single-sheet workbook: sample_sheet and result_sheet "
                     f"both set to {sample_sheet!r} (identity merge)")

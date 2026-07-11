@@ -31,7 +31,7 @@ emits normalized sample/result CSVs. The drafter is the missing piece.
    header matching per the spec — coarse two-tier confidence (CONFIRMED = exactly
    one distinct header matched; NEEDS_REVIEW = zero or ambiguous, candidates
    recorded). Field set updated from the spec's 13 to the full post-ADR-0075
-   resolver set (9 required + 15 optional). Format detection: `.csv` → flat_csv
+   resolver set (9 required + 16 optional, incl. `detection_limit`). Format detection: `.csv` → flat_csv
    (BOM-sniffed encoding); `.xlsx/.xlsm` → two_tab_xlsx with default
    Samples/Results sheet names, order-based fallback flagged for review, and
    single-sheet workbooks mapped as an identity merge (sample_sheet ==
