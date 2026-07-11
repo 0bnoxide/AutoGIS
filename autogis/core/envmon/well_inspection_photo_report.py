@@ -147,7 +147,7 @@ def match_photos_to_wells(
     return photo_map
 
 
-def _prepared_image_bytes(path: Path, box: tuple[int, int]) -> Optional[bytes]:
+def prepare_image_bytes(path: Path, box: tuple[int, int]) -> Optional[bytes]:
     """EXIF-corrected, RGB, thumbnail-to-*box* JPEG bytes; None if the file
     is missing on disk. Pillow is lazy-imported here (the only place)."""
     p = Path(path)
@@ -266,7 +266,7 @@ def write_photo_report(
             if entry is None:
                 ws.cell(row=row_no, column=2, value="No photos")
                 continue
-            data = _prepared_image_bytes(
+            data = prepare_image_bytes(
                 entry.get("saved_path", ""),
                 (photo_width_px, photo_height_px))
             if data is None:
@@ -311,3 +311,7 @@ def write_photo_report(
         photos_embedded=photos_embedded,
         photos_missing=len(missing_names),
     )
+
+
+# Back-compat: this was module-private before it was reused by the HTML report.
+_prepared_image_bytes = prepare_image_bytes
