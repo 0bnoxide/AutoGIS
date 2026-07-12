@@ -2,9 +2,9 @@
 
 Assembles one Markdown report per well from a wells CSV plus an optional
 maintenance-log CSV, and a site summary Markdown flagging wells with no
-inspection history or a non-passing latest condition. Photo attachments are
-explicitly out of scope for this tool — see the related ADR for the deferred
-follow-up.
+inspection history or a non-passing latest condition. Field photos are
+embedded in the HTML output (`fmt="html"`) by reusing the
+attachment-harvester pipeline; the Markdown output remains photo-free.
 
 No arcpy dependency. No openpyxl. Pure stdlib.
 """

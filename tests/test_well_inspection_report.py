@@ -181,6 +181,28 @@ def test_photo_grid_embeds_matching_photo(tmp_path):
     assert "wellhead.jpg" in body  # caption
 
 
+def test_missing_photo_file_emits_qa_warning(tmp_path):
+    # Manifest points at an ABSOLUTE path under harvest/MW-1/ that is never
+    # created on disk, so prepare_image_bytes returns None and a
+    # photo_files_missing WARNING must be recorded (parity with the XLSX tool).
+    import pytest
+    pytest.importorskip("PIL")
+    harvest = tmp_path / "harvest"
+    (harvest / "MW-1").mkdir(parents=True)
+    missing_img = harvest / "MW-1" / "ghost.jpg"  # never written
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "attachment_id,original_name,saved_path,disposition\n"
+        f"1,ghost.jpg,{missing_img},downloaded\n", encoding="utf-8")
+    out = tmp_path / "out"
+    qa = QACollector()
+    build_well_inspection_reports(
+        _wells_csv(tmp_path), out, site_id="S", fmt="html",
+        manifest_path=manifest, harvest_dir=harvest, qa=qa,
+    )
+    assert any(r.category == "photo_files_missing" for r in qa.records)
+
+
 def test_photo_inputs_without_pillow_fail_fast(tmp_path, monkeypatch):
     # Simulate Pillow missing: the probe must raise BEFORE any file is written.
     import builtins
