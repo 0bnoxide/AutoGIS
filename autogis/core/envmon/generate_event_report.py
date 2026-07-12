@@ -36,17 +36,6 @@ def _exceeds(row: dict) -> bool:
     return str(row.get("ExceedsScreeningLevel", "")).strip() in _EXCEED_TRUE
 
 
-def _color_tone(row: dict) -> str:
-    """DisplayColorClass EXCEED/OK -> bad/ok; UNKNOWN/absent -> fall back to
-    ExceedsScreeningLevel (mirrors the exec-summary count logic)."""
-    cc = str(row.get("DisplayColorClass", "")).strip().upper()
-    if cc == "EXCEED":
-        return "bad"
-    if cc == "OK":
-        return "ok"
-    return "bad" if _exceeds(row) else "ok"
-
-
 def _load_csv(path: Optional[Path]) -> list:
     """Load CSV rows as list of dicts. Returns [] if path is None or absent."""
     if not path or not Path(path).exists():
@@ -136,11 +125,12 @@ def _gather_event_data(
                            r.get("analyte", r.get("AnalyteName", "")),
                            r.get("message", r.get("Message", ""))] for r in errs]
 
-    # HTML-only detail (MD output is intentionally unchanged): exceedance list
-    # with per-row color tone. Cap mirrors the other detail sections.
+    # HTML-only detail (MD output is intentionally unchanged): the list of
+    # exceeding results. Every row here exceeds screening by construction, so
+    # the renderer tones them all "bad". Cap mirrors the other detail sections.
     exceedance_rows = [[r.get("LocationID", ""), r.get("AnalyteCanonicalName", ""),
                         r.get("DisplayText", r.get("ResultRawText", "")),
-                        r.get("ScreeningLevel", ""), _color_tone(r)]
+                        r.get("ScreeningLevel", "")]
                        for r in exceed_results[:20]]
 
     return {
@@ -246,14 +236,14 @@ def generate_event_report_html(
     ])
     sections = [rh.section("Executive Summary", kpi)]
     if d["exceedance_rows"]:
-        # DisplayColorClass/status tone must color the cell, not be embedded as
-        # a badge() string: table() escapes cell text, so a badge's HTML would
-        # render as visible markup. Render the tone via tone_of instead.
+        # Every row exceeds screening, so the Status cell is uniformly "EXCEED"
+        # with a "bad" tone. The tone must color the cell via tone_of, not be an
+        # embedded badge() string: table() escapes cell text, so a badge's HTML
+        # would render as visible markup.
         rows = [[r[0], r[1], r[2], r[3], "EXCEED"] for r in d["exceedance_rows"]]
-        tones = [r[4] for r in d["exceedance_rows"]]
         body = rh.table(
             ["Location", "Analyte", "Result", "Screening Level", "Status"], rows,
-            tone_of=lambda i, j: tones[i] if j == 4 else None,
+            tone_of=lambda i, j: "bad" if j == 4 else None,
         )
         sections.append(rh.section("Screening Exceedances", body))
     if d["trend_rows"] is not None:

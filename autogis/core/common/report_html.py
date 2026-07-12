@@ -21,10 +21,13 @@ def _css() -> str:
 
 
 def _esc(v) -> str:
-    return html.escape("" if v is None else str(v))
+    # Text context (element content): escape &<> only. Quotes are literal in
+    # text, so no quote-escaping here — that is _attr's job.
+    return html.escape("" if v is None else str(v), quote=False)
 
 
 def _attr(v) -> str:
+    # Attribute context: also escape " and ' so a value cannot break out.
     return html.escape("" if v is None else str(v), quote=True)
 
 
