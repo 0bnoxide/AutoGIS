@@ -274,6 +274,7 @@ def test_run_edd_import_calls_lifecycle(tmp_path, monkeypatch):
 
     def fake_append(gdb_path, table_name, records, qa, batch_id):
         calls.append(f"append:{table_name}")
+        return len(records), 0
 
     def fake_finalize(gdb_path, batch_id, qa, counts, status):
         calls.append("finalize")
@@ -450,3 +451,53 @@ def test_normalize_edd_rows_unmapped_new_columns_default_empty():
     r = results[0]
     assert (r.ResultFraction, r.QCType, r.MethodDilutionKey) == ("", "", "")
     assert r.AnalysisDate is None and r.PrepDate is None
+
+
+# ---------------------------------------------------------------------------
+# Step-3 EQuIS additions — cas_number, quantitation_limit, is_reportable
+# ---------------------------------------------------------------------------
+
+def test_normalize_resolves_step3_columns():
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.edd_importer import normalize_edd_rows
+    from autogis.core.envmon.edd_profile import LabEDDProfile
+    profile = LabEDDProfile(
+        profile_id="p", lab_name="l", format="flat_csv",
+        date_format="%m/%d/%Y", encoding="utf-8",
+        columns={"sample_id": "sid", "location_id": "loc",
+                 "event_date": "dt", "matrix": "mx", "analyte": "an",
+                 "result": "res", "units": "un", "qualifier": "q",
+                 "reporting_limit": "rl", "cas_number": "cas",
+                 "quantitation_limit": "ql", "is_reportable": "rep"},
+        matrix_map={}, nondetect_qualifiers=[])
+    rows = [{"sid": "S1", "loc": "MW-1", "dt": "01/02/2026", "mx": "GW",
+             "an": "Lead", "res": "1.2", "un": "ug/l", "q": "", "rl": "0.5",
+             "cas": "7439-92-1", "ql": "2.5", "rep": "1"}]
+    qa = QACollector()
+    _, results = normalize_edd_rows(rows, profile, "site", "batch",
+                                    {}, {}, qa)
+    assert results[0].CASNumber == "7439-92-1"
+    assert results[0].QuantitationLimit == 2.5
+    assert results[0].IsReportable == 1
+
+
+def test_normalize_step3_columns_default_when_unmapped():
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.edd_importer import normalize_edd_rows
+    from autogis.core.envmon.edd_profile import LabEDDProfile
+    profile = LabEDDProfile(
+        profile_id="p", lab_name="l", format="flat_csv",
+        date_format="%m/%d/%Y", encoding="utf-8",
+        columns={"sample_id": "sid", "location_id": "loc",
+                 "event_date": "dt", "matrix": "mx", "analyte": "an",
+                 "result": "res", "units": "un", "qualifier": "q",
+                 "reporting_limit": "rl"},
+        matrix_map={}, nondetect_qualifiers=[])
+    rows = [{"sid": "S1", "loc": "MW-1", "dt": "01/02/2026", "mx": "GW",
+             "an": "Lead", "res": "1.2", "un": "ug/l", "q": "", "rl": ""}]
+    qa = QACollector()
+    _, results = normalize_edd_rows(rows, profile, "site", "batch",
+                                    {}, {}, qa)
+    assert results[0].CASNumber == ""
+    assert results[0].QuantitationLimit is None
+    assert results[0].IsReportable is None

@@ -5,8 +5,9 @@ rows split by ResultFraction / QCType / MethodDilutionKey. Every consumer
 that pivots or groups results by analyte must read through this helper or
 it will double-count / silently drop data the moment Step 2 imports real
 WQX fractions (ADR-0075). Step-1 policy: drop lab/field-QC-flagged rows,
-resolve each group to a single fraction. MethodDilutionKey rerun
-disambiguation (IsReportable) is deferred to Step 3.
+resolve each group to a single fraction. MethodDilutionKey reruns resolve
+via the lab's IsReportable flag where present (Step 3); flagless groups
+keep every run.
 
 arcpy-free: operates on plain row dicts.
 """
@@ -74,6 +75,31 @@ def canonical_result_rows(
     out = [r for r in kept
            if _group_key(r) not in chosen
            or (r.get("ResultFraction") or "") == chosen[_group_key(r)]]
+
+    # IsReportable rerun disambiguation (Step 3): where one group spans
+    # multiple MethodDilutionKeys AND the lab marked run(s) reportable, keep
+    # only the reportable ones. Groups with no flag anywhere (all pre-Step-3
+    # imports) keep every run — legacy behavior, pinned by tests.
+    def _reportable(r) -> bool:
+        return r.get("IsReportable") in (1, "1", True)
+
+    rerun_groups: Dict[Tuple, List[dict]] = defaultdict(list)
+    for r in out:
+        rerun_groups[(_group_key(r),
+                      r.get("ResultFraction") or "")].append(r)
+    dropped = set()
+    for (gkey, _frac), members in rerun_groups.items():
+        mdks = {m.get("MethodDilutionKey") or "" for m in members}
+        if len(mdks) > 1 and any(_reportable(m) for m in members):
+            for m in members:
+                if not _reportable(m):
+                    dropped.add(id(m))
+            qa.add(SEV_INFO, "rerun_resolved",
+                   f"{gkey[2]} {gkey[5]}: {len(members)} rerun row(s) "
+                   f"resolved to the lab-flagged reportable run(s).",
+                   location_id=gkey[2], analyte_name=gkey[5])
+    if dropped:
+        out = [r for r in out if id(r) not in dropped]
     return out
 
 

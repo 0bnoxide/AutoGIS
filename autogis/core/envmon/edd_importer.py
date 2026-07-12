@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import dataclasses
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -9,7 +10,9 @@ from typing import Optional
 from ..common.config import screening_for
 from ..common.qa import QACollector, SEV_ERROR, SEV_WARNING
 from .edd_profile import LabEDDProfile
-from .gdb_schema import SampleRecord, AnalyticalResultRecord
+from .gdb_schema import (
+    SampleRecord, AnalyticalResultRecord, QCResultRecord, compute_unique_key,
+)
 from .result_parser import (
     apply_qualifiers, classify_display, evaluate_screening,
     normalize_analyte_name, parse_excel_date, parse_result_value,
@@ -27,7 +30,7 @@ def read_edd_file(path: Path, profile: LabEDDProfile,
     For two_tab_xlsx, sample-sheet metadata is merged onto each result row
     before returning, so the output is the same shape regardless of format.
     ``qa`` is optional (back-compat); readers with load-time transforms
-    (wqx_csv) emit warnings through it.
+    (wqx_csv, equis_xls) emit warnings through it.
     """
     path = Path(path)
     if profile.format == "flat_csv":
@@ -37,6 +40,9 @@ def read_edd_file(path: Path, profile: LabEDDProfile,
     if profile.format == "wqx_csv":
         from .wqx_reader import read_wqx_csv
         return read_wqx_csv(path, profile, qa)
+    if profile.format == "equis_xls":
+        from .equis_reader import read_equis_xls
+        return read_equis_xls(path, profile, qa)
     raise ValueError(f"Unknown EDD format '{profile.format}'")
 
 
@@ -226,6 +232,20 @@ def normalize_edd_rows(
             except (ValueError, AttributeError):
                 pass
 
+        # Step-3 EQuIS additions — format-agnostic like detection_limit
+        # (every EQuIS dialect carries cas_rn / quantitation_limit /
+        # reportable_result natively; other formats simply don't map them).
+        cas_number = profile.resolve_column(row, "cas_number") or ""
+        quantitation_limit = None
+        ql_raw = profile.resolve_column(row, "quantitation_limit")
+        if ql_raw:
+            try:
+                quantitation_limit = float(ql_raw.replace(",", ""))
+            except (ValueError, AttributeError):
+                pass
+        rep_raw = (profile.resolve_column(row, "is_reportable") or "").strip()
+        is_reportable = int(rep_raw) if rep_raw in ("0", "1") else None
+
         # --- analyte dictionary entry ---
         entry = ({k: v for k, v in analyte_dictionary.items()
                   if not k.startswith("_")}.get(canonical) or {})
@@ -315,9 +335,169 @@ def normalize_edd_rows(
             PrepDate=prep_date,
             ResultBasis=result_basis,
             MethodSpeciation=speciation,
+            CASNumber=cas_number,
+            QuantitationLimit=quantitation_limit,
+            IsReportable=is_reportable,
         ))
 
     return samples, results
+
+
+def _qc_float(profile: LabEDDProfile, row: dict, field: str) -> Optional[float]:
+    raw = profile.resolve_column(row, field)
+    if not raw:
+        return None
+    try:
+        return float(str(raw).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def normalize_qc_rows(
+    rows: list[dict],
+    profile: LabEDDProfile,
+    site_id: str,
+    batch_id: str,
+    analyte_dictionary: dict,
+    qa: QACollector,
+) -> list[QCResultRecord]:
+    """Convert reader-tagged lab-QC rows to QCResultRecord lists (spec D4/D5).
+
+    One record per source row — MSD/LCSD are their own rows in EQuIS v1 and
+    qc_dup_* merely echoes the row's own values (verified against the real
+    WMRD export), so spike fields read the primary qc_* columns with a
+    per-field qc_dup_* fallback. No second record is ever synthesized.
+    """
+    source_name = profile.profile_id
+    records: list[QCResultRecord] = []
+    for row_num, row in enumerate(rows, start=2):
+        try:
+            row_num = int(row.get("__source_row") or row_num)
+        except (TypeError, ValueError):
+            pass
+
+        sample_id = profile.resolve_column(row, "sample_id")
+        analyte_raw = profile.resolve_column(row, "analyte") or ""
+        if not sample_id or not analyte_raw:
+            qa.add(SEV_ERROR, "edd_qc_missing_required_field",
+                   f"Row {row_num}: QC row missing "
+                   f"{'sample_id' if not sample_id else 'analyte'} — skipped",
+                   site_id=site_id, import_batch_id=batch_id,
+                   source_sheet=source_name, source_row=row_num)
+            continue
+
+        canonical = normalize_analyte_name(analyte_raw, analyte_dictionary)
+        if canonical is None:
+            qa.add(SEV_WARNING, "edd_unknown_analyte",
+                   f"Row {row_num}: QC analyte '{analyte_raw}' not in the "
+                   f"analyte dictionary; using raw name",
+                   site_id=site_id, sample_id=sample_id,
+                   import_batch_id=batch_id,
+                   source_sheet=source_name, source_row=row_num)
+            canonical = analyte_raw
+
+        parsed = parse_result_value(profile.resolve_column(row, "result"))
+
+        result_numeric = parsed.result_numeric
+        sm = _qc_float(profile, row, "qc_spike_measured")
+        spike_measured = sm if sm is not None \
+            else _qc_float(profile, row, "qc_dup_spike_measured")
+        if result_numeric is None and not parsed.is_nondetect \
+                and spike_measured is not None:
+            # spike rows report the measured spike in qc_spike_measured, not
+            # result_value (documented convention, paper mapping)
+            result_numeric = spike_measured
+
+        def _fallback(primary: str, dup: str) -> Optional[float]:
+            v = _qc_float(profile, row, primary)
+            return v if v is not None else _qc_float(profile, row, dup)
+
+        records.append(QCResultRecord(
+            ImportBatchID=batch_id,
+            SiteID=site_id,
+            Matrix=profile.map_value(
+                "matrix", profile.resolve_column(row, "matrix") or ""),
+            SampleID=sample_id,
+            QCType=profile.resolve_column(row, "qc_type") or "",
+            AnalyteName=analyte_raw,
+            AnalyteCanonicalName=canonical,
+            SourceWorkbook=source_name,
+            SourceSheet=profile.result_sheet,
+            SourceRow=row_num,
+            PrepBatchID=profile.resolve_column(row, "prep_batch_id") or "",
+            AnalysisBatchID=profile.resolve_column(
+                row, "analysis_batch_id") or "",
+            ParentSampleID=profile.resolve_column(
+                row, "parent_sample_id") or "",
+            LabSampleID=profile.resolve_column(row, "lab_sample_id") or "",
+            CASNumber=profile.resolve_column(row, "cas_number") or "",
+            MethodID=profile.resolve_column(row, "method") or "",
+            ResultFraction=profile.map_value(
+                "result_fraction",
+                profile.resolve_column(row, "result_fraction") or ""),
+            MethodDilutionKey=(profile.resolve_column(
+                row, "dilution_factor") or "").strip(),
+            AnalysisDate=parse_excel_date(
+                profile.resolve_column(row, "analysis_date") or ""),
+            ResultRawText=parsed.raw_text,
+            ResultNumeric=result_numeric,
+            Units=profile.resolve_column(row, "units") or "",
+            ReportingLimit=_qc_float(profile, row, "reporting_limit"),
+            DetectionLimit=_qc_float(profile, row, "detection_limit"),
+            Qualifier=parsed.qualifier or
+                (profile.resolve_column(row, "qualifier") or ""),
+            IsNonDetect=int(parsed.is_nondetect),
+            SpikeAmount=_fallback("qc_spike_added", "qc_dup_spike_added"),
+            OriginalConcentration=_fallback("qc_original_conc",
+                                            "qc_dup_original_conc"),
+            PercentRecovery=_fallback("qc_spike_recovery",
+                                      "qc_dup_spike_recovery"),
+            RecoveryLowerLimit=_qc_float(profile, row, "qc_spike_lcl"),
+            RecoveryUpperLimit=_qc_float(profile, row, "qc_spike_ucl"),
+            RPD=_qc_float(profile, row, "qc_rpd"),
+            RPDControlLimit=_qc_float(profile, row, "qc_rpd_cl"),
+        ))
+    return records
+
+
+def detect_within_file_key_collisions(
+    records: list,
+    table_name: str,
+    qa: QACollector,
+    batch_id: str,
+) -> int:
+    """Blocking guard: rows from ONE file that share an idempotent-dedup key.
+
+    append_records_idempotent skips the later row of such a pair as a mere
+    INFO record, so without this guard the batch stores fewer rows than it
+    reports and still finalizes PASS — silent data loss. Known real-data
+    trigger (issue #230): the frozen unique keys under-discriminate
+    (Env_AnalyticalResults lacks MethodID; Env_QCResults surrogate reruns
+    lack a run-instance component). Until the key redesign lands, a
+    within-file collision is a blocking ERROR. Returns the surplus
+    (would-be-dropped) row count.
+    """
+    by_key: dict[tuple, list] = {}
+    for rec in records:
+        key = compute_unique_key(dataclasses.asdict(rec), table_name)
+        by_key.setdefault(key, []).append(rec)
+    surplus = 0
+    for key, group in by_key.items():
+        if len(group) < 2:
+            continue
+        surplus += len(group) - 1
+        rows = ", ".join(str(getattr(r, "SourceRow", "?")) for r in group)
+        qa.add(SEV_ERROR, "edd_key_collision",
+               f"{table_name}: {len(group)} rows in this file share the "
+               f"dedup key {key} (source rows {rows}); all but the first "
+               f"would be silently dropped by the idempotent append. "
+               f"Distinct results are colliding under the current unique "
+               f"key (issue #230) — batch marked ERROR.",
+               import_batch_id=batch_id,
+               recommended_action="Inspect the colliding source rows; see "
+                                  "issue #230 for the key redesign.",
+               source_row=getattr(group[0], "SourceRow", None))
+    return surplus
 
 
 # ---------------------------------------------------------------------------
@@ -388,8 +568,13 @@ def run_edd_import(
     qa = qa if qa is not None else QACollector()
     rows = read_edd_file(edd_path, profile, qa)
 
+    # Step-3 QC fork: readers with a QC concept (equis_xls) tag lab-QC rows;
+    # untagged formats pass through unchanged.
+    qc_rows = [r for r in rows if r.get("__equis_stream") == "qc"]
+    data_rows = [r for r in rows if r.get("__equis_stream") != "qc"]
+
     samples, results = normalize_edd_rows(
-        rows=rows,
+        rows=data_rows,
         profile=profile,
         site_id=site_id,
         batch_id=batch_id,
@@ -399,14 +584,38 @@ def run_edd_import(
         event_date_override=event_date_override,
     )
 
-    append_records_idempotent(gdb_path, "Env_Samples", samples, qa, batch_id)
-    append_records_idempotent(gdb_path, "Env_AnalyticalResults", results, qa, batch_id)
+    qc_records = []
+    if qc_rows:
+        qc_records = normalize_qc_rows(
+            qc_rows, profile, site_id, batch_id, analyte_dictionary, qa)
 
+    # Safe boundary for issue #230 (PR #229 review): rows colliding under the
+    # frozen keys would be dropped by the writer while the batch reported
+    # PASS. Blocking QA before the append so the loss can never be silent.
+    detect_within_file_key_collisions(
+        results, "Env_AnalyticalResults", qa, batch_id)
+    if qc_records:
+        detect_within_file_key_collisions(
+            qc_records, "Env_QCResults", qa, batch_id)
+
+    ins_s, skip_s = append_records_idempotent(
+        gdb_path, "Env_Samples", samples, qa, batch_id)
+    ins_a, skip_a = append_records_idempotent(
+        gdb_path, "Env_AnalyticalResults", results, qa, batch_id)
+    ins_q = skip_q = 0
+    if qc_records:
+        ins_q, skip_q = append_records_idempotent(
+            gdb_path, "Env_QCResults", qc_records, qa, batch_id)
+
+    # Counts reflect what actually landed (inserted/skipped), not the
+    # pre-dedup record-list lengths (PR #229 review).
     finalize_batch(
         gdb_path,
         batch_id,
         qa,
-        {"analytical_results": len(results)},
+        {"analytical_results": ins_a, "analytical_skipped": skip_a,
+         "samples": ins_s, "samples_skipped": skip_s,
+         "qc_results": ins_q, "qc_skipped": skip_q},
         "ERROR" if qa.has_blocking() else "PASS",
     )
 
