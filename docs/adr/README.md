@@ -102,7 +102,7 @@ Each ADR follows this structure:
 | [081](0081-lab-edd-profile-drafter.md) | LabEDD profile drafter — `draft-edd-profile` (2.3a) synonym-matching heuristic + `validate-lab-profile` (2.3b); NEEDS_REVIEW fields omitted so validation flags them; closes the two-profile-system disconnect (spec Slice 1, trimmed) | Accepted | 2026-07-10 |
 | [082](0082-edd-step3-equis-wmrd-slice1.md) | EDD Step 3 slice 1 — EQuIS WMRD `.xls` reader + `Env_QCResults` table (33 cols); xlrd required dep, D5 no-pivot reversal on real-file evidence, IsReportable-aware canonical-read reruns (closes ADR-0079 follow-up #3); key-collision limitation recorded, fix deferred | Accepted | 2026-07-10 |
 | [083](0083-report-template-system.md) | Report template system — self-contained HTML (base64 images, print-optimized) additive to Markdown for the two envmon report tools; one canonical `report.css` consumed by the stdlib render layer and a DesignSync preview bundle; DOCX/PDF-lib deferred; closes #163 | Accepted | 2026-07-11 |
-| [084](0084-edd-step3-slice2-key-collision-resolution.md) | EDD Step 3 slice 2 — resolve the #230 key collisions by extending the per-reader `MethodDilutionKey` value recipe (fold `MethodID` / a QC run-instance token), never widening the frozen keys; explicit `equis_true_duplicate` QA for genuine source dups | Proposed | 2026-07-15 |
+| [084](0084-edd-step3-slice2-key-collision-resolution.md) | EDD Step 3 slice 2 — resolve the #230 key collisions by extending the per-reader `MethodDilutionKey` value recipe (analytical `MethodID` fold + surgical QC run-instance token), never widening the frozen keys; genuine source dups downgrade to a non-blocking `edd_true_duplicate` WARNING | Accepted | 2026-07-15 |
 
 ## File naming
 

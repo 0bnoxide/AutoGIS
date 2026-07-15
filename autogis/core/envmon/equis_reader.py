@@ -208,11 +208,20 @@ def _synthesize_qualifier(row: dict) -> None:
 
 
 def _compose_dilution_key(row: dict) -> None:
-    # Unconditional per-row fold (ADR-0080 determinism argument); WMRD's
-    # literal 'NA' nulls normalized out so an undiluted INITIAL run keys
-    # compatibly with formats that leave the columns blank.
-    parts = (_na(_get(row, _COL_DILUTION)), _na(_get(row, _COL_TEST_TYPE)),
-             _na(_get(row, _COL_COLUMN_NUM)), _na(_get(row, _COL_BASIS)))
+    # Per-row fold (ADR-0080 determinism argument); WMRD's literal 'NA' nulls
+    # normalized out so an undiluted INITIAL run keys compatibly with formats
+    # that leave the columns blank.
+    parts = [_na(_get(row, _COL_DILUTION)), _na(_get(row, _COL_TEST_TYPE)),
+             _na(_get(row, _COL_COLUMN_NUM)), _na(_get(row, _COL_BASIS))]
+    # ADR-0084 §1: EQuIS reports the same analyte under two methods on one
+    # sample/date/fraction, and MethodID is not an Env_AnalyticalResults key
+    # part — without the method run-token in the key the second method's row
+    # silently loses to idempotent dedup. QC rows already carry MethodID as a
+    # frozen Env_QCResults key part, so folding it there would only churn keys
+    # on reimport; the method discriminator is analytical-only. Still per-row
+    # deterministic — a given physical row always keys the same.
+    if row.get("__equis_stream") != "qc":
+        parts.append(_na(_get(row, _COL_METHOD)))
     row["__equis_method_dilution_key"] = "|".join(p for p in parts if p)
 
 

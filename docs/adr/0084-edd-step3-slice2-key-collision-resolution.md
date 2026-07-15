@@ -1,6 +1,7 @@
-# ADR-0084: EDD Step 3 slice 2 — key-collision resolution (PROPOSAL)
+# ADR-0084: EDD Step 3 slice 2 — key-collision resolution
 
-**Status:** Proposed (awaiting sign-off — do not implement until Accepted)
+**Status:** Accepted (direction signed off 2026-07-15 — extend the value recipe,
+option 1; frozen keys untouched)
 **Date:** 2026-07-15
 **Addresses:** #230
 **Builds on:** ADR-0075 (frozen keys), ADR-0082 (slice 1, limitation recorded)
@@ -60,8 +61,8 @@ recipe — never the frozen key composition.**
 3. **Genuine source duplicates — explicit, visible policy.** Rows identical on
    every mapped field including the run-instance token (the `SourceRow`-only
    pair) are a true duplicate; idempotent dedup dropping one is *correct*, but it
-   must not be silent — emit a QA record (`equis_true_duplicate`, WARNING) naming
-   the collapsed rows.
+   must not be silent — emit a QA record (WARNING, named `edd_true_duplicate` as
+   built — see Implementation refinement 4) naming the collapsed rows.
 
 Each reader's recipe extension is documented in its profile/ADR, per the
 ADR-0075 §3 convention.
@@ -80,6 +81,45 @@ ADR-0075 §3 convention.
   inherent to any fix and is strictly smaller here than under key-widening.
 - Colliding rows now persist distinctly; `n_results`/QC counts stop under-counting.
 - Slice 2's new profiles inherit the pattern instead of re-deciding it.
+
+## Implementation (as built)
+
+Five refinements settled while implementing option 1; the judgment calls are
+logged in `docs/adr/logs/2026-07-15-agent-decisions.md`.
+
+1. **Method fold is analytical-stream-only.** `equis_reader._compose_dilution_key`
+   appends `lab_anl_method_name` only for non-QC rows. `MethodID` is already a
+   frozen `Env_QCResults` key part, so folding it into the QC recipe would
+   distinguish nothing and only churn QC keys on reimport. Still per-row
+   deterministic (the stream is intrinsic to the row, not batch state) — no
+   conflict with the ADR-0080/0082 "same physical row keys the same" rule.
+2. **The QC run-instance token is surgical.** `edd_importer._assign_qc_run_instance`
+   appends `#N` to `MethodDilutionKey` only inside groups that actually collide
+   on the frozen key, so a non-repeated QC row keeps its slice-1 key verbatim.
+   This shrinks the reimport re-key from "every QC row" to "colliding QC rows
+   only" (plus every analytical row from refinement 1) — strictly smaller than
+   the Consequences note's worst case.
+3. **`#N` numbers distinct data signatures, not raw positions.** Within a
+   colliding group the ordinal is assigned by first appearance of each distinct
+   `_data_signature` (all record fields except provenance), in source order. A
+   real rerun (differing measured value) gets a fresh number and persists; a
+   genuine duplicate (identical data, differing only in `SourceRow`) reuses its
+   number and therefore still collapses — satisfying §3 without keeping a
+   spurious row.
+4. **Genuine-duplicate surfacing reuses the format-agnostic collision guard.**
+   `detect_within_file_key_collisions` now splits a surviving collision: rows
+   identical except provenance → non-blocking `edd_true_duplicate` WARNING;
+   rows that differ → blocking `edd_key_collision` ERROR (the #230
+   under-discrimination safety net, unchanged for formats without the recipe
+   extension). The category is `edd_`-prefixed, not the proposal's `equis_`,
+   to match its sibling `edd_key_collision` — the guard is not EQuIS-specific.
+5. **The token is assigned at the reader→record seam** (`normalize_qc_rows`),
+   the only place with canonical analyte names, parsed numeric values, and the
+   record objects the frozen-key grouping needs — not the raw sheet reader.
+
+No separate design spec: the decision and these refinements live here (ADR-0075
+§3 already sanctions recipe extension as the mechanism, so no new architecture
+was introduced).
 
 ## Alternatives considered
 

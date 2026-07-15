@@ -5,7 +5,7 @@ the idempotent writer while the batch reported PASS. The guard turns that
 into blocking QA, and run_edd_import finalizes with the writer's actual
 inserted/skipped counts instead of pre-dedup list lengths.
 """
-from autogis.core.common.qa import QACollector, SEV_ERROR
+from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING
 from autogis.core.envmon.edd_importer import (
     detect_within_file_key_collisions, normalize_edd_rows, normalize_qc_rows,
 )
@@ -62,10 +62,8 @@ def test_distinct_keys_pass_clean():
     assert not qa.has_blocking()
 
 
-def test_qc_surrogate_rerun_collides():
-    # The real #230 QC case: two surrogate rows identical on every key
-    # component, differing only in the measured value.
-    profile = LabEDDProfile(
+def _qc_profile():
+    return LabEDDProfile(
         profile_id="p", lab_name="l", format="equis_xls",
         date_format="%m/%d/%Y", encoding="utf-8",
         columns={"sample_id": "sid", "analyte": "an", "matrix": "mx",
@@ -73,17 +71,45 @@ def test_qc_surrogate_rerun_collides():
                  "method": "meth", "result_fraction": "frac",
                  "analysis_batch_id": "ab"},
         matrix_map={}, nondetect_qualifiers=[])
-    base = {"sid": "LCS-1", "an": "Decachlorobiphenyl", "mx": "SQ-CONTROL",
+
+
+_QC_BASE = {"sid": "LCS-1", "an": "Decachlorobiphenyl", "mx": "SQ-CONTROL",
             "qct": "SURROGATE", "un": "% recovery", "meth": "8081",
             "frac": "Total", "ab": "AB-1"}
+
+
+def test_qc_surrogate_rerun_kept_distinct():
+    # The real #230 QC case: two surrogate rows identical on every frozen key
+    # part but the measured value. ADR-0084 §2 folds a source-order
+    # run-instance token into MethodDilutionKey, so both now persist.
     qa = QACollector()
-    qc = normalize_qc_rows([{**base, "res": "96"}, {**base, "res": "101"}],
-                           profile, "site", "batch", {}, qa)
+    qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
+                            {**_QC_BASE, "res": "101"}],
+                           _qc_profile(), "site", "batch", {}, qa)
     assert len(qc) == 2
+    assert qc[0].MethodDilutionKey != qc[1].MethodDilutionKey
+    guard_qa = QACollector()
+    assert detect_within_file_key_collisions(
+        qc, "Env_QCResults", guard_qa, "B1") == 0    # no longer collides
+    assert not guard_qa.has_blocking()
+
+
+def test_qc_genuine_duplicate_warns_but_does_not_block():
+    # A true source duplicate (ADR-0084 §3): two rows identical on every field
+    # including the measured value — they share a run-instance token, still
+    # collapse, and surface as a non-blocking WARNING rather than an ERROR.
+    qa = QACollector()
+    qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
+                            {**_QC_BASE, "res": "96"}],
+                           _qc_profile(), "site", "batch", {}, qa)
+    assert qc[0].MethodDilutionKey == qc[1].MethodDilutionKey
     guard_qa = QACollector()
     assert detect_within_file_key_collisions(
         qc, "Env_QCResults", guard_qa, "B1") == 1
-    assert guard_qa.has_blocking()
+    assert not guard_qa.has_blocking()               # WARNING, not ERROR
+    dups = [r for r in guard_qa.records
+            if r.category == "edd_true_duplicate"]
+    assert len(dups) == 1 and dups[0].severity == SEV_WARNING
 
 
 def test_run_edd_import_collision_finalizes_error_with_honest_counts(

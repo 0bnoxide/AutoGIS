@@ -152,10 +152,28 @@ def test_qualifier_precedence_interpreted_first():
 
 
 def test_dilution_key_fold_na_normalized():
+    # Method folds into the analytical MethodDilutionKey recipe (ADR-0084 §1);
+    # NA column drops out, method (E200.8) rides last.
     rows, _ = _run([_sample()], [_result(dilution_factor="5",
                                          test_type="DILUTION",
                                          column_number="NA", basis="Dry")], [])
-    assert rows[0]["__equis_method_dilution_key"] == "5|DILUTION|Dry"
+    assert rows[0]["__equis_method_dilution_key"] == "5|DILUTION|Dry|E200.8"
+
+
+def test_method_folds_into_analytical_key_not_qc():
+    # ADR-0084 §1: two rows identical but for method must key distinctly on
+    # the analytical stream (MethodID is not an Env_AnalyticalResults key
+    # part). On the QC stream the method is omitted — MethodID is already a
+    # frozen Env_QCResults key part there.
+    a1 = _result(lab_anl_method_name="8015")
+    a2 = _result(lab_anl_method_name="8015M")
+    rows, _ = _run([_sample()], [a1, a2], [])
+    assert (rows[0]["__equis_method_dilution_key"]
+            != rows[1]["__equis_method_dilution_key"])
+    qc, _ = _run([_sample(sample_source="LAB", sample_type_code="QC-LCS",
+                          sample_matrix_code="SQ-CONTROL")],
+                 [_result(lab_anl_method_name="8015")], [])
+    assert "8015" not in qc[0]["__equis_method_dilution_key"]
 
 
 def test_limit_conversion_and_short_circuit():
