@@ -349,3 +349,10 @@ def test_generate_inspection_report_end_to_end_with_photo(tmp_path):
         "--out", str(out)])
     assert r.exit_code == 0, r.output
     assert "1 photo(s) embedded" in r.output
+
+
+def test_prepare_image_bytes_is_public():
+    from autogis.core.envmon import well_inspection_photo_report as m
+    assert hasattr(m, "prepare_image_bytes")
+    # missing file returns None without importing Pillow
+    assert m.prepare_image_bytes("does_not_exist.jpg", (10, 10)) is None
