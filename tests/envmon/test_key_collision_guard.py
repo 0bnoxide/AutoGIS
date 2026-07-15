@@ -5,7 +5,7 @@ the idempotent writer while the batch reported PASS. The guard turns that
 into blocking QA, and run_edd_import finalizes with the writer's actual
 inserted/skipped counts instead of pre-dedup list lengths.
 """
-from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING
+from autogis.core.common.qa import QACollector, SEV_ERROR
 from autogis.core.envmon.edd_importer import (
     detect_within_file_key_collisions, normalize_edd_rows, normalize_qc_rows,
 )
@@ -78,93 +78,110 @@ _QC_BASE = {"sid": "LCS-1", "an": "Decachlorobiphenyl", "mx": "SQ-CONTROL",
             "frac": "Total", "ab": "AB-1"}
 
 
-def test_qc_surrogate_rerun_kept_distinct():
+def test_qc_surrogate_rerun_collides_and_blocks():
     # The real #230 QC case: two surrogate rows identical on every frozen key
-    # part but the measured value. ADR-0084 §2 folds a source-order
-    # run-instance token into MethodDilutionKey, so both now persist.
+    # part but the measured value. Fail-safe policy (ADR-0084 post-merge
+    # review, P1b): value equality cannot prove a genuine duplicate vs. a
+    # distinct rerun, so the collision blocks for adjudication rather than
+    # silently collapsing one row away. Auto-resolution is reopened, pending a
+    # source-provided run identity.
     qa = QACollector()
     qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
                             {**_QC_BASE, "res": "101"}],
                            _qc_profile(), "site", "batch", {}, qa)
     assert len(qc) == 2
-    assert qc[0].MethodDilutionKey != qc[1].MethodDilutionKey
-    guard_qa = QACollector()
-    assert detect_within_file_key_collisions(
-        qc, "Env_QCResults", guard_qa, "B1") == 0    # no longer collides
-    assert not guard_qa.has_blocking()
-
-
-def test_qc_mixed_group_rerun_persists_dup_collapses():
-    # ADR-0084 refinement 3, the subtle path: one colliding group holding a
-    # real rerun AND a genuine duplicate. Source order 96, 101, 96 → tokens
-    # #1, #2, #1: rows 1 & 3 (identical) share a key and collapse; row 2 (the
-    # real rerun) stays distinct and persists.
-    qa = QACollector()
-    qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
-                            {**_QC_BASE, "res": "101"},
-                            {**_QC_BASE, "res": "96"}],
-                           _qc_profile(), "site", "batch", {}, qa)
-    assert len(qc) == 3
-    assert qc[0].MethodDilutionKey == qc[2].MethodDilutionKey   # dup shares token
-    assert qc[1].MethodDilutionKey not in (qc[0].MethodDilutionKey,)  # rerun distinct
-    guard_qa = QACollector()
-    assert detect_within_file_key_collisions(
-        qc, "Env_QCResults", guard_qa, "B1") == 1               # only the dup pair
-    assert not guard_qa.has_blocking()
-    cats = [r.category for r in guard_qa.records]
-    assert cats == ["edd_true_duplicate"]                       # no ERROR for the rerun
-
-
-def test_qc_genuine_duplicate_warns_but_does_not_block():
-    # A true source duplicate (ADR-0084 §3): two rows identical on every field
-    # including the measured value — they share a run-instance token, still
-    # collapse, and surface as a non-blocking WARNING rather than an ERROR.
-    qa = QACollector()
-    qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
-                            {**_QC_BASE, "res": "96"}],
-                           _qc_profile(), "site", "batch", {}, qa)
-    assert qc[0].MethodDilutionKey == qc[1].MethodDilutionKey
     guard_qa = QACollector()
     assert detect_within_file_key_collisions(
         qc, "Env_QCResults", guard_qa, "B1") == 1
-    assert not guard_qa.has_blocking()               # WARNING, not ERROR
-    dups = [r for r in guard_qa.records
-            if r.category == "edd_true_duplicate"]
-    assert len(dups) == 1 and dups[0].severity == SEV_WARNING
+    assert guard_qa.has_blocking()                   # ERROR, never silent
+    cats = [r.category for r in guard_qa.records]
+    assert cats == ["edd_key_collision"]
 
 
-def test_run_edd_import_collision_finalizes_error_with_honest_counts(
-        monkeypatch, tmp_path):
+def test_overlength_method_dilution_key_blocks():
+    # P2 (ADR-0084 post-merge review): a MethodDilutionKey over the TEXT(64)
+    # schema slot would truncate on write and break dedup — reject it before
+    # the append instead of storing a silently-broken key.
+    from autogis.core.envmon.edd_importer import detect_overlength_keys
+
+    results = _analytical([_flat_row()])
+    results[0].MethodDilutionKey = "x" * 65          # one over the 64 limit
+    qa = QACollector()
+    assert detect_overlength_keys(
+        results, "Env_AnalyticalResults", qa, "B1") == 1
+    assert qa.has_blocking()
+    assert [r.category for r in qa.records] == ["edd_key_too_long"]
+
+    clean = _analytical([_flat_row()])
+    clean[0].MethodDilutionKey = "x" * 64            # exactly at the limit is fine
+    clean_qa = QACollector()
+    assert detect_overlength_keys(
+        clean, "Env_AnalyticalResults", clean_qa, "B1") == 0
+    assert not clean_qa.has_blocking()
+
+
+def _import_harness(monkeypatch, rows):
+    """Stub the GDB seams; return (seen, appended) trackers. `appended` stays
+    empty when the write is correctly gated (PR #236 review)."""
     from autogis.core.envmon import edd_importer
 
     seen = {}
+    appended = []
     monkeypatch.setattr(edd_importer, "create_or_update_gdb_schema",
                         lambda gdb, qa=None: None)
     monkeypatch.setattr(edd_importer, "create_edd_import_batch",
                         lambda *a, **k: "B1")
-    # Simulate the writer skipping the within-file duplicate.
     monkeypatch.setattr(
         edd_importer, "append_records_idempotent",
-        lambda gdb, table, records, qa, batch:
-            (len(records) - 1, 1) if table == "Env_AnalyticalResults"
-            else (len(records), 0))
+        lambda gdb, table, records, qa, batch: (
+            appended.append(table), (len(records), 0))[1])
     monkeypatch.setattr(
         edd_importer, "finalize_batch",
         lambda gdb, batch, qa, counts, status:
             seen.update(counts=counts, status=status))
     monkeypatch.setattr(edd_importer, "write_qa_to_gdb", lambda *a, **k: None)
-    monkeypatch.setattr(
-        edd_importer, "read_edd_file",
-        lambda path, profile, qa=None: [_flat_row(meth="8015"),
-                                        _flat_row(meth="8015M", res="2.4")])
+    monkeypatch.setattr(edd_importer, "read_edd_file",
+                        lambda path, profile, qa=None: rows)
+    return edd_importer, seen, appended
+
+
+def test_run_edd_import_collision_aborts_write_entirely(monkeypatch, tmp_path):
+    # A within-file collision must gate the write, not just flag QA: the writer
+    # never inspects qa, so a partial-collision write would otherwise still
+    # land (PR #236 review). Assert append is never invoked and nothing counts.
+    edd_importer, seen, appended = _import_harness(
+        monkeypatch, [_flat_row(meth="8015"),
+                      _flat_row(meth="8015M", res="2.4")])
 
     edd_importer.run_edd_import(
         tmp_path / "f.csv", _flat_profile(), tmp_path / "g.gdb",
         "site", {}, {})
 
-    assert seen["status"] == "ERROR"          # collision can never PASS
-    assert seen["counts"]["analytical_results"] == 1   # inserted, not len()
-    assert seen["counts"]["analytical_skipped"] == 1
+    assert appended == []                      # writer never invoked
+    assert seen["status"] == "ERROR"           # collision can never PASS
+    assert seen["counts"]["analytical_results"] == 0
+    assert seen["counts"]["samples"] == 0
+
+
+def test_run_edd_import_overlength_key_aborts_write(monkeypatch, tmp_path):
+    # An overlength MethodDilutionKey would truncate at InsertCursor; the guard
+    # must abort the write before that happens (PR #236 review, P2 gating).
+    row = _flat_row(dil="x" * 65)               # -> MethodDilutionKey, 65 chars
+    edd_importer, seen, appended = _import_harness(monkeypatch, [row])
+    profile = LabEDDProfile(
+        profile_id="p", lab_name="l", format="flat_csv",
+        date_format="%m/%d/%Y", encoding="utf-8",
+        columns={"sample_id": "sid", "location_id": "loc", "event_date": "dt",
+                 "matrix": "mx", "analyte": "an", "result": "res",
+                 "units": "un", "method": "meth", "dilution_factor": "dil"},
+        matrix_map={}, nondetect_qualifiers=[])
+
+    edd_importer.run_edd_import(
+        tmp_path / "f.csv", profile, tmp_path / "g.gdb", "site", {}, {})
+
+    assert appended == []                      # writer never invoked
+    assert seen["status"] == "ERROR"
+    assert seen["counts"]["analytical_results"] == 0
 
 
 def test_run_edd_import_clean_file_still_passes(monkeypatch, tmp_path):

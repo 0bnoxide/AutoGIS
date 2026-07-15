@@ -64,3 +64,64 @@ decision and refinements. YAGNI — a spec doc restating the ADR is process for
 its own sake.
 **Revisit if:** slice-2's actual new dialect profiles (mining / epar4 / NYSDEC)
 get built — that work is genuinely new and warrants its own spec.
+
+---
+
+## Post-merge follow-up (same day) — fail-safe reversion of the QC mechanism
+
+PR #235 merged before the incoming Codex review finished (my error — I read
+"poll for code review" as "run a review" and merged after the local cold review
+came back APPROVE). The Codex review then found two P1 data-integrity gaps.
+
+### Merged too early — owned it, fixed forward
+**Decision:** Did not restack on the merged branch. Restarted the designated
+branch from the merged `main` and opened the fail-safe fix as a **new** PR.
+**Reasoning:** A merged PR is finished; new commits belong on a fresh change off
+the new base. Also the honest move after a premature merge is to surface the
+gaps and correct in the open, not quietly patch.
+
+### Conceded the review; reverted §2/§3 rather than reshuffle the ordinal
+**Decision:** Removed the QC run-instance token and the `edd_true_duplicate`
+downgrade entirely; a within-file QC collision is again a blocking ERROR.
+**Reasoning:** Both P1s are properties of a within-file ordinal, not of the
+"surgical" variant — P1a (cohort-dependence breaks cross-file determinism) and
+P1b (value equality can't prove a genuine duplicate, so collapse can silently
+drop a distinct run). My own decision log had already flagged the singleton→
+rerun cohort case and the "prefer a source run id" caveat; the reviewer was
+right that shipping without the run id was the wrong call. A value-hash token
+would fix P1a but not P1b, and it is the "full robust fix" the user declined in
+favor of fail-safe. Blocking loses no data and is strictly safer than both the
+pre-slice guard and the merged behavior for the ambiguous case.
+**Revisit if:** the real WMRD export turns out to carry a stable per-analysis
+run identity (user to confirm) — then the QC half can be resolved per-row and
+cross-file deterministically without blocking.
+
+### Kept the analytical fold; it is immune to both P1s
+**Decision:** Left §1 (the analytical `MethodID` fold) in place.
+**Reasoning:** It keys off a real column value, per-row and source-alone
+deterministic — neither cohort-dependent (P1a) nor value-equality-based (P1b).
+It genuinely resolves the analytical half of #230.
+
+### P2 handled by rejecting, not truncating or encoding
+**Decision:** Added `detect_overlength_keys` — a `MethodDilutionKey` over the
+TEXT(64) schema slot blocks (ERROR) before the append.
+**Reasoning:** Fail-safe and minimal. Silent truncation would corrupt dedup; a
+bounded prefix+hash encoding is more code for a limit real method names don't
+currently approach. Reject-and-flag now, encode later if it ever fires — the
+upgrade path is named in the code comment and the ADR. (YAGNI on the encoding.)
+
+### PR #236 review: actually gate the write, not just flag QA
+**Decision:** `run_edd_import` now aborts before every `append_records_idempotent`
+call when a collision or overlength guard fires (finalize ERROR, zero counts,
+return) instead of appending and relying on the ERROR flag.
+**Reasoning:** The Codex review of #236 correctly caught that the guards only
+added QA records while the writer — which never inspects `qa` — appended
+regardless. My own `detect_overlength_keys` docstring claimed "rejecting before
+the append," which the control flow did not honor: a 65-char key still reached
+InsertCursor and truncated, and a "blocked" collision still wrote-first-skipped-
+rest. Gating on the guards' return counts (not global `qa.has_blocking()`)
+aborts the whole batch for the two batch-integrity failures while leaving the
+existing per-row partial-import behavior (missing-field rows) untouched. Added
+orchestration tests asserting the writer is never invoked in either case —
+exactly the coverage the reviewer asked for. This is the write-gating half of
+"fail-safe"; without it the revert was only cosmetically safe.
