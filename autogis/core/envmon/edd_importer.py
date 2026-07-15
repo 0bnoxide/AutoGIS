@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import dataclasses
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -457,7 +458,52 @@ def normalize_qc_rows(
             RPD=_qc_float(profile, row, "qc_rpd"),
             RPDControlLimit=_qc_float(profile, row, "qc_rpd_cl"),
         ))
+    _assign_qc_run_instance(records)
     return records
+
+
+# Fields that carry provenance, not datum identity: two records equal on
+# everything else are the same result reported from different source rows.
+_PROVENANCE_FIELDS = frozenset({
+    "ImportBatchID", "SourceWorkbook", "SourceSheet", "SourceRow",
+    "SourceColumn", "SourceCell"})
+
+
+def _data_signature(rec) -> tuple:
+    """Record identity ignoring provenance — a stable, hashable fingerprint of
+    the datum. Equal signatures ⇒ a genuine duplicate (differs only in which
+    source row it came from)."""
+    return tuple(sorted(
+        (k, str(v)) for k, v in dataclasses.asdict(rec).items()
+        if k not in _PROVENANCE_FIELDS))
+
+
+def _assign_qc_run_instance(records: list) -> None:
+    """ADR-0084 §2: give repeated QC runs a distinct dedup key.
+
+    Surrogate/lab-QC reruns share every frozen ``Env_QCResults`` key part
+    (SiteID…MethodID…MethodDilutionKey) yet report different measured values,
+    so the idempotent writer would drop all but the first — silent loss (#230).
+    Within each colliding group, append a source-order run-instance token
+    (``#N``) to MethodDilutionKey, numbered by distinct data signature: real
+    reruns get distinct tokens and all persist, while a genuine duplicate
+    (identical data, differing only in source row) shares its token and still
+    collapses — correctly, and visibly via the collision guard below. Only
+    colliding groups are touched, so a non-repeated QC row keeps its slice-1
+    key (minimal reimport churn); the token is not the frozen key composition,
+    only the reader's MethodDilutionKey value recipe (ADR-0075 §3 hatch)."""
+    groups: dict[tuple, list] = defaultdict(list)
+    for rec in records:
+        groups[compute_unique_key(
+            dataclasses.asdict(rec), "Env_QCResults")].append(rec)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        instance: dict[tuple, int] = {}
+        for rec in group:                       # records are in source order
+            n = instance.setdefault(_data_signature(rec), len(instance) + 1)
+            rec.MethodDilutionKey = (f"{rec.MethodDilutionKey}#{n}"
+                                     if rec.MethodDilutionKey else f"#{n}")
 
 
 def detect_within_file_key_collisions(
@@ -470,12 +516,18 @@ def detect_within_file_key_collisions(
 
     append_records_idempotent skips the later row of such a pair as a mere
     INFO record, so without this guard the batch stores fewer rows than it
-    reports and still finalizes PASS — silent data loss. Known real-data
-    trigger (issue #230): the frozen unique keys under-discriminate
-    (Env_AnalyticalResults lacks MethodID; Env_QCResults surrogate reruns
-    lack a run-instance component). Until the key redesign lands, a
-    within-file collision is a blocking ERROR. Returns the surplus
-    (would-be-dropped) row count.
+    reports and still finalizes PASS — silent data loss. Two kinds of
+    collision, resolved by ADR-0084:
+
+    - **Genuine source duplicate** — rows identical on every field but
+      provenance. The idempotent collapse is *correct*; the guard surfaces it
+      as a non-blocking ``edd_true_duplicate`` WARNING so it is never silent.
+    - **Under-discrimination** — rows that differ in a non-key field yet share
+      the frozen key (#230: the EQuIS two-method / surrogate-rerun cases before
+      the recipe extension distinguishes them). Real data loss → blocking
+      ``edd_key_collision`` ERROR, as before.
+
+    Returns the surplus (would-be-dropped) row count across both kinds.
     """
     by_key: dict[tuple, list] = {}
     for rec in records:
@@ -487,6 +539,17 @@ def detect_within_file_key_collisions(
             continue
         surplus += len(group) - 1
         rows = ", ".join(str(getattr(r, "SourceRow", "?")) for r in group)
+        if len({_data_signature(r) for r in group}) == 1:
+            qa.add(SEV_WARNING, "edd_true_duplicate",
+                   f"{table_name}: {len(group)} source rows ({rows}) are "
+                   f"identical except provenance; the idempotent append keeps "
+                   f"one. Verify the source export did not double-report.",
+                   import_batch_id=batch_id,
+                   recommended_action="Confirm the duplicate source rows are "
+                                      "expected; no data is lost beyond the "
+                                      "repeat.",
+                   source_row=getattr(group[0], "SourceRow", None))
+            continue
         qa.add(SEV_ERROR, "edd_key_collision",
                f"{table_name}: {len(group)} rows in this file share the "
                f"dedup key {key} (source rows {rows}); all but the first "

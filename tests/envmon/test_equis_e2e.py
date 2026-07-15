@@ -60,7 +60,7 @@ def test_rerun_flags_and_dilution_keys():
     diluted = next(r for r in arsenic if "DILUTION" in r.MethodDilutionKey)
     assert initial.IsReportable == 1
     assert diluted.IsReportable == 0
-    assert diluted.MethodDilutionKey == "5|DILUTION|Dry"
+    assert diluted.MethodDilutionKey == "5|DILUTION|Dry|E200.8"  # ADR-0084 §1
 
 
 def test_nd_row_limits_converted_to_result_units():
