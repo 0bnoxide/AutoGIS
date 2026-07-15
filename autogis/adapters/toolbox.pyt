@@ -73,6 +73,7 @@ class Toolbox(object):
             ReconcileSampleLocations,
             ConditionDEM,
             CompareDroneSurfaces,
+            BuildCADExportPackage,   # tool 8.9
             DownloadOpenTopoDEM,     # OpenTopography DEM fetch + add-to-map
         ]
 
@@ -952,6 +953,79 @@ class CompareDroneSurfaces(object):
         messages.addMessage(
             f"{summary.change_count}/{summary.count} cell(s) changed "
             f"(max {summary.max_diff_ft:.2f} ft, mean {summary.mean_diff_ft:.2f} ft).")
+
+
+_CAD_OUTPUT_TYPES = (
+    "DWG_R2018", "DWG_R2013", "DWG_R2010", "DWG_R2007", "DWG_R2005",
+    "DWG_R2004", "DWG_R2000", "DWG_R14",
+    "DXF_R2018", "DXF_R2013", "DXF_R2010", "DXF_R2007", "DXF_R2005",
+    "DXF_R2004", "DXF_R2000", "DXF_R14",
+    "DGN_V8",
+)
+
+
+class BuildCADExportPackage(object):
+    """Tool 8.9 — export GIS layers to a CAD package (arcpy Export To CAD).
+
+    CAD layer names in the exported file follow the source feature class
+    names; ``arcpy.conversion.ExportCAD`` doesn't rename them from the
+    GIS->CAD mapping config on its own (that needs Add CAD Fields + a field
+    calculate, not wired here -- see issue #166). ``mapping_report.csv`` is
+    written alongside the CAD file as the intended-mapping record for manual
+    reclassification.
+    """
+
+    def __init__(self):
+        self.label = "8.9 Build CAD Export Package"
+        self.description = ("Export selected GIS layers to a DWG/DXF CAD "
+                            "file, plus a projection note and a GIS->CAD "
+                            "layer-mapping report.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("layers", "GIS layers to export", "GPFeatureLayer", multi=True),
+            _param("mapping", "CAD layer mapping (YAML/JSON)", "DEFile"),
+            _param("crs", "Output coordinate system (e.g. EPSG:2256)", "GPString"),
+            _param("output_type", "CAD output type", "GPString",
+                   default="DWG_R2018", domain=_CAD_OUTPUT_TYPES),
+            _param("output_file", "Output CAD file", "DEFile", direction="Output"),
+            _param("export_dir", "Folder for projection note + mapping report",
+                   "DEFolder"),
+        ]
+
+    @toolbox_core.record_pyt_run("build-cad-package", site_config_param=None)
+    def execute(self, parameters, messages):
+        from autogis.core.envmon.cad_layer_map import (
+            load_cad_mapping, resolve_cad_plan, write_mapping_report,
+            write_projection_note,
+        )
+        p = {q.name: q for q in parameters}
+        raw_layers = p["layers"].valueAsText or ""
+        layer_paths = [tok.strip().strip("'\"") for tok in raw_layers.split(";") if tok.strip()]
+        layer_names = [arcpy.Describe(lp).name for lp in layer_paths]
+        mapping_config = load_cad_mapping(Path(p["mapping"].valueAsText))
+        crs = p["crs"].valueAsText
+
+        plan = resolve_cad_plan(layer_names, mapping_config, crs=crs)
+        _msg(messages, plan.qa)
+        if plan.qa.has_blocking():
+            return
+
+        export_dir = Path(p["export_dir"].valueAsText)
+        write_projection_note(crs, export_dir / "projection_note.txt")
+        report_path = write_mapping_report(plan, export_dir / "mapping_report.csv")
+
+        output_type = p["output_type"].valueAsText or "DWG_R2018"
+        output_file = p["output_file"].valueAsText
+        arcpy.conversion.ExportCAD(layer_paths, output_type, output_file)
+
+        messages.addMessage(f"Exported {len(layer_paths)} layer(s) -> {output_file} ({output_type}).")
+        messages.addMessage(f"Mapping report -> {report_path}")
+        messages.addWarningMessage(
+            "CAD layer names follow the source feature class names -- the "
+            "GIS->CAD rename in mapping_report.csv is not yet applied to the "
+            "CAD file itself (see issue #166).")
 
 
 class DownloadOpenTopoDEM(object):

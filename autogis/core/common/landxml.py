@@ -1,9 +1,12 @@
-"""landxml.py — read-only LandXML TIN surface parser (stdlib only).
+"""landxml.py — LandXML TIN surface parsing (read) + CgPoints export (write),
+stdlib only.
 
 Parses a ``<Surfaces><Surface><Definition>`` TIN block into points and
 triangle faces, for rasterizing/diffing against a drone DEM
-(:mod:`autogis.core.envmon.compare_drone_surfaces`). Write support (LandXML
-export) is separate scope — see issues #164/#166.
+(:mod:`autogis.core.envmon.compare_drone_surfaces`). Also writes point-only
+``<CgPoints>`` LandXML (control/survey points, no surface or alignment data)
+shared by ``export_survey_cad.py`` (RTK points, issue #164) and
+``civil3d_points.py`` (PNEZD points, issue #166).
 
 LandXML point order is (northing, easting, elevation) per the LandXML 1.2
 spec's default ``P`` element convention. Namespace-agnostic (``{*}tag``
@@ -18,7 +21,41 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, NamedTuple, Optional
+
+
+class CgPoint(NamedTuple):
+    name: str
+    northing: float
+    easting: float
+    elevation: float
+    code: str = ""
+    description: str = ""
+
+
+_LANDXML_NS = "http://www.landxml.org/schema/LandXML-1.2"
+
+
+def write_cgpoints(points: Iterable[CgPoint], output_path: Path) -> Path:
+    """Write a LandXML 1.2 ``<CgPoints>`` file: point-only export (control/
+    survey points), no surface or alignment data. Point text is "northing
+    easting elevation", the LandXML default convention.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    root = ET.Element("LandXML", {"xmlns": _LANDXML_NS, "version": "1.2"})
+    cg_points = ET.SubElement(root, "CgPoints")
+    for pt in points:
+        attrs = {"name": pt.name}
+        if pt.code:
+            attrs["code"] = pt.code
+        if pt.description:
+            attrs["desc"] = pt.description
+        el = ET.SubElement(cg_points, "CgPoint", attrs)
+        el.text = f"{pt.northing} {pt.easting} {pt.elevation}"
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
+    return output_path
 
 
 @dataclass

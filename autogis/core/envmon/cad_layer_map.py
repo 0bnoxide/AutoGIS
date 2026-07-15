@@ -58,6 +58,25 @@ def write_projection_note(crs: str, out_path: Path) -> Path:
     return out_path
 
 
+def write_mapping_report(plan: "CADExportPlan", out_path: Path) -> Path:
+    """Write a CSV of gis_layer,cad_layer,color,linetype for the resolved plan.
+
+    Export-to-CAD names CAD layers after the source feature class (arcpy has
+    no verified per-feature Layer-property rename wired here yet -- see issue
+    #166); this report is the record of the intended mapping for manual
+    reclassification in the CAD package.
+    """
+    import csv as _csv
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", newline="", encoding="utf-8") as fh:
+        writer = _csv.writer(fh)
+        writer.writerow(["gis_layer", "cad_layer", "color", "linetype"])
+        for m in plan.mappings:
+            writer.writerow([m.gis_layer, m.cad_layer, m.color or "", m.linetype or ""])
+    return out_path
+
+
 def resolve_cad_plan(selected_layers: list, mapping_config: dict, *, crs: str) -> CADExportPlan:
     """Resolve GIS->CAD layer mappings; flag unmapped layers and a missing CRS."""
     qa = QACollector()

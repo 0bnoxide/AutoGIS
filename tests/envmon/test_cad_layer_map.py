@@ -6,7 +6,8 @@ from click.testing import CliRunner
 from autogis.adapters.cli import autogis
 from autogis.core.common.qa import SEV_ERROR
 from autogis.core.envmon.cad_layer_map import (
-    load_cad_mapping, resolve_cad_plan, validate_crs, write_projection_note)
+    load_cad_mapping, resolve_cad_plan, validate_crs, write_mapping_report,
+    write_projection_note)
 
 
 def _no_arcpy_monkeypatch(monkeypatch):
@@ -91,6 +92,20 @@ def test_validate_crs_blank_is_error():
     qa = QACollector()
     assert validate_crs("", qa=qa) is False
     assert validate_crs("EPSG:2256", qa=qa) is True
+
+
+def test_write_mapping_report(tmp_path):
+    plan = resolve_cad_plan(
+        ["wells", "contours"],
+        {"wells": {"cad_layer": "V-WELL", "color": 3, "linetype": "DASHED"},
+         "contours": {"cad_layer": "C-TOPO-MAJR"}},
+        crs="EPSG:2256",
+    )
+    out = write_mapping_report(plan, tmp_path / "mapping_report.csv")
+    lines = out.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "gis_layer,cad_layer,color,linetype"
+    assert "wells,V-WELL,3,DASHED" in lines
+    assert "contours,C-TOPO-MAJR,," in lines
 
 
 def test_build_cad_package_guard_headless(monkeypatch, tmp_path):

@@ -10,8 +10,8 @@ plus a JSON manifest.
 LandXML output is ``<CgPoints>`` only (control/survey points, no surface or
 alignment) — that's the full extent of what these RTK point layers are.
 Format decision: LandXML, made 2026-07-06 (issue #164); shares its point
-serialization with the arcpy-gated Civil3D/CAD legs (issue #166) where
-practical.
+serialization (``core.common.landxml.write_cgpoints``) with the headless
+Civil3D points leg (issue #166, ADR-0088).
 """
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ import json
 import re
 from pathlib import Path
 from typing import Dict, List
-from xml.etree import ElementTree as ET
 
+from autogis.core.common.landxml import CgPoint, write_cgpoints
 from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .import_rtk_survey import RTKPoint
 
@@ -139,30 +139,18 @@ def write_layer_geojson(points: List[RTKPoint], output_path: Path) -> None:
     )
 
 
-_LANDXML_NS = "http://www.landxml.org/schema/LandXML-1.2"
-
-
 def write_layer_landxml(points: List[RTKPoint], output_path: Path) -> None:
     """Write one LandXML 1.2 ``<CgPoints>`` file per layer.
 
     Point-only output (control/survey points) -- no surface or alignment
-    data, since these RTK layers carry neither. Point text is
-    "northing easting elevation", the LandXML default convention.
+    data, since these RTK layers carry neither.
     """
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    root = ET.Element("LandXML", {"xmlns": _LANDXML_NS, "version": "1.2"})
-    cg_points = ET.SubElement(root, "CgPoints")
-    for pt in points:
-        attrs = {"name": pt.point_id}
-        if pt.feature_code:
-            attrs["code"] = pt.feature_code
-        if pt.description:
-            attrs["desc"] = pt.description
-        el = ET.SubElement(cg_points, "CgPoint", attrs)
-        el.text = f"{pt.northing} {pt.easting} {pt.elevation_ft}"
-    ET.indent(root, space="  ")
-    ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
+    write_cgpoints(
+        (CgPoint(pt.point_id, pt.northing, pt.easting, pt.elevation_ft,
+                 pt.feature_code, pt.description)
+         for pt in points),
+        output_path,
+    )
 
 
 def export_survey_to_cad_gis(

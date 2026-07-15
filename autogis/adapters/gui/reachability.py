@@ -25,9 +25,10 @@ exclude never-runnable steps can reuse the same map.
 # Runtime + _guard call), so a curated list cross-checked against the CLI bodies
 # and ADR-0006/0039 is the honest source. test_gui_reachability guards drift.
 #
-# export-civil3d is deliberately NOT here: its PNEZD-CSV path runs headless;
-# only its --landxml leg redirects (a param-level condition the CLI's own
-# ClickException handles -> a clean HALT), so the command stays reachable.
+# export-civil3d is deliberately NOT here: both its PNEZD-CSV and --landxml
+# (CgPoints) paths run headless (ADR-0088); only a still-unbuilt contour/TIN
+# leg would need arcpy, and no CLI flag exposes that yet, so the command
+# stays reachable end-to-end.
 """
 from __future__ import annotations
 
@@ -47,7 +48,8 @@ UNREACHABLE: dict[str, str] = {
     # BuildCallouts .pyt parameter, so this standalone leaf still redirects.
     "envmon optimize-callouts":
         "Folded into BuildCallouts 'Use hull collision (numpy)' (ADR-0070).",
-    # arcpy Export-to-CAD call not wired yet (planned) -- issue #166.
+    # ADR-0006 pattern: the .pyt BuildCADExportPackage tool (ADR-0088) is the
+    # primary UI; the CLI always redirects, same as the tools 2-7 group above.
     "envmon build-cad-package":
-        "CAD export (arcpy Export-to-CAD) not wired yet; see issue #166.",
+        "Runs in ArcGIS Pro only; use the .pyt toolbox (ADR-0088).",
 }
