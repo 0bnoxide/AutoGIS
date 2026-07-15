@@ -82,29 +82,32 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
   data recall of arcpy signatures is not evidence — the suite cannot catch these
   (arcpy seams are `pragma: no cover`), which is how #174/#214 shipped.
 
-## Deferred tool groups — do not build without a phase-gate decision
+## Deferred tool groups — phase-gate status
 
-Two roadmap groups are **out of scope until a deliberate phase-gate decision reopens
-them.** Do not implement, spec, or fast-track any of these without the user
-explicitly re-opening that group first:
+Deferred groups are **out of scope until a deliberate phase-gate decision reopens
+them.** Do not implement, spec, or fast-track a deferred group without the user
+explicitly re-opening it first:
 
-- **AI-assisted (§11):** `AIDraftParserProfile`, `AIExplainQAReport`,
+- **AI-assisted (§11) — DEFERRED:** `AIDraftParserProfile`, `AIExplainQAReport`,
   `AIDraftFigureSpec`, `AIMapReviewChecklist` — deferred pending LLM seam design
   (`docs/superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md`).
-- **Conditional / geostatistical (Phase 5):** 3 tools — RunFieldToGroundwaterModelPipeline,
-  BuildGroundwaterSurfaceModel, BuildAnalyticalConcentrationSurface (kriging / EBK / surface
-  modeling) — blocked on architecture review (`docs/CONDITIONAL_TOOLS_REVIEW.md`,
-  `docs/superpowers/specs/2026-06-28-geostatistical-conditional-tools-design.md`). The
-  other 6 tools originally reviewed there (SurveyToWellElevationUpdate,
+  Binding until the user says otherwise — not a backlog to pick from when idle.
+- **Conditional / geostatistical (Phase 5) — REOPENED 2026-07-15 (user
+  decision):** 3 tools — RunFieldToGroundwaterModelPipeline,
+  BuildGroundwaterSurfaceModel, BuildAnalyticalConcentrationSurface (kriging / EBK /
+  surface modeling). Reopened ≠ implement-first: the group's own exit criteria still
+  require the **architecture review lands as an ADR (user-signed) before any
+  per-tool spec or implementation** (`docs/CONDITIONAL_TOOLS_REVIEW.md`,
+  `docs/superpowers/specs/2026-06-28-geostatistical-conditional-tools-design.md`).
+  Hand-off + shipped-infrastructure inventory: `docs/HANDOFF-2026-07-15-geostat.md`.
+  The other 6 tools originally reviewed there (SurveyToWellElevationUpdate,
   GenerateRegulatoryTables, EvaluateGroundwaterSurfaceModels, DEMConditioningPipeline,
-  CompareDroneSurfaces, GenerateSubsurfaceProfileFromBorings) have shipped — see
-  issue #167 and the batch's ADR.
+  CompareDroneSurfaces, GenerateSubsurfaceProfileFromBorings) shipped earlier — see
+  issue #167 and ADR-0061.
 
-These are a **separate future development phase**: the codebase gets refined
-thoroughly first, before either group is even considered. Other roadmap batches have
-been quietly fast-tracked before without a formal gate decision — treat
-"deferred"/"blocked" on these two groups as binding until the user says otherwise,
-not as a backlog to pick from when idle.
+Other roadmap batches have been quietly fast-tracked before without a formal gate
+decision — treat "deferred"/"blocked" as binding until the user says otherwise, and
+record every gate change (like the 2026-07-15 reopening above) in this section.
 
 ## Decision records
 
