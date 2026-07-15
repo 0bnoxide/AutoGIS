@@ -22,8 +22,10 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 The codebase now ships **106 `core/envmon/` + 10 `core/agol/` modules (116 total)**,
 **113 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
-`manage-callout-overrides`'s 4 subcommands counted individually), and a **1779-test**
-arcpy-free suite (counts as of 2026-07-08). For the authoritative per-tool breakdown see
+`manage-callout-overrides`'s 4 subcommands counted individually), and an arcpy-free
+test suite — derive the live count with `python -m pytest --collect-only -q`; it is
+extras-dependent, so a `[dev]`-only env collects fewer tests than a full-extras env
+(module/CLI counts as of 2026-07-08). For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
 2026-07-02, PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119, plus ongoing wiring/hardening work
@@ -394,7 +396,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q           # 2129 tests (see: python -m pytest --collect-only -q)
+python -m pytest -q           # count is extras-dependent: python -m pytest --collect-only -q
 ```
 
 ---
@@ -605,7 +607,7 @@ autogis/
 │   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
 │   └── figure_specs/           # Cartography layout templates
 ├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # 1732 arcpy-free tests
+└── tests/               # arcpy-free test suite (count: pytest --collect-only -q)
 ```
 
 ### Key modules
@@ -682,7 +684,9 @@ before trusting outputs.
 
 ## Contributing
 
-Test baseline: **2129 tests** (`python -m pytest --collect-only -q`). All core logic is
+Test baseline: derive live with `python -m pytest --collect-only -q` — the count is
+extras-dependent (a `[dev]`-only env collects fewer tests than a full-extras env with
+PySide6/torch installed), so this README does not pin a number. All core logic is
 arcpy-free and CI-able.
 
 ```bash
