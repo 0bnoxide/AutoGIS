@@ -4503,7 +4503,7 @@ def build_cad_package_cmd(layers, mapping, crs):
     from autogis.core.envmon import cad_layer_map  # noqa: F401
     raise click.ClickException(
         "build-cad-package requires ArcGIS Pro (arcpy Export-to-CAD) and has "
-        "no .pyt toolbox entry yet -- see issue #105 (CLI/.pyt seam gap)."
+        "no .pyt toolbox entry yet -- see issue #166 (CLI/.pyt seam gap)."
     )
 
 
@@ -4525,7 +4525,7 @@ def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, report, 
         _guard("export-civil3d")
         raise click.ClickException(
             "--landxml requires ArcGIS Pro (contour polylines/LandXML) and has "
-            "no .pyt toolbox entry yet -- see issue #105 (CLI/.pyt seam gap).")
+            "no .pyt toolbox entry yet -- see issue #166 (CLI/.pyt seam gap).")
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.civil3d_points import (
         build_pnezd, load_gwe_points_csv, write_pnezd_csv, write_projection_note)

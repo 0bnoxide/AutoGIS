@@ -85,7 +85,11 @@ Each ADR follows this structure:
 | [064](0064-agol-publish-hardening.md) | AGOL publish-layer hardening — keep tracebacks in QA errors, pre-check the hosted service name + explicit `publish_parameters`, detect/validate source type (FGDB zip, shapefile zip, GeoJSON) | Accepted | 2026-07-06 |
 | [065](0065-gui-site-config-builder.md) | GUI Site Config Builder — guided harvest `config.yaml` dialog; live sublayer lookup resolves the pick to `layer.url`; validation round-trips through `HarvestConfig.load` | Accepted | 2026-07-06 |
 | [066](0066-harvest-layer-index-combined-sublayers.md) | `HarvestConfig.layer_index` — harvest sublayer selection over the combined layers+tables list (AGOL `?sublayer=N` numbering); out-of-range raises `ConfigError`; fixes hardcoded `layers[0]` | Accepted | 2026-07-06 |
+| [067](0067-coord-hook-write-coverage-hardening.md) | Coordination hook covers every git write in a command, push-to-main refspecs, history-writing porcelain, links, and NotebookEdit | Accepted | 2026-07-07 |
 | [068](0068-pyt-run-history-recording.md) | Record run history for redirect-only `.pyt` executions through an arcpy-free `toolbox_core` recorder; environment override then target-GDB parent then cwd; functional Pro QA tracked in #231 | Accepted | 2026-07-11 |
+| [069](0069-tool-registry-single-source-consolidation.md) | Consolidate the hand-maintained tool registries behind one table (PROPOSAL) | Proposed (not executed) | 2026-07-07 |
+| [070](0070-callout-placement-cli-wiring.md) | Wire callout-placement tools 5.2 / 5.3 (folded hull-collision flag; override CRUD with a full-row read) | Accepted | 2026-07-07 |
+| [071](0071-export-survey-cad-landxml-format.md) | LandXML as the CAD point-export format for `export-survey-cad` | Accepted | 2026-07-08 |
 | [072](0072-harvest-all-sublayers-mode.md) | `HarvestConfig.all_sublayers` — harvest every attachment-bearing layer/table of an item in one run, each under its own subfolder; mutually exclusive with `url`/`layer_index`/`incremental`; GUI checkbox in the Site Config Builder | Accepted | 2026-07-08 |
 | [073](0073-gui-report-plumbing-and-single-run-pause-parity.md) | GUI: copy the executor's qa.csv out to the user's `--report` path (extends ADR-0053), single Run honors "pause on warning" (extends ADR-0063), and color-code the output pane (blue INFO / green PASS) | Accepted | 2026-07-09 |
 | [074](0074-draft-lithology-from-scan-tool.md) | DraftLithologyFromScan — headless boring-log OCR (Table-Transformer + TrOCR) into a DRAFT lithology CSV; repo's first torch/transformers dep behind the new `ocr` optional extra | Accepted | 2026-07-09 |
@@ -97,6 +101,7 @@ Each ADR follows this structure:
 | [080](0080-wqx-step2-import.md) | WQX Step-2 import — `wqx_csv` reader + DRAFT profile on the frozen EDD seam; ND synthesis, limit routing/convert-at-load, unconditional MethodDilutionKey fold, speciation fold; merged after the ADR-0079 gate (PR #223) | Accepted | 2026-07-10 |
 | [081](0081-lab-edd-profile-drafter.md) | LabEDD profile drafter — `draft-edd-profile` (2.3a) synonym-matching heuristic + `validate-lab-profile` (2.3b); NEEDS_REVIEW fields omitted so validation flags them; closes the two-profile-system disconnect (spec Slice 1, trimmed) | Accepted | 2026-07-10 |
 | [082](0082-edd-step3-equis-wmrd-slice1.md) | EDD Step 3 slice 1 — EQuIS WMRD `.xls` reader + `Env_QCResults` table (33 cols); xlrd required dep, D5 no-pivot reversal on real-file evidence, IsReportable-aware canonical-read reruns (closes ADR-0079 follow-up #3); key-collision limitation recorded, fix deferred | Accepted | 2026-07-10 |
+| [083](0083-report-template-system.md) | Report template system — self-contained HTML (base64 images, print-optimized) additive to Markdown for the two envmon report tools; one canonical `report.css` consumed by the stdlib render layer and a DesignSync preview bundle; DOCX/PDF-lib deferred; closes #163 | Accepted | 2026-07-11 |
 
 ## File naming
 

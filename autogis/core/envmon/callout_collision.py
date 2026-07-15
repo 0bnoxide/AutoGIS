@@ -40,10 +40,6 @@ def rect_intersection_area(a: Rect, b: Rect) -> float:
     return w * h
 
 
-def rects_overlap(a: Rect, b: Rect, tolerance: float = 0.0) -> bool:
-    return rect_intersection_area(a, b) > tolerance
-
-
 def rect_within(inner: Rect, outer: Rect) -> bool:
     return (inner[0] >= outer[0] and inner[1] >= outer[1]
             and inner[2] <= outer[2] and inner[3] <= outer[3])

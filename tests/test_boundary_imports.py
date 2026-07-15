@@ -8,6 +8,12 @@ invariant was only enforced incidentally — a new module with a top-level
 Works in both environments: headless (import fails loudly) and inside an
 ArcGIS Pro env (the module would import, but the sys.modules assertion
 catches the eager arcpy/arcgis import).
+
+``autogis.adapters.gui.*`` (ADR-0057) requires the optional ``gui`` extra
+(``PySide6``), which ``pip install -e ".[dev]"`` does not pull in — a missing
+``PySide6`` is a separate, expected condition, not an arcpy/arcgis coupling.
+So the GUI modules are skipped only when PySide6 is absent; when the extra IS
+installed they are still checked, preserving the boundary guarantee for them.
 """
 import ast
 import importlib
@@ -17,12 +23,20 @@ from pathlib import Path
 
 import autogis
 
+try:
+    import PySide6  # noqa: F401
+    _HAS_PYSIDE6 = True
+except ImportError:
+    _HAS_PYSIDE6 = False
+
 
 def test_every_autogis_module_imports_headless():
     for name in ("arcpy", "arcgis"):
         sys.modules.pop(name, None)
     failed = []
     for mod in pkgutil.walk_packages(autogis.__path__, prefix="autogis."):
+        if not _HAS_PYSIDE6 and mod.name.startswith("autogis.adapters.gui"):
+            continue
         try:
             importlib.import_module(mod.name)
         except Exception as exc:  # noqa: BLE001 - report every failure at once
