@@ -120,38 +120,68 @@ def test_overlength_method_dilution_key_blocks():
     assert not clean_qa.has_blocking()
 
 
-def test_run_edd_import_collision_finalizes_error_with_honest_counts(
-        monkeypatch, tmp_path):
+def _import_harness(monkeypatch, rows):
+    """Stub the GDB seams; return (seen, appended) trackers. `appended` stays
+    empty when the write is correctly gated (PR #236 review)."""
     from autogis.core.envmon import edd_importer
 
     seen = {}
+    appended = []
     monkeypatch.setattr(edd_importer, "create_or_update_gdb_schema",
                         lambda gdb, qa=None: None)
     monkeypatch.setattr(edd_importer, "create_edd_import_batch",
                         lambda *a, **k: "B1")
-    # Simulate the writer skipping the within-file duplicate.
     monkeypatch.setattr(
         edd_importer, "append_records_idempotent",
-        lambda gdb, table, records, qa, batch:
-            (len(records) - 1, 1) if table == "Env_AnalyticalResults"
-            else (len(records), 0))
+        lambda gdb, table, records, qa, batch: (
+            appended.append(table), (len(records), 0))[1])
     monkeypatch.setattr(
         edd_importer, "finalize_batch",
         lambda gdb, batch, qa, counts, status:
             seen.update(counts=counts, status=status))
     monkeypatch.setattr(edd_importer, "write_qa_to_gdb", lambda *a, **k: None)
-    monkeypatch.setattr(
-        edd_importer, "read_edd_file",
-        lambda path, profile, qa=None: [_flat_row(meth="8015"),
-                                        _flat_row(meth="8015M", res="2.4")])
+    monkeypatch.setattr(edd_importer, "read_edd_file",
+                        lambda path, profile, qa=None: rows)
+    return edd_importer, seen, appended
+
+
+def test_run_edd_import_collision_aborts_write_entirely(monkeypatch, tmp_path):
+    # A within-file collision must gate the write, not just flag QA: the writer
+    # never inspects qa, so a partial-collision write would otherwise still
+    # land (PR #236 review). Assert append is never invoked and nothing counts.
+    edd_importer, seen, appended = _import_harness(
+        monkeypatch, [_flat_row(meth="8015"),
+                      _flat_row(meth="8015M", res="2.4")])
 
     edd_importer.run_edd_import(
         tmp_path / "f.csv", _flat_profile(), tmp_path / "g.gdb",
         "site", {}, {})
 
-    assert seen["status"] == "ERROR"          # collision can never PASS
-    assert seen["counts"]["analytical_results"] == 1   # inserted, not len()
-    assert seen["counts"]["analytical_skipped"] == 1
+    assert appended == []                      # writer never invoked
+    assert seen["status"] == "ERROR"           # collision can never PASS
+    assert seen["counts"]["analytical_results"] == 0
+    assert seen["counts"]["samples"] == 0
+
+
+def test_run_edd_import_overlength_key_aborts_write(monkeypatch, tmp_path):
+    # An overlength MethodDilutionKey would truncate at InsertCursor; the guard
+    # must abort the write before that happens (PR #236 review, P2 gating).
+    row = _flat_row(dil="x" * 65)               # -> MethodDilutionKey, 65 chars
+    edd_importer, seen, appended = _import_harness(monkeypatch, [row])
+    profile = LabEDDProfile(
+        profile_id="p", lab_name="l", format="flat_csv",
+        date_format="%m/%d/%Y", encoding="utf-8",
+        columns={"sample_id": "sid", "location_id": "loc", "event_date": "dt",
+                 "matrix": "mx", "analyte": "an", "result": "res",
+                 "units": "un", "method": "meth", "dilution_factor": "dil"},
+        matrix_map={}, nondetect_qualifiers=[])
+
+    edd_importer.run_edd_import(
+        tmp_path / "f.csv", profile, tmp_path / "g.gdb", "site", {}, {})
+
+    assert appended == []                      # writer never invoked
+    assert seen["status"] == "ERROR"
+    assert seen["counts"]["analytical_results"] == 0
 
 
 def test_run_edd_import_clean_file_still_passes(monkeypatch, tmp_path):

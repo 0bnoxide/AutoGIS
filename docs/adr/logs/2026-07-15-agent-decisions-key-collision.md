@@ -109,3 +109,19 @@ TEXT(64) schema slot blocks (ERROR) before the append.
 bounded prefix+hash encoding is more code for a limit real method names don't
 currently approach. Reject-and-flag now, encode later if it ever fires — the
 upgrade path is named in the code comment and the ADR. (YAGNI on the encoding.)
+
+### PR #236 review: actually gate the write, not just flag QA
+**Decision:** `run_edd_import` now aborts before every `append_records_idempotent`
+call when a collision or overlength guard fires (finalize ERROR, zero counts,
+return) instead of appending and relying on the ERROR flag.
+**Reasoning:** The Codex review of #236 correctly caught that the guards only
+added QA records while the writer — which never inspects `qa` — appended
+regardless. My own `detect_overlength_keys` docstring claimed "rejecting before
+the append," which the control flow did not honor: a 65-char key still reached
+InsertCursor and truncated, and a "blocked" collision still wrote-first-skipped-
+rest. Gating on the guards' return counts (not global `qa.has_blocking()`)
+aborts the whole batch for the two batch-integrity failures while leaving the
+existing per-row partial-import behavior (missing-field rows) untouched. Added
+orchestration tests asserting the writer is never invoked in either case —
+exactly the coverage the reviewer asked for. This is the write-gating half of
+"fail-safe"; without it the revert was only cosmetically safe.

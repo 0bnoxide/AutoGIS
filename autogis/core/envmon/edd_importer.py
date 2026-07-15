@@ -632,16 +632,37 @@ def run_edd_import(
         qc_records = normalize_qc_rows(
             qc_rows, profile, site_id, batch_id, analyte_dictionary, qa)
 
-    # Safe boundary for issue #230 (PR #229 review): rows colliding under the
-    # frozen keys would be dropped by the writer while the batch reported
-    # PASS. Blocking QA before the append so the loss can never be silent.
-    detect_within_file_key_collisions(
-        results, "Env_AnalyticalResults", qa, batch_id)
-    detect_overlength_keys(results, "Env_AnalyticalResults", qa, batch_id)
+    # Batch-integrity guards for issue #230 (PR #229 review + PR #236 review):
+    # a within-file key collision or an overlength key cannot be written
+    # faithfully — the idempotent writer would drop a colliding row, and an
+    # over-64-char key truncates at InsertCursor. These are batch-level
+    # failures, so they must gate the write itself, not merely flag QA: the
+    # writer never inspects `qa`, so without an explicit abort a truncated key
+    # or a partial-collision write still reaches the GDB (the exact corruption
+    # the guards claim to prevent). Per-row errors (missing required field)
+    # are NOT gated here — those rows were already dropped in normalize, and
+    # the remaining good rows still import (batch flagged ERROR).
+    bad = (detect_within_file_key_collisions(
+               results, "Env_AnalyticalResults", qa, batch_id)
+           + detect_overlength_keys(
+               results, "Env_AnalyticalResults", qa, batch_id))
     if qc_records:
-        detect_within_file_key_collisions(
+        bad += detect_within_file_key_collisions(
             qc_records, "Env_QCResults", qa, batch_id)
-        detect_overlength_keys(qc_records, "Env_QCResults", qa, batch_id)
+        bad += detect_overlength_keys(
+            qc_records, "Env_QCResults", qa, batch_id)
+
+    if bad:
+        # Abort before any append: reject the whole batch for adjudication so
+        # nothing partial or truncated ever lands. No row is written.
+        finalize_batch(
+            gdb_path, batch_id, qa,
+            {"analytical_results": 0, "analytical_skipped": 0,
+             "samples": 0, "samples_skipped": 0,
+             "qc_results": 0, "qc_skipped": 0},
+            "ERROR")
+        write_qa_to_gdb(gdb_path, qa, batch_id)
+        return batch_id
 
     ins_s, skip_s = append_records_idempotent(
         gdb_path, "Env_Samples", samples, qa, batch_id)

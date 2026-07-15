@@ -171,6 +171,17 @@ guard in a follow-up; the analytical method fold (§1) is unaffected and stands.
    any `MethodDilutionKey` over 64 chars before the append, so a truncatable
    key never reaches the GDB. Upgrade path if real recipes approach the limit:
    a bounded prefix+hash encoding, not raising the ceiling.
+4. **Write actually gated (PR #236 review).** Both batch-integrity guards
+   (collision, overlength) only *flagged* QA; `run_edd_import` then appended
+   unconditionally, and the writer never inspects `qa` — so a truncated key or
+   a partial-collision write still reached the GDB, the exact corruption the
+   guards claim to prevent. `run_edd_import` now **aborts before every append**
+   when either guard fires (return the guards' surplus/overlength counts,
+   finalize ERROR with zero counts, write QA, return) — the whole batch is
+   rejected for adjudication, nothing partial or truncated lands. Per-row
+   errors (missing required field) are unaffected: those rows drop in
+   normalize and the rest still import. Orchestration tests assert the writer
+   is never invoked for a collision or an overlength key.
 
 Net: #230's **analytical** collision is fixed and shipped; its **QC** collision
 is downgraded from "silently dropped" (pre-slice and, worse, the merged §2/§3)
