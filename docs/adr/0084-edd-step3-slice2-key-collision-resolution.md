@@ -70,7 +70,12 @@ ADR-0075 §3 convention.
 ## Consequences
 
 - **No frozen-key change**, so dedup behavior for every *other* lab format is
-  untouched — the blast radius is one reader family, not the whole schema.
+  untouched — the blast radius is one reader family, not the whole schema. (One
+  caveat: the QC run-instance token lives in `normalize_qc_rows`, which every
+  format's QC stream flows through, so the surrogate-rerun resolution applies to
+  any profile that ever produces colliding QC rows — a strict improvement, not a
+  regression, but not EQuIS-exclusive. The analytical method fold *is*
+  EQuIS-only, in `equis_reader`.)
 - **Re-import migration cost (must be surfaced):** appending a non-empty token to
   `MethodDilutionKey` changes the key *value* for all of that reader's rows, not
   only colliding ones. Because the token is non-empty, `_norm_key_part`'s

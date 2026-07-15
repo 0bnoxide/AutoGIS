@@ -94,6 +94,27 @@ def test_qc_surrogate_rerun_kept_distinct():
     assert not guard_qa.has_blocking()
 
 
+def test_qc_mixed_group_rerun_persists_dup_collapses():
+    # ADR-0084 refinement 3, the subtle path: one colliding group holding a
+    # real rerun AND a genuine duplicate. Source order 96, 101, 96 → tokens
+    # #1, #2, #1: rows 1 & 3 (identical) share a key and collapse; row 2 (the
+    # real rerun) stays distinct and persists.
+    qa = QACollector()
+    qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
+                            {**_QC_BASE, "res": "101"},
+                            {**_QC_BASE, "res": "96"}],
+                           _qc_profile(), "site", "batch", {}, qa)
+    assert len(qc) == 3
+    assert qc[0].MethodDilutionKey == qc[2].MethodDilutionKey   # dup shares token
+    assert qc[1].MethodDilutionKey not in (qc[0].MethodDilutionKey,)  # rerun distinct
+    guard_qa = QACollector()
+    assert detect_within_file_key_collisions(
+        qc, "Env_QCResults", guard_qa, "B1") == 1               # only the dup pair
+    assert not guard_qa.has_blocking()
+    cats = [r.category for r in guard_qa.records]
+    assert cats == ["edd_true_duplicate"]                       # no ERROR for the rerun
+
+
 def test_qc_genuine_duplicate_warns_but_does_not_block():
     # A true source duplicate (ADR-0084 §3): two rows identical on every field
     # including the measured value — they share a run-instance token, still
