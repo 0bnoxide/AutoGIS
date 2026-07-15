@@ -18,7 +18,7 @@ Three candidate clusters were evaluated:
   to test meaningfully; cannot be validated in an arcpy-free CI environment.
 - **Environmental analysis tools** (GroundwaterElevationEvent, EstimateGWFlowDirection,
   BuildAnalyticalExceedanceEvent, etc.) — depend on exceedance logic being correct first;
-  premature without ADR-018 in place.
+  premature without ADR-022 in place.
 - **Post-import QA + first reporting deliverable** — five items that form a complete
   dependency chain from EDD import to a PM-ready report-readiness gate; all headless or
   near-headless; no new external connectivity required.
@@ -29,7 +29,7 @@ Workgroup 2 consists of five items in the following dependency order:
 
 | # | Item | Roadmap ref | Effort est. |
 |---|---|---|---|
-| 1 | `evaluate_screening()` unit-conversion wire-up | ADR-018 | ~2 h |
+| 1 | `evaluate_screening()` unit-conversion wire-up | ADR-022 | ~2 h |
 | 2 | `ReconcileSampleLocations` (Tool 3.2) | §3.2 / §12 priority #2 | ~6–8 h |
 | 3 | `EvaluateDuplicateRPD` (Tool 3.6) | §3.6 | ~4–5 h |
 | 4 | `ExportAnalyticalSummaryTables` (Tool 9.1) | §9.1, ROI Round 3 #3 | ~5 h |
@@ -94,7 +94,7 @@ resolved before analysis tools consume joined data.
 
 3. **Start environmental analysis tools** (§4: GroundwaterElevationEvent,
    BuildAnalyticalExceedanceEvent):
-   - **Rejected:** Depend on unit-correct exceedance logic (ADR-018, item 1 of this
+   - **Rejected:** Depend on unit-correct exceedance logic (ADR-022, item 1 of this
      workgroup) and reconciled location data (item 2). Starting them before the
      pre-conditions are met would require revisiting them after WG2 anyway.
 
@@ -104,5 +104,5 @@ resolved before analysis tools consume joined data.
   output types this workgroup consumes
 - [ADR-017: CSV-based run history log](0017-run-history-csv-log.md) — `RunHistory` is
   consumed by `EvaluateReportReadiness` (item 5)
-- [ADR-018: Unit-conversion gate for screening evaluation](0018-screening-unit-conversion-invariant.md) —
+- [ADR-022: Unit-conversion gate for screening-level evaluation](0022-screening-unit-conversion-invariant.md) —
   item 1 of this workgroup; pre-condition for items 3 and 4

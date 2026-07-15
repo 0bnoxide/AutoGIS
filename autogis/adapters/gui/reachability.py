@@ -47,7 +47,7 @@ UNREACHABLE: dict[str, str] = {
     # BuildCallouts .pyt parameter, so this standalone leaf still redirects.
     "envmon optimize-callouts":
         "Folded into BuildCallouts 'Use hull collision (numpy)' (ADR-0070).",
-    # arcpy Export-to-CAD call not wired yet (planned) -- issue #105.
+    # arcpy Export-to-CAD call not wired yet (planned) -- issue #166.
     "envmon build-cad-package":
-        "CAD export (arcpy Export-to-CAD) not wired yet; see issue #105.",
+        "CAD export (arcpy Export-to-CAD) not wired yet; see issue #166.",
 }
