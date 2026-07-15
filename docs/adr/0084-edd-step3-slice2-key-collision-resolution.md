@@ -1,7 +1,9 @@
 # ADR-0084: EDD Step 3 slice 2 — key-collision resolution
 
-**Status:** Accepted (direction signed off 2026-07-15 — extend the value recipe,
-option 1; frozen keys untouched)
+**Status:** Accepted, **partially reverted post-merge** — the analytical method
+fold stands; the QC run-instance auto-resolution was reverted to a fail-safe
+blocking guard after a post-merge review found two data-integrity gaps. See
+**Post-merge revision (2026-07-15)** below. The QC half of #230 is reopened.
 **Date:** 2026-07-15
 **Addresses:** #230
 **Builds on:** ADR-0075 (frozen keys), ADR-0082 (slice 1, limitation recorded)
@@ -125,6 +127,57 @@ logged in `docs/adr/logs/2026-07-15-agent-decisions.md`.
 No separate design spec: the decision and these refinements live here (ADR-0075
 §3 already sanctions recipe extension as the mechanism, so no new architecture
 was introduced).
+
+## Post-merge revision (2026-07-15)
+
+PR #235 merged before an incoming Codex cold review finished. That review found
+two P1 data-integrity gaps in the QC run-instance mechanism (§2/§3) and one P2
+storage-boundary issue. The QC mechanism was reverted to a fail-safe blocking
+guard in a follow-up; the analytical method fold (§1) is unaffected and stands.
+
+- **P1a — the ordinal is cohort/order-dependent, so not cross-file
+  deterministic.** The surgical "only colliding groups get a token" choice
+  means a physical row keys as `K` alone but `K#1` when a later or revised
+  export also contains a rerun; append-only reimport then duplicates it, and a
+  distinct rerun arriving alone retains `K` and is silently skipped against the
+  stored `K`. This violates the ADR-0080/0082 per-row/cross-batch determinism
+  invariant — an ordinal drawn from within-file cohort cannot satisfy it.
+- **P1b — value equality does not prove a genuine duplicate.** `#N` numbered by
+  data signature collapses two rows with equal normalized values, but separate
+  surrogate analyses can legitimately share a rounded `ResultNumeric` /
+  `PercentRecovery`. Collapsing them (to a non-blocking `edd_true_duplicate`
+  WARNING) drops a distinct run — the exact silent loss this ADR set out to
+  prevent, and *worse* than the pre-slice guard, which blocked every QC
+  collision. Without a source-provided run identity, value equality is not
+  sufficient evidence.
+- **P2 — the composed key can exceed `MethodDilutionKey` TEXT(64).** The
+  analytical method fold (and the withdrawn `#N`) append with no length bound;
+  an overlength key dedups correctly in memory but truncates on write, breaking
+  idempotency on reimport.
+
+**Resolution (fail-safe, signed off 2026-07-15):**
+1. **Reverted §2/§3** — `_assign_qc_run_instance` and the `edd_true_duplicate`
+   downgrade are removed. A within-file QC collision is again a **blocking
+   `edd_key_collision` ERROR** (never a silent collapse): no data is lost, a
+   human adjudicates. The QC surrogate-rerun auto-import is **reopened** as a
+   known limitation — it cannot be resolved without either a stable
+   source-provided run identity or a DB-aware (read-existing-keys) import
+   strategy. Both P1a and P1b are gaps of the ordinal approach itself, not just
+   the surgical variant, so no ordinal reshaping fixes them.
+2. **§1 stands** — the analytical `MethodID` fold is a per-row, source-alone
+   deterministic value (the method is a real column), immune to P1a/P1b; it
+   resolves the analytical half of #230 and is retained.
+3. **P2 guarded** — `detect_overlength_keys` blocks (ERROR `edd_key_too_long`)
+   any `MethodDilutionKey` over 64 chars before the append, so a truncatable
+   key never reaches the GDB. Upgrade path if real recipes approach the limit:
+   a bounded prefix+hash encoding, not raising the ceiling.
+
+Net: #230's **analytical** collision is fixed and shipped; its **QC** collision
+is downgraded from "silently dropped" (pre-slice and, worse, the merged §2/§3)
+to "safely blocked, pending a run-identity design." Refinements 2–3 and 5 of the
+Implementation section below described the withdrawn QC mechanism and no longer
+apply; refinement 1 (analytical-only fold) and 4 (format-agnostic guard, now
+always-blocking) stand.
 
 ## Alternatives considered
 

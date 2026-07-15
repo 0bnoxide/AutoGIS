@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import csv
 import dataclasses
-from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -458,52 +457,47 @@ def normalize_qc_rows(
             RPD=_qc_float(profile, row, "qc_rpd"),
             RPDControlLimit=_qc_float(profile, row, "qc_rpd_cl"),
         ))
-    _assign_qc_run_instance(records)
     return records
 
 
-# Fields that carry provenance, not datum identity: two records equal on
-# everything else are the same result reported from different source rows.
-_PROVENANCE_FIELDS = frozenset({
-    "ImportBatchID", "SourceWorkbook", "SourceSheet", "SourceRow",
-    "SourceColumn", "SourceCell"})
+# MethodDilutionKey is TEXT(64) in both Env_AnalyticalResults and
+# Env_QCResults (gdb_schema). compute_unique_key compares the full in-memory
+# string, but the GDB truncates at 64 on write — so a key over the limit
+# dedups correctly this batch and then silently fails to match its truncated
+# stored twin on reimport. ADR-0084's method fold grows the analytical value,
+# so the ceiling is now reachable.
+_METHOD_DILUTION_KEY_MAXLEN = 64
 
 
-def _data_signature(rec) -> tuple:
-    """Record identity ignoring provenance — a stable, hashable fingerprint of
-    the datum. Equal signatures ⇒ a genuine duplicate (differs only in which
-    source row it came from)."""
-    return tuple(sorted(
-        (k, str(v)) for k, v in dataclasses.asdict(rec).items()
-        if k not in _PROVENANCE_FIELDS))
-
-
-def _assign_qc_run_instance(records: list) -> None:
-    """ADR-0084 §2: give repeated QC runs a distinct dedup key.
-
-    Surrogate/lab-QC reruns share every frozen ``Env_QCResults`` key part
-    (SiteID…MethodID…MethodDilutionKey) yet report different measured values,
-    so the idempotent writer would drop all but the first — silent loss (#230).
-    Within each colliding group, append a source-order run-instance token
-    (``#N``) to MethodDilutionKey, numbered by distinct data signature: real
-    reruns get distinct tokens and all persist, while a genuine duplicate
-    (identical data, differing only in source row) shares its token and still
-    collapses — correctly, and visibly via the collision guard below. Only
-    colliding groups are touched, so a non-repeated QC row keeps its slice-1
-    key (minimal reimport churn); the token is not the frozen key composition,
-    only the reader's MethodDilutionKey value recipe (ADR-0075 §3 hatch)."""
-    groups: dict[tuple, list] = defaultdict(list)
+def detect_overlength_keys(
+    records: list,
+    table_name: str,
+    qa: QACollector,
+    batch_id: str,
+) -> int:
+    """Blocking guard: a MethodDilutionKey longer than its TEXT(64) schema slot
+    (ADR-0084 post-merge review, P2). Rejecting before the append keeps a
+    truncatable key from ever reaching the GDB and breaking idempotency. The
+    upgrade path, if real method recipes approach the limit, is a bounded
+    prefix+hash encoding rather than raising this ceiling. Returns the count of
+    overlength records."""
+    n = 0
     for rec in records:
-        groups[compute_unique_key(
-            dataclasses.asdict(rec), "Env_QCResults")].append(rec)
-    for group in groups.values():
-        if len(group) < 2:
-            continue
-        instance: dict[tuple, int] = {}
-        for rec in group:                       # records are in source order
-            n = instance.setdefault(_data_signature(rec), len(instance) + 1)
-            rec.MethodDilutionKey = (f"{rec.MethodDilutionKey}#{n}"
-                                     if rec.MethodDilutionKey else f"#{n}")
+        mdk = getattr(rec, "MethodDilutionKey", "") or ""
+        if len(mdk) > _METHOD_DILUTION_KEY_MAXLEN:
+            n += 1
+            qa.add(SEV_ERROR, "edd_key_too_long",
+                   f"{table_name}: MethodDilutionKey is {len(mdk)} chars, over "
+                   f"the {_METHOD_DILUTION_KEY_MAXLEN}-char schema limit "
+                   f"(source row {getattr(rec, 'SourceRow', '?')}): '{mdk}'. "
+                   f"It would truncate on write and break dedup — batch marked "
+                   f"ERROR.",
+                   import_batch_id=batch_id,
+                   recommended_action="Shorten the method/dilution recipe or "
+                                      "add a bounded key encoding "
+                                      "(prefix+hash).",
+                   source_row=getattr(rec, "SourceRow", None))
+    return n
 
 
 def detect_within_file_key_collisions(
@@ -516,18 +510,15 @@ def detect_within_file_key_collisions(
 
     append_records_idempotent skips the later row of such a pair as a mere
     INFO record, so without this guard the batch stores fewer rows than it
-    reports and still finalizes PASS — silent data loss. Two kinds of
-    collision, resolved by ADR-0084:
-
-    - **Genuine source duplicate** — rows identical on every field but
-      provenance. The idempotent collapse is *correct*; the guard surfaces it
-      as a non-blocking ``edd_true_duplicate`` WARNING so it is never silent.
-    - **Under-discrimination** — rows that differ in a non-key field yet share
-      the frozen key (#230: the EQuIS two-method / surrogate-rerun cases before
-      the recipe extension distinguishes them). Real data loss → blocking
-      ``edd_key_collision`` ERROR, as before.
-
-    Returns the surplus (would-be-dropped) row count across both kinds.
+    reports and still finalizes PASS — silent data loss. Known real-data
+    trigger (issue #230): the frozen unique keys under-discriminate
+    (Env_QCResults surrogate reruns lack a run-instance component; the
+    analytical two-method case is resolved by the ADR-0084 method fold). A
+    within-file collision cannot be safely auto-resolved without a source-
+    provided run identity — collapsing value-equal rows can drop a genuinely
+    distinct run (ADR-0084 post-merge review, P1b) — so it stays a blocking
+    ERROR for human adjudication. Returns the surplus (would-be-dropped) row
+    count.
     """
     by_key: dict[tuple, list] = {}
     for rec in records:
@@ -539,17 +530,6 @@ def detect_within_file_key_collisions(
             continue
         surplus += len(group) - 1
         rows = ", ".join(str(getattr(r, "SourceRow", "?")) for r in group)
-        if len({_data_signature(r) for r in group}) == 1:
-            qa.add(SEV_WARNING, "edd_true_duplicate",
-                   f"{table_name}: {len(group)} source rows ({rows}) are "
-                   f"identical except provenance; the idempotent append keeps "
-                   f"one. Verify the source export did not double-report.",
-                   import_batch_id=batch_id,
-                   recommended_action="Confirm the duplicate source rows are "
-                                      "expected; no data is lost beyond the "
-                                      "repeat.",
-                   source_row=getattr(group[0], "SourceRow", None))
-            continue
         qa.add(SEV_ERROR, "edd_key_collision",
                f"{table_name}: {len(group)} rows in this file share the "
                f"dedup key {key} (source rows {rows}); all but the first "
@@ -657,9 +637,11 @@ def run_edd_import(
     # PASS. Blocking QA before the append so the loss can never be silent.
     detect_within_file_key_collisions(
         results, "Env_AnalyticalResults", qa, batch_id)
+    detect_overlength_keys(results, "Env_AnalyticalResults", qa, batch_id)
     if qc_records:
         detect_within_file_key_collisions(
             qc_records, "Env_QCResults", qa, batch_id)
+        detect_overlength_keys(qc_records, "Env_QCResults", qa, batch_id)
 
     ins_s, skip_s = append_records_idempotent(
         gdb_path, "Env_Samples", samples, qa, batch_id)

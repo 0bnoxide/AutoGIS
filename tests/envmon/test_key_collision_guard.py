@@ -5,7 +5,7 @@ the idempotent writer while the batch reported PASS. The guard turns that
 into blocking QA, and run_edd_import finalizes with the writer's actual
 inserted/skipped counts instead of pre-dedup list lengths.
 """
-from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING
+from autogis.core.common.qa import QACollector, SEV_ERROR
 from autogis.core.envmon.edd_importer import (
     detect_within_file_key_collisions, normalize_edd_rows, normalize_qc_rows,
 )
@@ -78,59 +78,46 @@ _QC_BASE = {"sid": "LCS-1", "an": "Decachlorobiphenyl", "mx": "SQ-CONTROL",
             "frac": "Total", "ab": "AB-1"}
 
 
-def test_qc_surrogate_rerun_kept_distinct():
+def test_qc_surrogate_rerun_collides_and_blocks():
     # The real #230 QC case: two surrogate rows identical on every frozen key
-    # part but the measured value. ADR-0084 §2 folds a source-order
-    # run-instance token into MethodDilutionKey, so both now persist.
+    # part but the measured value. Fail-safe policy (ADR-0084 post-merge
+    # review, P1b): value equality cannot prove a genuine duplicate vs. a
+    # distinct rerun, so the collision blocks for adjudication rather than
+    # silently collapsing one row away. Auto-resolution is reopened, pending a
+    # source-provided run identity.
     qa = QACollector()
     qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
                             {**_QC_BASE, "res": "101"}],
                            _qc_profile(), "site", "batch", {}, qa)
     assert len(qc) == 2
-    assert qc[0].MethodDilutionKey != qc[1].MethodDilutionKey
-    guard_qa = QACollector()
-    assert detect_within_file_key_collisions(
-        qc, "Env_QCResults", guard_qa, "B1") == 0    # no longer collides
-    assert not guard_qa.has_blocking()
-
-
-def test_qc_mixed_group_rerun_persists_dup_collapses():
-    # ADR-0084 refinement 3, the subtle path: one colliding group holding a
-    # real rerun AND a genuine duplicate. Source order 96, 101, 96 → tokens
-    # #1, #2, #1: rows 1 & 3 (identical) share a key and collapse; row 2 (the
-    # real rerun) stays distinct and persists.
-    qa = QACollector()
-    qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
-                            {**_QC_BASE, "res": "101"},
-                            {**_QC_BASE, "res": "96"}],
-                           _qc_profile(), "site", "batch", {}, qa)
-    assert len(qc) == 3
-    assert qc[0].MethodDilutionKey == qc[2].MethodDilutionKey   # dup shares token
-    assert qc[1].MethodDilutionKey not in (qc[0].MethodDilutionKey,)  # rerun distinct
-    guard_qa = QACollector()
-    assert detect_within_file_key_collisions(
-        qc, "Env_QCResults", guard_qa, "B1") == 1               # only the dup pair
-    assert not guard_qa.has_blocking()
-    cats = [r.category for r in guard_qa.records]
-    assert cats == ["edd_true_duplicate"]                       # no ERROR for the rerun
-
-
-def test_qc_genuine_duplicate_warns_but_does_not_block():
-    # A true source duplicate (ADR-0084 §3): two rows identical on every field
-    # including the measured value — they share a run-instance token, still
-    # collapse, and surface as a non-blocking WARNING rather than an ERROR.
-    qa = QACollector()
-    qc = normalize_qc_rows([{**_QC_BASE, "res": "96"},
-                            {**_QC_BASE, "res": "96"}],
-                           _qc_profile(), "site", "batch", {}, qa)
-    assert qc[0].MethodDilutionKey == qc[1].MethodDilutionKey
     guard_qa = QACollector()
     assert detect_within_file_key_collisions(
         qc, "Env_QCResults", guard_qa, "B1") == 1
-    assert not guard_qa.has_blocking()               # WARNING, not ERROR
-    dups = [r for r in guard_qa.records
-            if r.category == "edd_true_duplicate"]
-    assert len(dups) == 1 and dups[0].severity == SEV_WARNING
+    assert guard_qa.has_blocking()                   # ERROR, never silent
+    cats = [r.category for r in guard_qa.records]
+    assert cats == ["edd_key_collision"]
+
+
+def test_overlength_method_dilution_key_blocks():
+    # P2 (ADR-0084 post-merge review): a MethodDilutionKey over the TEXT(64)
+    # schema slot would truncate on write and break dedup — reject it before
+    # the append instead of storing a silently-broken key.
+    from autogis.core.envmon.edd_importer import detect_overlength_keys
+
+    results = _analytical([_flat_row()])
+    results[0].MethodDilutionKey = "x" * 65          # one over the 64 limit
+    qa = QACollector()
+    assert detect_overlength_keys(
+        results, "Env_AnalyticalResults", qa, "B1") == 1
+    assert qa.has_blocking()
+    assert [r.category for r in qa.records] == ["edd_key_too_long"]
+
+    clean = _analytical([_flat_row()])
+    clean[0].MethodDilutionKey = "x" * 64            # exactly at the limit is fine
+    clean_qa = QACollector()
+    assert detect_overlength_keys(
+        clean, "Env_AnalyticalResults", clean_qa, "B1") == 0
+    assert not clean_qa.has_blocking()
 
 
 def test_run_edd_import_collision_finalizes_error_with_honest_counts(
