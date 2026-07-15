@@ -157,6 +157,32 @@ def test_match_photos_outside_harvest_dir_dropped_with_warning(tmp_path):
                for r in qa.records)
 
 
+def test_match_photos_skips_non_image_attachments(tmp_path):
+    # A PDF/DOCX manifest row must be dropped before it can reach Image.open
+    # and abort the whole report (#232 review).
+    rows = [
+        _manifest_row(tmp_path / "MW-01" / "report.pdf", name="report.pdf"),
+        _manifest_row(tmp_path / "MW-01" / "a.jpg", name="a.jpg"),
+    ]
+    qa = QACollector()
+    photo_map = match_photos_to_wells(rows, tmp_path, qa=qa)
+    names = [r["original_name"] for rs in photo_map.values() for r in rs]
+    assert names == ["a.jpg"]
+    assert any(r.category == "non_image_attachments_skipped"
+               for r in qa.records)
+
+
+def test_prepare_image_bytes_none_on_undecodable_file(tmp_path):
+    # A file with an image extension but non-image bytes must return None, not
+    # raise UnidentifiedImageError/OSError up through the report run (#232).
+    pytest.importorskip("PIL")
+    from autogis.core.envmon.well_inspection_photo_report import prepare_image_bytes
+    bogus = tmp_path / "MW-01" / "corrupt.jpg"
+    bogus.parent.mkdir(parents=True)
+    bogus.write_bytes(b"not really a jpeg")
+    assert prepare_image_bytes(bogus, (10, 10)) is None
+
+
 # ── write_photo_report ───────────────────────────────────────────────────────
 
 def test_write_photo_report_embeds_photo(tmp_path):

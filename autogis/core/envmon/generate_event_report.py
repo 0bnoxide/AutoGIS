@@ -132,6 +132,7 @@ def _gather_event_data(
                         r.get("DisplayText", r.get("ResultRawText", "")),
                         r.get("ScreeningLevel", "")]
                        for r in exceed_results[:20]]
+    exceedance_overflow = max(0, n_exceedances - 20)
 
     return {
         "site_id": site_id, "event_id": event_id, "generated": generated,
@@ -141,6 +142,7 @@ def _gather_event_data(
         "history_rows": history_rows, "gap_rows": gap_rows,
         "gaps_overflow": gaps_overflow, "rpd_error_rows": rpd_error_rows,
         "exceedance_rows": exceedance_rows,
+        "exceedance_overflow": exceedance_overflow,
     }
 
 
@@ -245,7 +247,9 @@ def generate_event_report_html(
             ["Location", "Analyte", "Result", "Screening Level", "Status"], rows,
             tone_of=lambda i, j: "bad" if j == 4 else None,
         )
-        sections.append(rh.section("Screening Exceedances", body))
+        extra = (f'<p><em>… and {d["exceedance_overflow"]} more exceedance(s) '
+                 f'in the full CSV.</em></p>' if d["exceedance_overflow"] else "")
+        sections.append(rh.section("Screening Exceedances", body + extra))
     if d["trend_rows"] is not None:
         sections.append(rh.section("Trend vs Previous Event",
                                    rh.table(["Trend", "Count"], d["trend_rows"])))

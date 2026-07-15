@@ -203,6 +203,53 @@ def test_missing_photo_file_emits_qa_warning(tmp_path):
     assert any(r.category == "photo_files_missing" for r in qa.records)
 
 
+def _write_jpeg(path, color=(1, 2, 3)):
+    from PIL import Image
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (8, 6), color).save(path, "JPEG")
+    return path
+
+
+def test_html_build_warns_wells_without_photos(tmp_path):
+    # A well in the CSV with no matched photo group must trip the same
+    # wells_without_photos WARNING the XLSX tool emits (#232 review).
+    import pytest
+    pytest.importorskip("PIL")
+    wells_csv = tmp_path / "wells.csv"
+    wells_csv.write_text("WellID\nMW-1\nMW-2\n", encoding="utf-8")
+    harvest = tmp_path / "harvest"
+    img = _write_jpeg(harvest / "MW-1" / "a.jpg")
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "attachment_id,original_name,saved_path,disposition\n"
+        f"1,a.jpg,{img},downloaded\n", encoding="utf-8")
+    qa = QACollector()
+    build_well_inspection_reports(
+        wells_csv, tmp_path / "out", site_id="S", fmt="html",
+        manifest_path=manifest, harvest_dir=harvest, qa=qa)
+    assert any(r.category == "wells_without_photos" for r in qa.records)
+
+
+def test_html_build_warns_photos_without_record(tmp_path):
+    # A photo group keyed to a well not in the CSV (group_template mismatch)
+    # must trip photos_without_record (#232 review).
+    import pytest
+    pytest.importorskip("PIL")
+    wells_csv = tmp_path / "wells.csv"
+    wells_csv.write_text("WellID\nMW-1\n", encoding="utf-8")
+    harvest = tmp_path / "harvest"
+    img = _write_jpeg(harvest / "MW-99" / "a.jpg")
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "attachment_id,original_name,saved_path,disposition\n"
+        f"1,a.jpg,{img},downloaded\n", encoding="utf-8")
+    qa = QACollector()
+    build_well_inspection_reports(
+        wells_csv, tmp_path / "out", site_id="S", fmt="html",
+        manifest_path=manifest, harvest_dir=harvest, qa=qa)
+    assert any(r.category == "photos_without_record" for r in qa.records)
+
+
 def test_photo_inputs_without_pillow_fail_fast(tmp_path, monkeypatch):
     # Simulate Pillow missing: the probe must raise BEFORE any file is written.
     import builtins

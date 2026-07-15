@@ -36,6 +36,9 @@ from typing import Optional
 from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 
 _USABLE_DISPOSITIONS = {"downloaded", "skipped"}
+# Raster types Pillow can decode for embedding; non-image attachments (PDF,
+# DOCX, …) are dropped before ever reaching Image.open — see #232 review.
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp"}
 _PILLOW_HINT = ('Pillow is required to embed photos (openpyxl image '
                 'support). Install with: pip install "autogis[report]"')
 
@@ -126,10 +129,14 @@ def match_photos_to_wells(
     harvest_dir = Path(harvest_dir)
     photo_map: dict[str, list[dict]] = {}
     outside = 0
+    non_image: list[str] = []
     for row in manifest_rows:
         eff = ((row.get("disposition") or row.get("status") or "").strip())
         saved = (row.get("saved_path") or "").strip()
         if eff not in _USABLE_DISPOSITIONS or not saved:
+            continue
+        if Path(saved).suffix.lower() not in _IMAGE_EXTS:
+            non_image.append(row.get("original_name") or saved)
             continue
         try:
             well_id = Path(saved).relative_to(harvest_dir).parts[0]
@@ -142,14 +149,19 @@ def match_photos_to_wells(
                f"{outside} manifest row(s) have a saved_path outside "
                f"{harvest_dir} — dropped. Wrong --harvest-dir, or the "
                f"manifest came from another machine?")
+    if non_image and qa is not None:
+        qa.add(SEV_WARNING, "non_image_attachments_skipped",
+               f"{len(non_image)} non-image attachment(s) skipped (not a "
+               f"supported raster type): {', '.join(non_image)}")
     for rows in photo_map.values():
         rows.sort(key=lambda r: r.get("saved_path") or "")
     return photo_map
 
 
 def prepare_image_bytes(path: Path, box: tuple[int, int]) -> Optional[bytes]:
-    """EXIF-corrected, RGB, thumbnail-to-*box* JPEG bytes; None if the file
-    is missing on disk. Pillow is lazy-imported here (the only place)."""
+    """EXIF-corrected, RGB, thumbnail-to-*box* JPEG bytes; None if the file is
+    missing on disk or cannot be decoded as an image. Pillow is lazy-imported
+    here (the only place)."""
     p = Path(path)
     if not p.is_file():
         return None
@@ -157,14 +169,20 @@ def prepare_image_bytes(path: Path, box: tuple[int, int]) -> Optional[bytes]:
         from PIL import Image, ImageOps
     except ImportError as exc:
         raise ImportError(_PILLOW_HINT) from exc
-    img = Image.open(p)
-    img = ImageOps.exif_transpose(img)  # field photos: honor orientation tag
-    if img.mode != "RGB":
-        img = img.convert("RGB")  # JPEG has no alpha
-    img.thumbnail(box)  # never upscales
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=80)
-    return buf.getvalue()
+    try:
+        img = Image.open(p)
+        img = ImageOps.exif_transpose(img)  # field photos: honor orientation tag
+        if img.mode != "RGB":
+            img = img.convert("RGB")  # JPEG has no alpha
+        img.thumbnail(box)  # never upscales
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=80)
+        return buf.getvalue()
+    except OSError:
+        # Corrupt/truncated image or a mislabeled non-raster file: treat as
+        # unusable (UnidentifiedImageError subclasses OSError) rather than
+        # aborting the whole report. Caller records it via its missing path.
+        return None
 
 
 def write_photo_report(

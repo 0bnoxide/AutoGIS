@@ -151,6 +151,48 @@ def generate_well_report_html(
     )
 
 
+def _gather_site_summary(
+    wells: List[dict],
+    inspections_by_well: Dict[str, List[dict]],
+    *,
+    qa: QACollector,
+) -> "tuple[list, list, list]":
+    """Single gather-data/policy step for the site summary (ADR-0083).
+
+    Computes the well-status rows and flags, emitting the QA records exactly
+    once, so the Markdown and HTML renderers consume identical data and cannot
+    drift on counts or warnings.
+
+    Returns ``(rows, never_inspected, needs_attention)``.
+    """
+    never_inspected, needs_attention, rows = [], [], []
+    for w in wells:
+        wid = w.get("WellID", "")
+        history = inspections_by_well.get(wid, [])
+        if not history:
+            never_inspected.append(wid)
+            latest_condition, latest_date = "NEVER INSPECTED", ""
+        else:
+            latest_condition = history[0].get("Condition", "")
+            latest_date = history[0].get("InspectionDate", "")
+            if latest_condition.strip().upper() not in _PASSING_CONDITIONS:
+                needs_attention.append(wid)
+        rows.append([wid, latest_date, latest_condition])
+
+    if never_inspected:
+        qa.add(SEV_WARNING, "wells_never_inspected",
+               f"{len(never_inspected)} well(s) have no inspection history: "
+               f"{', '.join(never_inspected)}")
+    if needs_attention:
+        qa.add(SEV_WARNING, "wells_need_attention",
+               f"{len(needs_attention)} well(s) have a non-passing latest condition: "
+               f"{', '.join(needs_attention)}")
+    qa.add(SEV_INFO, "well_inspection_summary_complete",
+           f"Site summary: {len(wells)} well(s), {len(never_inspected)} never inspected, "
+           f"{len(needs_attention)} need attention")
+    return rows, never_inspected, needs_attention
+
+
 def generate_site_summary_html(
     wells: List[dict],
     inspections_by_well: Dict[str, List[dict]],
@@ -159,21 +201,10 @@ def generate_site_summary_html(
     generated_date: Optional[date] = None,
     qa: QACollector,
 ) -> str:
-    """HTML site summary (mirror of generate_site_summary; same QA emits)."""
+    """HTML site summary (thin renderer over _gather_site_summary)."""
     generated = (generated_date or date.today()).isoformat()
-    never, attention, rows = [], [], []
-    for w in wells:
-        wid = w.get("WellID", "")
-        history = inspections_by_well.get(wid, [])
-        if not history:
-            never.append(wid)
-            cond, dt = "NEVER INSPECTED", ""
-        else:
-            cond = history[0].get("Condition", "")
-            dt = history[0].get("InspectionDate", "")
-            if cond.strip().upper() not in _PASSING_CONDITIONS:
-                attention.append(wid)
-        rows.append([wid, dt, cond])
+    rows, never, attention = _gather_site_summary(
+        wells, inspections_by_well, qa=qa)
 
     def tone_of(i, j):
         if j != 2:
@@ -189,22 +220,11 @@ def generate_site_summary_html(
         ("Needs attention", len(attention), "bad" if attention else "ok"),
     ])
     tbl = rh.table(["WellID", "Latest Inspection", "Condition"], rows, tone_of=tone_of)
-    body = rh.render_document(
+    return rh.render_document(
         title=f"Well Inspection Site Summary — {site_id}",
         sections=[rh.section("Summary", kpi), rh.section("Well Status", tbl)],
         generated=generated,
     )
-    if never:
-        qa.add(SEV_WARNING, "wells_never_inspected",
-               f"{len(never)} well(s) have no inspection history: {', '.join(never)}")
-    if attention:
-        qa.add(SEV_WARNING, "wells_need_attention",
-               f"{len(attention)} well(s) have a non-passing latest condition: "
-               f"{', '.join(attention)}")
-    qa.add(SEV_INFO, "well_inspection_summary_complete",
-           f"Site summary: {len(wells)} well(s), {len(never)} never inspected, "
-           f"{len(attention)} need attention")
-    return body
 
 
 def generate_site_summary(
@@ -215,27 +235,14 @@ def generate_site_summary(
     generated_date: Optional[date] = None,
     qa: QACollector,
 ) -> str:
-    """Assemble a Markdown site summary across all wells.
+    """Markdown site summary (thin renderer over _gather_site_summary).
 
     Flags wells with no inspection history and wells whose latest recorded
     condition is not in the passing-condition set.
     """
     generated = (generated_date or date.today()).isoformat()
-    never_inspected = []
-    needs_attention = []
-    rows = []
-    for w in wells:
-        wid = w.get("WellID", "")
-        history = inspections_by_well.get(wid, [])
-        if not history:
-            never_inspected.append(wid)
-            latest_condition, latest_date = "NEVER INSPECTED", ""
-        else:
-            latest_condition = history[0].get("Condition", "")
-            latest_date = history[0].get("InspectionDate", "")
-            if latest_condition.strip().upper() not in _PASSING_CONDITIONS:
-                needs_attention.append(wid)
-        rows.append([wid, latest_date, latest_condition])
+    rows, never_inspected, needs_attention = _gather_site_summary(
+        wells, inspections_by_well, qa=qa)
 
     lines = [
         f"# Well Inspection Site Summary — {site_id}",
@@ -250,19 +257,6 @@ def generate_site_summary(
         _md_table(["WellID", "Latest Inspection", "Condition"], rows),
         "",
     ]
-
-    if never_inspected:
-        qa.add(SEV_WARNING, "wells_never_inspected",
-               f"{len(never_inspected)} well(s) have no inspection history: "
-               f"{', '.join(never_inspected)}")
-    if needs_attention:
-        qa.add(SEV_WARNING, "wells_need_attention",
-               f"{len(needs_attention)} well(s) have a non-passing latest condition: "
-               f"{', '.join(needs_attention)}")
-
-    qa.add(SEV_INFO, "well_inspection_summary_complete",
-           f"Site summary: {len(wells)} well(s), {len(never_inspected)} never inspected, "
-           f"{len(needs_attention)} need attention")
     return "\n".join(lines)
 
 
@@ -313,6 +307,23 @@ def build_well_inspection_reports(
                               'pip install "autogis[report]"') from exc
         manifest_rows = load_manifest(Path(manifest_path))
         photo_map = match_photos_to_wells(manifest_rows, Path(harvest_dir), qa=qa)
+        # Group_template mismatch tripwires — parity with the XLSX tool's
+        # write_photo_report (#232 review). A well with no matched photo group,
+        # or a photo group keyed to no well, usually means the harvest
+        # group_template is not well-id-based (pilot assumption).
+        well_ids = {w.get("WellID", "").strip() for w in wells} - {""}
+        without_photos = sorted(well_ids - set(photo_map))
+        without_record = sorted(set(photo_map) - well_ids)
+        if without_photos:
+            qa.add(SEV_WARNING, "wells_without_photos",
+                   f"{len(without_photos)} well(s) have no matched photos: "
+                   f"{', '.join(without_photos)}. If ALL wells lack photos, check "
+                   f"that the harvest group_template renders a well ID.")
+        if without_record:
+            qa.add(SEV_WARNING, "photos_without_record",
+                   f"{len(without_record)} photo group(s) have no matching well: "
+                   f"{', '.join(without_record)}. Unexpected group keys usually mean "
+                   f"the harvest group_template is not well-id-based.")
         missing: List[str] = []
         for wid, entries in photo_map.items():
             imgs = []

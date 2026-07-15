@@ -185,6 +185,22 @@ def test_md_and_html_agree_on_exceedance_count(tmp_path):
     assert "Screening level exceedances | 1" in md.replace("  ", " ")
 
 
+def test_html_exceedance_overflow_disclosed(tmp_path):
+    # >20 exceedances: the HTML table caps at 20 but must disclose the rest
+    # ("and N more"), not silently truncate (#232 review).
+    p = tmp_path / "results.csv"
+    rows = ["LocationID,AnalyteCanonicalName,DisplayText,ScreeningLevel,"
+            "ExceedsScreeningLevel"]
+    rows += [f"MW-{i},Benzene,9.9,5.0,1" for i in range(21)]
+    p.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    qa = QACollector()
+    data = _gather_event_data("S", "E", results_csv=p, qa=qa)
+    assert data["n_exceedances"] == 21
+    assert data["exceedance_overflow"] == 1
+    html = generate_event_report_html("S", "E", results_csv=p, qa=QACollector())
+    assert "more exceedance(s)" in html
+
+
 def test_badge_tone_falls_back_when_colorclass_missing(tmp_path):
     p = tmp_path / "r.csv"
     p.write_text("LocationID,AnalyteCanonicalName,DisplayText,ScreeningLevel,"
