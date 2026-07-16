@@ -160,7 +160,7 @@ def build_surface_registry_rows(
         "AnalyteFilter": analyte, "Method": method, "RasterType": rtype,
         "NondetectRule": nondetect_rule, "RasterPath": name,
         "ReviewStatus": "DRAFT", "CreatedAt": now,
-        "Notes": f"{_DRAFT_WARNING[:200]}",
+        "Notes": _DRAFT_WARNING[:200],
     } for rtype, name in sorted(rasters.items())]
 
 
@@ -180,13 +180,19 @@ def write_surface_registry_rows(gdb, rows: Sequence[dict]
     fields = ["SiteID", "EventDate", "SurfaceKind", "AnalyteFilter",
               "Method", "RasterType", "NondetectRule", "RasterPath",
               "ReviewStatus", "CreatedAt", "Notes"]
+
+    def _q(v: str) -> str:
+        # Apostrophe analytes (4,4'-DDT) are routine — escape every
+        # interpolated value (#slice-2 review; pattern from approve_gw_model).
+        return str(v).replace("'", "''")
+
     for r in rows:
         ymd = r["EventDate"]
-        where = (f"SiteID = '{r['SiteID']}' AND "
-                 f"SurfaceKind = '{r['SurfaceKind']}' AND "
-                 f"AnalyteFilter = '{r['AnalyteFilter']}' AND "
-                 f"Method = '{r['Method']}' AND "
-                 f"RasterType = '{r['RasterType']}' AND "
+        where = (f"SiteID = '{_q(r['SiteID'])}' AND "
+                 f"SurfaceKind = '{_q(r['SurfaceKind'])}' AND "
+                 f"AnalyteFilter = '{_q(r['AnalyteFilter'])}' AND "
+                 f"Method = '{_q(r['Method'])}' AND "
+                 f"RasterType = '{_q(r['RasterType'])}' AND "
                  f"EventDate >= date '{ymd} 00:00:00' AND "
                  f"EventDate <= date '{ymd} 23:59:59'")
         with arcpy.da.UpdateCursor(tbl, ["OID@"], where_clause=where) as cur:
@@ -249,6 +255,15 @@ def build_concentration_surface(  # pragma: no cover
         summary["skipped"] = True
         return summary
 
+    # Fail fast, before any license checkout or interpolation spend.
+    if boundary_fc and not arcpy.Exists(boundary_fc):
+        qa.add(SEV_ERROR, "boundary_missing",
+               f"Requested boundary clip but {boundary_fc} does not "
+               "exist. Surface skipped; existing drafts untouched.",
+               site_id=site_id)
+        summary["skipped"] = True
+        return summary
+
     need = ("Spatial",) if method == "IDW" else ("GeoStats",)
     missing = [e for e in need if arcpy.CheckExtension(e) != "Available"]
     if missing:
@@ -260,36 +275,43 @@ def build_concentration_surface(  # pragma: no cover
     for e in need:
         arcpy.CheckOutExtension(e)
 
-    scratch = Path(str(scratch or arcpy.env.scratchGDB))
-    pt_fc = str(scratch / "conc_pts")
-    sr = arcpy.Describe(str(Path(str(gdb)) / "MonitoringWells")
-                        ).spatialReference
-    if arcpy.Exists(pt_fc):
-        arcpy.management.Delete(pt_fc)
-    arcpy.management.CreateFeatureclass(str(scratch), "conc_pts", "POINT",
-                                        spatial_reference=sr)
-    arcpy.management.AddField(pt_fc, "CONC", "DOUBLE")
-    with arcpy.da.InsertCursor(pt_fc, ["SHAPE@XY", "CONC"]) as cur:
-        for _loc, x, y, v in points:
-            cur.insertRow([(x, y), v])
-
-    xs = [p[1] for p in points]; ys = [p[2] for p in points]
-    cs = cell_size or max((max(xs) - min(xs)), (max(ys) - min(ys)),
-                          1.0) / 250.0
-
     # Interpolate into scratch; clip (if requested) also into scratch —
     # only a fully validated result replaces the existing draft rasters.
+    # Everything after checkout sits inside try/finally so a failure
+    # (missing MonitoringWells, EBK error, bad clip) still checks the
+    # license back in and surfaces as QA, not a raw traceback.
     scratch_rasters: Dict[str, str] = {}
+    tag = f"{slug(site_id)}_{slug(analyte)}"  # scratch names per site/analyte
     try:
-        pred = str(scratch / "conc_pred")
+        scratch = Path(str(scratch or arcpy.env.scratchGDB))
+        pt_name = f"conc_pts_{tag}"
+        pt_fc = str(scratch / pt_name)
+        sr = arcpy.Describe(str(Path(str(gdb)) / "MonitoringWells")
+                            ).spatialReference
+        if arcpy.Exists(pt_fc):
+            arcpy.management.Delete(pt_fc)
+        arcpy.management.CreateFeatureclass(str(scratch), pt_name, "POINT",
+                                            spatial_reference=sr)
+        arcpy.management.AddField(pt_fc, "CONC", "DOUBLE")
+        with arcpy.da.InsertCursor(pt_fc, ["SHAPE@XY", "CONC"]) as cur:
+            for _loc, x, y, v in points:
+                cur.insertRow([(x, y), v])
+
+        xs = [p[1] for p in points]; ys = [p[2] for p in points]
+        cs = cell_size or max((max(xs) - min(xs)), (max(ys) - min(ys)),
+                              1.0) / 250.0
+
+        pred = str(scratch / f"conc_pred_{tag}")
         if arcpy.Exists(pred):
             arcpy.management.Delete(pred)
         if method == "IDW":
             arcpy.sa.Idw(pt_fc, "CONC", cs).save(pred)
         else:
-            lyr = "conc_ebk_lyr"
+            lyr = f"conc_ebk_lyr_{tag}"
+            if arcpy.Exists(lyr):
+                arcpy.management.Delete(lyr)
             arcpy.ga.EmpiricalBayesianKriging(pt_fc, "CONC", lyr, pred, cs)
-            se = str(scratch / "conc_se")
+            se = str(scratch / f"conc_se_{tag}")
             if arcpy.Exists(se):
                 arcpy.management.Delete(se)
             arcpy.ga.GALayerToRasters(lyr, se, "PREDICTION_STANDARD_ERROR",
@@ -298,13 +320,6 @@ def build_concentration_surface(  # pragma: no cover
         scratch_rasters["PREDICTION"] = pred
 
         if boundary_fc:
-            if not arcpy.Exists(boundary_fc):
-                qa.add(SEV_ERROR, "boundary_missing",
-                       f"Requested boundary clip but {boundary_fc} does not "
-                       "exist. Surface skipped; existing drafts untouched.",
-                       site_id=site_id)
-                summary["skipped"] = True
-                return summary
             for rtype, ras in list(scratch_rasters.items()):
                 clipped = ras + "_clip"
                 if arcpy.Exists(clipped):
@@ -312,6 +327,22 @@ def build_concentration_surface(  # pragma: no cover
                 arcpy.management.Clip(ras, "#", clipped, boundary_fc, "",
                                       "ClippingGeometry")
                 scratch_rasters[rtype] = clipped
+            # A disjoint boundary can clip to all-NoData without raising:
+            # no readable maximum -> nothing usable -> skip-before-replace
+            # (spec D5). Raster.maximum's all-NoData value is undocumented,
+            # so treat None AND a raise identically.
+            try:
+                clip_empty = \
+                    arcpy.Raster(scratch_rasters["PREDICTION"]).maximum is None
+            except Exception:
+                clip_empty = True
+            if clip_empty:
+                qa.add(SEV_ERROR, "boundary_clip_empty",
+                       f"Boundary clip produced no data (no overlap between "
+                       f"{boundary_fc} and the interpolated extent). Surface "
+                       "skipped; existing drafts untouched.", site_id=site_id)
+                summary["skipped"] = True
+                return summary
     except Exception as exc:
         qa.add(SEV_ERROR, "surface_generation_failed",
                f"{method} concentration surface failed: {exc}. Existing "
@@ -322,13 +353,26 @@ def build_concentration_surface(  # pragma: no cover
         for e in need:
             arcpy.CheckInExtension(e)
 
+    # Publish stage. Delete-then-copy cannot be atomic in a GDB; guard it
+    # so a mid-loop failure (e.g. the old draft lock-held by an open map)
+    # surfaces as QA with an explicit partial-replace warning, never a raw
+    # traceback after drafts were already touched (#slice-2 review).
     names = raster_names(site_id, event_date, analyte, method)
-    for rtype, name in names.items():
-        final = str(Path(str(gdb)) / name)
-        if arcpy.Exists(final):
-            arcpy.management.Delete(final)
-        arcpy.management.CopyRaster(scratch_rasters[rtype], final)
-        summary["rasters"][rtype] = name
+    try:
+        for rtype, name in names.items():
+            final = str(Path(str(gdb)) / name)
+            if arcpy.Exists(final):
+                arcpy.management.Delete(final)
+            arcpy.management.CopyRaster(scratch_rasters[rtype], final)
+            summary["rasters"][rtype] = name
+    except Exception as exc:
+        qa.add(SEV_ERROR, "surface_publish_failed",
+               f"Publishing {method} {analyte} raster(s) failed: {exc}. "
+               f"Written so far: {summary['rasters'] or 'none'} — existing "
+               "drafts may be partially replaced; close any map layers "
+               "locking them and re-run.", site_id=site_id)
+        summary["skipped"] = True
+        return summary
 
     rows = build_surface_registry_rows(
         site_id, event_date, "CONC", analyte, method, nondetect_rule,

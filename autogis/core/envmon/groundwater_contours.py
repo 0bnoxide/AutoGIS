@@ -233,6 +233,8 @@ def build_groundwater_contours(
                 if arcpy.Exists(ras):
                     arcpy.management.Delete(ras)
                 lyr = f"gwe_ebk_lyr_{site_id}"
+                if arcpy.Exists(lyr):
+                    arcpy.management.Delete(lyr)  # re-run in same Pro session
                 arcpy.ga.EmpiricalBayesianKriging(pt_fc, "GWE", lyr, ras, cs)
                 ebk_se_scratch = str(scratch / f"gwe_ebk_se_{site_id}")
                 if arcpy.Exists(ebk_se_scratch):
@@ -322,27 +324,39 @@ def build_groundwater_contours(
     if method == "EBK":
         # Publish the standard-error companion raster (slice-2 D3): only
         # after the contours succeeded, Draft_ prefix + registry row.
+        # Guarded: delete-then-copy is not atomic, and a lock-held old
+        # draft must surface as QA, not a traceback (#slice-2 review) —
+        # the contours above are already written and stay valid.
         from autogis.core.envmon.concentration_surface import (
             build_surface_registry_rows, slug, write_surface_registry_rows,
         )
         se_name = f"Draft_GWE_{slug(site_id)}_{ev_dt:%Y%m%d}_EBK_SE"
-        final = str(gdb / se_name)
-        if arcpy.Exists(final):
-            arcpy.management.Delete(final)
-        arcpy.management.CopyRaster(ebk_se_scratch, final)
-        summary["se_raster"] = se_name
-        rows = build_surface_registry_rows(
-            site_id, event_date, "GWE", "", "EBK", "", {"STD_ERROR": se_name},
-            _dt.datetime.now())
-        if not write_surface_registry_rows(gdb, rows):
-            qa.add(SEV_ERROR, "surface_registry_missing",
-                   "Env_SurfaceRegistry missing — run upgrade-schema (v2.5). "
-                   f"{se_name} written but NOT registered.", site_id=site_id)
+        try:
+            final = str(gdb / se_name)
+            if arcpy.Exists(final):
+                arcpy.management.Delete(final)
+            arcpy.management.CopyRaster(ebk_se_scratch, final)
+            summary["se_raster"] = se_name
+        except Exception as exc:
+            qa.add(SEV_ERROR, "uncertainty_raster_failed",
+                   f"EBK standard-error raster publish failed: {exc}. "
+                   f"Contours are written; the previous {se_name} (if any) "
+                   "may be deleted — close any map layers locking it and "
+                   "re-run.", site_id=site_id)
         else:
-            qa.add(SEV_INFO, "uncertainty_raster_generated",
-                   f"DRAFT EBK standard-error raster {se_name} registered "
-                   "in Env_SurfaceRegistry (ReviewStatus=DRAFT).",
-                   site_id=site_id)
+            rows = build_surface_registry_rows(
+                site_id, event_date, "GWE", "", "EBK", "",
+                {"STD_ERROR": se_name}, _dt.datetime.now())
+            if not write_surface_registry_rows(gdb, rows):
+                qa.add(SEV_ERROR, "surface_registry_missing",
+                       "Env_SurfaceRegistry missing — run upgrade-schema "
+                       f"(v2.5). {se_name} written but NOT registered.",
+                       site_id=site_id)
+            else:
+                qa.add(SEV_INFO, "uncertainty_raster_generated",
+                       f"DRAFT EBK standard-error raster {se_name} "
+                       "registered in Env_SurfaceRegistry "
+                       "(ReviewStatus=DRAFT).", site_id=site_id)
 
     qa.add(SEV_INFO, "contours_draft_generated",
            f"{n} DRAFT contour lines ({method}, {contour_interval} ft "

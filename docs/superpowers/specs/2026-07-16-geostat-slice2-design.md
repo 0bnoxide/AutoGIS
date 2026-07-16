@@ -38,6 +38,8 @@ none deprecated at Pro 3.x:
 | `arcpy.sa.Idw(in_point_features, z_field, {cell_size}, …)` | spatial-analyst/idw | re-verified this session (concentration IDW reuses it) |
 | `arcpy.sa.Contour(in_raster, out_polyline_features, contour_interval, …)` | spatial-analyst/contour | re-verified; EBK contour path routes through it (see below) |
 | `arcpy.CheckExtension("GeoStats")` | arcpy/functions/checkextension | `GeoStats` is the Geostatistical Analyst product code |
+| `Raster.save(name)` / `Raster.maximum` | arcpy/classes/raster-object | persists a temporary raster; `maximum` read-only property (all-NoData value undocumented — code treats None and a raise identically) |
+| `arcpy.management.CopyRaster(in_raster, out_rasterdataset, …)` | data-management/copy-raster | scratch → GDB publish; no extension required |
 
 ## Design decisions
 
@@ -117,25 +119,27 @@ continuous surface only.
 
 ### D5. Concentration surface tool shape
 
-`build-conc-surface` (CLI, `Runtime.LOCAL`, guard → redirect) +
-`BuildAnalyticalConcentrationSurface` .pyt Tool + capabilities +
-`_REGISTRY_SEED`, the standard four surfaces. Headless compute
-(points + policy) is unit-tested; the interpolate/clip/write seam is
-`# pragma: no cover`. Boundary clip contract copies the plume tool
-verbatim: a requested `--boundary-fc` that is missing, has no usable
-geometry, or clips to nothing → the seam returns False **before**
-replacing any existing raster/registry row. Minimum points: 4 (same
-QA-error-and-skip degrade as contours). IDW needs Spatial; EBK needs
-GeoStats (management.Clip needs no extension). EBK also writes the
-`_SE` standard-error companion raster (D3); IDW has no error surface —
-none is fabricated.
+`build-conc-surface` (CLI, `Runtime.LOCAL`, the draft-plume-boundary
+hybrid: headless point collection + `--dry-run` always work, the GDB
+stage is `_guard`ed) + `BuildAnalyticalConcentrationSurface` .pyt Tool +
+capabilities + `_REGISTRY_SEED`, the standard four surfaces. Headless
+compute (points + policy) is unit-tested; the interpolate/clip/write seam
+is `# pragma: no cover`. Boundary clip contract copies the plume tool:
+a requested `--boundary-fc` that is missing, has no usable geometry, or
+clips to nothing (no readable maximum on the clipped prediction) skips
+with a QA ERROR **before** replacing any existing raster/registry row.
+Minimum points: 4 (same QA-error-and-skip degrade as contours). IDW needs
+Spatial; EBK needs GeoStats (management.Clip needs no extension). EBK
+also writes the `_SE` standard-error companion raster (D3); IDW has no
+error surface — none is fabricated.
 
 ### D6. Pipeline surface: EBK is opt-in, not default
 
 `PIPELINE_METHODS` gains `"EBK"`, but the default method set for
 `run-gw-model-pipeline` stays `TIN,IDW` — EBK is slower, needs an extra
-license, and the ADR staged it as its own stage. `--methods TIN,IDW,EBK`
-(CLI) / the .pyt multivalue filter opt in.
+license, and the ADR staged it as its own stage. Opt-in is via the .pyt
+multivalue methods filter (the CLI pipeline verb stays guard→redirect
+with no methods flag, unchanged from slice 1).
 
 ## Deliverables checklist
 

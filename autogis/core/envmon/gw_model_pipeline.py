@@ -224,6 +224,8 @@ def _make_point_fc(arcpy, scratch, name, sr, pts):  # pragma: no cover
     arcpy.management.AddField(fc, "LocID", "TEXT", field_length=32)
     with arcpy.da.InsertCursor(fc, ["SHAPE@XY", "GWE", "LocID"]) as cur:
         for loc, x, y, z in pts:
+            # [:32] is lossless only because LocationID is TEXT 32 across
+            # the schema; the CV merge joins on the full well_id.
             cur.insertRow([(x, y), z, str(loc)[:32]])
     return fc
 
@@ -290,6 +292,8 @@ def ebk_loo_predictions(sr, scratch, pts) -> Dict[str, float]:  # pragma: no cov
         for oid, loc in cur:
             oid_to_loc[oid] = loc
     lyr = "gwm_ebk_cv_lyr"
+    if arcpy.Exists(lyr):
+        arcpy.management.Delete(lyr)  # re-run in same Pro session
     arcpy.ga.EmpiricalBayesianKriging(pt_fc, "GWE", lyr)
     cv_pts = str(scratch / "gwm_ebk_cv_pts")
     if arcpy.Exists(cv_pts):
