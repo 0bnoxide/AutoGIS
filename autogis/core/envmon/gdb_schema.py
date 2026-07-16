@@ -306,6 +306,20 @@ TABLE_SCHEMAS = {
         ("RunID", T, 64), ("ModelName", T, 32), ("NPoints", L, None),
         ("RMSE", D, None), ("MeanError", D, None), ("MAE", D, None),
         ("PctWithinTolerance", D, None), ("Rank", L, None)],
+
+    # ------------------------------------------------------------------
+    # Surface raster registry (Phase-5 slice 2, SCHEMA_VERSION 2.5).
+    # Rasters cannot carry a ReviewStatus field, so the DRAFT convention
+    # maps to a Draft_ name prefix plus a row here. Replace-on-write key:
+    # (SiteID, EventDate, SurfaceKind, AnalyteFilter, Method, RasterType).
+    # ------------------------------------------------------------------
+    "Env_SurfaceRegistry": [
+        ("SiteID", T, 32), ("EventDate", DT, None),
+        ("SurfaceKind", T, 16), ("AnalyteFilter", T, 128),
+        ("Method", T, 32), ("RasterType", T, 32),
+        ("NondetectRule", T, 16), ("RasterPath", T, 256),
+        ("ReviewStatus", T, 16), ("CreatedAt", DT, None),
+        ("Notes", T, 256)],
 }
 
 # Alias for backward compatibility and test imports

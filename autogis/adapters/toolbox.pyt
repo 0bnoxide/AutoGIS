@@ -66,6 +66,7 @@ class Toolbox(object):
             BuildCallouts,           # tool 4
             GroundwaterContours,     # tool 5
             RunGWModelPipeline,      # Phase-5 slice 1 (ADR-0085)
+            BuildConcentrationSurface,  # Phase-5 slice 2 (ADR-0085)
             ExportFigures,           # tool 6
             FullPipeline,            # tool 7
             ValidateDatabase,        # tool 8
@@ -416,7 +417,8 @@ class GroundwaterContours(object):
             _param("event_date", "Event date YYYY-MM-DD", "GPString"),
             _param("method", "Interpolation method", "GPString",
                    default="TIN",
-                   domain=("TIN", "IDW", "NaturalNeighbor", "SkipContours")),
+                   domain=("TIN", "IDW", "NaturalNeighbor", "SkipContours",
+                           "EBK")),
             _param("interval", "Contour interval (ft)", "GPDouble",
                    required=False, default=1.0),
             _param("min_points", "Minimum valid points", "GPLong",
@@ -458,17 +460,19 @@ class RunGWModelPipeline(object):
     def __init__(self):
         self.label = "5b. Run GW Model Pipeline (DRAFT)"
         self.description = ("Build DRAFT contours per interpolation method "
-                            "(TIN/IDW), leave-one-out cross-validate, rank "
-                            "by RMSE and persist GW_ModelRun/"
+                            "(TIN/IDW/EBK), leave-one-out cross-validate, "
+                            "rank by RMSE and persist GW_ModelRun/"
                             "GW_ModelCrossValidation (ReviewStatus=DRAFT). "
+                            "EBK (slice 2) also writes a Draft_ standard-"
+                            "error raster and needs Geostatistical Analyst. "
                             "Rank 1 is a suggestion only — a hydrogeologist "
                             "approves a model with approve-gw-model.")
         self.canRunInBackground = False
 
     def getParameterInfo(self):
         methods = _param("methods", "Interpolation methods", "GPString",
-                         multi=True, domain=("TIN", "IDW"))
-        methods.value = ["TIN", "IDW"]
+                         multi=True, domain=("TIN", "IDW", "EBK"))
+        methods.value = ["TIN", "IDW"]  # EBK is opt-in (slice-2 D6)
         return [
             _param("gdb", "File geodatabase", "DEWorkspace"),
             _param("site_config", "Site config", "DEFile"),
@@ -512,6 +516,74 @@ class RunGWModelPipeline(object):
                               if p["observations_csv"].valueAsText else None),
             stats_csv=(Path(p["stats_csv"].valueAsText)
                        if p["stats_csv"].valueAsText else None),
+        )
+        messages.addMessage(json.dumps(summary, indent=2))
+        _msg(messages, qa)
+
+
+class BuildConcentrationSurface(object):
+    """Phase-5 slice 2 — DRAFT interpolated concentration raster (arcpy).
+
+    BuildAnalyticalConcentrationSurface per ADR-0085: one analyte per
+    surface, configurable nondetect policy, optional site-boundary clip.
+    EBK also writes a standard-error companion raster.
+    """
+
+    def __init__(self):
+        self.label = "5c. Build Concentration Surface (DRAFT)"
+        self.description = ("Interpolate a DRAFT per-analyte concentration "
+                            "raster (IDW: Spatial Analyst; EBK: "
+                            "Geostatistical Analyst, adds a standard-error "
+                            "raster). Nondetects follow the selected rule "
+                            "(ADR-0085 decision 4). Rasters get a Draft_ "
+                            "name prefix and an Env_SurfaceRegistry row "
+                            "(ReviewStatus=DRAFT).")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("site_config", "Site config", "DEFile"),
+            _param("event_date", "Event date YYYY-MM-DD", "GPString"),
+            _param("results_csv", "Analytical results CSV", "DEFile"),
+            _param("coords_csv", "Well coords CSV (location_id,x,y)",
+                   "DEFile"),
+            _param("analyte", "Analyte canonical name", "GPString"),
+            _param("nondetect_rule", "Nondetect rule", "GPString",
+                   required=False, default="exclude",
+                   domain=("exclude", "half_rl", "use_rl", "use_zero")),
+            _param("method", "Interpolation method", "GPString",
+                   required=False, default="IDW", domain=("IDW", "EBK")),
+            _param("boundary_fc", "Clip boundary feature class",
+                   "DEFeatureClass", required=False),
+            _param("cell_size", "Cell size", "GPDouble", required=False),
+        ]
+
+    @toolbox_core.record_pyt_run("build-conc-surface")
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("build-conc-surface")
+        from autogis.core.envmon.concentration_surface import (
+            build_concentration_surface, collect_concentration_points,
+        )
+        qa = QACollector()
+        p = {q.name: q for q in parameters}
+        site = SiteConfig.load(Path(p["site_config"].valueAsText))
+        points = collect_concentration_points(
+            Path(p["results_csv"].valueAsText),
+            Path(p["coords_csv"].valueAsText),
+            analyte=p["analyte"].valueAsText,
+            nondetect_rule=p["nondetect_rule"].valueAsText or "exclude",
+            qa=qa)
+        summary = build_concentration_surface(
+            Path(p["gdb"].valueAsText), site.site_id,
+            p["event_date"].valueAsText, p["analyte"].valueAsText,
+            points, qa,
+            method=p["method"].valueAsText or "IDW",
+            nondetect_rule=p["nondetect_rule"].valueAsText or "exclude",
+            cell_size=(float(p["cell_size"].value)
+                       if p["cell_size"].value else None),
+            boundary_fc=p["boundary_fc"].valueAsText or None,
         )
         messages.addMessage(json.dumps(summary, indent=2))
         _msg(messages, qa)

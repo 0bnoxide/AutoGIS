@@ -7,7 +7,9 @@ cross-validation ranked by ``evaluate_gw_models`` — and persists one
 'DRAFT'). BuildGroundwaterSurfaceModel is this pipeline with a single method
 plus ``approve_gw_model`` (hydro judgment trumps rank — ADR-0085 decision 3).
 
-Slice 1 is TIN/IDW only; EBK/kriging and uncertainty surfaces are slice 2.
+Slice 1 shipped TIN/IDW; slice 2 (spec 2026-07-16-geostat-slice2-design.md)
+adds EBK — contours + standard-error raster via groundwater_contours, LOO
+ranking via arcpy.ga.CrossValidation merged into the shared rows (D2).
 
 Headless (unit-tested): run-id, LOO glue, registry-row shaping, CSV audit
 writer. arcpy work lives in the ``# pragma: no cover`` seam functions.
@@ -24,7 +26,7 @@ from autogis.core.envmon.evaluate_gw_models import (
     ModelStats, ObservationRow, evaluate_gw_models,
 )
 
-PIPELINE_METHODS = ("TIN", "IDW")
+PIPELINE_METHODS = ("TIN", "IDW", "EBK")
 
 # (LocationID, x, y, GroundwaterElevation_ft) — the shape
 # groundwater_contours.collect_contour_points already returns.
@@ -74,6 +76,37 @@ def loo_observation_rows(
         rows.append(ObservationRow(
             well_id=held[0], observed_ft=held[3], predictions=predictions))
     return rows
+
+
+def merge_method_predictions(
+    rows: Sequence[ObservationRow],
+    method: str,
+    predictions: Dict[str, float],
+    qa: QACollector,
+) -> int:
+    """Merge {well_id: predicted} into existing LOO rows; returns matches.
+
+    Slice-2 D2: EBK predictions come from ``arcpy.ga.CrossValidation``
+    (leave-one-out for the fitted layer) rather than the manual per-fold
+    predictor, then join the shared ObservationRow list so
+    ``evaluate_gw_models`` ranks every method on identical wells. A well
+    absent from ``predictions`` is a skipped cell, same as a None from the
+    manual predictor.
+    """
+    if method not in PIPELINE_METHODS:
+        raise ValueError(
+            f"method must be one of {PIPELINE_METHODS}, got {method!r}")
+    matched = 0
+    for r in rows:
+        v = predictions.get(r.well_id)
+        if v is not None:
+            r.predictions[method] = float(v)
+            matched += 1
+    if rows and not matched:
+        qa.add(SEV_WARNING, "cv_merge_no_matches",
+               f"{method}: cross-validation returned no predictions for any "
+               f"of the {len(rows)} well(s); method will rank as all-skipped.")
+    return matched
 
 
 def build_run_records(
@@ -141,6 +174,8 @@ def cross_validate_and_rank(
     now: _dt.datetime,
     tolerance_ft: float = 0.5,
     requested_methods: Optional[Sequence[str]] = None,
+    loo_methods: Optional[Sequence[str]] = None,
+    extra_predictions: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> Tuple[List[ObservationRow], List[ModelStats], dict, List[dict]]:
     """Headless pipeline core: LOO -> evaluate_gw_models -> registry rows.
 
@@ -148,10 +183,18 @@ def cross_validate_and_rank(
     cross-validates — recorded as ExecutedMethods, the approval universe.
     ``requested_methods`` (default: same) is what GW_ModelRun.Methods
     records — the ADR-0085 field is "methods requested", which must survive
-    a license-skipped method.
+    a license-skipped method. ``loo_methods`` (default: ``methods``) is the
+    subset routed through the manual per-fold ``predict``;
+    ``extra_predictions`` ({method: {well_id: value}}) carries methods
+    cross-validated externally — EBK via arcpy.ga.CrossValidation (slice-2
+    D2) — merged into the same rows so all methods rank on identical wells.
     """
     run_id = make_run_id(site_id, event_date, now)
-    rows = loo_observation_rows(points, methods, predict, qa)
+    rows = loo_observation_rows(
+        points, methods if loo_methods is None else loo_methods, predict, qa)
+    if rows:
+        for m, preds in (extra_predictions or {}).items():
+            merge_method_predictions(rows, m, preds, qa)
     stats = evaluate_gw_models(rows, tolerance_ft=tolerance_ft, qa=qa) \
         if rows else []
     run_row, cv_rows = build_run_records(
@@ -167,16 +210,21 @@ def cross_validate_and_rank(
 # ---------------------------------------------------------------------------
 
 def _make_point_fc(arcpy, scratch, name, sr, pts):  # pragma: no cover
-    """(Re)create a scratch point FC with a GWE double field from pts."""
+    """(Re)create a scratch point FC with GWE + LocID fields from pts.
+
+    LocID lets CrossValidation output points (Source_ID = source OID) be
+    joined back to wells without assuming OID insertion order (slice-2 D2).
+    """
     fc = str(Path(str(scratch)) / name)
     if arcpy.Exists(fc):
         arcpy.management.Delete(fc)
     arcpy.management.CreateFeatureclass(str(scratch), name, "POINT",
                                         spatial_reference=sr)
     arcpy.management.AddField(fc, "GWE", "DOUBLE")
-    with arcpy.da.InsertCursor(fc, ["SHAPE@XY", "GWE"]) as cur:
-        for _loc, x, y, z in pts:
-            cur.insertRow([(x, y), z])
+    arcpy.management.AddField(fc, "LocID", "TEXT", field_length=32)
+    with arcpy.da.InsertCursor(fc, ["SHAPE@XY", "GWE", "LocID"]) as cur:
+        for loc, x, y, z in pts:
+            cur.insertRow([(x, y), z, str(loc)[:32]])
     return fc
 
 
@@ -222,6 +270,44 @@ def make_arcpy_loo_predictor(sr, scratch,
             return None  # 'NoData' outside the interpolated extent
 
     return predict
+
+
+def ebk_loo_predictions(sr, scratch, pts) -> Dict[str, float]:  # pragma: no cover
+    """Per-well leave-one-out predictions for EBK (slice-2 D2).
+
+    ADR-0077 doc-verified 2026-07-16: EmpiricalBayesianKriging +
+    CrossValidation (Geostatistical Analyst). CrossValidation IS
+    leave-one-out for the fitted layer — one call instead of N EBK refits.
+    Wells the CV excluded (Included negative / null Predicted) are simply
+    absent, which evaluate_gw_models treats as skipped cells.
+    """
+    from autogis.runtime.sessions import arcpy_env as _arcpy
+    arcpy = _arcpy()
+    scratch = Path(str(scratch))
+    pt_fc = _make_point_fc(arcpy, scratch, "gwm_ebk_pts", sr, pts)
+    oid_to_loc: Dict[int, str] = {}
+    with arcpy.da.SearchCursor(pt_fc, ["OID@", "LocID"]) as cur:
+        for oid, loc in cur:
+            oid_to_loc[oid] = loc
+    lyr = "gwm_ebk_cv_lyr"
+    arcpy.ga.EmpiricalBayesianKriging(pt_fc, "GWE", lyr)
+    cv_pts = str(scratch / "gwm_ebk_cv_pts")
+    if arcpy.Exists(cv_pts):
+        arcpy.management.Delete(cv_pts)
+    arcpy.ga.CrossValidation(lyr, cv_pts)
+    preds: Dict[str, float] = {}
+    with arcpy.da.SearchCursor(
+            cv_pts, ["Source_ID", "Included", "Predicted"]) as cur:
+        for src_oid, included, predicted in cur:
+            if predicted is None:
+                continue
+            if included is not None and \
+                    str(included).strip().lower() in ("no", "false", "0"):
+                continue
+            loc = oid_to_loc.get(src_oid)
+            if loc:
+                preds[loc] = float(predicted)
+    return preds
 
 
 def write_model_run_to_gdb(gdb, run_row: dict,
@@ -304,17 +390,26 @@ def run_field_to_groundwater_model_pipeline(  # pragma: no cover
                   if not summary["contours"][m].get("skipped")]
     now = _dt.datetime.now()
     if cv_methods and len(pts) >= 4:
-        need = {"TIN": "3D", "IDW": "Spatial"}
+        # TIN/IDW rank via the manual per-fold predictor; EBK ranks via
+        # ga.CrossValidation (slice-2 D2) — one call, not N EBK refits.
+        manual = [m for m in cv_methods if m != "EBK"]
+        need = {"TIN": "3D", "IDW": "Spatial", "EBK": "GeoStats"}
         for ext in {need[m] for m in cv_methods}:
             arcpy.CheckOutExtension(ext)
         try:
             sr = arcpy.Describe(
                 str(Path(str(gdb)) / "MonitoringWells")).spatialReference
-            predict = make_arcpy_loo_predictor(sr, arcpy.env.scratchGDB)
+            predict = make_arcpy_loo_predictor(sr, arcpy.env.scratchGDB) \
+                if manual else (lambda *_: None)
+            extra = {}
+            if "EBK" in cv_methods:
+                extra["EBK"] = ebk_loo_predictions(
+                    sr, arcpy.env.scratchGDB, pts)
             rows, stats, run_row, cv_rows = cross_validate_and_rank(
                 pts, cv_methods, predict, qa, site_id=site_id,
                 event_date=event_date, now=now, tolerance_ft=tolerance_ft,
-                requested_methods=methods)
+                requested_methods=methods, loo_methods=manual,
+                extra_predictions=extra)
         finally:
             for ext in {need[m] for m in cv_methods}:
                 arcpy.CheckInExtension(ext)
