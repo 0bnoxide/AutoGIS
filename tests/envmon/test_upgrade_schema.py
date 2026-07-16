@@ -38,9 +38,9 @@ def test_all_new_tables_in_schema():
 
 
 def test_total_table_count():
-    assert len(TABLE_SCHEMAS) == 40, (
-        f"Expected 40 tables (38 at v2.3 + 2 GW model registry), "
-        f"got {len(TABLE_SCHEMAS)}"
+    assert len(TABLE_SCHEMAS) == 41, (
+        f"Expected 41 tables (38 at v2.3 + 2 GW model registry + "
+        f"Env_SurfaceRegistry), got {len(TABLE_SCHEMAS)}"
     )
 
 
@@ -75,7 +75,7 @@ from autogis.core.envmon.upgrade_schema import (  # noqa: E402
 
 
 def test_schema_version_constant():
-    assert SCHEMA_VERSION == "2.4"
+    assert SCHEMA_VERSION == "2.5"
 
 
 def test_table_upgrade_status_attributes():
@@ -150,3 +150,11 @@ def test_upgrade_schema_guard_without_arcpy():
     result = CliRunner().invoke(autogis, ["envmon", "upgrade-schema", "fake.gdb"])
     assert result.exit_code in (0, 1)
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_surface_registry_fields():
+    """Slice-2 drift guard (spec D3 + #241 review: Units provenance)."""
+    fields = [f[0] for f in TABLE_SCHEMAS["Env_SurfaceRegistry"]]
+    assert fields == ["SiteID", "EventDate", "SurfaceKind", "AnalyteFilter",
+                      "Method", "RasterType", "NondetectRule", "Units",
+                      "RasterPath", "ReviewStatus", "CreatedAt", "Notes"]

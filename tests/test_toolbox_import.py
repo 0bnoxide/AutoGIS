@@ -32,6 +32,7 @@ def test_redirect_only_pyt_tools_use_shared_run_recorder():
         "BuildCallouts": "build-callouts",
         "GroundwaterContours": "gw-contours",
         "RunGWModelPipeline": "run-gw-model-pipeline",
+        "BuildConcentrationSurface": "build-conc-surface",
         "ExportFigures": "export-figures",
         "FullPipeline": "full-pipeline",
         "ReconcileSampleLocations": "reconcile-locations",

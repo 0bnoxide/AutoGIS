@@ -85,6 +85,7 @@ TOOLS: dict[str, Runtime] = {
     "gen-map-series": Runtime.LOCAL,  # tool 5.6 batch figure-packet export — needs arcpy
     "run-gw-model-pipeline": Runtime.LOCAL,  # Phase-5 slice 1 — TIN/IDW LOO CV, needs arcpy
     "approve-gw-model": Runtime.LOCAL,  # Phase-5 slice 1 — GW_ModelRun field edit, needs arcpy
+    "build-conc-surface": Runtime.LOCAL,  # Phase-5 slice 2 — raster interpolation, needs arcpy
 }
 
 
@@ -361,6 +362,10 @@ _REGISTRY_SEED = [
      "stable", "analysis",
      "Record the hydrogeologist's approved model on a GW_ModelRun (single-"
      "method runs via run-gw-model-pipeline; ADR-0085 decision 3)"),
+    ("build-conc-surface", "BuildAnalyticalConcentrationSurface", "", "LOCAL",
+     "stable", "analysis",
+     "DRAFT interpolated concentration raster (IDW/EBK) per analyte with "
+     "nondetect policy + boundary clip (Phase-5 slice 2, ADR-0085)"),
 ]
 
 TOOL_REGISTRY: list = [

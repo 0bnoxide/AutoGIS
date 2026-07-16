@@ -4536,6 +4536,97 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("build-conc-surface")
+@click.option("--results", "results_csv", required=True,
+              type=click.Path(exists=True),
+              help="AnalyticalResultRecord CSV (canonical-read applied here).")
+@click.option("--coords", "coords_csv", required=True,
+              type=click.Path(exists=True),
+              help="location_id,x,y CSV.")
+@click.option("--analyte", required=True,
+              help="AnalyteCanonicalName — one surface per analyte "
+                   "(ADR-0085 decision 5).")
+@click.option("--site", "site_id", required=True, help="Site ID.")
+@click.option("--event-date", required=True,
+              help="Event date YYYY-MM-DD (raster naming + registry row).")
+@click.option("--nondetect-rule",
+              type=click.Choice(["exclude", "half_rl", "use_rl", "use_zero"]),
+              default="exclude", show_default=True,
+              help="Numeric substitution for nondetects (ADR-0085 "
+                   "decision 4).")
+@click.option("--unit", "surface_unit", default="ug/L", show_default=True,
+              help="Declared surface unit (ADR-0022 registry); every "
+                   "result/RL/DL is normalized into it, rows with unknown "
+                   "or cross-dimension units are excluded with a warning.")
+@click.option("--matrix", default=None,
+              help="Optional Matrix filter (e.g. GW); rows outside it are "
+                   "excluded.")
+@click.option("--method", type=click.Choice(["IDW", "EBK"]), default="IDW",
+              show_default=True,
+              help="IDW needs Spatial Analyst; EBK needs Geostatistical "
+                   "Analyst and also writes a standard-error raster.")
+@click.option("--gdb", default=None, type=click.Path(),
+              help="File geodatabase for the Draft_ raster(s) + "
+                   "Env_SurfaceRegistry rows (ArcGIS Pro). Required unless "
+                   "--dry-run.")
+@click.option("--boundary-fc", default=None,
+              help="Site-boundary polygon feature class: clip the surface "
+                   "(requires --gdb).")
+@click.option("--cell-size", type=float, default=None,
+              help="Raster cell size (default: extent/250).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Collect and print the interpolation points headlessly; "
+                   "no arcpy, no writes.")
+@qa_report_options
+def build_conc_surface_cmd(results_csv, coords_csv, analyte, site_id,
+                           event_date, nondetect_rule, surface_unit, matrix,
+                           method, gdb, boundary_fc, cell_size, dry_run,
+                           report, fail_on):
+    """BuildAnalyticalConcentrationSurface: DRAFT interpolated concentration
+    raster for one analyte (Phase-5 slice 2, ADR-0085).
+
+    Point collection (nondetect policy included) is headless; the
+    interpolate/clip/write stage runs inside ArcGIS Pro only.
+    """
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.concentration_surface import (
+        build_concentration_surface, collect_concentration_points,
+    )
+
+    if boundary_fc and not gdb:
+        raise click.UsageError("--boundary-fc requires --gdb.")
+    if not dry_run and not gdb:
+        raise click.UsageError("Provide --gdb, or use --dry-run for the "
+                               "headless point preview.")
+    if gdb and not dry_run:
+        _guard("build-conc-surface")
+
+    qa = QACollector()
+    points = collect_concentration_points(
+        Path(results_csv), Path(coords_csv), site_id=site_id,
+        event_date=event_date, analyte=analyte,
+        nondetect_rule=nondetect_rule, surface_unit=surface_unit,
+        matrix=matrix, qa=qa)
+    click.echo(f"[DRAFT] {len(points)} interpolation point(s) for {analyte} "
+               f"({surface_unit}, nondetect_rule={nondetect_rule})")
+    if dry_run:
+        for loc, x, y, v in points:
+            click.echo(f"  {loc}: ({x}, {y}) = {v}")
+    else:
+        summary = build_concentration_surface(
+            Path(gdb), site_id, event_date, analyte, points, qa,
+            method=method, nondetect_rule=nondetect_rule,
+            surface_unit=surface_unit,
+            cell_size=cell_size, boundary_fc=boundary_fc)
+        if summary["skipped"]:
+            click.echo("WARNING: surface skipped — see QA report.")
+        else:
+            for rtype, name in summary["rasters"].items():
+                click.echo(f"Written {gdb}/{name} ({rtype}, DRAFT)")
+
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("build-cad-package")
 @click.option("--layers", required=True, type=click.Path(exists=True),
               help="Text file listing selected GIS layers, one per line.")

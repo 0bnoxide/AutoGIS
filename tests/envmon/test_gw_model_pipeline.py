@@ -69,8 +69,9 @@ def test_loo_requires_four_points():
 
 
 def test_loo_rejects_unknown_method():
-    with pytest.raises(ValueError, match="EBK"):
-        loo_observation_rows(POINTS, ["EBK"], mean_predictor, QACollector())
+    with pytest.raises(ValueError, match="Kriging"):
+        loo_observation_rows(POINTS, ["Kriging"], mean_predictor,
+                             QACollector())
 
 
 def test_build_run_records_draft_and_unapproved():
@@ -206,3 +207,86 @@ def test_approve_gw_model_guard_without_arcpy():
         "--run-id", "GWM_X", "--model", "TIN"])
     assert result.exit_code != 0
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+# ---------------------------------------------------------------------------
+# Slice-2: EBK cross-validation merge (spec D2)
+# ---------------------------------------------------------------------------
+from autogis.core.envmon.gw_model_pipeline import (  # noqa: E402
+    PIPELINE_METHODS, merge_method_predictions,
+)
+
+
+def test_ebk_in_pipeline_methods():
+    assert PIPELINE_METHODS == ("TIN", "IDW", "EBK")
+
+
+def test_merge_method_predictions_joins_by_well():
+    qa = QACollector()
+    rows = loo_observation_rows(POINTS, ["TIN"], mean_predictor, qa)
+    ebk = {p[0]: p[3] + 0.1 for p in POINTS}
+    del ebk["MW-5"]  # CV excluded one well -> skipped cell
+    matched = merge_method_predictions(rows, "EBK", ebk, qa)
+    assert matched == 4
+    mw1 = next(r for r in rows if r.well_id == "MW-1")
+    assert mw1.predictions["EBK"] == pytest.approx(100.1)
+    mw5 = next(r for r in rows if r.well_id == "MW-5")
+    assert "EBK" not in mw5.predictions and "TIN" in mw5.predictions
+
+
+def test_merge_no_matches_warns():
+    qa = QACollector()
+    rows = loo_observation_rows(POINTS, ["TIN"], mean_predictor, qa)
+    assert merge_method_predictions(rows, "EBK", {}, qa) == 0
+    assert any(r.category == "cv_merge_no_matches" for r in qa.records)
+
+
+def test_merge_rejects_unknown_method():
+    with pytest.raises(ValueError, match="Kriging"):
+        merge_method_predictions([], "Kriging", {}, QACollector())
+
+
+def test_cross_validate_ebk_only_via_extra_predictions():
+    """EBK-only run: no manual LOO methods, ranking entirely from the
+    externally supplied CV predictions (arcpy.ga.CrossValidation seam)."""
+    qa = QACollector()
+    ebk = {p[0]: p[3] for p in POINTS}  # perfect predictions
+    rows, stats, run_row, cv_rows = cross_validate_and_rank(
+        POINTS, ["EBK"], lambda *_: None, qa,
+        site_id="H281", event_date="2026-06-15", now=NOW,
+        loo_methods=[], extra_predictions={"EBK": ebk})
+    assert [s.model_name for s in stats] == ["EBK"]
+    assert stats[0].rmse == pytest.approx(0.0)
+    assert run_row["ExecutedMethods"] == "EBK"
+    assert len(cv_rows) == 1 and cv_rows[0]["Rank"] == 1
+
+
+def test_cross_validate_mixed_manual_and_ebk_ranks_together():
+    """TIN (manual, biased) vs EBK (external, perfect) rank on the same
+    wells; EBK must take rank 1."""
+    qa = QACollector()
+
+    def biased(method, rest, held):
+        return held[3] + 2.0
+
+    ebk = {p[0]: p[3] for p in POINTS}
+    _rows, stats, run_row, _cv = cross_validate_and_rank(
+        POINTS, ["TIN", "EBK"], biased, qa,
+        site_id="H281", event_date="2026-06-15", now=NOW,
+        loo_methods=["TIN"], extra_predictions={"EBK": ebk})
+    assert stats[0].model_name == "EBK" and stats[0].rank == 1
+    assert stats[0].n_points == stats[1].n_points == len(POINTS)
+    assert run_row["ExecutedMethods"] == "TIN,EBK"
+
+
+def test_default_methods_exclude_ebk():
+    """#241 P2 regression: EBK is in the validation universe but must not
+    run by default — a bare programmatic call stays TIN,IDW."""
+    import inspect
+    from autogis.core.envmon.gw_model_pipeline import (
+        DEFAULT_PIPELINE_METHODS, run_field_to_groundwater_model_pipeline,
+    )
+    assert DEFAULT_PIPELINE_METHODS == ("TIN", "IDW")
+    assert "EBK" not in DEFAULT_PIPELINE_METHODS
+    sig = inspect.signature(run_field_to_groundwater_model_pipeline)
+    assert sig.parameters["methods"].default == DEFAULT_PIPELINE_METHODS
