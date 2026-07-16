@@ -40,6 +40,7 @@ none deprecated at Pro 3.x:
 | `arcpy.CheckExtension("GeoStats")` | arcpy/functions/checkextension | `GeoStats` is the Geostatistical Analyst product code |
 | `Raster.save(name)` / `Raster.maximum` | arcpy/classes/raster-object | persists a temporary raster; `maximum` read-only property (all-NoData value undocumented — code treats None and a raise identically) |
 | `arcpy.management.CopyRaster(in_raster, out_rasterdataset, …)` | data-management/copy-raster | scratch → GDB publish; no extension required |
+| `arcpy.management.GetRasterProperties(in_raster, "ALLNODATA")` | data-management/get-raster-properties | direct all-NoData test for the clipped prediction (#241 review); `getOutput(0)` == "1" → confirmed empty |
 
 ## Design decisions
 
@@ -83,6 +84,7 @@ Env_SurfaceRegistry (new, additive):
   Method (TEXT 32)         -- 'IDW' | 'EBK'
   RasterType (TEXT 32)     -- 'PREDICTION' | 'STD_ERROR'
   NondetectRule (TEXT 16)  -- '' for GWE surfaces
+  Units (TEXT 16)          -- declared surface unit ('ug/L' CONC, 'ft' GWE)
   RasterPath (TEXT 256)    ReviewStatus (TEXT 16)
   CreatedAt (DATE)         Notes (TEXT 256)
 ```
@@ -92,9 +94,12 @@ Method, RasterType) — mirrors the contour-row replace semantics. No RunID
 column: rasters are replaced in place per key, and the run registry already
 records which methods a run executed (YAGNI on a join table).
 
-Raster naming: `Draft_GWE_<site>_<yyyymmdd>_EBK_SE` /
-`Draft_Conc_<site>_<yyyymmdd>_<analyte-slug>_<method>[_SE]`, slugged to
-GDB-legal identifiers.
+Raster naming (#241 review — `slug()` alone is lossy, so distinct
+identities could collide onto one dataset): a bounded readable prefix plus
+a stable sha1-8 of the ORIGINAL site/analyte identity (`surface_tag`),
+e.g. `Draft_GWE_<tag>_<yyyymmdd>_EBK_SE` /
+`Draft_Conc_<tag>_<yyyymmdd>_<method>[_SE]`. Scratch names carry the same
+tag.
 
 ### D4. Nondetect policy (`exclude | half_rl | use_rl | use_zero`)
 
@@ -110,12 +115,18 @@ Applied at point-collection time in the new headless
 
 Input path mirrors `draft-plume-boundary` (results CSV + coords CSV,
 canonical-read first per ADR-0075 so fraction pairs/QC rows never seed a
-surface). Per-well aggregation: **max** value across the well's rows for
-the analyte (conservative for plume mapping); wells lacking coordinates
-warn and drop, matching the plume tool. The rule and its provenance are
-recorded on the registry row and in the QA log. `ExceedsScreeningLevel` /
-the plume hull are untouched — decision 4 scoped the policy to the
-continuous surface only.
+surface). Rows are scoped to the requested SiteID + SampleDate(==event) +
+optional Matrix before aggregation — a multi-site/multi-event export must
+never leak a foreign value into the surface (#241 review). Every value
+(and the RL/DL a rule substitutes) is normalized into a **declared surface
+unit** (default `ug/L`, `--unit` to override) via the ADR-0022 registry
+(`core/common/units.py`); unknown or cross-dimension units warn and drop
+(#241 review — mixed mg/L / ug/L data is routine). Per-well aggregation:
+**max** normalized value (conservative for plume mapping); wells lacking
+coordinates warn and drop, matching the plume tool. The rule and the unit
+are recorded on the registry row and in the QA log.
+`ExceedsScreeningLevel` / the plume hull are untouched — decision 4 scoped
+the policy to the continuous surface only.
 
 ### D5. Concentration surface tool shape
 
@@ -126,8 +137,10 @@ capabilities + `_REGISTRY_SEED`, the standard four surfaces. Headless
 compute (points + policy) is unit-tested; the interpolate/clip/write seam
 is `# pragma: no cover`. Boundary clip contract copies the plume tool:
 a requested `--boundary-fc` that is missing, has no usable geometry, or
-clips to nothing (no readable maximum on the clipped prediction) skips
-with a QA ERROR **before** replacing any existing raster/registry row.
+clips to nothing (`GetRasterProperties(ALLNODATA) == '1'` on the clipped
+prediction — a direct test, with an inspection failure reported as its
+own QA category, #241 review) skips with a QA ERROR **before** replacing
+any existing raster/registry row.
 Minimum points: 4 (same QA-error-and-skip degrade as contours). IDW needs
 Spatial; EBK needs GeoStats (management.Clip needs no extension). EBK
 also writes the `_SE` standard-error companion raster (D3); IDW has no
@@ -135,11 +148,15 @@ error surface — none is fabricated.
 
 ### D6. Pipeline surface: EBK is opt-in, not default
 
-`PIPELINE_METHODS` gains `"EBK"`, but the default method set for
-`run-gw-model-pipeline` stays `TIN,IDW` — EBK is slower, needs an extra
-license, and the ADR staged it as its own stage. Opt-in is via the .pyt
+`PIPELINE_METHODS` gains `"EBK"` as the validation universe, and a
+separate `DEFAULT_PIPELINE_METHODS = ("TIN", "IDW")` is the function
+default (#241 review) — so programmatic callers with no methods argument
+never silently consume a GeoStats license. Opt-in is via the .pyt
 multivalue methods filter (the CLI pipeline verb stays guard→redirect
-with no methods flag, unchanged from slice 1).
+with no methods flag, unchanged from slice 1). EBK's CV points are
+accepted only when `Included` normalizes to exactly `yes` — Esri
+documents the field's other values as diagnostic strings, not `No`
+(#241 review).
 
 ## Deliverables checklist
 

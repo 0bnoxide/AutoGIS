@@ -552,6 +552,10 @@ class BuildConcentrationSurface(object):
             _param("nondetect_rule", "Nondetect rule", "GPString",
                    required=False, default="exclude",
                    domain=("exclude", "half_rl", "use_rl", "use_zero")),
+            _param("surface_unit", "Surface unit (ADR-0022 registry)",
+                   "GPString", required=False, default="ug/L"),
+            _param("matrix", "Matrix filter (e.g. GW)", "GPString",
+                   required=False),
             _param("method", "Interpolation method", "GPString",
                    required=False, default="IDW", domain=("IDW", "EBK")),
             _param("boundary_fc", "Clip boundary feature class",
@@ -572,8 +576,12 @@ class BuildConcentrationSurface(object):
         points = collect_concentration_points(
             Path(p["results_csv"].valueAsText),
             Path(p["coords_csv"].valueAsText),
+            site_id=site.site_id,
+            event_date=p["event_date"].valueAsText,
             analyte=p["analyte"].valueAsText,
             nondetect_rule=p["nondetect_rule"].valueAsText or "exclude",
+            surface_unit=p["surface_unit"].valueAsText or "ug/L",
+            matrix=p["matrix"].valueAsText or None,
             qa=qa)
         summary = build_concentration_surface(
             Path(p["gdb"].valueAsText), site.site_id,
@@ -581,6 +589,7 @@ class BuildConcentrationSurface(object):
             points, qa,
             method=p["method"].valueAsText or "IDW",
             nondetect_rule=p["nondetect_rule"].valueAsText or "exclude",
+            surface_unit=p["surface_unit"].valueAsText or "ug/L",
             cell_size=(float(p["cell_size"].value)
                        if p["cell_size"].value else None),
             boundary_fc=p["boundary_fc"].valueAsText or None,

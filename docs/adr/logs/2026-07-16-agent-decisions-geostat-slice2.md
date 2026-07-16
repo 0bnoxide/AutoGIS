@@ -64,3 +64,18 @@ qualifies"). Mean/latest would need tie-break policy for depth intervals
 and duplicate samples that slice 2 has no requirement for.
 **Revisit if:** depth-discrete surfaces are requested (then aggregation
 becomes per-interval, not per-well).
+
+## Declared surface unit (default ug/L), not derived-from-data
+**Decision:** (#241 review follow-up) The concentration surface normalizes
+every value into a unit the caller DECLARES (`--unit`, default `ug/L`),
+validated against the ADR-0022 registry, rather than deriving the unit
+from the first row encountered.
+**Reasoning:** A derived unit changes silently when the input file's row
+order changes — the exact class of silent-scale bug the review flagged.
+Declaration makes the raster's unit a stated contract, persisted on the
+registry row (`Units`). `ug/L` is the domain default for groundwater
+analytes; GWE surfaces record `ft`. Rows that cannot convert (unknown or
+cross-dimension units) warn and drop — a fabricated conversion would be
+worse than a missing well.
+**Revisit if:** soil-matrix surfaces become a real use — then the default
+should key off the Matrix filter instead of being aqueous-biased.

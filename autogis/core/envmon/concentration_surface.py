@@ -22,11 +22,13 @@ from __future__ import annotations
 
 import csv
 import datetime as _dt
+import hashlib
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
+from autogis.core.common.units import UnitError, convert, normalize_unit
 from autogis.core.envmon.canonical_read import canonical_result_rows
 from autogis.core.envmon.export_geojson import load_well_coords
 
@@ -89,21 +91,42 @@ def collect_concentration_points(
     results_path: Path,
     coords_path: Path,
     *,
+    site_id: str,
+    event_date: str,
     analyte: str,
     nondetect_rule: str = "exclude",
+    surface_unit: str = "ug/L",
+    matrix: Optional[str] = None,
     qa: QACollector,
 ) -> List[ConcPoint]:
-    """Per-well concentration points for one analyte, policy applied.
+    """Per-well concentration points for one site/event/analyte surface.
 
     Canonical-read first (fraction pairs resolved, QC rows dropped —
-    ADR-0075), then the nondetect rule, then one point per well using the
-    MAX value across its rows (conservative for plume mapping). Wells with
-    no coordinates warn and drop, matching draft-plume-boundary.
+    ADR-0075). Rows are scoped to the requested SiteID, SampleDate
+    (== event_date), optional Matrix, and analyte — a multi-site or
+    multi-event export must never leak a foreign value into this surface
+    (#241 review). Values (and the RL/DL a nondetect rule substitutes)
+    are normalized into the declared ``surface_unit`` via the ADR-0022
+    registry; rows with an unknown unit or a cross-dimension unit (e.g.
+    mg/kg into an aqueous surface) warn and drop rather than corrupt the
+    MAX aggregation. One point per well: MAX normalized value
+    (conservative for plume mapping). Wells with no coordinates warn and
+    drop, matching draft-plume-boundary.
     """
+    if normalize_unit(surface_unit) is None:
+        raise ValueError(f"surface_unit not in the ADR-0022 unit registry: "
+                         f"{surface_unit!r}")
     coords = load_well_coords(coords_path)
     best: Dict[str, float] = {}
     with Path(results_path).open(newline="", encoding="utf-8") as fh:
         for row in canonical_result_rows(list(csv.DictReader(fh)), qa):
+            if row.get("SiteID", "").strip() != site_id:
+                continue
+            if str(row.get("SampleDate", "")).strip()[:10] != event_date:
+                continue
+            if matrix is not None and \
+                    row.get("Matrix", "").strip() != matrix:
+                continue
             if row.get("AnalyteCanonicalName", "").strip() != analyte:
                 continue
             v = resolve_result_value(row, nondetect_rule, qa)
@@ -111,6 +134,14 @@ def collect_concentration_points(
                 continue
             loc = row.get("LocationID", "").strip()
             if not loc:
+                continue
+            row_unit = row.get("Units", "").strip()
+            try:
+                v = convert(v, row_unit, surface_unit)
+            except UnitError as exc:
+                qa.add(SEV_WARNING, "surface_unit_mismatch",
+                       f"{loc}/{analyte}: {exc}; row excluded from the "
+                       f"{surface_unit} surface.", location_id=loc)
                 continue
             if loc not in best or v > best[loc]:
                 best[loc] = v
@@ -133,11 +164,24 @@ def slug(text: str) -> str:
     return ("_" + s) if s[0].isdigit() else s
 
 
+def surface_tag(*parts) -> str:
+    """Bounded, collision-resistant identity fragment (#241 review).
+
+    slug() is lossy ('Ben zene' == 'Ben/zene'), so a readable sanitized
+    prefix is paired with a stable sha1-8 of the ORIGINAL identity; the
+    registry key keeps the originals, the raster/scratch names carry this.
+    """
+    raw = "|".join(str(p) for p in parts)
+    h = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+    prefix = "_".join(slug(p)[:16] for p in parts if str(p).strip()) or "X"
+    return f"{prefix[:40]}_{h}"
+
+
 def raster_names(site_id: str, event_date: str, analyte: str,
                  method: str) -> Dict[str, str]:
     """Draft_ raster names per spec D3: PREDICTION and (EBK only) STD_ERROR."""
     ev = event_date.replace("-", "")
-    base = f"Draft_Conc_{slug(site_id)}_{ev}_{slug(analyte)}_{method}"
+    base = f"Draft_Conc_{surface_tag(site_id, analyte)}_{ev}_{method}"
     names = {"PREDICTION": base}
     if method == "EBK":
         names["STD_ERROR"] = base + "_SE"
@@ -153,12 +197,18 @@ def build_surface_registry_rows(
     nondetect_rule: str,
     rasters: Dict[str, str],
     now: _dt.datetime,
+    units: str = "",
 ) -> List[dict]:
-    """Shape Env_SurfaceRegistry rows (one per raster type) — spec D3."""
+    """Shape Env_SurfaceRegistry rows (one per raster type) — spec D3.
+
+    ``units`` is the declared surface unit the raster values are in
+    ('ug/L' for CONC, 'ft' for GWE) — provenance the raster itself cannot
+    carry (#241 review).
+    """
     return [{
         "SiteID": site_id, "EventDate": event_date, "SurfaceKind": kind,
         "AnalyteFilter": analyte, "Method": method, "RasterType": rtype,
-        "NondetectRule": nondetect_rule, "RasterPath": name,
+        "NondetectRule": nondetect_rule, "Units": units, "RasterPath": name,
         "ReviewStatus": "DRAFT", "CreatedAt": now,
         "Notes": _DRAFT_WARNING[:200],
     } for rtype, name in sorted(rasters.items())]
@@ -178,8 +228,8 @@ def write_surface_registry_rows(gdb, rows: Sequence[dict]
     if not arcpy.Exists(tbl):
         return False
     fields = ["SiteID", "EventDate", "SurfaceKind", "AnalyteFilter",
-              "Method", "RasterType", "NondetectRule", "RasterPath",
-              "ReviewStatus", "CreatedAt", "Notes"]
+              "Method", "RasterType", "NondetectRule", "Units",
+              "RasterPath", "ReviewStatus", "CreatedAt", "Notes"]
 
     def _q(v: str) -> str:
         # Apostrophe analytes (4,4'-DDT) are routine — escape every
@@ -202,7 +252,7 @@ def write_surface_registry_rows(gdb, rows: Sequence[dict]
         with arcpy.da.InsertCursor(tbl, fields) as cur:
             cur.insertRow([r["SiteID"], ev_dt, r["SurfaceKind"],
                            r["AnalyteFilter"], r["Method"], r["RasterType"],
-                           r["NondetectRule"], r["RasterPath"],
+                           r["NondetectRule"], r["Units"], r["RasterPath"],
                            r["ReviewStatus"], r["CreatedAt"], r["Notes"]])
     return True
 
@@ -216,6 +266,7 @@ def build_concentration_surface(  # pragma: no cover
     qa: QACollector,
     method: str = "IDW",
     nondetect_rule: str = "exclude",
+    surface_unit: str = "ug/L",
     cell_size: Optional[float] = None,
     boundary_fc: Optional[str] = None,
     min_valid_points: int = 4,
@@ -272,17 +323,20 @@ def build_concentration_surface(  # pragma: no cover
                "concentration surface skipped.", site_id=site_id)
         summary["skipped"] = True
         return summary
-    for e in need:
-        arcpy.CheckOutExtension(e)
 
     # Interpolate into scratch; clip (if requested) also into scratch —
     # only a fully validated result replaces the existing draft rasters.
-    # Everything after checkout sits inside try/finally so a failure
-    # (missing MonitoringWells, EBK error, bad clip) still checks the
-    # license back in and surfaces as QA, not a raw traceback.
+    # The checkout loop itself is inside try/finally and only extensions
+    # actually acquired are checked back in (#241 review), so any failure
+    # (partial checkout, missing MonitoringWells, EBK error, bad clip)
+    # surfaces as QA without leaking a license.
     scratch_rasters: Dict[str, str] = {}
-    tag = f"{slug(site_id)}_{slug(analyte)}"  # scratch names per site/analyte
+    acquired: List[str] = []
+    tag = surface_tag(site_id, analyte)  # scratch names per site/analyte
     try:
+        for e in need:
+            arcpy.CheckOutExtension(e)
+            acquired.append(e)
         scratch = Path(str(scratch or arcpy.env.scratchGDB))
         pt_name = f"conc_pts_{tag}"
         pt_fc = str(scratch / pt_name)
@@ -327,16 +381,24 @@ def build_concentration_surface(  # pragma: no cover
                 arcpy.management.Clip(ras, "#", clipped, boundary_fc, "",
                                       "ClippingGeometry")
                 scratch_rasters[rtype] = clipped
-            # A disjoint boundary can clip to all-NoData without raising:
-            # no readable maximum -> nothing usable -> skip-before-replace
-            # (spec D5). Raster.maximum's all-NoData value is undocumented,
-            # so treat None AND a raise identically.
+            # A disjoint boundary can clip to all-NoData without raising.
+            # GetRasterProperties(ALLNODATA) is the direct test (#241
+            # review; ADR-0077 doc-verified 2026-07-16): '1' = confirmed
+            # empty. An inspection failure is reported as its own QA
+            # category, distinct from confirmed no-overlap — both skip
+            # before any draft is replaced (spec D5).
             try:
-                clip_empty = \
-                    arcpy.Raster(scratch_rasters["PREDICTION"]).maximum is None
-            except Exception:
-                clip_empty = True
-            if clip_empty:
+                allnodata = str(arcpy.management.GetRasterProperties(
+                    scratch_rasters["PREDICTION"], "ALLNODATA"
+                ).getOutput(0)).strip()
+            except Exception as exc:
+                qa.add(SEV_ERROR, "boundary_clip_inspect_failed",
+                       f"Could not inspect the clipped raster ({exc}). "
+                       "Surface skipped; existing drafts untouched.",
+                       site_id=site_id)
+                summary["skipped"] = True
+                return summary
+            if allnodata == "1":
                 qa.add(SEV_ERROR, "boundary_clip_empty",
                        f"Boundary clip produced no data (no overlap between "
                        f"{boundary_fc} and the interpolated extent). Surface "
@@ -350,7 +412,7 @@ def build_concentration_surface(  # pragma: no cover
         summary["skipped"] = True
         return summary
     finally:
-        for e in need:
+        for e in acquired:
             arcpy.CheckInExtension(e)
 
     # Publish stage. Delete-then-copy cannot be atomic in a GDB; guard it
@@ -376,7 +438,7 @@ def build_concentration_surface(  # pragma: no cover
 
     rows = build_surface_registry_rows(
         site_id, event_date, "CONC", analyte, method, nondetect_rule,
-        names, _dt.datetime.now())
+        names, _dt.datetime.now(), units=surface_unit)
     summary["registry_written"] = write_surface_registry_rows(gdb, rows)
     if not summary["registry_written"]:
         qa.add(SEV_ERROR, "surface_registry_missing",
@@ -384,7 +446,7 @@ def build_concentration_surface(  # pragma: no cover
                "first. Raster written but NOT registered.", site_id=site_id)
     else:
         qa.add(SEV_INFO, "concentration_surface_generated",
-               f"DRAFT {method} {analyte} surface from {len(points)} "
-               f"well(s), nondetect_rule={nondetect_rule}. "
+               f"DRAFT {method} {analyte} surface ({surface_unit}) from "
+               f"{len(points)} well(s), nondetect_rule={nondetect_rule}. "
                f"{_DRAFT_WARNING}", site_id=site_id)
     return summary

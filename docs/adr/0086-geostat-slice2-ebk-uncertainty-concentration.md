@@ -27,8 +27,10 @@ performed in the implementing session (8 tool pages; table in the spec).
    to QA-ERROR skip like every other method). Ranking uses one
    `arcpy.ga.CrossValidation` call (LOO for the fitted layer) merged into
    the shared `ObservationRow` list by headless, tested glue — all methods
-   rank on identical wells via `evaluate_gw_models`. EBK is opt-in; the
-   pipeline default stays `TIN,IDW`.
+   rank on identical wells via `evaluate_gw_models` (CV points accepted
+   only when `Included` normalizes to `yes` — PR #241 review). EBK is
+   opt-in: `PIPELINE_METHODS` is the validation universe,
+   `DEFAULT_PIPELINE_METHODS = ("TIN", "IDW")` the function default.
 2. **Uncertainty presentation (closes ADR-0085 decision 6)** — EBK writes
    a `PREDICTION_STANDARD_ERROR` companion raster via
    `ga.GALayerToRasters`. DRAFT convention for rasters: `Draft_` name
@@ -38,18 +40,25 @@ performed in the implementing session (8 tool pages; table in the spec).
 3. **Continuous concentration surface** — new `build-conc-surface` CLI /
    `BuildAnalyticalConcentrationSurface` .pyt tool (four-surface
    registration): per-analyte IDW or EBK raster from canonical-read
-   results, optional site-boundary clip with the plume tool's
-   validate-before-replace contract (PR #240 review lesson), rasters +
-   registry rows as in (2).
+   results scoped to the requested site/event/matrix (PR #241 review),
+   values normalized into a declared surface unit via the ADR-0022
+   registry, optional site-boundary clip with the plume tool's
+   validate-before-replace contract (PR #240 review lesson; empty clip
+   confirmed via `GetRasterProperties(ALLNODATA)`), rasters + registry
+   rows as in (2).
 4. **Nondetect policy (closes ADR-0085 decision 4)** —
    `exclude | half_rl | use_rl | use_zero`, applied at point collection in
    headless `concentration_surface.py`; RL falls back to DetectionLimit,
-   both-null rows are excluded with a warning. Scoped to the concentration
-   surface only; `ExceedsScreeningLevel`/plume hull untouched.
-5. **Schema 2.4 → 2.5 (additive)** — `Env_SurfaceRegistry` (41 tables);
-   replace-on-write key (SiteID, EventDate, SurfaceKind, AnalyteFilter,
-   Method, RasterType); no RunID column (GW_ModelRun already records
-   execution; rasters replace in place).
+   both-null rows are excluded with a warning; the substituted limit is
+   unit-normalized like any result. Scoped to the concentration surface
+   only; `ExceedsScreeningLevel`/plume hull untouched.
+5. **Schema 2.4 → 2.5 (additive)** — `Env_SurfaceRegistry` (41 tables)
+   incl. `Units` provenance (PR #241 review); replace-on-write key
+   (SiteID, EventDate, SurfaceKind, AnalyteFilter, Method, RasterType);
+   no RunID column (GW_ModelRun already records execution; rasters
+   replace in place). Raster names pair a bounded readable prefix with a
+   stable sha1-8 of the original identity so lossy sanitization cannot
+   collide two surfaces onto one dataset.
 
 ## Consequences
 

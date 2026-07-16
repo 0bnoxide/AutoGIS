@@ -150,3 +150,11 @@ def test_upgrade_schema_guard_without_arcpy():
     result = CliRunner().invoke(autogis, ["envmon", "upgrade-schema", "fake.gdb"])
     assert result.exit_code in (0, 1)
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_surface_registry_fields():
+    """Slice-2 drift guard (spec D3 + #241 review: Units provenance)."""
+    fields = [f[0] for f in TABLE_SCHEMAS["Env_SurfaceRegistry"]]
+    assert fields == ["SiteID", "EventDate", "SurfaceKind", "AnalyteFilter",
+                      "Method", "RasterType", "NondetectRule", "Units",
+                      "RasterPath", "ReviewStatus", "CreatedAt", "Notes"]

@@ -317,7 +317,8 @@ TABLE_SCHEMAS = {
         ("SiteID", T, 32), ("EventDate", DT, None),
         ("SurfaceKind", T, 16), ("AnalyteFilter", T, 128),
         ("Method", T, 32), ("RasterType", T, 32),
-        ("NondetectRule", T, 16), ("RasterPath", T, 256),
+        ("NondetectRule", T, 16), ("Units", T, 16),
+        ("RasterPath", T, 256),
         ("ReviewStatus", T, 16), ("CreatedAt", DT, None),
         ("Notes", T, 256)],
 }

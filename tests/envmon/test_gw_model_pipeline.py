@@ -277,3 +277,16 @@ def test_cross_validate_mixed_manual_and_ebk_ranks_together():
     assert stats[0].model_name == "EBK" and stats[0].rank == 1
     assert stats[0].n_points == stats[1].n_points == len(POINTS)
     assert run_row["ExecutedMethods"] == "TIN,EBK"
+
+
+def test_default_methods_exclude_ebk():
+    """#241 P2 regression: EBK is in the validation universe but must not
+    run by default — a bare programmatic call stays TIN,IDW."""
+    import inspect
+    from autogis.core.envmon.gw_model_pipeline import (
+        DEFAULT_PIPELINE_METHODS, run_field_to_groundwater_model_pipeline,
+    )
+    assert DEFAULT_PIPELINE_METHODS == ("TIN", "IDW")
+    assert "EBK" not in DEFAULT_PIPELINE_METHODS
+    sig = inspect.signature(run_field_to_groundwater_model_pipeline)
+    assert sig.parameters["methods"].default == DEFAULT_PIPELINE_METHODS

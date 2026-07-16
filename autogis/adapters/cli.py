@@ -4554,6 +4554,13 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
               default="exclude", show_default=True,
               help="Numeric substitution for nondetects (ADR-0085 "
                    "decision 4).")
+@click.option("--unit", "surface_unit", default="ug/L", show_default=True,
+              help="Declared surface unit (ADR-0022 registry); every "
+                   "result/RL/DL is normalized into it, rows with unknown "
+                   "or cross-dimension units are excluded with a warning.")
+@click.option("--matrix", default=None,
+              help="Optional Matrix filter (e.g. GW); rows outside it are "
+                   "excluded.")
 @click.option("--method", type=click.Choice(["IDW", "EBK"]), default="IDW",
               show_default=True,
               help="IDW needs Spatial Analyst; EBK needs Geostatistical "
@@ -4572,8 +4579,9 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
                    "no arcpy, no writes.")
 @qa_report_options
 def build_conc_surface_cmd(results_csv, coords_csv, analyte, site_id,
-                           event_date, nondetect_rule, method, gdb,
-                           boundary_fc, cell_size, dry_run, report, fail_on):
+                           event_date, nondetect_rule, surface_unit, matrix,
+                           method, gdb, boundary_fc, cell_size, dry_run,
+                           report, fail_on):
     """BuildAnalyticalConcentrationSurface: DRAFT interpolated concentration
     raster for one analyte (Phase-5 slice 2, ADR-0085).
 
@@ -4595,10 +4603,12 @@ def build_conc_surface_cmd(results_csv, coords_csv, analyte, site_id,
 
     qa = QACollector()
     points = collect_concentration_points(
-        Path(results_csv), Path(coords_csv), analyte=analyte,
-        nondetect_rule=nondetect_rule, qa=qa)
+        Path(results_csv), Path(coords_csv), site_id=site_id,
+        event_date=event_date, analyte=analyte,
+        nondetect_rule=nondetect_rule, surface_unit=surface_unit,
+        matrix=matrix, qa=qa)
     click.echo(f"[DRAFT] {len(points)} interpolation point(s) for {analyte} "
-               f"(nondetect_rule={nondetect_rule})")
+               f"({surface_unit}, nondetect_rule={nondetect_rule})")
     if dry_run:
         for loc, x, y, v in points:
             click.echo(f"  {loc}: ({x}, {y}) = {v}")
@@ -4606,6 +4616,7 @@ def build_conc_surface_cmd(results_csv, coords_csv, analyte, site_id,
         summary = build_concentration_surface(
             Path(gdb), site_id, event_date, analyte, points, qa,
             method=method, nondetect_rule=nondetect_rule,
+            surface_unit=surface_unit,
             cell_size=cell_size, boundary_fc=boundary_fc)
         if summary["skipped"]:
             click.echo("WARNING: surface skipped — see QA report.")

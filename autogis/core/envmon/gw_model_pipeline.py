@@ -26,7 +26,11 @@ from autogis.core.envmon.evaluate_gw_models import (
     ModelStats, ObservationRow, evaluate_gw_models,
 )
 
+# Validation universe vs. default set (#241 review): EBK is SUPPORTED but
+# opt-in (slice-2 D6) — a programmatic call with no methods argument must
+# not silently start consuming a GeoStats license.
 PIPELINE_METHODS = ("TIN", "IDW", "EBK")
+DEFAULT_PIPELINE_METHODS = ("TIN", "IDW")
 
 # (LocationID, x, y, GroundwaterElevation_ft) — the shape
 # groundwater_contours.collect_contour_points already returns.
@@ -305,8 +309,11 @@ def ebk_loo_predictions(sr, scratch, pts) -> Dict[str, float]:  # pragma: no cov
         for src_oid, included, predicted in cur:
             if predicted is None:
                 continue
-            if included is not None and \
-                    str(included).strip().lower() in ("no", "false", "0"):
+            # Esri documents Included as 'Yes' or a diagnostic string
+            # ('Not enough neighbors', 'Overfilling', ...) — accept ONLY a
+            # normalized 'yes'; anything else is an excluded point even if
+            # Predicted is non-null (#241 review).
+            if str(included).strip().lower() != "yes":
                 continue
             loc = oid_to_loc.get(src_oid)
             if loc:
@@ -348,7 +355,7 @@ def run_field_to_groundwater_model_pipeline(  # pragma: no cover
     site_id: str,
     event_date: str,
     qa: QACollector,
-    methods: Sequence[str] = PIPELINE_METHODS,
+    methods: Sequence[str] = DEFAULT_PIPELINE_METHODS,
     contour_interval: float = 1.0,
     min_valid_points: int = 3,
     boundary_fc: Optional[str] = None,
@@ -398,9 +405,13 @@ def run_field_to_groundwater_model_pipeline(  # pragma: no cover
         # ga.CrossValidation (slice-2 D2) — one call, not N EBK refits.
         manual = [m for m in cv_methods if m != "EBK"]
         need = {"TIN": "3D", "IDW": "Spatial", "EBK": "GeoStats"}
-        for ext in {need[m] for m in cv_methods}:
-            arcpy.CheckOutExtension(ext)
+        acquired = []
         try:
+            # Checkout inside the try, tracking only what was acquired —
+            # a partial checkout must not leak the first license (#241).
+            for ext in {need[m] for m in cv_methods}:
+                arcpy.CheckOutExtension(ext)
+                acquired.append(ext)
             sr = arcpy.Describe(
                 str(Path(str(gdb)) / "MonitoringWells")).spatialReference
             predict = make_arcpy_loo_predictor(sr, arcpy.env.scratchGDB) \
@@ -415,7 +426,7 @@ def run_field_to_groundwater_model_pipeline(  # pragma: no cover
                 requested_methods=methods, loo_methods=manual,
                 extra_predictions=extra)
         finally:
-            for ext in {need[m] for m in cv_methods}:
+            for ext in acquired:
                 arcpy.CheckInExtension(ext)
     else:
         rows, stats, run_row, cv_rows = cross_validate_and_rank(

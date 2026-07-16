@@ -191,26 +191,31 @@ def build_groundwater_contours(
                site_id=site_id)
         summary["skipped"] = True
         return summary
-    for ext in needs:
-        arcpy.CheckOutExtension(ext)
-
-    scratch = Path(scratch or arcpy.env.scratchGDB)
-    pt_fc = str(scratch / f"gwe_pts_{site_id}")
-    sr = arcpy.Describe(str(gdb / "MonitoringWells")).spatialReference
-    if arcpy.Exists(pt_fc):
-        arcpy.management.Delete(pt_fc)
-    arcpy.management.CreateFeatureclass(str(scratch), Path(pt_fc).name,
-                                        "POINT", spatial_reference=sr)
-    arcpy.management.AddField(pt_fc, "GWE", "DOUBLE")
-    with arcpy.da.InsertCursor(pt_fc, ["SHAPE@XY", "GWE"]) as cur:
-        for _loc, x, y, z in pts:
-            cur.insertRow([(x, y), z])
-
-    raw_contours = str(scratch / f"gwe_ctr_{site_id}")
-    if arcpy.Exists(raw_contours):
-        arcpy.management.Delete(raw_contours)
-
+    # Checkout and ALL post-checkout setup sit inside one try/finally that
+    # checks back in only the extensions actually acquired — a scratch-lock
+    # or missing-schema failure must not leak a license (#241 review).
+    acquired = []
     try:
+        for ext in needs:
+            arcpy.CheckOutExtension(ext)
+            acquired.append(ext)
+
+        scratch = Path(scratch or arcpy.env.scratchGDB)
+        pt_fc = str(scratch / f"gwe_pts_{site_id}")
+        sr = arcpy.Describe(str(gdb / "MonitoringWells")).spatialReference
+        if arcpy.Exists(pt_fc):
+            arcpy.management.Delete(pt_fc)
+        arcpy.management.CreateFeatureclass(str(scratch), Path(pt_fc).name,
+                                            "POINT", spatial_reference=sr)
+        arcpy.management.AddField(pt_fc, "GWE", "DOUBLE")
+        with arcpy.da.InsertCursor(pt_fc, ["SHAPE@XY", "GWE"]) as cur:
+            for _loc, x, y, z in pts:
+                cur.insertRow([(x, y), z])
+
+        raw_contours = str(scratch / f"gwe_ctr_{site_id}")
+        if arcpy.Exists(raw_contours):
+            arcpy.management.Delete(raw_contours)
+
         if method == "TIN":
             tin = str(Path(str(scratch)).parent / f"gwe_tin_{site_id}")
             if arcpy.Exists(tin):
@@ -251,7 +256,7 @@ def build_groundwater_contours(
         summary["skipped"] = True
         return summary
     finally:
-        for ext in needs:
+        for ext in acquired:
             arcpy.CheckInExtension(ext)
 
     clipped = raw_contours
@@ -328,9 +333,10 @@ def build_groundwater_contours(
         # draft must surface as QA, not a traceback (#slice-2 review) —
         # the contours above are already written and stay valid.
         from autogis.core.envmon.concentration_surface import (
-            build_surface_registry_rows, slug, write_surface_registry_rows,
+            build_surface_registry_rows, surface_tag,
+            write_surface_registry_rows,
         )
-        se_name = f"Draft_GWE_{slug(site_id)}_{ev_dt:%Y%m%d}_EBK_SE"
+        se_name = f"Draft_GWE_{surface_tag(site_id)}_{ev_dt:%Y%m%d}_EBK_SE"
         try:
             final = str(gdb / se_name)
             if arcpy.Exists(final):
@@ -346,7 +352,7 @@ def build_groundwater_contours(
         else:
             rows = build_surface_registry_rows(
                 site_id, event_date, "GWE", "", "EBK", "",
-                {"STD_ERROR": se_name}, _dt.datetime.now())
+                {"STD_ERROR": se_name}, _dt.datetime.now(), units="ft")
             if not write_surface_registry_rows(gdb, rows):
                 qa.add(SEV_ERROR, "surface_registry_missing",
                        "Env_SurfaceRegistry missing — run upgrade-schema "
