@@ -103,6 +103,7 @@ Each ADR follows this structure:
 | [082](0082-edd-step3-equis-wmrd-slice1.md) | EDD Step 3 slice 1 — EQuIS WMRD `.xls` reader + `Env_QCResults` table (33 cols); xlrd required dep, D5 no-pivot reversal on real-file evidence, IsReportable-aware canonical-read reruns (closes ADR-0079 follow-up #3); key-collision limitation recorded, fix deferred | Accepted | 2026-07-10 |
 | [083](0083-report-template-system.md) | Report template system — self-contained HTML (base64 images, print-optimized) additive to Markdown for the two envmon report tools; one canonical `report.css` consumed by the stdlib render layer and a DesignSync preview bundle; DOCX/PDF-lib deferred; closes #163 | Accepted | 2026-07-11 |
 | [084](0084-edd-step3-slice2-key-collision-resolution.md) | EDD Step 3 slice 2 — #230 key collisions. Analytical `MethodID` fold into the `MethodDilutionKey` value recipe (stands). QC run-instance token **reverted post-merge** (Codex review P1a/P1b data-integrity gaps) to a fail-safe blocking guard; QC half reopened. P2 overlength-key guard added. Frozen keys untouched | Accepted (QC reverted) | 2026-07-15 |
+| [085](0085-phase5-geostatistical-architecture-review.md) | Phase-5 geostatistical architecture review — slice 1 reuses `groundwater_contours`/`evaluate_gw_models`/`draft_plume_boundary` (TIN/IDW + ranking + boundary clip); EBK/kriging, uncertainty output, and nondetect policy deferred to slice 2 pending ADR-0077 verification; new additive `GW_ModelRun`/`GW_ModelCrossValidation` tables | Proposed | 2026-07-15 |
 
 ## File naming
 
