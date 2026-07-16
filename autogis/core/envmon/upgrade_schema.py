@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
-SCHEMA_VERSION = "2.3"
+SCHEMA_VERSION = "2.4"
 
 
 @dataclass

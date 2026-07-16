@@ -1,6 +1,9 @@
 # ADR-0085: Phase-5 geostatistical conditional tools — architecture review
 
-**Status:** Proposed
+**Status:** Accepted (2026-07-16 — user merged the Proposed ADR in PR #239
+without change requests and instructed "continue geostat development"; treated
+as the plain-text direction sign-off required by
+`docs/HANDOFF-2026-07-15-geostat.md`)
 
 **Date:** 2026-07-15
 

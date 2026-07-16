@@ -38,9 +38,21 @@ def test_all_new_tables_in_schema():
 
 
 def test_total_table_count():
-    assert len(TABLE_SCHEMAS) == 38, (
-        f"Expected 38 tables (9 existing + 29 new), got {len(TABLE_SCHEMAS)}"
+    assert len(TABLE_SCHEMAS) == 40, (
+        f"Expected 40 tables (38 at v2.3 + 2 GW model registry), "
+        f"got {len(TABLE_SCHEMAS)}"
     )
+
+
+def test_gw_model_registry_tables():
+    """ADR-0085 schema sketch, SCHEMA_VERSION 2.4 — additive only."""
+    run_fields = [f[0] for f in TABLE_SCHEMAS["GW_ModelRun"]]
+    assert run_fields == ["RunID", "SiteID", "EventDate", "Methods",
+                          "RunTimestamp", "ApprovedModel", "ReviewStatus",
+                          "Notes"]
+    cv_fields = [f[0] for f in TABLE_SCHEMAS["GW_ModelCrossValidation"]]
+    assert cv_fields == ["RunID", "ModelName", "NPoints", "RMSE",
+                         "MeanError", "MAE", "PctWithinTolerance", "Rank"]
 
 
 def test_env_schema_version_fields():
@@ -63,7 +75,7 @@ from autogis.core.envmon.upgrade_schema import (  # noqa: E402
 
 
 def test_schema_version_constant():
-    assert SCHEMA_VERSION == "2.3"
+    assert SCHEMA_VERSION == "2.4"
 
 
 def test_table_upgrade_status_attributes():

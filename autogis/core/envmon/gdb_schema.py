@@ -291,6 +291,20 @@ TABLE_SCHEMAS = {
         ("GISReady", SH, None), ("QAReady", SH, None),
         ("ModelReady", SH, None), ("ReportReady", SH, None),
         ("OverallReady", SH, None), ("LastUpdated", T, 32)],
+
+    # ------------------------------------------------------------------
+    # GW model registry (ADR-0085, SCHEMA_VERSION 2.4) — input/excluded
+    # points stay in Env_GWContourPoints; these persist runs + ranking.
+    # ------------------------------------------------------------------
+    "GW_ModelRun": [
+        ("RunID", T, 64), ("SiteID", T, 32), ("EventDate", DT, None),
+        ("Methods", T, 64), ("RunTimestamp", DT, None),
+        ("ApprovedModel", T, 32), ("ReviewStatus", T, 16),
+        ("Notes", T, 256)],
+    "GW_ModelCrossValidation": [
+        ("RunID", T, 64), ("ModelName", T, 32), ("NPoints", L, None),
+        ("RMSE", D, None), ("MeanError", D, None), ("MAE", D, None),
+        ("PctWithinTolerance", D, None), ("Rank", L, None)],
 }
 
 # Alias for backward compatibility and test imports
