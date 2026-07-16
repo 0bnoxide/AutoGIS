@@ -233,7 +233,13 @@ def build_groundwater_contours(
 
     out_fc = str(gdb / "Env_GWContours_Draft")
     where = f"SiteID = '{site_id}' AND " + _where_date("EventDate", event_date)
-    with arcpy.da.UpdateCursor(out_fc, ["OID@"], where_clause=where) as cur:
+    # Replace only THIS method's draft rows: multi-method runs (the ADR-0085
+    # pipeline) must not have the second method wipe the first's contours
+    # (PR #240 review). Flow-arrow replacement below stays event-scoped — it
+    # is method-independent (plane fit of the same points).
+    ctr_where = where + f" AND InterpolationMethod = '{method}'"
+    with arcpy.da.UpdateCursor(out_fc, ["OID@"],
+                               where_clause=ctr_where) as cur:
         for _ in cur:
             cur.deleteRow()
     n = 0

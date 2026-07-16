@@ -275,26 +275,61 @@ def write_plume_draft_to_gdb(  # pragma: no cover
     gdb_path: str,
     site_id: str,
     result: DraftPlumeBoundaryResult,
+    boundary_fc: Optional[str] = None,
 ) -> bool:
     """Write the draft plume polygon to Env_PlumeBoundary_Draft (ArcGIS Pro).
 
     ReviewStatus='DRAFT' matches the convention in groundwater_contours.py.
     Requires arcpy. Wrapped by the CLI --gdb flag behind _guard().
 
+    boundary_fc: optional site-boundary polygon feature class; when given,
+    the hull is clipped to it (Geometry.intersect — ADR-0085 decision 5,
+    doc-verified 2026-07-16) so the draft plume never extends past the site
+    boundary. A boundary_fc that does not exist or is empty, or an empty
+    intersection, writes nothing and returns False with the prior draft left
+    intact — a requested clip is never silently skipped.
+
     Returns True if the row was written, False if the target feature class
     does not exist (e.g. schema tooling hasn't been run against this GDB
     yet) — callers must not report success when this returns False.
     """
     import datetime
-    import arcpy
     from pathlib import Path as _P
+
+    from autogis.runtime.sessions import arcpy_env as _arcpy
+    arcpy = _arcpy()
 
     fc = str(_P(gdb_path) / "Env_PlumeBoundary_Draft")
     if not arcpy.Exists(fc):
         return False
 
     sr = arcpy.Describe(fc).spatialReference
-    # Delete existing draft polygon for this site
+
+    # Build closed ring polygon
+    closed = result.hull_vertices + [result.hull_vertices[0]]
+    ring = arcpy.Array([arcpy.Point(xy[0], xy[1]) for xy in closed])
+    polygon = arcpy.Polygon(ring, sr)
+
+    # Validate + apply the requested clip BEFORE touching the existing draft:
+    # a failed clip must leave the prior draft intact, never write unclipped
+    # (PR #240 review).
+    clip_note = ""
+    if boundary_fc:
+        if not arcpy.Exists(boundary_fc):
+            return False  # requested clip must not be silently skipped
+        site_poly = None
+        with arcpy.da.SearchCursor(boundary_fc, ["SHAPE@"]) as cur:
+            for (shape,) in cur:
+                site_poly = shape if site_poly is None \
+                    else site_poly.union(shape)
+        if site_poly is None:
+            return False  # empty boundary FC — clip cannot be honored
+        polygon = polygon.intersect(site_poly, 4)  # 4 = polygon output
+        if polygon.area == 0:
+            return False
+        clip_note = " Clipped to site boundary."
+
+    # Only now replace the existing draft polygon for this site
     where = f"SiteID = '{site_id}'"
     if result.analyte:
         where += f" AND AnalyteFilter = '{result.analyte}'"
@@ -302,15 +337,10 @@ def write_plume_draft_to_gdb(  # pragma: no cover
         for _ in cur:
             cur.deleteRow()
 
-    # Build closed ring polygon
-    closed = result.hull_vertices + [result.hull_vertices[0]]
-    ring = arcpy.Array([arcpy.Point(xy[0], xy[1]) for xy in closed])
-    polygon = arcpy.Polygon(ring, sr)
-
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     note = (f"DRAFT boundary — {result.hull_method} hull, "
-            f"{result.n_exceedance_points} exceedance point(s). "
-            f"Auto-generated {stamp}; review required.")
+            f"{result.n_exceedance_points} exceedance point(s)."
+            f"{clip_note} Auto-generated {stamp}; review required.")
 
     fields = ["SiteID", "AnalyteFilter", "HullMethod", "KNeighbors",
               "NExceedancePoints", "ReviewStatus", "Notes", "SHAPE@"]

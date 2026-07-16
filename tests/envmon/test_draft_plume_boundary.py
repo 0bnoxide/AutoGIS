@@ -333,3 +333,19 @@ def test_result_to_wkt_ring_closed():
     inner = wkt.split("((")[1].rstrip("))")
     pairs = [pair.strip().split() for pair in inner.split(",")]
     assert pairs[0] == pairs[-1], "WKT ring must be closed"
+
+
+# ---------------------------------------------------------------------------
+# CLI: --boundary-fc (ADR-0085 decision 5 — clip lives in the GDB write seam)
+# ---------------------------------------------------------------------------
+
+def test_cli_boundary_fc_requires_gdb(tmp_path):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    pts = tmp_path / "pts.csv"
+    pts.write_text("location_id,x,y\nA,0,0\nB,1,0\nC,0,1\n", encoding="utf-8")
+    result = CliRunner().invoke(autogis, [
+        "envmon", "draft-plume-boundary", "--points", str(pts),
+        "--boundary-fc", "site_boundary"])
+    assert result.exit_code != 0
+    assert "--boundary-fc requires --gdb" in result.output

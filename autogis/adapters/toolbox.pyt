@@ -65,6 +65,7 @@ class Toolbox(object):
             BuildCurrentEvent,       # tool 3
             BuildCallouts,           # tool 4
             GroundwaterContours,     # tool 5
+            RunGWModelPipeline,      # Phase-5 slice 1 (ADR-0085)
             ExportFigures,           # tool 6
             FullPipeline,            # tool 7
             ValidateDatabase,        # tool 8
@@ -441,6 +442,76 @@ class GroundwaterContours(object):
             contour_interval=float(p["interval"].value or 1.0),
             min_valid_points=int(p["min_points"].value or 3),
             boundary_fc=p["boundary_fc"].valueAsText or None,
+        )
+        messages.addMessage(json.dumps(summary, indent=2))
+        _msg(messages, qa)
+
+
+class RunGWModelPipeline(object):
+    """Phase-5 slice 1 — multi-model GW pipeline with LOO ranking (arcpy).
+
+    RunFieldToGroundwaterModelPipeline per ADR-0085; select a single method
+    for the BuildGroundwaterSurfaceModel mode. Approval is recorded
+    afterwards with the `approve-gw-model` CLI verb.
+    """
+
+    def __init__(self):
+        self.label = "5b. Run GW Model Pipeline (DRAFT)"
+        self.description = ("Build DRAFT contours per interpolation method "
+                            "(TIN/IDW), leave-one-out cross-validate, rank "
+                            "by RMSE and persist GW_ModelRun/"
+                            "GW_ModelCrossValidation (ReviewStatus=DRAFT). "
+                            "Rank 1 is a suggestion only — a hydrogeologist "
+                            "approves a model with approve-gw-model.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        methods = _param("methods", "Interpolation methods", "GPString",
+                         multi=True, domain=("TIN", "IDW"))
+        methods.value = ["TIN", "IDW"]
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            _param("site_config", "Site config", "DEFile"),
+            _param("event_date", "Event date YYYY-MM-DD", "GPString"),
+            methods,
+            _param("interval", "Contour interval (ft)", "GPDouble",
+                   required=False, default=1.0),
+            _param("min_points", "Minimum valid points", "GPLong",
+                   required=False, default=3),
+            _param("boundary_fc", "Clip boundary feature class",
+                   "DEFeatureClass", required=False),
+            _param("tolerance_ft", "CV tolerance (ft)", "GPDouble",
+                   required=False, default=0.5),
+            _param("observations_csv", "Audit observations CSV", "DEFile",
+                   required=False, direction="Output"),
+            _param("stats_csv", "Ranked stats CSV", "DEFile",
+                   required=False, direction="Output"),
+        ]
+
+    @toolbox_core.record_pyt_run("run-gw-model-pipeline")
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("run-gw-model-pipeline")
+        from autogis.core.envmon.gw_model_pipeline import (
+            run_field_to_groundwater_model_pipeline,
+        )
+        qa = QACollector()
+        p = {q.name: q for q in parameters}
+        site = SiteConfig.load(Path(p["site_config"].valueAsText))
+        methods = [m.strip() for m in
+                   (p["methods"].valueAsText or "TIN;IDW").split(";") if m]
+        summary = run_field_to_groundwater_model_pipeline(
+            Path(p["gdb"].valueAsText), site.site_id,
+            p["event_date"].valueAsText, qa,
+            methods=methods,
+            contour_interval=float(p["interval"].value or 1.0),
+            min_valid_points=int(p["min_points"].value or 3),
+            boundary_fc=p["boundary_fc"].valueAsText or None,
+            tolerance_ft=float(p["tolerance_ft"].value or 0.5),
+            observations_csv=(Path(p["observations_csv"].valueAsText)
+                              if p["observations_csv"].valueAsText else None),
+            stats_csv=(Path(p["stats_csv"].valueAsText)
+                       if p["stats_csv"].valueAsText else None),
         )
         messages.addMessage(json.dumps(summary, indent=2))
         _msg(messages, qa)

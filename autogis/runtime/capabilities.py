@@ -83,6 +83,8 @@ TOOLS: dict[str, Runtime] = {
     "sync-to-gdb": Runtime.LOCAL,  # tool 6.2 GDB upsert (--gdb path); agol group
     "generate-inspection-report": Runtime.CLOUD,  # tool 7.4 headless photo workbook (openpyxl + Pillow)
     "gen-map-series": Runtime.LOCAL,  # tool 5.6 batch figure-packet export — needs arcpy
+    "run-gw-model-pipeline": Runtime.LOCAL,  # Phase-5 slice 1 — TIN/IDW LOO CV, needs arcpy
+    "approve-gw-model": Runtime.LOCAL,  # Phase-5 slice 1 — GW_ModelRun field edit, needs arcpy
 }
 
 
@@ -351,6 +353,14 @@ _REGISTRY_SEED = [
      "cartography",
      "Batch figure-packet exporter across sites/events (plan headless via "
      "--dry-run)"),
+    ("run-gw-model-pipeline", "RunFieldToGroundwaterModelPipeline", "", "LOCAL",
+     "stable", "analysis",
+     "Multi-model (TIN/IDW) draft GW contours + leave-one-out cross-validation "
+     "ranking persisted to GW_ModelRun (Phase-5 slice 1, ADR-0085)"),
+    ("approve-gw-model", "BuildGroundwaterSurfaceModel", "", "LOCAL",
+     "stable", "analysis",
+     "Record the hydrogeologist's approved model on a GW_ModelRun (single-"
+     "method runs via run-gw-model-pipeline; ADR-0085 decision 3)"),
 ]
 
 TOOL_REGISTRY: list = [

@@ -1644,6 +1644,42 @@ def gw_contours_cmd(site_config):
     )
 
 
+@envmon.command("run-gw-model-pipeline")
+@click.argument("site_config", type=click.Path(exists=True))
+def run_gw_model_pipeline_cmd(site_config):
+    """RunFieldToGroundwaterModelPipeline: multi-model draft contours +
+    leave-one-out cross-validation ranking (ArcGIS Pro)."""
+    _guard("run-gw-model-pipeline")
+    from autogis.core.envmon import gw_model_pipeline  # noqa: F401
+    raise click.ClickException(
+        "run-gw-model-pipeline runs inside ArcGIS Pro only. Use the "
+        "RunGWModelPipeline tool in the .pyt toolbox."
+    )
+
+
+@envmon.command("approve-gw-model")
+@click.option("--gdb", required=True, type=click.Path(),
+              help="File geodatabase holding GW_ModelRun (schema >= 2.4).")
+@click.option("--run-id", required=True, help="GW_ModelRun.RunID to approve.")
+@click.option("--model", required=True,
+              help="Model name to approve (must have been in the run; any "
+                   "rank — hydro judgment trumps the metric).")
+@click.option("--reviewer", default="", help="Reviewer name for the record.")
+def approve_gw_model_cmd(gdb, run_id, model, reviewer):
+    """BuildGroundwaterSurfaceModel approval verb: record the
+    hydrogeologist's model choice on a DRAFT run (ArcGIS Pro)."""
+    _guard("approve-gw-model")
+    from autogis.core.envmon.gw_model_pipeline import approve_gw_model
+    if approve_gw_model(gdb, run_id, model, reviewer=reviewer):
+        click.echo(f"Run {run_id}: ApprovedModel={model}, "
+                   "ReviewStatus=APPROVED.")
+    else:
+        raise click.ClickException(
+            f"Not approved: run {run_id!r} not found, {model!r} was not one "
+            "of its models, or GW_ModelRun tables are missing (run "
+            "upgrade-schema first).")
+
+
 @envmon.command("export-figures")
 @click.argument("site_config", type=click.Path(exists=True))
 @click.argument("figure_spec", type=click.Path(exists=True))
@@ -4430,12 +4466,15 @@ def reconcile_field_lab_cmd(field_csv, lab_csv, output, date_tolerance,
 @click.option("--gdb", default=None, type=click.Path(),
               help="File geodatabase: write the draft polygon to "
                    "Env_PlumeBoundary_Draft (ArcGIS Pro).")
+@click.option("--boundary-fc", default=None,
+              help="Site-boundary polygon feature class: clip the hull to it "
+                   "before the GDB write (requires --gdb).")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Compute and print the boundary without writing to --gdb.")
 @qa_report_options
 def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analyte,
-                             hull_method, k_neighbors, out_path, gdb, dry_run,
-                             report, fail_on):
+                             hull_method, k_neighbors, out_path, gdb, boundary_fc,
+                             dry_run, report, fail_on):
     """Tool 4.5: draft plume-extent polygon (convex/concave hull) from exceedance points.
 
     DRAFT output for analyst review only — not a geostatistical model. Provide
@@ -4453,6 +4492,9 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
         raise click.UsageError("--points is mutually exclusive with --results/--coords.")
     if not points_csv and not (results_csv and coords_csv):
         raise click.UsageError("Provide --points, or both --results and --coords.")
+    if boundary_fc and not gdb:
+        raise click.UsageError("--boundary-fc requires --gdb (the clip happens "
+                               "during the GDB write).")
     if gdb:
         _guard("draft-plume-boundary")
 
@@ -4480,13 +4522,16 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
             click.echo(geojson)
 
         if gdb and not dry_run:
-            written = write_plume_draft_to_gdb(gdb, site_id, result)
+            written = write_plume_draft_to_gdb(gdb, site_id, result,
+                                               boundary_fc=boundary_fc)
             if written:
                 click.echo(f"Written to {gdb}/Env_PlumeBoundary_Draft (ReviewStatus=DRAFT)")
             else:
                 click.echo(
-                    f"WARNING: {gdb}/Env_PlumeBoundary_Draft does not exist "
-                    "-- nothing written. Run the GDB schema tool first.")
+                    f"WARNING: nothing written to {gdb}/Env_PlumeBoundary_Draft "
+                    "-- the feature class is missing (run the GDB schema tool "
+                    "first), --boundary-fc does not exist, or the hull does "
+                    "not overlap it.")
 
     _render_qa(qa, report, fail_on)
 
