@@ -2,8 +2,11 @@
 
 Query / filter / format the human-facing tool registry that backs the
 `envmon list-tools` discovery command. The registry data itself lives in
-``autogis.runtime.capabilities.TOOL_REGISTRY`` (single source of truth);
-this module is the pure, arcpy-free query + rendering layer.
+``autogis.runtime.capabilities.TOOL_REGISTRY`` — this module's only source
+for it, though it is one of several hand-maintained tool registries in the
+codebase, not a system-wide single source of truth (see ADR-0069, proposed
+and not yet executed). This module is the pure, arcpy-free query +
+rendering layer.
 """
 from __future__ import annotations
 
