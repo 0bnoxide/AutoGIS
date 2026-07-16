@@ -199,7 +199,11 @@ session per ADR-0077 — not assumed here.
 ```
 GW_ModelRun (new, additive):
   RunID (TEXT 64, PK)      SiteID (TEXT 32)
-  EventDate (DATE)         Methods (TEXT 64, e.g. "TIN,IDW")
+  EventDate (DATE)         Methods (TEXT 64, e.g. "TIN,IDW" — as requested)
+  ExecutedMethods (TEXT 64 — methods that actually produced a surface; the
+                   approval universe. Amended 2026-07-16, PR #240 review:
+                   approval must not depend on nullable CV rows, and
+                   requested Methods may include license-skipped ones)
   RunTimestamp (DATE)      ApprovedModel (TEXT 32, null until hydro sets it)
   ReviewStatus (TEXT 16)   Notes (TEXT 256)
 

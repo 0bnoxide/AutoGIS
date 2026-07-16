@@ -285,9 +285,9 @@ def write_plume_draft_to_gdb(  # pragma: no cover
     boundary_fc: optional site-boundary polygon feature class; when given,
     the hull is clipped to it (Geometry.intersect — ADR-0085 decision 5,
     doc-verified 2026-07-16) so the draft plume never extends past the site
-    boundary. A boundary_fc that does not exist, or an empty intersection,
-    writes nothing and returns False — a requested clip is never silently
-    skipped.
+    boundary. A boundary_fc that does not exist or is empty, or an empty
+    intersection, writes nothing and returns False with the prior draft left
+    intact — a requested clip is never silently skipped.
 
     Returns True if the row was written, False if the target feature class
     does not exist (e.g. schema tooling hasn't been run against this GDB
@@ -304,19 +304,15 @@ def write_plume_draft_to_gdb(  # pragma: no cover
         return False
 
     sr = arcpy.Describe(fc).spatialReference
-    # Delete existing draft polygon for this site
-    where = f"SiteID = '{site_id}'"
-    if result.analyte:
-        where += f" AND AnalyteFilter = '{result.analyte}'"
-    with arcpy.da.UpdateCursor(fc, ["OID@"], where_clause=where) as cur:
-        for _ in cur:
-            cur.deleteRow()
 
     # Build closed ring polygon
     closed = result.hull_vertices + [result.hull_vertices[0]]
     ring = arcpy.Array([arcpy.Point(xy[0], xy[1]) for xy in closed])
     polygon = arcpy.Polygon(ring, sr)
 
+    # Validate + apply the requested clip BEFORE touching the existing draft:
+    # a failed clip must leave the prior draft intact, never write unclipped
+    # (PR #240 review).
     clip_note = ""
     if boundary_fc:
         if not arcpy.Exists(boundary_fc):
@@ -326,11 +322,20 @@ def write_plume_draft_to_gdb(  # pragma: no cover
             for (shape,) in cur:
                 site_poly = shape if site_poly is None \
                     else site_poly.union(shape)
-        if site_poly is not None:
-            polygon = polygon.intersect(site_poly, 4)  # 4 = polygon output
-            if polygon.area == 0:
-                return False
-            clip_note = " Clipped to site boundary."
+        if site_poly is None:
+            return False  # empty boundary FC — clip cannot be honored
+        polygon = polygon.intersect(site_poly, 4)  # 4 = polygon output
+        if polygon.area == 0:
+            return False
+        clip_note = " Clipped to site boundary."
+
+    # Only now replace the existing draft polygon for this site
+    where = f"SiteID = '{site_id}'"
+    if result.analyte:
+        where += f" AND AnalyteFilter = '{result.analyte}'"
+    with arcpy.da.UpdateCursor(fc, ["OID@"], where_clause=where) as cur:
+        for _ in cur:
+            cur.deleteRow()
 
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     note = (f"DRAFT boundary — {result.hull_method} hull, "

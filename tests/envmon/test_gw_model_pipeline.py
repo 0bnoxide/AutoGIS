@@ -81,6 +81,7 @@ def test_build_run_records_draft_and_unapproved():
     assert run_row["ReviewStatus"] == "DRAFT"
     assert run_row["ApprovedModel"] == ""
     assert run_row["Methods"] == "TIN,IDW"
+    assert run_row["ExecutedMethods"] == "TIN,IDW"
     assert run_row["RunID"] == "GWM_H281_2026-06-15_20260716120000"
     assert "Rank-1 suggestion" in run_row["Notes"]
     assert len(stats) == 2 and len(cv_rows) == 2
@@ -93,15 +94,27 @@ def test_build_run_records_draft_and_unapproved():
 
 
 def test_requested_methods_survive_license_skip():
-    """GW_ModelRun.Methods records what was REQUESTED (ADR-0085 decision 2),
-    even when a method was license-skipped out of cross-validation."""
+    """GW_ModelRun.Methods records what was REQUESTED (ADR-0085 decision 2);
+    ExecutedMethods records what actually ran — the approval universe
+    (PR #240 review)."""
     qa = QACollector()
     _rows, stats, run_row, _cv = cross_validate_and_rank(
         POINTS, ["IDW"], mean_predictor, qa,
         site_id="H281", event_date="2026-06-15", now=NOW,
         requested_methods=["TIN", "IDW"])
     assert run_row["Methods"] == "TIN,IDW"
+    assert run_row["ExecutedMethods"] == "IDW"
     assert [s.model_name for s in stats] == ["IDW"]
+
+
+def test_executed_methods_recorded_without_cv():
+    """A 3-point run produces contours but no CV rows — ExecutedMethods must
+    still record the generated models so approval stays possible."""
+    run_row, cv_rows = build_run_records(
+        "GWM_X_2026-01-01_20260101000000", "X", "2026-01-01",
+        ["TIN", "IDW"], [], NOW, executed_methods=["TIN", "IDW"])
+    assert cv_rows == []
+    assert run_row["ExecutedMethods"] == "TIN,IDW"
 
 
 def test_run_records_without_cv():

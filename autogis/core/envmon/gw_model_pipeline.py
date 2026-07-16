@@ -83,20 +83,25 @@ def build_run_records(
     methods: Sequence[str],
     stats: Sequence[ModelStats],
     now: _dt.datetime,
+    executed_methods: Optional[Sequence[str]] = None,
 ) -> Tuple[dict, List[dict]]:
     """Shape one GW_ModelRun row + GW_ModelCrossValidation rows (ADR-0085).
 
     ReviewStatus starts 'DRAFT' and ApprovedModel empty: rank 1 is a default
     suggestion only — approval is the hydrogeologist's call
-    (``approve_gw_model``).
+    (``approve_gw_model``). ``executed_methods`` (default: ``methods``)
+    records which methods actually produced a surface — the approval
+    universe, independent of nullable CV stats (PR #240 review).
     """
     best = min(stats, key=lambda s: s.rank) if stats else None
     note = (f"Rank-1 suggestion: {best.model_name} (RMSE={best.rmse:.4f} ft). "
             "Suggestion only — requires hydrogeologist approval."
             if best else "No cross-validation ranking (insufficient points).")
+    executed = methods if executed_methods is None else executed_methods
     run_row = {
         "RunID": run_id, "SiteID": site_id, "EventDate": event_date,
-        "Methods": ",".join(methods), "RunTimestamp": now,
+        "Methods": ",".join(methods),
+        "ExecutedMethods": ",".join(executed), "RunTimestamp": now,
         "ApprovedModel": "", "ReviewStatus": "DRAFT", "Notes": note,
     }
     cv_rows = [{
@@ -139,16 +144,19 @@ def cross_validate_and_rank(
 ) -> Tuple[List[ObservationRow], List[ModelStats], dict, List[dict]]:
     """Headless pipeline core: LOO -> evaluate_gw_models -> registry rows.
 
-    ``methods`` is what actually cross-validates; ``requested_methods``
-    (default: same) is what GW_ModelRun.Methods records — the ADR-0085 field
-    is "methods requested", which must survive a license-skipped method.
+    ``methods`` is what actually executed (produced a surface) and
+    cross-validates — recorded as ExecutedMethods, the approval universe.
+    ``requested_methods`` (default: same) is what GW_ModelRun.Methods
+    records — the ADR-0085 field is "methods requested", which must survive
+    a license-skipped method.
     """
     run_id = make_run_id(site_id, event_date, now)
     rows = loo_observation_rows(points, methods, predict, qa)
     stats = evaluate_gw_models(rows, tolerance_ft=tolerance_ft, qa=qa) \
         if rows else []
     run_row, cv_rows = build_run_records(
-        run_id, site_id, event_date, requested_methods or methods, stats, now)
+        run_id, site_id, event_date, requested_methods or methods, stats, now,
+        executed_methods=methods)
     return rows, stats, run_row, cv_rows
 
 
@@ -229,12 +237,12 @@ def write_model_run_to_gdb(gdb, run_row: dict,
     ev_dt = _dt.datetime.strptime(run_row["EventDate"], "%Y-%m-%d")
     with arcpy.da.InsertCursor(
             run_tbl, ["RunID", "SiteID", "EventDate", "Methods",
-                      "RunTimestamp", "ApprovedModel", "ReviewStatus",
-                      "Notes"]) as cur:
+                      "ExecutedMethods", "RunTimestamp", "ApprovedModel",
+                      "ReviewStatus", "Notes"]) as cur:
         cur.insertRow([run_row["RunID"], run_row["SiteID"], ev_dt,
-                       run_row["Methods"], run_row["RunTimestamp"],
-                       run_row["ApprovedModel"], run_row["ReviewStatus"],
-                       run_row["Notes"]])
+                       run_row["Methods"], run_row["ExecutedMethods"],
+                       run_row["RunTimestamp"], run_row["ApprovedModel"],
+                       run_row["ReviewStatus"], run_row["Notes"]])
     with arcpy.da.InsertCursor(
             cv_tbl, ["RunID", "ModelName", "NPoints", "RMSE", "MeanError",
                      "MAE", "PctWithinTolerance", "Rank"]) as cur:
@@ -341,24 +349,28 @@ def approve_gw_model(gdb, run_id: str, model_name: str,
                      reviewer: str = "") -> bool:  # pragma: no cover
     """Record the hydrogeologist's model choice on GW_ModelRun.
 
-    The chosen model must have been part of the run (any rank — hydro
-    judgment trumps the metric, ADR-0085 decision 3). Returns False when the
-    run id is unknown or the model was not in the run.
+    The chosen model must be in the run's ExecutedMethods — the methods that
+    actually produced a surface. A model with no CV rows (3-point runs, or
+    no valid LOO predictions) is still approvable: hydro judgment trumps the
+    metric (ADR-0085 decision 3; PR #240 review). Returns False when the run
+    id is unknown or the model did not execute in that run.
     """
     from autogis.runtime.sessions import arcpy_env as _arcpy
     arcpy = _arcpy()
     run_tbl = str(Path(str(gdb)) / "GW_ModelRun")
-    cv_tbl = str(Path(str(gdb)) / "GW_ModelCrossValidation")
-    if not (arcpy.Exists(run_tbl) and arcpy.Exists(cv_tbl)):
+    if not arcpy.Exists(run_tbl):
         return False
     # --run-id is user input: escape quotes so the where clause can't break.
     where = "RunID = '{}'".format(run_id.replace("'", "''"))
-    ran = set()
-    with arcpy.da.SearchCursor(cv_tbl, ["ModelName"],
+    executed = set()
+    found = False
+    with arcpy.da.SearchCursor(run_tbl, ["ExecutedMethods"],
                                where_clause=where) as cur:
-        for (name,) in cur:
-            ran.add(name)
-    if model_name not in ran:
+        for (methods_str,) in cur:
+            found = True
+            executed.update(
+                m.strip() for m in (methods_str or "").split(",") if m.strip())
+    if not found or model_name not in executed:
         return False
     stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     updated = False

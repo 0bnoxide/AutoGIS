@@ -37,8 +37,12 @@ decisions 4 and 6). Maps the 3 gated tool names to deliverables:
 
 ### 1. Schema (additive, `SCHEMA_VERSION` 2.3 → 2.4)
 
-`GW_ModelRun` and `GW_ModelCrossValidation` exactly per the ADR-0085 sketch.
-Input/excluded points stay in `Env_GWContourPoints` (no new point tables).
+`GW_ModelRun` and `GW_ModelCrossValidation` per the ADR-0085 sketch, plus
+`GW_ModelRun.ExecutedMethods` (PR #240 review amendment, recorded in the
+ADR): `Methods` is what was requested, `ExecutedMethods` is what actually
+produced a surface — approval validates against the latter, so a model with
+no CV rows (3-point runs) stays approvable. Input/excluded points stay in
+`Env_GWContourPoints` (no new point tables).
 
 ### 2. `core/envmon/gw_model_pipeline.py`
 

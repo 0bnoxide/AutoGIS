@@ -48,8 +48,8 @@ def test_gw_model_registry_tables():
     """ADR-0085 schema sketch, SCHEMA_VERSION 2.4 — additive only."""
     run_fields = [f[0] for f in TABLE_SCHEMAS["GW_ModelRun"]]
     assert run_fields == ["RunID", "SiteID", "EventDate", "Methods",
-                          "RunTimestamp", "ApprovedModel", "ReviewStatus",
-                          "Notes"]
+                          "ExecutedMethods", "RunTimestamp", "ApprovedModel",
+                          "ReviewStatus", "Notes"]
     cv_fields = [f[0] for f in TABLE_SCHEMAS["GW_ModelCrossValidation"]]
     assert cv_fields == ["RunID", "ModelName", "NPoints", "RMSE",
                          "MeanError", "MAE", "PctWithinTolerance", "Rank"]

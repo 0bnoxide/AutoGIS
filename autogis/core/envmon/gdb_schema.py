@@ -298,7 +298,8 @@ TABLE_SCHEMAS = {
     # ------------------------------------------------------------------
     "GW_ModelRun": [
         ("RunID", T, 64), ("SiteID", T, 32), ("EventDate", DT, None),
-        ("Methods", T, 64), ("RunTimestamp", DT, None),
+        ("Methods", T, 64), ("ExecutedMethods", T, 64),
+        ("RunTimestamp", DT, None),
         ("ApprovedModel", T, 32), ("ReviewStatus", T, 16),
         ("Notes", T, 256)],
     "GW_ModelCrossValidation": [
