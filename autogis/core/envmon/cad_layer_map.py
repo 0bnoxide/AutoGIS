@@ -81,13 +81,7 @@ def write_projection_note(crs: str, out_path: Path) -> Path:
 
 
 def write_mapping_report(plan: "CADExportPlan", out_path: Path) -> Path:
-    """Write a CSV of gis_layer,cad_layer,color,linetype for the resolved plan.
-
-    Export-to-CAD names CAD layers after the source feature class (arcpy has
-    no verified per-feature Layer-property rename wired here yet -- see issue
-    #166); this report is the record of the intended mapping for manual
-    reclassification in the CAD package.
-    """
+    """Write an audit CSV of the CAD properties applied to each GIS layer."""
     import csv as _csv
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,7 +89,8 @@ def write_mapping_report(plan: "CADExportPlan", out_path: Path) -> Path:
         writer = _csv.writer(fh)
         writer.writerow(["gis_layer", "cad_layer", "color", "linetype"])
         for m in plan.mappings:
-            writer.writerow([m.gis_layer, m.cad_layer, m.color or "", m.linetype or ""])
+            color = "" if m.color is None else m.color
+            writer.writerow([m.gis_layer, m.cad_layer, color, m.linetype or ""])
     return out_path
 
 

@@ -82,6 +82,11 @@ substantially different, larger piece of work than sharing a point writer,
 and explicitly "LOW priority" / "niche" per the tool's own 2026-06-28 design
 doc. Left for a future, separately-scoped pass.
 
+**Follow-up (2026-07-17):** ADR-0089 completes decisions 4 and 5 using the
+now-verifiable reserved CAD fields and an existing-TIN-to-LandXML surface
+path. The deferrals above remain the historical reason they were excluded
+from this ADR's scope.
+
 **6. Coordinate-reference hardening (PR #246 cold review, 2026-07-17).**
 Two P1s, both fixed:
 

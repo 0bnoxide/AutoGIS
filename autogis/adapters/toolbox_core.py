@@ -21,6 +21,7 @@ Pro instead of only discoverable by running the tool inside ArcGIS Pro.
 See issue #108 / the fable-architecture-review finding M2.
 """
 import json
+import math
 import os
 import uuid
 from contextlib import contextmanager
@@ -29,6 +30,182 @@ from functools import wraps
 from pathlib import Path
 
 from autogis.core.harvest.models import HarvestConfig, AttachmentResult
+
+
+@contextmanager
+def staged_cad_layers(arcpy_module, layer_paths, mappings):
+    """Yield scratch copies carrying mapped CAD layer properties.
+
+    ``AddCADFields`` changes its input table. Copying selected features into
+    ``scratchGDB`` first keeps the source GIS layers untouched while giving
+    Export To CAD the reserved ``Layer``/``LyrColor``/``LyrLnType`` values
+    it consumes.
+    """
+    if len(layer_paths) != len(mappings):
+        raise ValueError("CAD layer paths and mappings must have the same length.")
+
+    staged = []
+    try:
+        for index, (layer_path, mapping) in enumerate(zip(layer_paths, mappings)):
+            temp_path = str(
+                Path(arcpy_module.env.scratchGDB)
+                / f"autogis_cad_{index}_{uuid.uuid4().hex[:8]}"
+            )
+            staged.append(temp_path)
+            arcpy_module.management.CopyFeatures(layer_path, temp_path)
+            arcpy_module.conversion.AddCADFields(
+                temp_path,
+                "NO_ENTITY_PROPERTIES",
+                "ADD_LAYER_PROPERTIES",
+                "NO_TEXT_PROPERTIES",
+                "NO_DOCUMENT_PROPERTIES",
+                "NO_XDATA_PROPERTIES",
+            )
+            with arcpy_module.da.UpdateCursor(
+                    temp_path, ["Layer", "LyrColor", "LyrLnType"]) as cursor:
+                for row in cursor:
+                    row[0] = mapping.cad_layer
+                    row[1] = mapping.color
+                    row[2] = mapping.linetype
+                    cursor.updateRow(row)
+        yield staged
+    finally:
+        for temp_path in staged:
+            try:
+                arcpy_module.management.Delete(temp_path)
+            except Exception:
+                pass  # scratch cleanup must not hide the export result/error
+
+
+def surface_from_triangle_json(geometry_rows, surface_name: str):
+    """Build a LandXML TIN from Esri JSON triangle polygons.
+
+    Esri JSON vertices are ``x, y, z`` (easting, northing, elevation); the
+    shared LandXML model stores ``northing, easting, elevation``. Shared TIN
+    vertices are deduplicated so adjacent faces reference the same point id.
+    """
+    from autogis.core.common.landxml import LandXMLSurface
+
+    points = {}
+    point_ids = {}
+    faces = []
+    for raw_geometry in geometry_rows:
+        geometry = (json.loads(raw_geometry)
+                    if isinstance(raw_geometry, str) else raw_geometry)
+        rings = geometry.get("rings") or []
+        if len(rings) != 1:
+            raise ValueError("Each TIN triangle must contain exactly one polygon ring.")
+        vertices = []
+        for coordinate in rings[0]:
+            if len(coordinate) < 3 or coordinate[2] is None:
+                raise ValueError("TIN triangle geometry is missing vertex elevations.")
+            vertex = (
+                float(coordinate[1]), float(coordinate[0]), float(coordinate[2]))
+            if not all(math.isfinite(value) for value in vertex):
+                raise ValueError("TIN triangle geometry contains a non-finite coordinate.")
+            vertices.append(vertex)
+        if len(vertices) > 1 and vertices[0] == vertices[-1]:
+            vertices.pop()
+        if len(vertices) != 3 or len(set(vertices)) != 3:
+            raise ValueError(
+                f"TIN triangle must have exactly 3 distinct vertices; got {len(vertices)}.")
+
+        face = []
+        for vertex in vertices:
+            point_id = point_ids.get(vertex)
+            if point_id is None:
+                point_id = len(point_ids) + 1
+                point_ids[vertex] = point_id
+                points[point_id] = vertex
+            face.append(point_id)
+        faces.append(tuple(face))
+
+    if not faces:
+        raise ValueError("Input TIN contains no triangle faces.")
+    return LandXMLSurface(name=surface_name, points=points, faces=faces)
+
+
+def export_tin_landxml(arcpy_module, input_tin: str, output_path: Path, *,
+                       surface_name: str, crs: str, linear_unit: str) -> Path:
+    """Extract an ArcGIS Pro TIN and write a Civil 3D-ready LandXML surface."""
+    from autogis.core.common.landxml import parse_epsg, write_landxml_surface
+
+    if not surface_name or not surface_name.strip():
+        raise ValueError("Civil 3D surface name must not be blank.")
+    expected_epsg = parse_epsg(crs)
+    if expected_epsg is None:
+        raise ValueError(f"CRS {crs!r} is not an EPSG code (e.g. EPSG:2256).")
+    expected_units = {
+        "meter": 1.0,
+        "foot": 0.3048,
+        "USSurveyFoot": 1200.0 / 3937.0,
+    }
+    if linear_unit not in expected_units:
+        raise ValueError(
+            f"Unsupported LandXML linear unit {linear_unit!r}; expected one "
+            f"of {', '.join(expected_units)}.")
+
+    spatial_reference = arcpy_module.Describe(input_tin).spatialReference
+    actual_epsg = getattr(spatial_reference, "factoryCode", 0) or 0
+    if actual_epsg != expected_epsg:
+        raise ValueError(
+            f"Input TIN is EPSG:{actual_epsg or 'unknown'}, not EPSG:{expected_epsg}.")
+    if getattr(spatial_reference, "type", "") != "Projected":
+        raise ValueError(
+            "Input TIN must use a projected coordinate system with linear "
+            "units; geographic degree coordinates cannot be labeled as LandXML feet/meters.")
+
+    expected_meters_per_unit = expected_units[linear_unit]
+    actual_meters_per_unit = float(spatial_reference.metersPerUnit)
+    if not math.isclose(actual_meters_per_unit, expected_meters_per_unit,
+                        rel_tol=1e-9, abs_tol=1e-12):
+        raise ValueError(
+            f"Input TIN uses {actual_meters_per_unit:g} meters per unit, "
+            f"which does not match LandXML unit {linear_unit!r}.")
+
+    vertical_reference = getattr(spatial_reference, "VCS", None)
+    if vertical_reference is not None:
+        vertical_meters_per_unit = float(vertical_reference.metersPerUnit)
+        if not math.isclose(vertical_meters_per_unit, expected_meters_per_unit,
+                            rel_tol=1e-9, abs_tol=1e-12):
+            raise ValueError(
+                f"Input TIN vertical coordinates use {vertical_meters_per_unit:g} "
+                f"meters per unit, which does not match LandXML unit "
+                f"{linear_unit!r}.")
+        if getattr(vertical_reference, "direction", 1) != 1:
+            raise ValueError(
+                "Input TIN vertical coordinate system is positive downward; "
+                "LandXML surface elevations must be positive upward.")
+
+    license_status = arcpy_module.CheckExtension("3D")
+    if license_status != "Available":
+        raise ValueError(
+            f"3D Analyst license is unavailable ({license_status}); "
+            "TIN LandXML export was not started.")
+
+    triangles = str(
+        Path(arcpy_module.env.scratchGDB)
+        / f"autogis_tin_triangles_{uuid.uuid4().hex[:8]}"
+    )
+    acquired_3d = False
+    try:
+        arcpy_module.CheckOutExtension("3D")
+        acquired_3d = True
+        # Let TinTriangle use its documented z-factor default. Passing an
+        # explicit z-factor is unavailable when the TIN defines a VCS.
+        arcpy_module.ddd.TinTriangle(input_tin, triangles, "PERCENT")
+        with arcpy_module.da.SearchCursor(triangles, ["SHAPE@JSON"]) as cursor:
+            surface = surface_from_triangle_json(
+                (row[0] for row in cursor), surface_name)
+        return write_landxml_surface(
+            surface, output_path, crs=crs, linear_unit=linear_unit)
+    finally:
+        try:
+            arcpy_module.management.Delete(triangles)
+        except Exception:
+            pass  # scratch cleanup must not hide the extraction result/error
+        if acquired_3d:
+            arcpy_module.CheckInExtension("3D")
 
 
 def build_harvest_config(

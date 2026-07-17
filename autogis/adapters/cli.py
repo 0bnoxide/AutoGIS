@@ -4653,7 +4653,7 @@ def build_cad_package_cmd(layers, mapping, crs):
               help="First PNEZD point number.")
 @click.option("--landxml", is_flag=True, default=False,
               help="Also write points_pnezd.xml (LandXML CgPoints, headless). "
-                   "Contour polylines/TIN surfaces still require ArcGIS Pro.")
+                   "Use the .pyt tool to export an existing Pro TIN surface.")
 @click.option("--units", type=click.Choice(["foot", "USSurveyFoot", "meter"]),
               default=None,
               help="Linear unit of the point coordinates; required with "
@@ -4663,8 +4663,8 @@ def build_cad_package_cmd(layers, mapping, crs):
 def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
                        report, fail_on):
     """Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless);
-    --landxml adds a headless LandXML CgPoints export. Contour polylines /
-    TIN surfaces still require the .pyt toolbox (arcpy)."""
+    --landxml adds a headless LandXML CgPoints export. Existing Pro TINs use
+    the ExportContoursForCivil3D tool in the .pyt toolbox."""
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.civil3d_points import (
         build_pnezd, load_gwe_points_csv, write_pnezd_csv, write_pnezd_landxml,
