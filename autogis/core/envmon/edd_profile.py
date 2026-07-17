@@ -28,7 +28,7 @@ class LabEDDProfile:
     sample_sheet: str = "Samples"            # two_tab_xlsx only
     result_sheet: str = "Results"            # two_tab_xlsx only
     batch_sheet: str = ""                    # equis_xls only; "" = no batch sheet
-    test_sheet: str = ""                     # equis_xls only (R4, ADR XXXX)
+    test_sheet: str = ""                     # equis_xls only (R4, ADR-0090)
     source_aliases: dict[str, str] = field(default_factory=dict)  # equis_xls only (R3)
     value_maps: dict[str, dict[str, str]] = field(default_factory=dict)
     path: Optional[Path] = field(default=None, compare=False)

@@ -224,7 +224,7 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
         batch_index.setdefault(key, {})[
             _get(b, _COL_BATCH_TYPE).casefold()] = _get(b, _COL_BATCH_ID)
 
-    # R4 (ADR XXXX): epar4 splits Test and Result into two sheets sharing a
+    # R4 (ADR-0090): epar4 splits Test and Result into two sheets sharing a
     # 7-column composite; index the test sheet and merge under each result
     # row. fraction is the post-alias name (total_or_dissolved bridged by R3).
     test_index: dict[tuple, dict] = {}
@@ -344,7 +344,7 @@ def _compose_dilution_key(row: dict, run_token: str = "") -> None:
     # deterministic — a given physical row always keys the same.
     if row.get("__equis_stream") != "qc":
         parts.append(_na(_get(row, _COL_METHOD)))
-    # R9 (ADR XXXX): epar4's TST composite treats analysis date/time as the
+    # R9 (ADR-0090): epar4's TST composite treats analysis date/time as the
     # run identity, but neither survives into the frozen keys — the bounded
     # token makes reanalyses key distinctly on both tables. Worst case
     # (4 parts + method + 12 digits) stays far below the TEXT(64) guard.

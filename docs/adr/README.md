@@ -107,6 +107,7 @@ Each ADR follows this structure:
 | [086](0086-geostat-slice2-ebk-uncertainty-concentration.md) | Phase-5 slice 2 — EBK stage, uncertainty raster, analytical concentration surface, and configurable nondetect policy | Proposed | 2026-07-16 |
 | [087](0087-post-catalog-production-roadmap.md) | Post-catalog complementary capabilities — ten sequential production phases with explicit exit gates and minimum-slice scope | Accepted | 2026-07-16 |
 | [088](0088-civil3d-cad-export-arcpy-legs.md) | Civil3D/CAD arcpy legs (#166): shared LandXML CgPoints writer; headless `export-civil3d --landxml`; `.pyt` `BuildCADExportPackage` wired to doc-verified `arcpy.conversion.ExportCAD`. CAD layer rename (`AddCADFields`) and 8.2's contour/TIN leg deliberately deferred — not doc-verifiable / out of scope | Accepted | 2026-07-15 |
+| [090](0090-edd-step3-slice2b-dialects.md) | EDD Step-3 slice 2b: EQuIS dialect support (mining/epar4/NYSDEC) — xlsx engine, header normalization, `source_aliases`/`test_sheet` profile keys (amends ADR-0075's 2-sheet freeze, precedent ADR-0082), inline-batch fallback, date-extended batch join, epar4 run-identity token in the `MethodDilutionKey` recipe; three DRAFT profiles | Accepted | 2026-07-17 |
 
 ## File naming
 
