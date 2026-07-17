@@ -1,0 +1,102 @@
+# autogis/config/lab_profiles/epar4.yaml
+# EPA Region 4 EQuIS EDD (.xlsx, FSample + TST + RES) — Step-3 slice 2b.
+#
+# *** DRAFT — verify against a real filled EPAR4 EDD before first
+# production import; do not remove this banner until then (wqx.yaml
+# precedent). ***
+# Structure verified against epar4_blank_edd.xlsx + its rt_* vocabulary
+# sheets (2026-07-12 / 2026-07-17); no real filled EDD exists yet.
+# Test/Result are split sheets joined on the shared 7-column composite
+# (test_sheet, R4/ADR XXXX); test_batch ids are inline on RES (R5); a
+# digits-only analysis date/time token is folded into MethodDilutionKey
+# (R9) so reanalyses key distinctly. VI_* sheets are slice 4.
+profile_id: epar4
+lab_name: EPA Region 4 EQuIS
+format: equis_xls
+date_format: "%m/%d/%Y"
+encoding: utf-8
+
+sample_sheet: EPAR4_FSample_v1
+result_sheet: EPAR4_RES_v1
+test_sheet: EPAR4_TST_v1
+# No batch sheet: test_batch_type / test_batch_id are inline on RES (R5).
+
+# R3: epar4 says total_or_dissolved where WMRD says fraction, and
+# lab_prep_method_name where WMRD says prep_method.
+source_aliases:
+  total_or_dissolved: fraction
+  lab_prep_method_name: prep_method
+
+columns:
+  # identity / joins
+  sample_id: sys_sample_code
+  parent_sample_id: parent_sample_code
+  lab_sample_id: lab_sample_id
+  location_id: sys_loc_code
+  event_date: sample_date
+  matrix: sample_matrix_code
+  depth_top_ft: start_depth
+  depth_bot_ft: end_depth
+  # analyte / method
+  analyte: chemical_name
+  cas_number: cas_rn
+  method: lab_anl_method_name
+  method_name: lab_anl_method_name
+  result_fraction: fraction
+  analysis_date: analysis_date
+  prep_method: prep_method
+  prep_date: prep_date
+  lab_name: lab_name_code
+  result_basis: basis
+  # reader-synthesized (__equis_*) keys
+  result: __equis_result
+  units: __equis_units
+  qualifier: __equis_qualifier
+  qc_type: __equis_qc_type
+  dilution_factor: __equis_method_dilution_key
+  is_reportable: __equis_is_reportable
+  reporting_limit: __equis_reporting_limit
+  detection_limit: __equis_detection_limit
+  quantitation_limit: __equis_quantitation_limit
+  prep_batch_id: __equis_prep_batch
+  analysis_batch_id: __equis_analysis_batch
+  # QC-only source columns (normalize_qc_rows)
+  qc_original_conc: qc_original_conc
+  qc_spike_added: qc_spike_added
+  qc_spike_measured: qc_spike_measured
+  qc_spike_recovery: qc_spike_recovery
+  qc_spike_lcl: qc_spike_lcl
+  qc_spike_ucl: qc_spike_ucl
+  qc_rpd: qc_rpd
+  qc_rpd_cl: qc_rpd_cl
+  qc_dup_original_conc: qc_dup_original_conc
+  qc_dup_spike_added: qc_dup_spike_added
+  qc_dup_spike_measured: qc_dup_spike_measured
+  qc_dup_spike_recovery: qc_dup_spike_recovery
+
+# rt_matrix (epar4): minimal, unambiguous mappings only (wqx.yaml policy);
+# everything else passes through + WARN. _TODO: extend after a real EDD.
+matrix_map:
+  SB: SOIL
+  SF: SOIL
+  Soil: SOIL
+  SD: SED
+
+nondetect_qualifiers: ["U", "UJ"]
+
+value_maps:
+  qc_sample_type:
+    # rt_sample_type -> canonical QCType; unmapped codes fail safe (WARN).
+    "N": ""
+    "FD": FIELD_DUP
+    "LCS": LCS
+    "LCSD": LCSD
+    "MS": MS
+    "MSD": MSD
+    "MBL": LAB_BLANK
+    "EB": EQUIPMENT_BLANK
+    "FL": FIELD_BLANK
+    "TB": TRIP_BLANK
+    "TW": TRIP_BLANK
+    "TA": TRIP_BLANK
+    "TS": TRIP_BLANK
