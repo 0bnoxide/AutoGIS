@@ -986,7 +986,9 @@ class BuildCADExportPackage(object):
         return [
             _param("layers", "GIS layers to export", "GPFeatureLayer", multi=True),
             _param("mapping", "CAD layer mapping (YAML/JSON)", "DEFile"),
-            _param("crs", "Output coordinate system (e.g. EPSG:2256)", "GPString"),
+            _param("crs", "Coordinate system of the input layers "
+                   "(e.g. EPSG:2256; validated against each layer, recorded "
+                   "in the projection note)", "GPString"),
             _param("output_type", "CAD output type", "GPString",
                    default="DWG_R2018", domain=_CAD_OUTPUT_TYPES),
             _param("output_file", "Output CAD file", "DEFile", direction="Output"),
@@ -996,6 +998,7 @@ class BuildCADExportPackage(object):
 
     @toolbox_core.record_pyt_run("build-cad-package", site_config_param=None)
     def execute(self, parameters, messages):
+        from autogis.core.common.landxml import parse_epsg
         from autogis.core.envmon.cad_layer_map import (
             load_cad_mapping, resolve_cad_plan, write_mapping_report,
             write_projection_note,
@@ -1010,6 +1013,33 @@ class BuildCADExportPackage(object):
         plan = resolve_cad_plan(layer_names, mapping_config, crs=crs)
         _msg(messages, plan.qa)
         if plan.qa.has_blocking():
+            return
+
+        # ExportCAD writes each layer's SOURCE coordinates unchanged (no
+        # output-CRS parameter, no reprojection) — a requested CRS that
+        # doesn't match a layer would yield CAD in one CRS with a sidecar
+        # claiming another (PR #246 review). Block on any mismatch.
+        epsg = parse_epsg(crs)
+        if epsg is None:
+            messages.addErrorMessage(
+                f"CRS {crs!r} is not an EPSG code (e.g. EPSG:2256), so the "
+                "input layers' coordinate systems cannot be validated "
+                "against it. Export To CAD keeps each layer's source CRS; "
+                "refusing to export with an unverifiable claim.")
+            return
+        mismatched = [
+            f"{name} (EPSG:{code or 'unknown'})"
+            for name, code in (
+                (lp, getattr(arcpy.Describe(lp).spatialReference,
+                             "factoryCode", 0) or 0)
+                for lp in layer_paths)
+            if code != epsg]
+        if mismatched:
+            messages.addErrorMessage(
+                "Export To CAD exports source coordinates unchanged (no "
+                f"reprojection); these layers do not match EPSG:{epsg}: "
+                + "; ".join(mismatched)
+                + ". Project them first or pass their actual CRS.")
             return
 
         export_dir = Path(p["export_dir"].valueAsText)

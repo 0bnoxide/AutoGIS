@@ -466,7 +466,7 @@ autogis envmon validate-rtk-survey <headerless_points.csv> --format penzd --repo
 autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
 autogis envmon rtk-control-check --control-points <control.csv> --horizontal-tolerance-ft 0.05 --vertical-tolerance-ft 0.10
 autogis envmon export-survey-cad <points.csv> --feature-code-map <map.yaml> --output-dir <out>
-autogis envmon export-civil3d --points <gwe_points.csv> --crs EPSG:2256 --out-dir <out> --landxml   # --landxml is headless (ADR-0088); contours/TIN still need Pro
+autogis envmon export-civil3d --points <gwe_points.csv> --crs EPSG:2256 --out-dir <out> --landxml --units foot   # --landxml is headless (ADR-0088; --units required so Civil 3D imports without a unit shift); contours/TIN still need Pro
 autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --maintenance-log-csv <log.csv>
 autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --format html   # photo grid (ADR-0083)
 autogis envmon generate-inspection-report --inspections <inspections.csv> --manifest <manifest.csv> --harvest-dir <dir> --site <id> --out <report.xlsx>

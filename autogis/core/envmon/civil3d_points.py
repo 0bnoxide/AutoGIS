@@ -71,13 +71,17 @@ def write_pnezd_csv(points: list, out_path: Path) -> Path:
     return out_path
 
 
-def write_pnezd_landxml(points: list, out_path: Path) -> Path:
+def write_pnezd_landxml(points: list, out_path: Path, *,
+                        crs: str = None, linear_unit: str = None) -> Path:
     """Write PNEZD points as a LandXML 1.2 ``<CgPoints>`` file (points only;
     no contour/TIN surface -- that leg still requires arcpy, see issue #166).
+    *crs*/*linear_unit* thread through to the shared writer's ``<Units>`` +
+    ``<CoordinateSystem>`` emission (PR #246 review).
     """
     return write_cgpoints(
         (CgPoint(str(p.point_number), p.northing, p.easting, p.elevation,
                  description=p.description)
          for p in points),
         out_path,
+        crs=crs, linear_unit=linear_unit,
     )

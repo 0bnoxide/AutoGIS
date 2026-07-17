@@ -82,6 +82,34 @@ substantially different, larger piece of work than sharing a point writer,
 and explicitly "LOW priority" / "niche" per the tool's own 2026-06-28 design
 doc. Left for a future, separately-scoped pass.
 
+**6. Coordinate-reference hardening (PR #246 cold review, 2026-07-17).**
+Two P1s, both fixed:
+
+- *LandXML carries its own units + CRS.* `write_cgpoints()` now emits
+  `<Units>` (`Imperial`/`Metric` with the full required attribute set —
+  including `elevationUnit`, whose schema default is `meter`) and
+  `<CoordinateSystem name=... epsgCode=...>`, plus the schema-required root
+  `date`/`time` attributes. Verified against `LandXML-1.2.xsd`
+  (`landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd`: `impLinear` enum
+  `foot`/`USSurveyFoot`, `metLinear` `meter`). `export-civil3d --landxml`
+  now **requires `--units foot|USSurveyFoot|meter`** — Autodesk documents
+  spatially shifted imports when file and drawing units differ, and the
+  sidecar projection note is not consumed by LandXML import.
+  `export-survey-cad`'s LandXML leg still writes the bare legacy form (that
+  tool has no CRS/units input at all) — threading one through is follow-up
+  scope under issue #166.
+- *`BuildCADExportPackage` validates layer CRS before export.* `ExportCAD`
+  has no output-CRS parameter and writes each layer's source coordinates
+  unchanged (`pro.arcgis.com/en/pro-app/3.6/tool-reference/conversion/export-to-cad.htm`),
+  so the tool now blocks unless every input layer's
+  `arcpy.Describe(...).spatialReference.factoryCode` (both properties
+  doc-verified on current Pro arcpy reference pages, 2026-07-17) matches
+  the EPSG code parsed from the `crs` parameter (new arcpy-free
+  `landxml.parse_epsg()`, tested) — no more CAD in one CRS with a sidecar
+  claiming another. Projecting mismatched inputs to the requested CRS was
+  considered and rejected as silent data mutation; blocking with a
+  actionable error is the fail-safe default.
+
 ## Consequences
 
 ### Positive

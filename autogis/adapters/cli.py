@@ -4654,8 +4654,14 @@ def build_cad_package_cmd(layers, mapping, crs):
 @click.option("--landxml", is_flag=True, default=False,
               help="Also write points_pnezd.xml (LandXML CgPoints, headless). "
                    "Contour polylines/TIN surfaces still require ArcGIS Pro.")
+@click.option("--units", type=click.Choice(["foot", "USSurveyFoot", "meter"]),
+              default=None,
+              help="Linear unit of the point coordinates; required with "
+                   "--landxml (written as the LandXML <Units> block so "
+                   "Civil 3D imports without a unit-mismatch shift).")
 @qa_report_options
-def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, report, fail_on):
+def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
+                       report, fail_on):
     """Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless);
     --landxml adds a headless LandXML CgPoints export. Contour polylines /
     TIN surfaces still require the .pyt toolbox (arcpy)."""
@@ -4673,7 +4679,13 @@ def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, report, 
     click.echo(f"{len(pts)} PNEZD point(s) -> {csv_path}")
     click.echo(f"Projection note -> {note_path}")
     if landxml:
-        xml_path = write_pnezd_landxml(pts, out / "points_pnezd.xml")
+        if not units:
+            raise click.UsageError(
+                "--landxml requires --units (foot / USSurveyFoot / meter): "
+                "Civil 3D shifts or scales imports whose LandXML units are "
+                "missing and differ from the drawing's.")
+        xml_path = write_pnezd_landxml(pts, out / "points_pnezd.xml",
+                                       crs=crs, linear_unit=units)
         click.echo(f"LandXML CgPoints -> {xml_path}")
     _render_qa(qa, report, fail_on)
 
