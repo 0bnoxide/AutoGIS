@@ -1,7 +1,7 @@
 """Cover the mirror semantics of .claude/scripts/sync-ponytail-skills.sh.
 
-The script vendors the ponytail plugin skills into the repo so cloud/remote
-sessions (which don't inherit user-scope plugin installs) get the same set.
+The script vendors the ponytail plugin skills into the Claude Code and Codex
+repo locations so cloud/remote sessions get the same set.
 A plain `cp -R` overlay would let an upstream deletion linger while the tool
 reported "synced"/"clean" (PR #247 review, [P2]). These tests pin the two
 reproduced failure modes plus the base mirror, driving the script through its
@@ -60,6 +60,43 @@ def test_base_mirror(dirs):
     assert (vendor / "ponytail" / "SKILL.md").read_text(encoding="utf-8") == "core"
     assert (vendor / "ponytail-audit" / "SKILL.md").read_text(encoding="utf-8") == "audit"
     assert _run(cache, vendor, check=True).returncode == 0  # now clean
+
+
+def test_default_mirrors_claude_and_codex_locations(tmp_path):
+    """Without the test override, both supported repo skill locations stay equal."""
+    cache = tmp_path / "cache"
+    _skill(cache / "4.8.4" / "skills", "ponytail", "core")
+    repo = tmp_path / "repo"
+    script = repo / ".claude" / "scripts" / SCRIPT.name
+    script.parent.mkdir(parents=True)
+    shutil.copy2(SCRIPT, script)
+
+    args = ["bash", script.as_posix()]
+    env = {
+        "PONYTAIL_CACHE_ROOT": cache.as_posix(),
+        "PATH": __import__("os").environ["PATH"],
+    }
+    assert subprocess.run(args, env=env, capture_output=True, text=True).returncode == 0
+    for vendor in (repo / ".claude" / "skills", repo / ".agents" / "skills"):
+        assert (vendor / "ponytail" / "SKILL.md").read_text(encoding="utf-8") == "core"
+
+    assert subprocess.run(
+        args + ["--check"], env=env, capture_output=True, text=True
+    ).returncode == 0
+
+
+def test_committed_claude_and_codex_skills_match():
+    """The two checked-in copies cannot drift when the upstream plugin is absent."""
+    repo = SCRIPT.parent.parent.parent
+
+    def files(root):
+        return {
+            path.relative_to(root): path.read_bytes()
+            for path in root.glob("ponytail*/**/*")
+            if path.is_file()
+        }
+
+    assert files(repo / ".claude" / "skills") == files(repo / ".agents" / "skills")
 
 
 def test_prunes_upstream_deleted_file(dirs):
