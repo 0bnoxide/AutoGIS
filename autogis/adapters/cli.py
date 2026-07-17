@@ -4638,8 +4638,8 @@ def build_cad_package_cmd(layers, mapping, crs):
     _guard("build-cad-package")
     from autogis.core.envmon import cad_layer_map  # noqa: F401
     raise click.ClickException(
-        "build-cad-package requires ArcGIS Pro (arcpy Export-to-CAD) and has "
-        "no .pyt toolbox entry yet -- see issue #166 (CLI/.pyt seam gap)."
+        "build-cad-package runs inside ArcGIS Pro only. Use the "
+        "BuildCADExportPackage tool in the .pyt toolbox."
     )
 
 
@@ -4652,19 +4652,23 @@ def build_cad_package_cmd(layers, mapping, crs):
 @click.option("--start-number", type=int, default=1, show_default=True,
               help="First PNEZD point number.")
 @click.option("--landxml", is_flag=True, default=False,
-              help="Contour polylines/LandXML export (ArcGIS Pro only).")
+              help="Also write points_pnezd.xml (LandXML CgPoints, headless). "
+                   "Contour polylines/TIN surfaces still require ArcGIS Pro.")
+@click.option("--units", type=click.Choice(["foot", "USSurveyFoot", "meter"]),
+              default=None,
+              help="Linear unit of the point coordinates; required with "
+                   "--landxml (written as the LandXML <Units> block so "
+                   "Civil 3D imports without a unit-mismatch shift).")
 @qa_report_options
-def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, report, fail_on):
+def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
+                       report, fail_on):
     """Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless);
-    --landxml routes to the .pyt toolbox."""
-    if landxml:
-        _guard("export-civil3d")
-        raise click.ClickException(
-            "--landxml requires ArcGIS Pro (contour polylines/LandXML) and has "
-            "no .pyt toolbox entry yet -- see issue #166 (CLI/.pyt seam gap).")
+    --landxml adds a headless LandXML CgPoints export. Contour polylines /
+    TIN surfaces still require the .pyt toolbox (arcpy)."""
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.civil3d_points import (
-        build_pnezd, load_gwe_points_csv, write_pnezd_csv, write_projection_note)
+        build_pnezd, load_gwe_points_csv, write_pnezd_csv, write_pnezd_landxml,
+        write_projection_note)
 
     qa = QACollector()
     records = load_gwe_points_csv(Path(points_csv))
@@ -4674,6 +4678,15 @@ def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, report, 
     note_path = write_projection_note(crs, out / "projection_note.txt")
     click.echo(f"{len(pts)} PNEZD point(s) -> {csv_path}")
     click.echo(f"Projection note -> {note_path}")
+    if landxml:
+        if not units:
+            raise click.UsageError(
+                "--landxml requires --units (foot / USSurveyFoot / meter): "
+                "Civil 3D shifts or scales imports whose LandXML units are "
+                "missing and differ from the drawing's.")
+        xml_path = write_pnezd_landxml(pts, out / "points_pnezd.xml",
+                                       crs=crs, linear_unit=units)
+        click.echo(f"LandXML CgPoints -> {xml_path}")
     _render_qa(qa, report, fail_on)
 
 

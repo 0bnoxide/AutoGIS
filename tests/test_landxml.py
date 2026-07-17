@@ -110,3 +110,72 @@ def test_elevation_at_surface_with_no_points_raises_clear_value_error():
     surface = LandXMLSurface(name="empty", points={}, faces=[])
     with pytest.raises(ValueError, match="no points"):
         elevation_at(surface, 1.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# write_cgpoints Units / CoordinateSystem emission (PR #246 review)
+
+def test_write_cgpoints_emits_units_and_coordinate_system(tmp_path):
+    import xml.etree.ElementTree as ET
+    from autogis.core.common.landxml import CgPoint, write_cgpoints
+
+    out = write_cgpoints([CgPoint("1", 2000.0, 1000.0, 512.5)],
+                         tmp_path / "pts.xml",
+                         crs="EPSG:2256", linear_unit="foot")
+    root = ET.parse(str(out)).getroot()
+    # required LandXML root attributes (LandXML-1.2.xsd)
+    assert root.get("version") == "1.2"
+    assert root.get("date") and root.get("time")
+    imperial = root.find("{*}Units/{*}Imperial")
+    assert imperial is not None
+    assert imperial.get("linearUnit") == "foot"
+    # elevationUnit defaults to meter in the schema — must be explicit
+    assert imperial.get("elevationUnit") == "feet"
+    cs = root.find("{*}CoordinateSystem")
+    assert cs.get("epsgCode") == "2256"
+    assert cs.get("name") == "EPSG:2256"
+
+
+def test_write_cgpoints_metric_units(tmp_path):
+    import xml.etree.ElementTree as ET
+    from autogis.core.common.landxml import CgPoint, write_cgpoints
+
+    out = write_cgpoints([CgPoint("1", 1.0, 2.0, 3.0)], tmp_path / "pts.xml",
+                         linear_unit="meter")
+    root = ET.parse(str(out)).getroot()
+    metric = root.find("{*}Units/{*}Metric")
+    assert metric.get("linearUnit") == "meter"
+    assert metric.get("elevationUnit") == "meter"
+    assert root.find("{*}CoordinateSystem") is None  # no crs given
+
+
+def test_write_cgpoints_rejects_unknown_unit(tmp_path):
+    from autogis.core.common.landxml import CgPoint, write_cgpoints
+    with pytest.raises(ValueError, match="linear unit"):
+        write_cgpoints([CgPoint("1", 1.0, 2.0, 3.0)], tmp_path / "pts.xml",
+                       linear_unit="furlong")
+
+
+def test_write_cgpoints_legacy_bare_output(tmp_path):
+    """No crs/linear_unit -> no Units/CoordinateSystem (export-survey-cad path)."""
+    import xml.etree.ElementTree as ET
+    from autogis.core.common.landxml import CgPoint, write_cgpoints
+
+    out = write_cgpoints([CgPoint("1", 1.0, 2.0, 3.0)], tmp_path / "pts.xml")
+    root = ET.parse(str(out)).getroot()
+    assert root.find("{*}Units") is None
+    assert root.find("{*}CoordinateSystem") is None
+    assert root.find("{*}CgPoints/{*}CgPoint") is not None
+
+
+@pytest.mark.parametrize("crs,expected", [
+    ("EPSG:2256", 2256),
+    ("epsg: 2256", 2256),
+    ("2256", 2256),
+    ("NAD83 State Plane", None),
+    ("", None),
+    (None, None),
+])
+def test_parse_epsg(crs, expected):
+    from autogis.core.common.landxml import parse_epsg
+    assert parse_epsg(crs) == expected

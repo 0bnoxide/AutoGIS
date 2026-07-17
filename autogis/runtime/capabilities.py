@@ -77,7 +77,7 @@ TOOLS: dict[str, Runtime] = {
     "update-well-elevations": Runtime.LOCAL,  # tool 8.2 GDB write (--gdb path)
     "draft-plume-boundary": Runtime.LOCAL,    # tool 4.5 GDB write (--gdb path)
     "build-cad-package": Runtime.LOCAL,  # tool 8.9 Export-to-CAD — needs arcpy
-    "export-civil3d": Runtime.LOCAL,     # tool 8.2 LandXML/contour leg needs arcpy; PNEZD CSV is headless
+    "export-civil3d": Runtime.CLOUD,     # tool 8.2 PNEZD CSV + LandXML CgPoints are headless (ADR-0088); contour/TIN leg unbuilt, see #166
     "update-layout-text": Runtime.LOCAL,  # tool 5.8 APRX layout edit — needs arcpy
     "build-fieldmaps": Runtime.LOCAL,  # tool 7.1 GDB layer/field provisioning — needs arcpy
     "sync-to-gdb": Runtime.LOCAL,  # tool 6.2 GDB upsert (--gdb path); agol group
@@ -311,11 +311,13 @@ _REGISTRY_SEED = [
      "analysis", "Raster-diff a drone DEM against a prior flight or LandXML design surface"),
     ("index-field-attachments", "SyncFieldAttachments", "6.5", "CLOUD", "stable",
      "agol", "Index a harvester manifest into the AttachmentIndex table"),
-    ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "planned",
-     "cartography", "Export GIS layers to a Civil 3D-ready CAD package (DWG/DXF) "
-     "-- mapping/validation logic done; arcpy Export-to-CAD call not yet wired, see issue #166"),
-    ("export-civil3d", "ExportContoursForCivil3D", "8.2", "LOCAL", "stable",
-     "cartography", "Export PNEZD point CSV + projection note (headless); contours/LandXML via Pro"),
+    ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "stable",
+     "cartography", "Export GIS layers to a DWG/DXF CAD file (arcpy Export-to-CAD, "
+     "ADR-0088) + a projection note and mapping report; CAD layer rename from the "
+     "mapping config is not yet applied to the file itself, see issue #166"),
+    ("export-civil3d", "ExportContoursForCivil3D", "8.2", "CLOUD", "stable",
+     "cartography", "Export PNEZD point CSV + projection note + LandXML CgPoints "
+     "(all headless, ADR-0088); contour polylines/TIN surface still need Pro, see issue #166"),
     ("draft-parser-profile", "DraftParserProfile", "2.1", "CLOUD", "stable",
      "admin", "Inspect a workbook and write a draft parser profile YAML"),
     ("batch-import-workbooks", "BatchImportWorkbooks", "2.2", "CLOUD", "stable",

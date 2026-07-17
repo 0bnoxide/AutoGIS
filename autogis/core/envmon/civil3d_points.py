@@ -1,8 +1,11 @@
 """PNEZD point CSV + projection metadata for Civil 3D surface input (Tool 8.2).
 
-Headless leg of ExportContoursForCivil3D. Contour polylines / LandXML are
-arcpy and live in the .pyt toolbox. CRS validation and the projection note
-are owned by cad_layer_map (Tool 8.9) and reused here.
+Headless leg of ExportContoursForCivil3D: PNEZD CSV, projection note, and
+(ADR-0088) point-only LandXML CgPoints export, sharing
+``core.common.landxml.write_cgpoints`` with export_survey_cad.py (issue
+#164). Contour polylines / TIN surfaces still require arcpy and are not yet
+wired — see issue #166. CRS validation and the projection note are owned by
+cad_layer_map (Tool 8.9) and reused here.
 """
 from __future__ import annotations
 
@@ -10,6 +13,7 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..common.landxml import CgPoint, write_cgpoints
 from ..common.qa import QACollector, SEV_WARNING
 from .cad_layer_map import validate_crs, write_projection_note  # noqa: F401  (re-export)
 
@@ -65,3 +69,19 @@ def write_pnezd_csv(points: list, out_path: Path) -> Path:
         for p in points:
             writer.writerow([p.point_number, p.northing, p.easting, p.elevation, p.description])
     return out_path
+
+
+def write_pnezd_landxml(points: list, out_path: Path, *,
+                        crs: str = None, linear_unit: str = None) -> Path:
+    """Write PNEZD points as a LandXML 1.2 ``<CgPoints>`` file (points only;
+    no contour/TIN surface -- that leg still requires arcpy, see issue #166).
+    *crs*/*linear_unit* thread through to the shared writer's ``<Units>`` +
+    ``<CoordinateSystem>`` emission (PR #246 review).
+    """
+    return write_cgpoints(
+        (CgPoint(str(p.point_number), p.northing, p.easting, p.elevation,
+                 description=p.description)
+         for p in points),
+        out_path,
+        crs=crs, linear_unit=linear_unit,
+    )

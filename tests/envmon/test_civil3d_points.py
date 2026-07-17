@@ -84,7 +84,30 @@ def test_export_civil3d_headless_writes_csv_and_note(tmp_path):
     assert "EPSG:2256" in (out_dir / "projection_note.txt").read_text(encoding="utf-8")
 
 
-def test_export_civil3d_landxml_guard_headless(monkeypatch, tmp_path):
+def test_export_civil3d_landxml_is_headless(monkeypatch, tmp_path):
+    """--landxml (CgPoints) needs no arcpy; only contours/TIN would (issue #166)."""
+    _no_arcpy_monkeypatch(monkeypatch)
+    points = tmp_path / "points.csv"
+    points.write_text("location_id,x,y,z\nMW-1,1000.0,2000.0,512.5\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    result = CliRunner().invoke(
+        autogis,
+        ["envmon", "export-civil3d",
+         "--points", str(points), "--crs", "EPSG:2256",
+         "--out-dir", str(out_dir), "--landxml", "--units", "foot"],
+    )
+    assert result.exit_code == 0, result.output
+    xml = (out_dir / "points_pnezd.xml").read_text(encoding="utf-8")
+    assert "CgPoint" in xml
+    # CRS + units travel INSIDE the LandXML (PR #246 review) — Civil 3D
+    # ignores the sidecar projection note on import.
+    assert 'epsgCode="2256"' in xml
+    assert 'linearUnit="foot"' in xml
+
+
+def test_export_civil3d_landxml_requires_units(monkeypatch, tmp_path):
+    """--landxml without --units is a usage error, not a unit-less file."""
     _no_arcpy_monkeypatch(monkeypatch)
     points = tmp_path / "points.csv"
     points.write_text("location_id,x,y,z\nMW-1,1000.0,2000.0,512.5\n", encoding="utf-8")
@@ -96,8 +119,19 @@ def test_export_civil3d_landxml_guard_headless(monkeypatch, tmp_path):
          "--out-dir", str(tmp_path / "out"), "--landxml"],
     )
     assert result.exit_code != 0
-    assert "arcpy" in result.output.lower()
-    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "--units" in result.output
+
+
+def test_write_pnezd_landxml(tmp_path):
+    qa = QACollector()
+    pts = build_pnezd([_rec("MW-1")], crs="EPSG:2256", qa=qa)
+    from autogis.core.envmon.civil3d_points import write_pnezd_landxml
+    out = write_pnezd_landxml(pts, tmp_path / "points_pnezd.xml",
+                              crs="EPSG:2256", linear_unit="foot")
+    xml = out.read_text(encoding="utf-8")
+    assert 'name="1"' in xml
+    assert "2000.0 1000.0 512.5" in xml
+    assert 'epsgCode="2256"' in xml
 
 
 def test_write_projection_note_reexported(tmp_path):

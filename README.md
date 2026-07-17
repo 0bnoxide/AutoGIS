@@ -9,7 +9,7 @@ GUI, and the importable core itself).
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-07-08**. The
+Status against the 79-tool environmental monitoring roadmap, as of **2026-07-15**. The
 Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
@@ -20,16 +20,18 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **106 `core/envmon/` + 10 `core/agol/` modules (116 total)**,
-**113 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
+The codebase now ships **112 `core/envmon/` + 11 `core/agol/` modules (123 total)**,
+**117 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
 `manage-callout-overrides`'s 4 subcommands counted individually), and an arcpy-free
 test suite — derive the live count with `python -m pytest --collect-only -q`; it is
 extras-dependent, so a `[dev]`-only env collects fewer tests than a full-extras env
-(module/CLI counts as of 2026-07-08). For the authoritative per-tool breakdown see
+(module/CLI counts as of 2026-07-15 — derive live: `ls autogis/core/envmon/*.py | grep -v __init__ | wc -l`).
+For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
-here have advanced past that snapshot — a large batch of tools merged 2026-06-28 through
-2026-07-02, PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119, plus ongoing wiring/hardening work
-through 2026-07-07, PRs #196-#200).
+here have advanced well past that snapshot — batches merged through 2026-06-28 – 07-02
+(PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119), 07-07 (PRs #196-#200), and 07-08 – 07-15
+(EQuIS/WQX EDD import ADR-0080/0082, HTML report output ADR-0083, drone/geotech batch,
+OpenTopography DEM ADR-0078, Civil3D/CAD arcpy legs ADR-0088)).
 
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
@@ -56,7 +58,7 @@ through 2026-07-07, PRs #196-#200).
 | [BuildSurvey123XLSFormFromConfig](autogis/core/envmon/survey123_form_builder.py) | 7.1a | `envmon build-survey-form` | Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config |
 | [EvaluateReportReadiness](autogis/core/envmon/evaluate_readiness.py) | 9.0b | `envmon evaluate-readiness` | Tool: report-readiness gate — checks required tools ran successfully |
 | [ExportAnalyticalSummaryTables](autogis/core/envmon/export_summary_tables.py) | 9.1 | `envmon export-report-format-summary-tables` / `envmon export-summary` | Tool: export Env_AnalyticalResults to formatted report-appendix tables |
-| [GenerateMonitoringEventReport](autogis/core/envmon/generate_event_report.py) | — | `envmon generate-event-report` | Assemble a Markdown monitoring event report from CSV tool outputs (post-roadmap extra) |
+| [GenerateMonitoringEventReport](autogis/core/envmon/generate_event_report.py) | — | `envmon generate-event-report` | Assemble a monitoring event report (Markdown or `--format html`, ADR-0083) from CSV tool outputs (post-roadmap extra) |
 | [ExportGeoJSONResults](autogis/core/envmon/export_geojson.py) | — | `envmon export-geojson` | Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless) |
 | [ValidateScheduleYAML](autogis/core/envmon/validate_schedule.py) | — | `envmon validate-schedule` | Tool 10.2: validate monitoring schedule YAML structure and analyte names |
 | [RunHistoryReport / Query](autogis/core/envmon/history_report.py) | 10.1 | `envmon run-history-report` / `envmon run-history` | Tool 10.1: per-location per-analyte history summary across events |
@@ -98,6 +100,9 @@ through 2026-07-07, PRs #196-#200).
 | [AuditAGOLItemDependencies](autogis/core/agol/audit_dependencies.py) | 6.9 | `agol audit-dependencies` | Tool 6.9: find items that reference/depend on an AGOL item (HYBRID) |
 | [PromoteAGOLDataBetweenStages](autogis/core/agol/promote.py) | 6.10 | `agol promote` | Tool 6.10: promote an AGOL layer's data between DEV/QA/PROD stages |
 | [UpdateWellElevationsFromLevelLoop](autogis/core/envmon/level_loop.py) | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* | Tool 8.2: push a closed level-loop run's elevations to MonitoringWells.TOC_ft |
+| [ExportContoursForCivil3D](autogis/core/envmon/civil3d_points.py) | 8.2 | `envmon export-civil3d` | Tool 8.2: PNEZD point CSV + projection note + `--landxml` CgPoints export, all headless (ADR-0088); contour polylines/TIN surface still need ArcGIS Pro — see issue #166 |
+| [GenerateSubsurfaceProfileFromBorings](autogis/core/envmon/generate_subsurface_profile.py) | — | `envmon generate-subsurface-profile` | Render a subsurface profile figure from borings projected onto a line (headless; `profile` extra for matplotlib) |
+| [DraftLithologyFromScan](autogis/core/envmon/draft_lithology_from_scan.py) | — | `envmon draft-lithology-from-scan` (DRAFT, unreviewed OCR output) | Draft a lithology CSV from a scanned boring log via a Table-Transformer + TrOCR pipeline (ADR-0074, headless; `ocr` extra) |
 | [UpdateAGOLWebMapFromFigureSpec](autogis/core/agol/webmap.py) | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) | Tool 6.3: push a figure spec's display config into an AGOL web map |
 | [CreateHostedViewsForStakeholders](autogis/core/agol/hosted_views.py) | 6.11 | `agol create-views` | Tool 6.11: create/update audience-specific hosted views (sensitive-field leak is blocking) |
 | [SyncAGOLFeatureLayerToGDB](autogis/core/agol/sync_layer.py) | 6.2 | `agol sync-to-gdb` *(HYBRID — `--gdb` upsert path is LOCAL; attribute sync only — attachments stay with `autogis harvest` + `envmon index-field-attachments`)* | Tool 6.2: download hosted feature layer edits into the local FGDB (HYBRID) |
@@ -124,7 +129,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [GeneratePortfolioMetrics](autogis/core/envmon/portfolio_metrics.py) | `envmon portfolio-metrics` | Roll up per-site report readiness across a multi-site run history |
 | [EvaluateGroundwaterSurfaceModels](autogis/core/envmon/evaluate_gw_models.py) | `envmon evaluate-gw-models` | Cross-validate interpolation model predictions against observed values |
 | [ExportSurveyToCADGIS](autogis/core/envmon/export_survey_cad.py) | `envmon export-survey-cad` | Export RTK survey points to feature-code-mapped CSV/GeoJSON/LandXML layers (headless; `--landxml` per ADR-0071) |
-| [GenerateWellInspectionReports](autogis/core/envmon/well_inspection_report.py) | `envmon well-inspection-report` | Generate Markdown well inspection reports + a site summary (headless) |
+| [GenerateWellInspectionReports](autogis/core/envmon/well_inspection_report.py) | `envmon well-inspection-report` | Generate well inspection reports (Markdown or `--format html` with a photo grid, ADR-0083) + a site summary (headless) |
 | [DownloadOpenTopographyDEM](autogis/core/envmon/opentopo.py) | `envmon download-dem` | Download an OpenTopography DEM GeoTIFF for an AOI (HYBRID — headless CLI + `.pyt` add-to-map; `opentopo` extra for non-WGS84 reprojection) |
 
 </details>
@@ -134,7 +139,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 
 | Tool | Roadmap # | CLI command (arcpy-guarded; primary UI is the `.pyt`) | What it does |
 |------|-----------|--------------------------------------------------------|--------------|
-| [ImportLabEDD](autogis/core/envmon/edd_importer.py) | 2.3 | `envmon import-edd` | Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro) |
+| [ImportLabEDD](autogis/core/envmon/edd_importer.py) | 2.3 | `envmon import-edd` | Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro); profile-driven formats include EQuIS (`equis_xls`, ADR-0082) and WQX (`wqx_csv`, ADR-0080) alongside the original layout |
 | [ImportToGDB](autogis/core/envmon/import_to_gdb.py) | 2/3 | `envmon import-gdb` | Tool 2: import a workbook into the file geodatabase (ArcGIS Pro) |
 | [BuildCurrentEvent](autogis/core/envmon/build_current_event.py) | 4 | `envmon build-event` | Tool 3: build the current-event feature data (ArcGIS Pro) |
 | [BuildAnalyticalCallouts](autogis/core/envmon/build_figure_dataset.py) | 5.1 | `envmon build-callouts` | Tool 4: generate callout feature classes (ArcGIS Pro) |
@@ -151,8 +156,9 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ImportDroneProducts](autogis/core/envmon/import_drone_products.py) | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) | Tool 8.8: import drone deliverables to raster catalog + GCP table (ArcGIS Pro) |
 | [ImportFieldBoringLogs](autogis/core/envmon/import_boring_logs.py) | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) | Tool 8.0b: import a boring-log CSV package into the GDB (ArcGIS Pro) |
 | [BuildDashboardDataMart](autogis/core/envmon/dashboard_data_mart.py) | 6.7 | `envmon build-dashboard-data-mart` | Tool 6.7: truncate + repopulate the Dash_* mart tables (ArcGIS Pro) |
-| [BuildCADExportPackage](autogis/core/envmon/cad_layer_map.py) | 8.9 | `envmon build-cad-package` (mapping/CRS logic only; arcpy Export-to-CAD call not yet wired — see issue #105) | Tool 8.9: export GIS layers to a CAD package (ArcGIS Pro) |
-| [ExportContoursForCivil3D](autogis/core/envmon/civil3d_points.py) | 8.2 | `envmon export-civil3d` (PNEZD CSV + projection note headless; `--landxml` guarded, arcpy leg not yet wired — see issue #105) | Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless); --landxml routes to the .pyt toolbox |
+| [BuildCADExportPackage](autogis/core/envmon/cad_layer_map.py) | 8.9 | `envmon build-cad-package` (guards + redirects to the `.pyt` toolbox) | Tool 8.9: export GIS layers to a DWG/DXF CAD file via arcpy Export-to-CAD (ADR-0088) + a projection note and mapping report; CAD layer rename from the mapping config isn't applied to the file yet — see issue #166 |
+| [DEMConditioningPipeline](autogis/core/envmon/dem_conditioning.py) | — | `envmon condition-dem` (config validated headless; guards + redirects to the `.pyt` toolbox) | Void-fill/smooth a drone flight's DEM and derive hillshade/slope/contours (ArcGIS Pro) |
+| [CompareDroneSurfaces](autogis/core/envmon/compare_drone_surfaces.py) | — | `envmon compare-drone-surfaces` (args validated headless; guards + redirects to the `.pyt` toolbox) | Raster-diff a drone DEM against a prior flight or a LandXML design surface (ArcGIS Pro) |
 | [UpdateLayoutDynamicText](autogis/core/envmon/layout_manager.py) | 5.8 | `envmon update-layout-text` (CLI-first per ADR-0039; wraps the shipped `layout_manager.update_layout_text`) | Tool 5.8: update APRX layout text elements from a YAML values file (ArcGIS Pro) |
 | [BuildFieldMapsMonitoringProject](autogis/core/envmon/fieldmaps_plan.py) | 7.1 | `envmon build-fieldmaps` (CLI-first per ADR-0039; plan is arcpy-free + headless via `--dry-run`, GDB provisioning needs arcpy; publish via `agol publish-layer`) | Tool 7.1: create/refresh the Field Maps monitoring layers for field crews (ArcGIS Pro) |
 | [GenerateSiteMapSeries](autogis/core/envmon/map_series_plan.py) | 5.6 | `envmon gen-map-series` (CLI-first per ADR-0039; planner + `--dry-run` are arcpy-free; export loop replays the ExportFigures chain) | Tool 5.6: batch figure-packet exporter across sites/events (ArcGIS Pro) |
@@ -234,7 +240,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (97 modules), and `autogis.core.agol` (publishing, 9 modules) sit on top of common
+  (112 modules), and `autogis.core.agol` (publishing, 11 modules) sit on top of common
 - **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
   (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
   core functions — the two interfaces cannot drift
@@ -337,6 +343,9 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon well-inspection-report` | CLOUD | `core/envmon/well_inspection_report.py` |
 | `autogis envmon generate-inspection-report` | CLOUD | `core/envmon/well_inspection_photo_report.py` (photo embedding needs Pillow) |
 | `autogis envmon download-dem` | CLOUD | `core/envmon/opentopo.py` (`.pyt` add-to-map/reproject path is LOCAL) |
+| `autogis envmon export-civil3d` | CLOUD | `core/envmon/civil3d_points.py` (PNEZD CSV + `--landxml` CgPoints, both headless, ADR-0088; contour/TIN leg needs Pro, not yet built — #166) |
+| `autogis envmon generate-subsurface-profile` | CLOUD | `core/envmon/generate_subsurface_profile.py` (`profile` extra for matplotlib) |
+| `autogis envmon draft-lithology-from-scan` | CLOUD | `core/envmon/draft_lithology_from_scan.py` (DRAFT; `ocr` extra) |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
@@ -361,11 +370,16 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon build-dashboard-data-mart` | `core/envmon/dashboard_data_mart.py` |
 | `autogis envmon survey-to-well-elevation --gdb` | `core/envmon/survey_to_well_elevation.py` (HYBRID command; headless via `--wells-csv`) |
 | `autogis envmon register-drone-flight` (non-dry-run) | `core/envmon/register_drone_flight.py` (HYBRID command; headless via `--dry-run`) |
+| `autogis envmon build-cad-package` | `core/envmon/cad_layer_map.py` (`.pyt` `BuildCADExportPackage`, ADR-0088; CLI always guards + redirects) |
+| `autogis envmon condition-dem` | `core/envmon/dem_conditioning.py` (config validated headless; guards + redirects) |
+| `autogis envmon compare-drone-surfaces` | `core/envmon/compare_drone_surfaces.py` (args validated headless; guards + redirects) |
 
 LOCAL commands guard on `arcpy` and redirect to the `.pyt` toolbox inside ArcGIS Pro when it is
 absent. `import-edd`, `import-rtk-survey`, `route-survey123`, `import-drone-products`,
-`import-boring-logs`, and `build-dashboard-data-mart` are LOCAL-only and will print the standard
-guard message if run headless — use the `.pyt` toolbox or the guarded CLI inside Pro.
+`import-boring-logs`, `build-dashboard-data-mart`, and `build-cad-package` are LOCAL-only and will
+print the standard guard message if run headless — use the `.pyt` toolbox or the guarded CLI
+inside Pro. `condition-dem` and `compare-drone-surfaces` validate their arguments headlessly
+before guarding, but always redirect to the `.pyt` toolbox to actually run.
 
 ---
 
@@ -438,6 +452,7 @@ autogis envmon compare-schedule-vs-actual --schedule <schedule.yaml> --results-c
 autogis envmon process-level-loop --observations-csv <survey.csv> --run-id <id> --site-id <id> --survey-date <YYYY-MM-DD> --benchmark-id <pt> --known-elevation <z>
 autogis envmon evaluate-readiness --site-id <id> --run-history <run_history.csv>
 autogis envmon generate-event-report --site <id> --event <id> --output <report.md>
+autogis envmon generate-event-report --site <id> --event <id> --output <report.html> --format html   # ADR-0083
 autogis envmon export-geojson --results-csv <results.csv> --coords-csv <coords.csv> --output <out.geojson>
 autogis envmon export-report-format-summary-tables --results-csv <results.csv> --output <out.xlsx>
 autogis envmon run-history --run-history <run_history.csv> --format table
@@ -451,7 +466,9 @@ autogis envmon validate-rtk-survey <headerless_points.csv> --format penzd --repo
 autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
 autogis envmon rtk-control-check --control-points <control.csv> --horizontal-tolerance-ft 0.05 --vertical-tolerance-ft 0.10
 autogis envmon export-survey-cad <points.csv> --feature-code-map <map.yaml> --output-dir <out>
+autogis envmon export-civil3d --points <gwe_points.csv> --crs EPSG:2256 --out-dir <out> --landxml --units foot   # --landxml is headless (ADR-0088; --units required so Civil 3D imports without a unit shift); contours/TIN still need Pro
 autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --maintenance-log-csv <log.csv>
+autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --format html   # photo grid (ADR-0083)
 autogis envmon generate-inspection-report --inspections <inspections.csv> --manifest <manifest.csv> --harvest-dir <dir> --site <id> --out <report.xlsx>
 autogis envmon reconcile-survey123-lab --survey <s123.csv> --edd <lab.csv> --edd-profile <profile.yaml> --site <id>
 autogis envmon survey-to-well-elevation <rtk.csv> --site <id> --wells-csv <wells.csv>       # headless
@@ -482,6 +499,8 @@ autogis envmon select-soil-intervals --results-csv <soil.csv> --out <out.csv>
 autogis envmon build-analytical-key --analyte-dict <analytes.yaml> --screening-levels <levels.yaml> --matrix GW
 autogis envmon generate-arcade-labels --analytes "Benzene,PCE" --out <labels.json>
 autogis envmon generate-python-labels --analytes "Benzene,PCE" --out <labels.json>
+autogis envmon generate-subsurface-profile <boring.sqlite> --boring-a <id> --boring-b <id> --out <profile.png>
+autogis envmon draft-lithology-from-scan <scan.pdf> --out-dir <out>   # DRAFT: review every row against the scan
 
 # Reporting extras
 autogis envmon build-report-appendix --results <results.csv> --out <out.xlsx>
@@ -505,7 +524,9 @@ autogis envmon build-event <site-config.yaml>
 autogis envmon validate-db <geodatabase>
 autogis envmon upgrade-schema <geodatabase>
 autogis envmon export-snapshot <geodatabase>
-# build-callouts, optimize-callouts, gw-contours, export-figures, full-pipeline follow the same pattern
+autogis envmon build-cad-package --layers <layers.txt> --mapping <cad_map.yaml> --crs EPSG:2256   # ADR-0088
+# build-callouts, optimize-callouts, gw-contours, export-figures, full-pipeline,
+# condition-dem, compare-drone-surfaces follow the same pattern
 ```
 
 > `import-edd`, `import-rtk-survey`, `route-survey123`, `import-drone-products`,
@@ -595,7 +616,7 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 97 modules
+│   ├── envmon/          # Environmental monitoring — 112 modules
 │   └── agol/            # AGOL publishing
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
@@ -617,7 +638,7 @@ autogis/
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
 | `core/common/schema/` | 5 modules (attachments, boring, drone, envmon, survey) exporting ~21 typed dataclasses |
-| `core/envmon/` | 97 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/envmon/` | 112 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 

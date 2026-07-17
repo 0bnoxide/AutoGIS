@@ -1,9 +1,12 @@
-"""landxml.py — read-only LandXML TIN surface parser (stdlib only).
+"""landxml.py — LandXML TIN surface parsing (read) + CgPoints export (write),
+stdlib only.
 
 Parses a ``<Surfaces><Surface><Definition>`` TIN block into points and
 triangle faces, for rasterizing/diffing against a drone DEM
-(:mod:`autogis.core.envmon.compare_drone_surfaces`). Write support (LandXML
-export) is separate scope — see issues #164/#166.
+(:mod:`autogis.core.envmon.compare_drone_surfaces`). Also writes point-only
+``<CgPoints>`` LandXML (control/survey points, no surface or alignment data)
+shared by ``export_survey_cad.py`` (RTK points, issue #164) and
+``civil3d_points.py`` (PNEZD points, issue #166).
 
 LandXML point order is (northing, easting, elevation) per the LandXML 1.2
 spec's default ``P`` element convention. Namespace-agnostic (``{*}tag``
@@ -15,10 +18,103 @@ values would silently swap the axes here — no validation catches it.
 """
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, NamedTuple, Optional
+
+
+class CgPoint(NamedTuple):
+    name: str
+    northing: float
+    easting: float
+    elevation: float
+    code: str = ""
+    description: str = ""
+
+
+_LANDXML_NS = "http://www.landxml.org/schema/LandXML-1.2"
+
+_EPSG_RE = re.compile(r"^\s*(?:EPSG\s*:\s*)?(\d{4,6})\s*$", re.IGNORECASE)
+
+# LandXML-1.2.xsd impLinear / metLinear enums (only the survey-relevant ones);
+# the remaining required Units attributes are fixed to the conventional values
+# for each system — point files carry no area/volume/temperature data.
+_IMPERIAL_UNITS = {
+    "areaUnit": "squareFoot", "volumeUnit": "cubicFeet",
+    "temperatureUnit": "fahrenheit", "pressureUnit": "inHG",
+    "elevationUnit": "feet",
+}
+_METRIC_UNITS = {
+    "areaUnit": "squareMeter", "volumeUnit": "cubicMeter",
+    "temperatureUnit": "celsius", "pressureUnit": "milliBars",
+    "elevationUnit": "meter",
+}
+_IMPERIAL_LINEAR = ("foot", "USSurveyFoot")
+_METRIC_LINEAR = ("meter",)
+SUPPORTED_LINEAR_UNITS = _IMPERIAL_LINEAR + _METRIC_LINEAR
+
+
+def parse_epsg(crs: Optional[str]) -> Optional[int]:
+    """``"EPSG:2256"`` / ``"2256"`` -> 2256; anything else -> None."""
+    m = _EPSG_RE.match(crs or "")
+    return int(m.group(1)) if m else None
+
+
+def write_cgpoints(points: Iterable[CgPoint], output_path: Path, *,
+                   crs: Optional[str] = None,
+                   linear_unit: Optional[str] = None) -> Path:
+    """Write a LandXML 1.2 ``<CgPoints>`` file: point-only export (control/
+    survey points), no surface or alignment data. Point text is "northing
+    easting elevation", the LandXML default convention.
+
+    *linear_unit* ("foot" / "USSurveyFoot" / "meter", per the LandXML-1.2
+    ``impLinear``/``metLinear`` enums) emits a ``<Units>`` block; *crs*
+    (e.g. ``"EPSG:2256"``) emits ``<CoordinateSystem>`` with ``epsgCode``
+    when the string carries an EPSG number. Civil 3D reads both on import —
+    without them it assumes the drawing's units and can shift/scale the
+    points. Omitting both keeps the bare legacy output.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    now = datetime.now()
+    root = ET.Element("LandXML", {
+        "xmlns": _LANDXML_NS, "version": "1.2",
+        # date/time are required LandXML root attributes (LandXML-1.2.xsd)
+        "date": now.strftime("%Y-%m-%d"), "time": now.strftime("%H:%M:%S"),
+    })
+    if linear_unit is not None:
+        units = ET.SubElement(root, "Units")
+        if linear_unit in _IMPERIAL_LINEAR:
+            ET.SubElement(units, "Imperial",
+                          {"linearUnit": linear_unit, **_IMPERIAL_UNITS})
+        elif linear_unit in _METRIC_LINEAR:
+            ET.SubElement(units, "Metric",
+                          {"linearUnit": linear_unit, **_METRIC_UNITS})
+        else:
+            raise ValueError(
+                f"Unsupported LandXML linear unit {linear_unit!r}; expected "
+                f"one of {', '.join(SUPPORTED_LINEAR_UNITS)}.")
+    if crs:
+        cs_attrs = {"name": crs}
+        epsg = parse_epsg(crs)
+        if epsg is not None:
+            cs_attrs["epsgCode"] = str(epsg)
+        ET.SubElement(root, "CoordinateSystem", cs_attrs)
+    cg_points = ET.SubElement(root, "CgPoints")
+    for pt in points:
+        attrs = {"name": pt.name}
+        if pt.code:
+            attrs["code"] = pt.code
+        if pt.description:
+            attrs["desc"] = pt.description
+        el = ET.SubElement(cg_points, "CgPoint", attrs)
+        el.text = f"{pt.northing} {pt.easting} {pt.elevation}"
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
+    return output_path
 
 
 @dataclass
