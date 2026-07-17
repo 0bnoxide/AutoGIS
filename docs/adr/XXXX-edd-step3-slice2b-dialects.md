@@ -77,6 +77,26 @@ new dependency, zero CLI change):
 - Committed fixtures are synthetic openpyxl-generated `.xlsx` (template
   headers + invented rows); no client data enters the repo.
 
+## Alternatives considered
+
+- **Per-dialect `_COL_*` constant sets behind a `dialect:` knob.** Rejected
+  (spec R3 rejection): every future dialect becomes a reader edit, and the
+  three dialects verified here already share ~80% of their column vocabulary
+  with WMRD — a parallel constant set would duplicate that shared surface
+  per dialect instead of bridging the outliers once via `source_aliases`.
+- **Route Mining through the `two_tab_xlsx` reader** (WQX-family, ADR-0080)
+  instead of extending `equis_reader`. Rejected (D2 rejection re-confirmed):
+  Mining is EQuIS-vocabulary, not WQX-vocabulary, and doing this would
+  duplicate the QC stream fork, ND synthesis, and spike/recovery handling
+  already built into `equis_reader` into a second reader rather than reusing
+  it via `source_aliases`.
+- **Widen the frozen unique keys** to carry run identity (e.g. an
+  `AnalysisTime` or run-instance key part) instead of folding a token into
+  `MethodDilutionKey`. Banned by ADR-0084, which rejected key-widening there
+  for the same reason it applies here: it re-keys every existing row of
+  every format for a problem localized to one reader family. The R9
+  value-recipe fold is the sanctioned mechanism (ADR-0075 §3 escape hatch).
+
 ## Related decisions
 
 - [ADR-0075](0075-canonical-schema-expansion-step1.md) — frozen keys, `LabEDDProfile` shape, ADR-0075 §3 value-recipe extensibility

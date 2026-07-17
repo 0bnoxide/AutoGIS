@@ -3,7 +3,6 @@ import datetime
 from pathlib import Path
 
 import openpyxl
-import pytest
 
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.edd_profile import LabEDDProfile

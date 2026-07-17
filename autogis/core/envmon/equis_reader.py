@@ -244,7 +244,7 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
             continue
 
         row = dict(sample)
-        if test_rows:
+        if test_rows or profile.test_sheet:
             test = test_index.get(_test_key(src, sample_id))
             if test is None:
                 qa.add(SEV_WARNING, "equis_missing_test",
@@ -409,10 +409,11 @@ def _attach_batches(row: dict, batch_index: dict, batch_rows: list[dict],
     row["__equis_prep_batch"] = hit.get("prep", "")
     row["__equis_analysis_batch"] = hit.get("analysis", "")
     if not hit:
+        date_part = f", {key[5]}" if join_date else ""
         qa.add(SEV_WARNING, "equis_missing_batch",
                f"Row {row_num}: no batch-sheet entry for "
-               f"({sample_id}, {key[1]}, {key[2]}, {key[3]}, {key[4]}) — "
-               f"batch ids empty", source_row=row_num)
+               f"({sample_id}, {key[1]}, {key[2]}, {key[3]}, {key[4]}"
+               f"{date_part}) — batch ids empty", source_row=row_num)
 
 
 def _attach_inline_batch(row: dict, qa: QACollector, row_num: int) -> None:

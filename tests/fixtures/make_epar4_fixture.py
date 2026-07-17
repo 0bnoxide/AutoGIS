@@ -30,7 +30,7 @@ def _tst(code, time, dil="1", ttype="initial"):
 
 TESTS = [
     _tst("E-001", "10:00"),
-    _tst("E-001", "14:30", ttype="Reanalysis"),
+    _tst("E-001", "14:30"),
     _tst("LCS-1", "10:00"),
 ]
 
@@ -65,7 +65,7 @@ RESULTS = [
     # the R9 token must key them distinctly (only the initial reportable)
     _res("E-001", "10:00", "Lead", "7439-92-1", "12.4"),
     _res("E-001", "14:30", "Lead", "7439-92-1", "12.6",
-         ttype="Reanalysis", reportable="No"),
+         reportable="No"),
     # a row with NO matching TST entry -> equis_missing_test WARN, imports
     _res("E-001", "09:00", "Arsenic", "7440-38-2", "2.0"),
     # LCS -> QC stream, Prep-typed inline batch fills both ids (R5)

@@ -319,6 +319,15 @@ def test_run_token_absent_without_test_sheet():
     assert "0317" not in out[0]["__equis_method_dilution_key"]
 
 
+def test_empty_test_sheet_still_warns_missing_test():
+    # a present-but-empty EPAR4_TST_v1 sheet must not silently skip the
+    # equis_missing_test WARN (the `if test_rows:` gate used to hide this).
+    out, qa = _run_epar4([_equis_sample()], [_res()], [])
+    assert len(out) == 1                          # row still imports
+    missing = [r for r in qa.records if r.category == "equis_missing_test"]
+    assert len(missing) == 1
+
+
 def test_run_token_empty_dates_add_no_part():
     out, _ = _run_epar4([_equis_sample()],
                         [_res(analysis_date="", analysis_time="")],
