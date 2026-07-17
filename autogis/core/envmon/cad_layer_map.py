@@ -44,6 +44,23 @@ def validate_crs(crs: str, *, qa: QACollector) -> bool:
     return True
 
 
+def find_prj_conflicts(cad_output_file: Path) -> list:
+    """Projection files that would make Export To CAD reproject its output.
+
+    A CAD file with an associated ``<same-stem>.prj``, or a folder-wide
+    ``esri_cad.prj`` / ``*.uprj``, gets its coordinates *projected to that
+    file's CRS* on export — silently breaking the "source coordinates pass
+    through unchanged" contract in projection_note.txt (issue #238).
+    Docs: pro.arcgis.com .../conversion/export-to-cad.htm (Usage);
+    doc.esri.com .../help/data/cad/about-cad-coordinate-systems.html.
+    """
+    cad_output_file = Path(cad_output_file)
+    folder = cad_output_file.parent
+    candidates = [cad_output_file.with_suffix(".prj"), folder / "esri_cad.prj"]
+    candidates += sorted(folder.glob("*.uprj")) if folder.is_dir() else []
+    return [f for f in candidates if f.is_file()]
+
+
 def write_projection_note(crs: str, out_path: Path) -> Path:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
