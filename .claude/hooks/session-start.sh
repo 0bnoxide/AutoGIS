@@ -41,6 +41,15 @@ if [ "$(git -C "$PROJECT_DIR" branch --show-current 2>/dev/null)" = "main" ] \
   git -C "$PROJECT_DIR" pull --ff-only >/dev/null 2>&1 || true
 fi
 
+# --- Warn (never block, never auto-write) if the vendored ponytail skills have
+# drifted from the locally installed plugin. Claude Code has no plugin-update
+# event to hook, so SessionStart is the periodic check. Fixing drift is a
+# deliberate branch+PR: run .claude/scripts/sync-ponytail-skills.sh. The script
+# no-ops quietly when the plugin isn't installed (cloud/CI). ponytail: detect +
+# notify only — auto-writing would leave surprise changes on read-only main.
+SYNC="$PROJECT_DIR/.claude/scripts/sync-ponytail-skills.sh"
+[ -f "$SYNC" ] && bash "$SYNC" --check || true
+
 # Keep stdout clean in synchronous mode: send all install chatter to stderr.
 {
   # --- AutoGIS project deps (so the 113-test suite runs in fresh sessions) ---
