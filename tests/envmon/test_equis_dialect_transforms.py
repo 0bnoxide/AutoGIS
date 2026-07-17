@@ -225,3 +225,75 @@ def test_batch_join_date_mismatch_warns_missing():
                    batches, profile=_wmrd_profile())
     assert out[0]["__equis_analysis_batch"] == ""
     assert [r for r in qa.records if r.category == "equis_missing_batch"]
+
+
+def _epar4_profile(**over):
+    kw = dict(
+        profile_id="e", lab_name="E", format="equis_xls",
+        date_format="%m/%d/%Y", encoding="utf-8",
+        columns={"sample_id": "sys_sample_code"},
+        matrix_map={}, nondetect_qualifiers=["U"],
+        sample_sheet="EPAR4_FSample_v1", result_sheet="EPAR4_RES_v1",
+        batch_sheet="", test_sheet="EPAR4_TST_v1",
+        source_aliases={"total_or_dissolved": "fraction",
+                        "lab_prep_method_name": "prep_method"},
+        value_maps={"qc_sample_type": {"N": ""}},
+    )
+    kw.update(over)
+    return LabEDDProfile(**kw)
+
+
+def _tst(**over):
+    row = {"sys_sample_code": "S-1", "lab_anl_method_name": "E200.8",
+           "analysis_date": "03/17/2025", "analysis_time": "14:02",
+           "total_or_dissolved": "T", "column_number": "NA",
+           "test_type": "initial", "basis": "NA", "dilution_factor": "5",
+           "lab_prep_method_name": "E200.2", "lab_name_code": "ELI",
+           "lab_sample_id": "L-1"}
+    row.update(over)
+    return row
+
+
+def _res(**over):
+    row = _equis_result(analysis_time="14:02",
+                        total_or_dissolved="T")
+    del row["fraction"]          # epar4 says total_or_dissolved
+    del row["dilution_factor"]   # dilution lives on the TST sheet
+    del row["basis"]
+    row["test_type"] = "initial"
+    row.update(over)
+    return row
+
+
+def _run_epar4(samples, results, tests, profile=None):
+    qa = QACollector()
+    out = transform_equis_sheets(list(samples), list(results), [],
+                                 profile or _epar4_profile(), qa,
+                                 test_rows=list(tests))
+    return out, qa
+
+
+def test_test_sheet_merges_under_result_row():
+    out, qa = _run_epar4([_equis_sample()], [_res()], [_tst()])
+    assert len(out) == 1
+    row = out[0]
+    assert row["lab_sample_id"] == "L-1"          # TST-side field arrived
+    # TST dilution + basis reached the dilution-key fold
+    assert row["__equis_method_dilution_key"].startswith("5|")
+    assert not [r for r in qa.records if r.category == "equis_missing_test"]
+
+
+def test_result_columns_win_on_collision():
+    out, _ = _run_epar4([_equis_sample()],
+                        [_res(lab_anl_method_name="E300.0")],
+                        [_tst(lab_anl_method_name="E300.0",
+                              comment="tst-comment")])
+    assert out[0]["lab_anl_method_name"] == "E300.0"
+    assert out[0]["comment"] == "tst-comment"
+
+
+def test_missing_test_entry_warns_and_imports():
+    out, qa = _run_epar4([_equis_sample()],
+                         [_res(analysis_time="09:00")], [_tst()])
+    assert len(out) == 1                          # fail-safe: row imports
+    assert [r for r in qa.records if r.category == "equis_missing_test"]

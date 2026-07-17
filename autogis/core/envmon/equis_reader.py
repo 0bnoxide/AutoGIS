@@ -44,6 +44,7 @@ _COL_SAMPLE_SOURCE = "sample_source"
 _COL_BATCH_TYPE = "test_batch_type"
 _COL_BATCH_ID = "test_batch_id"
 _COL_ANALYSIS_DATE = "analysis_date"
+_COL_ANALYSIS_TIME = "analysis_time"
 
 
 def _get(row: dict, col: str) -> str:
@@ -75,11 +76,12 @@ def read_equis_xls(path: Path, profile,
     loader = (_load_xlsx_sheets if path.suffix.casefold() == ".xlsx"
               else _load_xls_sheets)
     sheets = loader(path, [profile.sample_sheet, profile.result_sheet,
-                           profile.batch_sheet])
+                           profile.batch_sheet, profile.test_sheet])
     return transform_equis_sheets(sheets.get(profile.sample_sheet, []),
                                   sheets.get(profile.result_sheet, []),
                                   sheets.get(profile.batch_sheet, []),
-                                  profile, qa)
+                                  profile, qa,
+                                  test_rows=sheets.get(profile.test_sheet, []))
 
 
 def _load_xls_sheets(path: Path, names: list[str]) -> dict[str, list[dict]]:
@@ -177,12 +179,23 @@ def _apply_source_aliases(rows: list[dict], aliases: dict[str, str]) -> None:
                 row[dst] = row[src]
 
 
+def _test_key(row: dict, sample_id: str) -> tuple:
+    """R4: 7-column composite key for test-sheet join: sample, method, date,
+    time, fraction, column, test_type (casefolded)."""
+    return (sample_id, _get(row, _COL_METHOD),
+            _get(row, _COL_ANALYSIS_DATE), _get(row, _COL_ANALYSIS_TIME),
+            _get(row, _COL_FRACTION), _get(row, _COL_COLUMN_NUM),
+            _get(row, _COL_TEST_TYPE).casefold())
+
+
 def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
                            batch_rows: list[dict], profile,
-                           qa: QACollector) -> list[dict]:
+                           qa: QACollector,
+                           test_rows: Optional[list[dict]] = None) -> list[dict]:
     """Join + synthesize; returns flat rows, QC rows tagged __equis_stream."""
+    test_rows = test_rows or []
     if profile.source_aliases:
-        for rows in (sample_rows, result_rows, batch_rows):
+        for rows in (sample_rows, result_rows, batch_rows, test_rows):
             _apply_source_aliases(rows, profile.source_aliases)
     sample_index = {}
     for s in sample_rows:
@@ -210,6 +223,13 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
         batch_index.setdefault(key, {})[
             _get(b, _COL_BATCH_TYPE).casefold()] = _get(b, _COL_BATCH_ID)
 
+    # R4 (ADR XXXX): epar4 splits Test and Result into two sheets sharing a
+    # 7-column composite; index the test sheet and merge under each result
+    # row. fraction is the post-alias name (total_or_dissolved bridged by R3).
+    test_index: dict[tuple, dict] = {}
+    for t in test_rows:
+        test_index[_test_key(t, _get_sample_id(t, profile))] = t
+
     out = []
     for row_num, src in enumerate(result_rows, start=2):
         row_num = int(src.get("__sheet_row") or row_num)
@@ -223,6 +243,15 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
             continue
 
         row = dict(sample)
+        if test_rows:
+            test = test_index.get(_test_key(src, sample_id))
+            if test is None:
+                qa.add(SEV_WARNING, "equis_missing_test",
+                       f"Row {row_num}: no test-sheet entry for sample "
+                       f"'{sample_id}' — test-side fields empty",
+                       source_row=row_num)
+            else:
+                row.update(test)
         row.update(src)             # result columns win on collision
         row["__source_row"] = row_num
         _tag_stream(row, profile, qa, row_num)
