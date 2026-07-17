@@ -5,6 +5,9 @@ where things live; it does not replace reading the files themselves.
 
 ## Durable, authoritative
 
+- **[`production-roadmap.md`](production-roadmap.md)** — accepted post-catalog
+  production sequence and phase exit gates. ADR-0087 records the ordering
+  decision; this file carries the living phase detail.
 - **[`adr/`](adr/README.md)** — Architecture Decision Records. The durable record of
   every architectural/structural/invariant/tool-batch decision. Start here for
   "why is it built this way".
@@ -39,7 +42,8 @@ where things live; it does not replace reading the files themselves.
 
 ## Flat top-level files
 
-The remaining top-level `docs/*.md` files (roadmap snapshots, ROI analyses, status
+Except for the authoritative `production-roadmap.md` linked above, the remaining
+top-level `docs/*.md` files (roadmap snapshots, ROI analyses, status
 updates, integration notes) are point-in-time working documents from specific
 batches -- not kept current after the fact. Treat a date in the filename or a
 "Status: as of <date>" line as the file's shelf life; for current status, prefer
