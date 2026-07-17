@@ -189,18 +189,20 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
         if key:
             sample_index[key] = s
 
-    # (sample, method, fraction, column, test_type) -> {"Prep": id, ...}
+    # (sample, method, fraction, column, test_type) -> {"prep": id, ...}
     # test_type is casefolded: the real WMRD export carries "initial" on
     # Batch_v1 vs "INITIAL" on TestResultQC_v1 (verified against the real
     # B25030623 export 2026-07-10) — case carries no meaning here, and a
     # case-sensitive join flooded every row with equis_missing_batch.
+    # Batch type keys are also casefolded to handle NYSDEC's uppercase PREP/ANALYSIS
+    # and Mining's enum records.
     batch_index: dict[tuple, dict] = {}
     for b in batch_rows:
         key = (_get_sample_id(b, profile), _get(b, _COL_METHOD),
                _get(b, _COL_FRACTION), _get(b, _COL_COLUMN_NUM),
                _get(b, _COL_TEST_TYPE).casefold())
-        batch_index.setdefault(key, {})[_get(b, _COL_BATCH_TYPE)] = \
-            _get(b, _COL_BATCH_ID)
+        batch_index.setdefault(key, {})[
+            _get(b, _COL_BATCH_TYPE).casefold()] = _get(b, _COL_BATCH_ID)
 
     out = []
     for row_num, src in enumerate(result_rows, start=2):
@@ -350,13 +352,41 @@ def _synthesize_reportable(row: dict) -> None:
 def _attach_batches(row: dict, batch_index: dict, batch_rows: list[dict],
                     sample_id: str, profile, qa: QACollector,
                     row_num: int) -> None:
+    if not batch_rows:
+        _attach_inline_batch(row, qa, row_num)
+        return
     key = (sample_id, _get(row, _COL_METHOD), _get(row, _COL_FRACTION),
            _get(row, _COL_COLUMN_NUM), _get(row, _COL_TEST_TYPE).casefold())
     hit = batch_index.get(key, {})
-    row["__equis_prep_batch"] = hit.get("Prep", "")
-    row["__equis_analysis_batch"] = hit.get("Analysis", "")
-    if batch_rows and not hit:
+    row["__equis_prep_batch"] = hit.get("prep", "")
+    row["__equis_analysis_batch"] = hit.get("analysis", "")
+    if not hit:
         qa.add(SEV_WARNING, "equis_missing_batch",
                f"Row {row_num}: no batch-sheet entry for "
                f"({sample_id}, {key[1]}, {key[2]}, {key[3]}, {key[4]}) — "
                f"batch ids empty", source_row=row_num)
+
+
+def _attach_inline_batch(row: dict, qa: QACollector, row_num: int) -> None:
+    """R5: no batch sheet — route the row's single inline
+    test_batch_type/test_batch_id pair by type, case-insensitively (Mining's
+    enum records uppercase PREP/ANALYSIS)."""
+    row["__equis_prep_batch"] = ""
+    row["__equis_analysis_batch"] = ""
+    batch_id = _get(row, _COL_BATCH_ID)
+    if not batch_id:
+        return
+    batch_type = _get(row, _COL_BATCH_TYPE).casefold()
+    if batch_type == "prep":
+        row["__equis_prep_batch"] = batch_id
+        # The frozen Env_QCResults key carries AnalysisBatchID, not
+        # PrepBatchID — without this fill, otherwise-identical QC rows from
+        # two prep batches key identically and one silently loses to dedup.
+        row["__equis_analysis_batch"] = batch_id
+    elif batch_type == "analysis":
+        row["__equis_analysis_batch"] = batch_id
+    else:
+        qa.add(SEV_WARNING, "equis_unknown_batch_type",
+               f"Row {row_num}: inline batch type "
+               f"'{_get(row, _COL_BATCH_TYPE)}' is not Prep/Analysis — "
+               f"batch ids left empty", source_row=row_num)

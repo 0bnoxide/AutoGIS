@@ -103,3 +103,90 @@ def test_no_aliases_is_a_noop():
                   [_mining_result()])
     # without the bridge the ND/method synthesis inputs are absent
     assert "lab_anl_method_name" not in out[0]
+
+
+def _wmrd_profile(**over):
+    kw = dict(
+        profile_id="w", lab_name="W", format="equis_xls",
+        date_format="%m/%d/%Y", encoding="utf-8",
+        columns={"sample_id": "sys_sample_code"},
+        matrix_map={}, nondetect_qualifiers=["U"],
+        sample_sheet="Sample_v1", result_sheet="TestResultQC_v1",
+        batch_sheet="Batch_v1",
+        value_maps={"qc_sample_type": {"N": ""}},
+    )
+    kw.update(over)
+    return LabEDDProfile(**kw)
+
+
+def _equis_sample(**over):
+    row = {"sys_sample_code": "S-1", "sample_matrix_code": "WQ",
+           "sample_type_code": "N", "sample_source": "Field",
+           "parent_sample_code": "", "sample_date": "03/11/2025",
+           "sys_loc_code": "MW-1"}
+    row.update(over)
+    return row
+
+
+def _equis_result(**over):
+    row = {"sys_sample_code": "S-1", "lab_anl_method_name": "E200.8",
+           "analysis_date": "03/17/2025", "fraction": "T",
+           "column_number": "NA", "test_type": "INITIAL", "basis": "NA",
+           "dilution_factor": "1", "cas_rn": "7439-92-1",
+           "chemical_name": "Lead", "result_value": "12.4",
+           "result_type_code": "TRG", "reportable_result": "Yes",
+           "detect_flag": "Y", "result_unit": "mg/L",
+           "detection_limit_unit": "mg/L"}
+    row.update(over)
+    return row
+
+
+def test_batch_sheet_types_match_case_insensitively():
+    # NYSDEC Batch_v5 carries uppercase PREP/ANALYSIS
+    batch = {"sys_sample_code": "S-1", "lab_anl_method_name": "E200.8",
+             "fraction": "T", "column_number": "NA", "test_type": "INITIAL",
+             "test_batch_type": "PREP", "test_batch_id": "PB-9"}
+    out, _ = _run([_equis_sample()], [_equis_result()], [batch],
+                  profile=_wmrd_profile())
+    assert out[0]["__equis_prep_batch"] == "PB-9"
+
+
+def test_inline_batch_prep_populates_both_ids():
+    # key-safety (P1): AnalysisBatchID is the frozen key part, PrepBatchID
+    # is not — a prep-typed inline id must reach AnalysisBatchID too.
+    out, qa = _run([_equis_sample()],
+                   [_equis_result(test_batch_type="PREP",
+                                  test_batch_id="PB-1")],
+                   profile=_wmrd_profile(batch_sheet=""))
+    assert out[0]["__equis_prep_batch"] == "PB-1"
+    assert out[0]["__equis_analysis_batch"] == "PB-1"
+    assert not any(r.category == "equis_unknown_batch_type"
+                   for r in qa.records)
+
+
+def test_inline_batch_analysis_type():
+    out, _ = _run([_equis_sample()],
+                  [_equis_result(test_batch_type="Analysis",
+                                 test_batch_id="AB-1")],
+                  profile=_wmrd_profile(batch_sheet=""))
+    assert out[0]["__equis_prep_batch"] == ""
+    assert out[0]["__equis_analysis_batch"] == "AB-1"
+
+
+def test_inline_batch_unknown_type_warns_and_stays_empty():
+    out, qa = _run([_equis_sample()],
+                   [_equis_result(test_batch_type="LEACH",
+                                  test_batch_id="LB-1")],
+                   profile=_wmrd_profile(batch_sheet=""))
+    assert out[0]["__equis_prep_batch"] == ""
+    assert out[0]["__equis_analysis_batch"] == ""
+    assert any(r.category == "equis_unknown_batch_type"
+               for r in qa.records)
+
+
+def test_no_batch_columns_no_warn():
+    out, qa = _run([_equis_sample()], [_equis_result()],
+                   profile=_wmrd_profile(batch_sheet=""))
+    assert out[0]["__equis_analysis_batch"] == ""
+    assert not any(r.category == "equis_unknown_batch_type"
+                   for r in qa.records)
