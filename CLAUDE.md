@@ -18,10 +18,16 @@ The codebase-memory MCP server is **wired at USER scope** (stdio), not via a rep
 file. The binary lives at
 `C:\Users\ichbi\AppData\Roaming\npm\node_modules\codebase-memory-mcp\bin\codebase-memory-mcp.exe`
 (npm-global install, on PATH as `codebase-memory-mcp`)
-and is registered in `~/.claude.json` (`claude mcp add --scope user`). There is no
-project `.mcp.json` — a previous one pointed at a non-existent npm package and was
-removed. The persistent index lives at
+and is registered in `~/.claude.json` (`claude mcp add --scope user`). It is
+**not** in the project `.mcp.json` — an earlier entry for it there pointed at a
+non-existent npm package and was removed. The persistent index lives at
 `~/.cache/codebase-memory-mcp/C-Users-ichbi-AutoGIS.db`.
+
+> The project `.mcp.json` **does** exist now — it carries the **GitHub MCP**
+> server only (`@modelcontextprotocol/server-github` via `npx`, token from the
+> `GITHUB_PERSONAL_ACCESS_TOKEN` env var; the file holds no secret). That is a
+> deliberate, working entry — do not "reconcile" it away. codebase-memory stays
+> user-scope for the reasons above; the two are unrelated.
 
 > **If the `mcp__codebase-memory-mcp__*` tools are missing this session:** the
 > registration was likely wiped, or you just (re)registered and haven't restarted —
