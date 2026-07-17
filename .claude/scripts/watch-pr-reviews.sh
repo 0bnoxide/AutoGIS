@@ -1,0 +1,100 @@
+#!/bin/bash
+# watch-pr-reviews.sh — robust poller for new PR reviews/comments, meant to be
+# armed as a Monitor command (Claude Code). It exists because a bare `gh` poll
+# with swallowed stderr fails silently forever (the "Monitor gh silent failure"
+# lesson): you wait for a review that already landed, or wait through an auth
+# error that never surfaces. This template bakes in the fixes:
+#
+#   - pins the repo (no reliance on ambient cwd)
+#   - checks ALL THREE comment surfaces — they are separate GitHub endpoints:
+#       pulls/{n}/reviews    review summaries (APPROVED / CHANGES_REQUESTED / …)
+#       pulls/{n}/comments   inline (line-anchored) review comments
+#       issues/{n}/comments  the PR conversation timeline
+#   - --paginate, so a PR with >30 comments doesn't silently truncate
+#   - emits POLL-FAIL <time> on any gh error instead of going quiet
+#   - dedups by id, so you're told about each item exactly once
+#   - is foreground-testable with --once BEFORE you trust it in a Monitor
+#
+# Usage:
+#   watch-pr-reviews.sh <pr>                     arm as a Monitor command
+#   watch-pr-reviews.sh <pr> --once             one poll, then exit (foreground test)
+#   watch-pr-reviews.sh <pr> --repo owner/name  explicit repo (else auto-detected)
+#   watch-pr-reviews.sh <pr> --interval 30      seconds between polls (default 45)
+#   watch-pr-reviews.sh <pr> --exclude LOGIN    skip a login (repeatable)
+#   watch-pr-reviews.sh <pr> --include-self     don't skip your own comments
+#   watch-pr-reviews.sh <pr> --continuous       keep emitting; don't exit on first
+#
+# By default it excludes the Copilot review bot and your own login, and EXITS 0
+# after the first new item so a `Monitor` fires once and stops (the common
+# "wake me when the review lands" case). Arm it with persistent:true.
+#
+#   Monitor(command: 'bash .claude/scripts/watch-pr-reviews.sh 247',
+#           description: 'reviews on PR #247', persistent: true)
+#
+# ponytail: gh + jq + a comm-based seen-file. No state DB, no extra deps.
+set -uo pipefail   # NOT -e: a transient gh failure must become POLL-FAIL, not an exit
+
+PR=""; REPO=""; INTERVAL=45; ONCE=0; CONTINUOUS=0; INCLUDE_SELF=0
+EXCLUDES=("copilot-pull-request-reviewer[bot]")
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repo) REPO="$2"; shift 2 ;;
+    --interval) INTERVAL="$2"; shift 2 ;;
+    --exclude) EXCLUDES+=("$2"); shift 2 ;;
+    --include-self) INCLUDE_SELF=1; shift ;;
+    --once) ONCE=1; shift ;;
+    --continuous) CONTINUOUS=1; shift ;;
+    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+    [0-9]*) PR="$1"; shift ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+[ -n "$PR" ] || { echo "usage: watch-pr-reviews.sh <pr> [--repo o/n] [--once] ..." >&2; exit 2; }
+
+[ -n "$REPO" ] || REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+[ -n "$REPO" ] || { echo "no repo: pass --repo owner/name (gh could not auto-detect)" >&2; exit 2; }
+
+if [ "$INCLUDE_SELF" = 0 ]; then
+  self="$(gh api user -q .login 2>/dev/null || true)"
+  [ -n "$self" ] && EXCLUDES+=("$self")
+fi
+# JSON array of excluded logins, embedded verbatim into the gh --jq programs (a
+# jq array literal of JSON strings is valid jq syntax). Built in pure bash: only
+# gh's BUILT-IN --jq is available here, not a standalone `jq` binary, and GitHub
+# logins are [A-Za-z0-9-]/`name[bot]` — no quotes or backslashes to escape.
+_ex=""
+for e in "${EXCLUDES[@]}"; do _ex="${_ex:+$_ex,}\"$e\""; done
+EX="[$_ex]"
+
+SEEN="${TMPDIR:-/tmp}/watch-pr-reviews.${REPO//\//_}.${PR}.seen"
+touch "$SEEN"
+
+# Emit new (id-deduped) items across all three surfaces; return 0 if any new.
+poll() {
+  local ok=1 r i s cur new
+  r=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+        --jq ".[] | select(.user.login as \$l | ($EX | index(\$l)) | not) | \"REVIEW \(.id) \(.user.login) \(.state)\"" 2>/dev/null) || ok=0
+  i=$(gh api --paginate "repos/$REPO/pulls/$PR/comments" \
+        --jq ".[] | select(.user.login as \$l | ($EX | index(\$l)) | not) | \"INLINE \(.id) \(.user.login) \(.path):\(.line // .original_line)\"" 2>/dev/null) || ok=0
+  s=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+        --jq ".[] | select(.user.login as \$l | ($EX | index(\$l)) | not) | \"ISSUE \(.id) \(.user.login)\"" 2>/dev/null) || ok=0
+  if [ "$ok" = 0 ]; then
+    echo "POLL-FAIL $(date -u +%H:%M:%S) (gh error querying $REPO#$PR)"
+    return 1
+  fi
+  cur="$(printf '%s\n%s\n%s\n' "$r" "$i" "$s" | grep -v '^$' | sort -u)"
+  new="$(comm -13 <(sort -u "$SEEN") <(printf '%s\n' "$cur"))"
+  printf '%s\n' "$cur" > "$SEEN"
+  if [ -n "$new" ]; then
+    printf 'NEW %s\n' "$new"
+    return 0
+  fi
+  return 1
+}
+
+if [ "$ONCE" = 1 ]; then poll; exit 0; fi
+while true; do
+  if poll && [ "$CONTINUOUS" = 0 ]; then exit 0; fi
+  sleep "$INTERVAL"
+done
