@@ -72,12 +72,20 @@ def write_cgpoints(points: Iterable[CgPoint], output_path: Path, *,
 
     *linear_unit* ("foot" / "USSurveyFoot" / "meter", per the LandXML-1.2
     ``impLinear``/``metLinear`` enums) emits a ``<Units>`` block; *crs*
-    (e.g. ``"EPSG:2256"``) emits ``<CoordinateSystem>`` with ``epsgCode``
-    when the string carries an EPSG number. Civil 3D reads both on import —
-    without them it assumes the drawing's units and can shift/scale the
-    points. Omitting both keeps the bare legacy output.
+    (e.g. ``"EPSG:2256"``) emits ``<CoordinateSystem>`` with ``epsgCode``.
+    A *crs* that carries no EPSG number raises ValueError — a name-only
+    ``<CoordinateSystem>`` is not machine-readable, so consumers would fall
+    back to the drawing's CRS while the file *looks* georeferenced (issue
+    #238). Civil 3D reads both blocks on import — without them it assumes
+    the drawing's units and can shift/scale the points. Omitting both keeps
+    the bare legacy output.
     """
     output_path = Path(output_path)
+    if crs and parse_epsg(crs) is None:
+        raise ValueError(
+            f"CRS {crs!r} carries no EPSG code (e.g. 'EPSG:2256'); a "
+            "<CoordinateSystem> without epsgCode is not machine-readable "
+            "on import.")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     now = datetime.now()
     root = ET.Element("LandXML", {
@@ -98,11 +106,8 @@ def write_cgpoints(points: Iterable[CgPoint], output_path: Path, *,
                 f"Unsupported LandXML linear unit {linear_unit!r}; expected "
                 f"one of {', '.join(SUPPORTED_LINEAR_UNITS)}.")
     if crs:
-        cs_attrs = {"name": crs}
-        epsg = parse_epsg(crs)
-        if epsg is not None:
-            cs_attrs["epsgCode"] = str(epsg)
-        ET.SubElement(root, "CoordinateSystem", cs_attrs)
+        ET.SubElement(root, "CoordinateSystem",
+                      {"name": crs, "epsgCode": str(parse_epsg(crs))})
     cg_points = ET.SubElement(root, "CgPoints")
     for pt in points:
         attrs = {"name": pt.name}

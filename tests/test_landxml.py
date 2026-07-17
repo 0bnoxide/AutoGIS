@@ -168,6 +168,17 @@ def test_write_cgpoints_legacy_bare_output(tmp_path):
     assert root.find("{*}CgPoints/{*}CgPoint") is not None
 
 
+def test_write_cgpoints_rejects_non_epsg_crs(tmp_path):
+    """A crs with no EPSG code would emit a name-only <CoordinateSystem>
+    that consumers can't read — refuse instead (issue #238)."""
+    from autogis.core.common.landxml import CgPoint, write_cgpoints
+
+    with pytest.raises(ValueError, match="EPSG"):
+        write_cgpoints([CgPoint("1", 1.0, 2.0, 3.0)], tmp_path / "pts.xml",
+                       crs="NAD83 State Plane")
+    assert not (tmp_path / "pts.xml").exists()
+
+
 @pytest.mark.parametrize("crs,expected", [
     ("EPSG:2256", 2256),
     ("epsg: 2256", 2256),

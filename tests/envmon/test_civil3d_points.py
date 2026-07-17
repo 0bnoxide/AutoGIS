@@ -120,6 +120,27 @@ def test_export_civil3d_landxml_requires_units(monkeypatch, tmp_path):
     )
     assert result.exit_code != 0
     assert "--units" in result.output
+    # usage errors must not leave a partial package (issue #238)
+    assert not (tmp_path / "out").exists()
+
+
+def test_export_civil3d_landxml_requires_epsg_crs(monkeypatch, tmp_path):
+    """--landxml with a non-EPSG --crs is a usage error before any artifact
+    is written — a name-only <CoordinateSystem> is not machine-readable
+    (issue #238)."""
+    _no_arcpy_monkeypatch(monkeypatch)
+    points = tmp_path / "points.csv"
+    points.write_text("location_id,x,y,z\nMW-1,1000.0,2000.0,512.5\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        autogis,
+        ["envmon", "export-civil3d",
+         "--points", str(points), "--crs", "NAD83 State Plane",
+         "--out-dir", str(tmp_path / "out"), "--landxml", "--units", "foot"],
+    )
+    assert result.exit_code != 0
+    assert "EPSG" in result.output
+    assert not (tmp_path / "out").exists()
 
 
 def test_write_pnezd_landxml(tmp_path):
