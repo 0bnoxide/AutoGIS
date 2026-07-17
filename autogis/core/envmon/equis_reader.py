@@ -14,6 +14,7 @@ arcpy-free; xlrd/openpyxl are lazy-imported in the sheet loaders only.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -257,7 +258,12 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
         _tag_stream(row, profile, qa, row_num)
         _synthesize_result(row, qa, row_num)
         _synthesize_qualifier(row)
-        _compose_dilution_key(row)
+        run_token = ""
+        if profile.test_sheet:
+            run_token = re.sub(r"\D", "",
+                               _get(row, _COL_ANALYSIS_DATE)
+                               + _get(row, _COL_ANALYSIS_TIME))
+        _compose_dilution_key(row, run_token)
         _route_limits(row, qa, row_num)
         _synthesize_reportable(row)
         _attach_batches(row, batch_index, batch_rows, sample_id, profile,
@@ -323,7 +329,7 @@ def _synthesize_qualifier(row: dict) -> None:
                                 or _get(row, _COL_QUAL_LAB))
 
 
-def _compose_dilution_key(row: dict) -> None:
+def _compose_dilution_key(row: dict, run_token: str = "") -> None:
     # Per-row fold (ADR-0080 determinism argument); WMRD's literal 'NA' nulls
     # normalized out so an undiluted INITIAL run keys compatibly with formats
     # that leave the columns blank.
@@ -338,6 +344,12 @@ def _compose_dilution_key(row: dict) -> None:
     # deterministic — a given physical row always keys the same.
     if row.get("__equis_stream") != "qc":
         parts.append(_na(_get(row, _COL_METHOD)))
+    # R9 (ADR XXXX): epar4's TST composite treats analysis date/time as the
+    # run identity, but neither survives into the frozen keys — the bounded
+    # token makes reanalyses key distinctly on both tables. Worst case
+    # (4 parts + method + 12 digits) stays far below the TEXT(64) guard.
+    if run_token:
+        parts.append(run_token)
     row["__equis_method_dilution_key"] = "|".join(p for p in parts if p)
 
 

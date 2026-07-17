@@ -297,3 +297,30 @@ def test_missing_test_entry_warns_and_imports():
                          [_res(analysis_time="09:00")], [_tst()])
     assert len(out) == 1                          # fail-safe: row imports
     assert [r for r in qa.records if r.category == "equis_missing_test"]
+
+
+def test_run_token_distinguishes_reanalyses():
+    # R9: two valid reanalyses differing only by analysis_time must compute
+    # distinct MethodDilutionKey values (frozen key part on both tables).
+    out, _ = _run_epar4(
+        [_equis_sample()],
+        [_res(analysis_time="10:00"), _res(analysis_time="14:30")],
+        [_tst(analysis_time="10:00"), _tst(analysis_time="14:30")])
+    keys = {r["__equis_method_dilution_key"] for r in out}
+    assert len(keys) == 2
+    # bounded digits-only token, e.g. ...|031720251000
+    assert any(k.endswith("031720251000") for k in keys)
+
+
+def test_run_token_absent_without_test_sheet():
+    # WMRD/mining/nysdec profiles (no test_sheet) — key recipe unchanged
+    out, _ = _run([_equis_sample()], [_equis_result()],
+                  profile=_wmrd_profile(batch_sheet=""))
+    assert "0317" not in out[0]["__equis_method_dilution_key"]
+
+
+def test_run_token_empty_dates_add_no_part():
+    out, _ = _run_epar4([_equis_sample()],
+                        [_res(analysis_date="", analysis_time="")],
+                        [_tst(analysis_date="", analysis_time="")])
+    assert not out[0]["__equis_method_dilution_key"].endswith("|")
