@@ -43,10 +43,15 @@ def _res(code, chem, cas, value, adate="03/17/2025", detect="Y",
 
 
 RESULTS = [
-    # two field samples analyzed on DIFFERENT dates -> R6 join picks the
-    # date-matching batch row
+    # SAME sample (N-001), two analytes, analyzed on DIFFERENT dates -> the
+    # batch join key (sample, method, fraction, col, test_type[, date]) does
+    # NOT include analyte, so both rows compete for the SAME batch rows.
+    # Without join_date (R6 reverted) the two ANALYSIS batch rows below
+    # collapse onto one 5-col key and last-write-wins -- this is what makes
+    # the ambiguity genuine (N-001 vs N-002 would already disambiguate on
+    # sample_id alone, which doesn't exercise R6 at all).
     _res("N-001", "Lead", "7439-92-1", "12.4", adate="03/17/2025"),
-    _res("N-002", "Lead", "7439-92-1", "8.1", adate="03/18/2025"),
+    _res("N-001", "Copper", "7440-50-8", "3.2", adate="03/18/2025"),
     # lab blank -> QC stream; ND
     _res("LB-1", "Lead", "7439-92-1", "", adate="03/17/2025", detect="N"),
 ]
@@ -58,9 +63,11 @@ BATCHES = [
     # uppercase types (rt_test_batch_type) — case-insensitive match (R5)
     ["N-001", "E200.8", "03/17/2025", "T", "NA", "INITIAL",
      "PREP", "PB-1"],
+    # two ANALYSIS batch rows for N-001, IDENTICAL except analysis_date --
+    # the R6 case: without date in the join composite these collide.
     ["N-001", "E200.8", "03/17/2025", "T", "NA", "INITIAL",
      "ANALYSIS", "AB-1"],
-    ["N-002", "E200.8", "03/18/2025", "T", "NA", "INITIAL",
+    ["N-001", "E200.8", "03/18/2025", "T", "NA", "INITIAL",
      "ANALYSIS", "AB-2"],
     ["LB-1", "E200.8", "03/17/2025", "T", "NA", "INITIAL",
      "ANALYSIS", "AB-1"],

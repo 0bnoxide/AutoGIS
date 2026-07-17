@@ -50,24 +50,29 @@ def test_stream_split_and_keys():
 def test_r6_date_extended_join_and_uppercase_types():
     # NOTE (brief deviation): AnalyticalResultRecord has no
     # PrepBatchID/AnalysisBatchID fields (batch ids are QC-only per
-    # gdb_schema.py QCResultRecord), so the R6 join outcome for N-001/N-002
-    # can't be asserted off the analytical rows directly. Verify at the
-    # reader level instead: read_edd_file's raw rows carry the
+    # gdb_schema.py QCResultRecord), so the R6 join outcome can't be
+    # asserted off the analytical rows directly. Verify at the reader
+    # level instead: read_edd_file's raw rows carry the
     # __equis_prep_batch / __equis_analysis_batch synthesized columns
-    # before normalize_edd_rows drops them, so we can confirm N-001 got
-    # the uppercase-PREP batch (R5) and N-002 got the date-discriminated
-    # ANALYSIS batch (R6) at the point they're actually attached. We also
-    # confirm no missing-batch QA issue was raised for either sample.
+    # before normalize_edd_rows drops them.
+    #
+    # Both rows below are the SAME sample (N-001) so the batch join
+    # composite (which does not include analyte) sees two competing
+    # ANALYSIS batch rows that are identical except analysis_date -- this
+    # is what makes the ambiguity genuine (same-sample rows sharing
+    # method/fraction/test_type but differing only by date). Without R6
+    # (join_date) the two batch rows collapse onto one key and
+    # last-write-wins, so this fails if R6 is reverted.
     qa = QACollector()
     profile = LabEDDProfile.load(PROFILE)
     rows = read_edd_file(FIXTURE, profile, qa)
-    data_rows = {r["sys_sample_code"]: r for r in rows
+    data_rows = {r["chemical_name"]: r for r in rows
                  if r.get("__equis_stream") != "qc"}
-    n1 = data_rows["N-001"]
-    n2 = data_rows["N-002"]
-    assert n1["__equis_prep_batch"] == "PB-1"        # uppercase PREP matched
-    assert n1["__equis_analysis_batch"] == "AB-1"
-    assert n2["__equis_analysis_batch"] == "AB-2"    # date-discriminated (R6)
+    lead = data_rows["Lead"]
+    copper = data_rows["Copper"]
+    assert lead["__equis_prep_batch"] == "PB-1"       # uppercase PREP matched
+    assert lead["__equis_analysis_batch"] == "AB-1"
+    assert copper["__equis_analysis_batch"] == "AB-2"  # date-discriminated (R6)
     assert not [r for r in qa.records if r.category == "equis_missing_batch"]
 
 
