@@ -10,11 +10,18 @@
 # surprise uncommitted changes on read-only main). To apply an update: run this
 # with no args, then commit on a feature branch.
 #
-#   sync-ponytail-skills.sh            copy latest plugin skills into the repo
+#   sync-ponytail-skills.sh            mirror latest plugin skills into the repo
 #   sync-ponytail-skills.sh --check    report drift only, no writes (exit 1 = drift)
 #
-# ponytail: plain cp + diff -rq, no version pinning cleverness — take the
-# highest installed version dir and mirror the ponytail* skills verbatim.
+# It is a true MIRROR of every ponytail* skill under the vendor dir: files
+# deleted upstream are removed (per-skill clean recreate) and skills removed
+# upstream (destination-only ponytail* dirs) are pruned — so "synced"/"clean"
+# never hide an upstream deletion. The vendor dir's ponytail* dirs are treated
+# as plugin-managed; other skills there are never touched.
+#
+# Env overrides (for tests): PONYTAIL_CACHE_ROOT, PONYTAIL_VENDOR_DIR.
+# ponytail: plain rm+cp mirror + diff -rq, no version-pinning cleverness — take
+# the highest installed version dir.
 set -euo pipefail
 
 CHECK=0
@@ -22,10 +29,10 @@ CHECK=0
 
 # Repo checkout that owns this script: .claude/scripts/ -> repo root is ../..
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DST="$(cd "$SCRIPT_DIR/../.." && pwd)/.claude/skills"
+DST="${PONYTAIL_VENDOR_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)/.claude/skills}"
 
 # Locally installed plugin cache (user-scope; absent on cloud/other machines).
-CACHE_ROOT="$HOME/.claude/plugins/cache/ponytail/ponytail"
+CACHE_ROOT="${PONYTAIL_CACHE_ROOT:-$HOME/.claude/plugins/cache/ponytail/ponytail}"
 if [ ! -d "$CACHE_ROOT" ]; then
   # Silent in --check mode: absent plugin is the expected state on cloud/CI,
   # where the vendored files ARE the source. Only speak up on an explicit run.
@@ -42,18 +49,38 @@ if [ -z "$VER" ] || [ ! -d "$SRC" ]; then
 fi
 
 drift=0
+
+# Pass 1: every skill the plugin ships -> mirror into the vendor dir.
 for skill_dir in "$SRC"/ponytail*/; do
-  [ -d "$skill_dir" ] || continue
+  [ -d "$skill_dir" ] || continue          # unmatched glob stays literal
   name="$(basename "$skill_dir")"
   if [ "$CHECK" = 1 ]; then
+    # diff -r also reports vendor-only files inside the skill, so an upstream
+    # file deletion shows up as drift here too.
     if ! diff -rq "$skill_dir" "$DST/$name/" >/dev/null 2>&1; then
       echo "DRIFT: vendored $name differs from plugin $VER" >&2
       drift=1
     fi
   else
+    rm -rf "$DST/$name"                     # clean recreate = drop upstream-deleted files
     mkdir -p "$DST/$name"
     cp -R "$skill_dir." "$DST/$name/"
     echo "synced $name <- plugin $VER"
+  fi
+done
+
+# Pass 2: ponytail* skills present in the vendor dir but no longer in the plugin
+# -> prune them (a source-only loop would report success/clean and leave them).
+for dst_dir in "$DST"/ponytail*/; do
+  [ -d "$dst_dir" ] || continue
+  name="$(basename "$dst_dir")"
+  [ -d "$SRC/$name" ] && continue          # still shipped upstream
+  if [ "$CHECK" = 1 ]; then
+    echo "DRIFT: vendored $name not in plugin $VER (removed upstream)" >&2
+    drift=1
+  else
+    rm -rf "$dst_dir"
+    echo "removed $name (no longer in plugin $VER)"
   fi
 done
 
