@@ -43,6 +43,7 @@ _COL_SAMPLE_TYPE = "sample_type_code"
 _COL_SAMPLE_SOURCE = "sample_source"
 _COL_BATCH_TYPE = "test_batch_type"
 _COL_BATCH_ID = "test_batch_id"
+_COL_ANALYSIS_DATE = "analysis_date"
 
 
 def _get(row: dict, col: str) -> str:
@@ -196,11 +197,16 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
     # case-sensitive join flooded every row with equis_missing_batch.
     # Batch type keys are also casefolded to handle NYSDEC's uppercase PREP/ANALYSIS
     # and Mining's enum records.
+    # R6: NYSDEC's Batch_v5 adds analysis_date to the 5-column composite;
+    # WMRD's 5-column join is byte-identical when the column is absent.
+    join_date = bool(batch_rows and _COL_ANALYSIS_DATE in batch_rows[0]
+                     and result_rows and _COL_ANALYSIS_DATE in result_rows[0])
     batch_index: dict[tuple, dict] = {}
     for b in batch_rows:
         key = (_get_sample_id(b, profile), _get(b, _COL_METHOD),
                _get(b, _COL_FRACTION), _get(b, _COL_COLUMN_NUM),
-               _get(b, _COL_TEST_TYPE).casefold())
+               _get(b, _COL_TEST_TYPE).casefold()) \
+            + ((_get(b, _COL_ANALYSIS_DATE),) if join_date else ())
         batch_index.setdefault(key, {})[
             _get(b, _COL_BATCH_TYPE).casefold()] = _get(b, _COL_BATCH_ID)
 
@@ -226,7 +232,7 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
         _route_limits(row, qa, row_num)
         _synthesize_reportable(row)
         _attach_batches(row, batch_index, batch_rows, sample_id, profile,
-                        qa, row_num)
+                        qa, row_num, join_date)
         out.append(row)
     return out
 
@@ -351,12 +357,13 @@ def _synthesize_reportable(row: dict) -> None:
 
 def _attach_batches(row: dict, batch_index: dict, batch_rows: list[dict],
                     sample_id: str, profile, qa: QACollector,
-                    row_num: int) -> None:
+                    row_num: int, join_date: bool = False) -> None:
     if not batch_rows:
         _attach_inline_batch(row, qa, row_num)
         return
     key = (sample_id, _get(row, _COL_METHOD), _get(row, _COL_FRACTION),
-           _get(row, _COL_COLUMN_NUM), _get(row, _COL_TEST_TYPE).casefold())
+           _get(row, _COL_COLUMN_NUM), _get(row, _COL_TEST_TYPE).casefold()) \
+        + ((_get(row, _COL_ANALYSIS_DATE),) if join_date else ())
     hit = batch_index.get(key, {})
     row["__equis_prep_batch"] = hit.get("prep", "")
     row["__equis_analysis_batch"] = hit.get("analysis", "")

@@ -190,3 +190,38 @@ def test_no_batch_columns_no_warn():
     assert out[0]["__equis_analysis_batch"] == ""
     assert not any(r.category == "equis_unknown_batch_type"
                    for r in qa.records)
+
+
+def _batch(**over):
+    row = {"sys_sample_code": "S-1", "lab_anl_method_name": "E200.8",
+           "fraction": "T", "column_number": "NA", "test_type": "INITIAL",
+           "test_batch_type": "Analysis", "test_batch_id": "AB-1"}
+    row.update(over)
+    return row
+
+
+def test_batch_join_extends_with_analysis_date_when_both_carry_it():
+    # NYSDEC Batch_v5: two batches for the same test differing only by date
+    batches = [_batch(analysis_date="03/17/2025", test_batch_id="AB-1"),
+               _batch(analysis_date="03/18/2025", test_batch_id="AB-2")]
+    out, _ = _run([_equis_sample()],
+                  [_equis_result(analysis_date="03/18/2025")],
+                  batches, profile=_wmrd_profile())
+    assert out[0]["__equis_analysis_batch"] == "AB-2"
+
+
+def test_batch_join_stays_5col_when_batch_lacks_analysis_date():
+    # WMRD Batch_v1 has no analysis_date: result date must NOT enter the key
+    out, _ = _run([_equis_sample()],
+                  [_equis_result(analysis_date="03/18/2025")],
+                  [_batch()], profile=_wmrd_profile())
+    assert out[0]["__equis_analysis_batch"] == "AB-1"
+
+
+def test_batch_join_date_mismatch_warns_missing():
+    batches = [_batch(analysis_date="03/17/2025")]
+    out, qa = _run([_equis_sample()],
+                   [_equis_result(analysis_date="03/18/2025")],
+                   batches, profile=_wmrd_profile())
+    assert out[0]["__equis_analysis_batch"] == ""
+    assert [r for r in qa.records if r.category == "equis_missing_batch"]
