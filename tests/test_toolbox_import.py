@@ -38,5 +38,6 @@ def test_redirect_only_pyt_tools_use_shared_run_recorder():
         "ReconcileSampleLocations": "reconcile-locations",
         "ConditionDEM": "condition-dem",
         "CompareDroneSurfaces": "compare-drone-surfaces",
+        "ExportContoursForCivil3D": "export-civil3d",
         "BuildCADExportPackage": "build-cad-package",
     }

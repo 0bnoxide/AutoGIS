@@ -67,3 +67,47 @@ lighter-weight cross-session claim signal for issue-level work (e.g., a
 "claiming this" comment on the GitHub issue itself before starting), since
 GitHub issues are the one piece of state genuinely shared across independent
 cloud sessions, unlike the local coordination registry.
+
+## Stage CAD fields on copies, not source feature classes
+
+**Decision:** Copy every selected feature layer to the scratch geodatabase,
+add and populate reserved CAD fields there, export the staged copies, and
+delete them in `finally`.
+
+**Reasoning:** `AddCADFields` changes its input. Applying it directly would
+silently mutate project data for a packaging operation. Scratch staging keeps
+the export repeatable and preserves feature selections through `CopyFeatures`.
+
+**Revisit if:** Esri adds an `ExportCAD` mapping parameter that can set
+per-layer name, color, and linetype without modifying inputs.
+
+## Export the reviewed TIN rather than duplicate contours
+
+**Decision:** Export an existing Pro TIN as LandXML `<Pnts>` and `<Faces>` and
+let Civil 3D derive contours from that surface. Do not also emit contour
+polylines in this issue.
+
+**Reasoning:** The triangulation is the authoritative surface and Autodesk
+documents preservation of its faces on full LandXML import. A second contour
+artifact can disagree with the surface and is unnecessary for Civil 3D's
+surface workflow.
+
+**Revisit if:** A consumer requires standalone breaklines without importing a
+surface, or a verified handoff example demonstrates that derived contours do
+not meet its contract.
+
+## Fail closed on license and coordinate ambiguity
+
+**Decision:** Require a matching horizontal EPSG/unit, reject a defined
+mismatched or positive-down vertical coordinate system, and acquire the 3D
+Analyst license before extracting triangles.
+
+**Reasoning:** A valid-looking LandXML file with mislabeled coordinates is
+worse than no file. When no VCS is defined, the user's explicit unit remains
+the only available source of truth; when one is defined, the adapter can and
+does verify it.
+
+**Revisit if:** The tool gains an explicit, reviewed vertical-unit conversion
+or vertical transformation workflow.
+
+Related architectural record: [ADR-0089](../0089-cad-layer-properties-and-civil3d-tin-landxml.md).

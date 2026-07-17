@@ -108,6 +108,14 @@ def test_write_mapping_report(tmp_path):
     assert "contours,C-TOPO-MAJR,," in lines
 
 
+def test_write_mapping_report_preserves_zero_color(tmp_path):
+    plan = resolve_cad_plan(
+        ["wells"], {"wells": {"cad_layer": "V-WELL", "color": 0}},
+        crs="EPSG:2256")
+    out = write_mapping_report(plan, tmp_path / "mapping_report.csv")
+    assert "wells,V-WELL,0," in out.read_text(encoding="utf-8").splitlines()
+
+
 def test_build_cad_package_guard_headless(monkeypatch, tmp_path):
     _no_arcpy_monkeypatch(monkeypatch)
     layers = tmp_path / "layers.txt"

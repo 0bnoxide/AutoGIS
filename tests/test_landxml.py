@@ -190,3 +190,47 @@ def test_write_cgpoints_rejects_non_epsg_crs(tmp_path):
 def test_parse_epsg(crs, expected):
     from autogis.core.common.landxml import parse_epsg
     assert parse_epsg(crs) == expected
+
+
+def test_write_landxml_surface_round_trips_points_faces_crs_and_units(tmp_path):
+    import xml.etree.ElementTree as ET
+    from autogis.core.common.landxml import write_landxml_surface
+
+    surface = LandXMLSurface(
+        name="Groundwater",
+        points={
+            1: (2000.0, 1000.0, 512.5),
+            2: (2000.0, 1010.0, 513.0),
+            3: (2010.0, 1000.0, 514.0),
+        },
+        faces=[(1, 2, 3)],
+    )
+    out = write_landxml_surface(
+        surface, tmp_path / "surface.xml",
+        crs="EPSG:2256", linear_unit="USSurveyFoot")
+
+    parsed = parse_landxml_surface(out)
+    assert parsed == surface
+    root = ET.parse(out).getroot()
+    assert root.find("{*}Units/{*}Imperial").get("linearUnit") == "USSurveyFoot"
+    assert root.find("{*}CoordinateSystem").get("epsgCode") == "2256"
+    assert root.find("{*}Surfaces/{*}Surface").get("name") == "Groundwater"
+
+
+@pytest.mark.parametrize("surface,match", [
+    (LandXMLSurface(name="", points={1: (0, 0, 0)}, faces=[(1, 1, 1)]), "name"),
+    (LandXMLSurface(name="TIN", points={}, faces=[]), "no points"),
+    (LandXMLSurface(name="TIN", points={1: (0, 0, 0)}, faces=[]), "no faces"),
+    (LandXMLSurface(name="TIN", points={1: (0, 0, 0)}, faces=[(1, 2, 3)]),
+     "unknown point"),
+    (LandXMLSurface(name="TIN", points={1: (0, 0, 0)}, faces=[(1, 1, 1)]),
+     "distinct points"),
+    (LandXMLSurface(name="TIN", points={1: (0, 0, float("nan"))},
+                    faces=[(1, 2, 3)]),
+     "finite coordinates"),
+])
+def test_write_landxml_surface_rejects_invalid_tin(tmp_path, surface, match):
+    from autogis.core.common.landxml import write_landxml_surface
+    with pytest.raises(ValueError, match=match):
+        write_landxml_surface(
+            surface, tmp_path / "surface.xml", crs="EPSG:2256", linear_unit="foot")

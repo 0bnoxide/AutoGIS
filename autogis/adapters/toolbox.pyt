@@ -73,6 +73,7 @@ class Toolbox(object):
             ReconcileSampleLocations,
             ConditionDEM,
             CompareDroneSurfaces,
+            ExportContoursForCivil3D,  # tool 8.2 TIN -> LandXML surface
             BuildCADExportPackage,   # tool 8.9
             DownloadOpenTopoDEM,     # OpenTopography DEM fetch + add-to-map
         ]
@@ -967,12 +968,9 @@ _CAD_OUTPUT_TYPES = (
 class BuildCADExportPackage(object):
     """Tool 8.9 — export GIS layers to a CAD package (arcpy Export To CAD).
 
-    CAD layer names in the exported file follow the source feature class
-    names; ``arcpy.conversion.ExportCAD`` doesn't rename them from the
-    GIS->CAD mapping config on its own (that needs Add CAD Fields + a field
-    calculate, not wired here -- see issue #166). ``mapping_report.csv`` is
-    written alongside the CAD file as the intended-mapping record for manual
-    reclassification.
+    Scratch copies receive ArcGIS's reserved CAD layer-property fields before
+    export, so the mapping config controls CAD layer name/color/linetype
+    without modifying the source feature classes (ADR-0089).
     """
 
     def __init__(self):
@@ -1062,19 +1060,62 @@ class BuildCADExportPackage(object):
         report_path = write_mapping_report(plan, export_dir / "mapping_report.csv")
 
         output_type = p["output_type"].valueAsText or "DWG_R2018"
-        # Pin the Output Coordinate System environment to the validated
-        # source EPSG so an ambient env setting can't silently reproject
-        # the export (Export To CAD honors that environment; issue #238).
-        with arcpy.EnvManager(
-                outputCoordinateSystem=arcpy.SpatialReference(epsg)):
-            arcpy.conversion.ExportCAD(layer_paths, output_type, output_file)
+        with toolbox_core.staged_cad_layers(
+                arcpy, layer_paths, plan.mappings) as staged_layers:
+            # Pin the Output Coordinate System environment to the validated
+            # source EPSG so an ambient env setting can't silently reproject
+            # the export (Export To CAD honors that environment; issue #238).
+            with arcpy.EnvManager(
+                    outputCoordinateSystem=arcpy.SpatialReference(epsg)):
+                arcpy.conversion.ExportCAD(
+                    staged_layers, output_type, output_file)
 
         messages.addMessage(f"Exported {len(layer_paths)} layer(s) -> {output_file} ({output_type}).")
         messages.addMessage(f"Mapping report -> {report_path}")
-        messages.addWarningMessage(
-            "CAD layer names follow the source feature class names -- the "
-            "GIS->CAD rename in mapping_report.csv is not yet applied to the "
-            "CAD file itself (see issue #166).")
+        messages.addMessage("Applied mapped CAD layer names/properties to the exported file.")
+
+
+class ExportContoursForCivil3D(object):
+    """Tool 8.2 — export an existing ArcGIS TIN as a LandXML TIN surface."""
+
+    def __init__(self):
+        self.label = "8.2 Export Civil 3D TIN LandXML"
+        self.description = (
+            "Export an existing ArcGIS TIN to a coordinate-aware LandXML "
+            "surface. Civil 3D imports the preserved triangle faces and can "
+            "generate contour polylines from the resulting surface.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("input_tin", "Input TIN surface", "GPTinLayer"),
+            _param("surface_name", "Civil 3D surface name", "GPString"),
+            _param("crs", "Coordinate system of the TIN (e.g. EPSG:2256; "
+                   "validated against the input)", "GPString"),
+            _param("units", "Horizontal and elevation units", "GPString",
+                   default="USSurveyFoot",
+                   domain=("foot", "USSurveyFoot", "meter")),
+            _param("output_file", "Output LandXML surface", "DEFile",
+                   direction="Output"),
+        ]
+
+    @toolbox_core.record_pyt_run(
+        "export-civil3d", gdb_param="input_tin", site_config_param=None)
+    def execute(self, parameters, messages):
+        p = {q.name: q for q in parameters}
+        try:
+            output = toolbox_core.export_tin_landxml(
+                arcpy,
+                p["input_tin"].valueAsText,
+                Path(p["output_file"].valueAsText),
+                surface_name=p["surface_name"].valueAsText,
+                crs=p["crs"].valueAsText,
+                linear_unit=p["units"].valueAsText,
+            )
+        except ValueError as exc:
+            messages.addErrorMessage(str(exc))
+            return
+        messages.addMessage(f"Civil 3D LandXML TIN surface -> {output}")
 
 
 class DownloadOpenTopoDEM(object):

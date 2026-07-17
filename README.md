@@ -100,7 +100,7 @@ OpenTopography DEM ADR-0078, Civil3D/CAD arcpy legs ADR-0088)).
 | [AuditAGOLItemDependencies](autogis/core/agol/audit_dependencies.py) | 6.9 | `agol audit-dependencies` | Tool 6.9: find items that reference/depend on an AGOL item (HYBRID) |
 | [PromoteAGOLDataBetweenStages](autogis/core/agol/promote.py) | 6.10 | `agol promote` | Tool 6.10: promote an AGOL layer's data between DEV/QA/PROD stages |
 | [UpdateWellElevationsFromLevelLoop](autogis/core/envmon/level_loop.py) | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* | Tool 8.2: push a closed level-loop run's elevations to MonitoringWells.TOC_ft |
-| [ExportContoursForCivil3D](autogis/core/envmon/civil3d_points.py) | 8.2 | `envmon export-civil3d` | Tool 8.2: PNEZD point CSV + projection note + `--landxml` CgPoints export, all headless (ADR-0088); contour polylines/TIN surface still need ArcGIS Pro — see issue #166 |
+| [ExportContoursForCivil3D](autogis/core/envmon/civil3d_points.py) | 8.2 | `envmon export-civil3d` | Tool 8.2: PNEZD point CSV + projection note + `--landxml` CgPoints export, all headless (ADR-0088); the `.pyt` tool exports an existing Pro TIN as a triangulated LandXML surface (ADR-0089) |
 | [GenerateSubsurfaceProfileFromBorings](autogis/core/envmon/generate_subsurface_profile.py) | — | `envmon generate-subsurface-profile` | Render a subsurface profile figure from borings projected onto a line (headless; `profile` extra for matplotlib) |
 | [DraftLithologyFromScan](autogis/core/envmon/draft_lithology_from_scan.py) | — | `envmon draft-lithology-from-scan` (DRAFT, unreviewed OCR output) | Draft a lithology CSV from a scanned boring log via a Table-Transformer + TrOCR pipeline (ADR-0074, headless; `ocr` extra) |
 | [UpdateAGOLWebMapFromFigureSpec](autogis/core/agol/webmap.py) | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) | Tool 6.3: push a figure spec's display config into an AGOL web map |
@@ -156,7 +156,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ImportDroneProducts](autogis/core/envmon/import_drone_products.py) | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) | Tool 8.8: import drone deliverables to raster catalog + GCP table (ArcGIS Pro) |
 | [ImportFieldBoringLogs](autogis/core/envmon/import_boring_logs.py) | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) | Tool 8.0b: import a boring-log CSV package into the GDB (ArcGIS Pro) |
 | [BuildDashboardDataMart](autogis/core/envmon/dashboard_data_mart.py) | 6.7 | `envmon build-dashboard-data-mart` | Tool 6.7: truncate + repopulate the Dash_* mart tables (ArcGIS Pro) |
-| [BuildCADExportPackage](autogis/core/envmon/cad_layer_map.py) | 8.9 | `envmon build-cad-package` (guards + redirects to the `.pyt` toolbox) | Tool 8.9: export GIS layers to a DWG/DXF CAD file via arcpy Export-to-CAD (ADR-0088) + a projection note and mapping report; CAD layer rename from the mapping config isn't applied to the file yet — see issue #166 |
+| [BuildCADExportPackage](autogis/core/envmon/cad_layer_map.py) | 8.9 | `envmon build-cad-package` (guards + redirects to the `.pyt` toolbox) | Tool 8.9: export GIS layers to DWG/DXF with mapped CAD layer name/color/linetype on scratch copies, plus a projection note and mapping report (ADRs 0088–0089) |
 | [DEMConditioningPipeline](autogis/core/envmon/dem_conditioning.py) | — | `envmon condition-dem` (config validated headless; guards + redirects to the `.pyt` toolbox) | Void-fill/smooth a drone flight's DEM and derive hillshade/slope/contours (ArcGIS Pro) |
 | [CompareDroneSurfaces](autogis/core/envmon/compare_drone_surfaces.py) | — | `envmon compare-drone-surfaces` (args validated headless; guards + redirects to the `.pyt` toolbox) | Raster-diff a drone DEM against a prior flight or a LandXML design surface (ArcGIS Pro) |
 | [UpdateLayoutDynamicText](autogis/core/envmon/layout_manager.py) | 5.8 | `envmon update-layout-text` (CLI-first per ADR-0039; wraps the shipped `layout_manager.update_layout_text`) | Tool 5.8: update APRX layout text elements from a YAML values file (ArcGIS Pro) |
@@ -343,7 +343,7 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon well-inspection-report` | CLOUD | `core/envmon/well_inspection_report.py` |
 | `autogis envmon generate-inspection-report` | CLOUD | `core/envmon/well_inspection_photo_report.py` (photo embedding needs Pillow) |
 | `autogis envmon download-dem` | CLOUD | `core/envmon/opentopo.py` (`.pyt` add-to-map/reproject path is LOCAL) |
-| `autogis envmon export-civil3d` | CLOUD | `core/envmon/civil3d_points.py` (PNEZD CSV + `--landxml` CgPoints, both headless, ADR-0088; contour/TIN leg needs Pro, not yet built — #166) |
+| `autogis envmon export-civil3d` | CLOUD | `core/envmon/civil3d_points.py` (PNEZD CSV + `--landxml` CgPoints, both headless, ADR-0088; existing TIN surface export is available in the Pro `.pyt` toolbox, ADR-0089) |
 | `autogis envmon generate-subsurface-profile` | CLOUD | `core/envmon/generate_subsurface_profile.py` (`profile` extra for matplotlib) |
 | `autogis envmon draft-lithology-from-scan` | CLOUD | `core/envmon/draft_lithology_from_scan.py` (DRAFT; `ocr` extra) |
 
@@ -466,7 +466,7 @@ autogis envmon validate-rtk-survey <headerless_points.csv> --format penzd --repo
 autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
 autogis envmon rtk-control-check --control-points <control.csv> --horizontal-tolerance-ft 0.05 --vertical-tolerance-ft 0.10
 autogis envmon export-survey-cad <points.csv> --feature-code-map <map.yaml> --output-dir <out>
-autogis envmon export-civil3d --points <gwe_points.csv> --crs EPSG:2256 --out-dir <out> --landxml --units foot   # --landxml is headless (ADR-0088; --units required so Civil 3D imports without a unit shift); contours/TIN still need Pro
+autogis envmon export-civil3d --points <gwe_points.csv> --crs EPSG:2256 --out-dir <out> --landxml --units foot   # headless point export; use the .pyt tool for an existing Pro TIN surface (ADRs 0088–0089)
 autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --maintenance-log-csv <log.csv>
 autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --format html   # photo grid (ADR-0083)
 autogis envmon generate-inspection-report --inspections <inspections.csv> --manifest <manifest.csv> --harvest-dir <dir> --site <id> --out <report.xlsx>
