@@ -165,10 +165,24 @@ def _cell_text(cell, datemode: int) -> str:
     return str(cell.value).strip()
 
 
+def _apply_source_aliases(rows: list[dict], aliases: dict[str, str]) -> None:
+    """R3: bridge a dialect's renamed source columns onto the EQuIS names the
+    ``_COL_*`` synthesis rules read. The source key is kept — profile
+    ``columns:`` maps may still reference it. Applied after R2 (keys are
+    already casefolded), before any synthesis."""
+    for row in rows:
+        for src, dst in aliases.items():
+            if src in row and dst not in row:
+                row[dst] = row[src]
+
+
 def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
                            batch_rows: list[dict], profile,
                            qa: QACollector) -> list[dict]:
     """Join + synthesize; returns flat rows, QC rows tagged __equis_stream."""
+    if profile.source_aliases:
+        for rows in (sample_rows, result_rows, batch_rows):
+            _apply_source_aliases(rows, profile.source_aliases)
     sample_index = {}
     for s in sample_rows:
         key = profile.resolve_column(s, "sample_id")
