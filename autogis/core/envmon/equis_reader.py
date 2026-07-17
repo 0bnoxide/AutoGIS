@@ -7,11 +7,10 @@ column->canonical mapping in the profile YAML (ADR-0080 pattern). Lab-QC rows
 forked by run_edd_import into Env_QCResults.
 
 Column constants target the EQuIS v1 dialect family (wmrd/epar4/nysdec) —
-verified against the real B25030623 WMRD export 2026-07-10. Mining's renamed
-cousins are a later slice.
+verified against the real B25030623 WMRD export 2026-07-10.
 
 Spec: docs/superpowers/specs/2026-07-10-edd-step3-equis-wmrd-design.md.
-arcpy-free; xlrd is lazy-imported in read_equis_xls only.
+arcpy-free; xlrd/openpyxl are lazy-imported in the sheet loaders only.
 """
 from __future__ import annotations
 
@@ -56,33 +55,99 @@ def _na(val: str) -> str:
     return "" if val.upper() == "NA" else val
 
 
+def _norm_header(text: str) -> str:
+    """R2: casefold + strip ONE leading '#' (the template 'not uploaded'
+    marker). No-op for the real WMRD export (lowercase, plain headers)."""
+    text = text.strip()
+    if text.startswith("#"):
+        text = text[1:]
+    return text.casefold()
+
+
 def read_equis_xls(path: Path, profile,
                    qa: Optional[QACollector] = None) -> list[dict]:
-    """Read a legacy .xls EQuIS EDD and return transformed flat row dicts."""
+    """Read an EQuIS EDD (.xls via xlrd, .xlsx via openpyxl — R1) and return
+    transformed flat row dicts. The format id stays ``equis_xls``; the
+    profile key, not the extension, selects this reader."""
     qa = qa if qa is not None else QACollector()
+    path = Path(path)
+    loader = (_load_xlsx_sheets if path.suffix.casefold() == ".xlsx"
+              else _load_xls_sheets)
+    sheets = loader(path, [profile.sample_sheet, profile.result_sheet,
+                           profile.batch_sheet])
+    return transform_equis_sheets(sheets.get(profile.sample_sheet, []),
+                                  sheets.get(profile.result_sheet, []),
+                                  sheets.get(profile.batch_sheet, []),
+                                  profile, qa)
+
+
+def _load_xls_sheets(path: Path, names: list[str]) -> dict[str, list[dict]]:
     import xlrd  # required dep, lazy so nothing else pays the import
-
     wb = xlrd.open_workbook(str(path))
-
-    def _sheet_to_dicts(name: str) -> list[dict]:
+    out: dict[str, list[dict]] = {}
+    for name in names:
+        if not name:
+            continue
         sheet = wb.sheet_by_name(name)
         if sheet.nrows == 0:
-            return []
-        headers = [_cell_text(c, wb.datemode) for c in sheet.row(0)]
-        out = []
+            out[name] = []
+            continue
+        headers = [_norm_header(_cell_text(c, wb.datemode))
+                   for c in sheet.row(0)]
+        rows = []
         for r in range(1, sheet.nrows):
             row = {h: _cell_text(c, wb.datemode)
                    for h, c in zip(headers, sheet.row(r)) if h}
             row["__sheet_row"] = r + 1   # 1-based, header = row 1
-            out.append(row)
-        return out
+            rows.append(row)
+        out[name] = rows
+    return out
 
-    sample_rows = _sheet_to_dicts(profile.sample_sheet)
-    result_rows = _sheet_to_dicts(profile.result_sheet)
-    batch_rows = (_sheet_to_dicts(profile.batch_sheet)
-                  if profile.batch_sheet else [])
-    return transform_equis_sheets(sample_rows, result_rows, batch_rows,
-                                  profile, qa)
+
+def _load_xlsx_sheets(path: Path, names: list[str]) -> dict[str, list[dict]]:
+    import openpyxl  # required dep, lazy (R1)
+    wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+    try:
+        out: dict[str, list[dict]] = {}
+        for name in names:
+            if not name:
+                continue
+            rows_iter = wb[name].iter_rows(values_only=True)
+            first = next(rows_iter, None)
+            if first is None:
+                out[name] = []
+                continue
+            headers = [_norm_header(_xlsx_cell_text(v)) for v in first]
+            rows = []
+            for r, values in enumerate(rows_iter, start=2):
+                row = {h: _xlsx_cell_text(v)
+                       for h, v in zip(headers, values) if h}
+                row["__sheet_row"] = r
+                rows.append(row)
+            out[name] = rows
+        return out
+    finally:
+        wb.close()
+
+
+def _xlsx_cell_text(value) -> str:
+    """Normalize one openpyxl cell value to the same text contract as
+    _cell_text: dates -> %m/%d/%Y [%H:%M], times -> %H:%M, int-valued floats
+    without the .0 artifact, everything else stripped str."""
+    import datetime
+    if value is None:
+        return ""
+    if isinstance(value, datetime.datetime):
+        return (value.strftime("%m/%d/%Y %H:%M")
+                if (value.hour or value.minute)
+                else value.strftime("%m/%d/%Y"))
+    if isinstance(value, datetime.date):
+        return value.strftime("%m/%d/%Y")
+    if isinstance(value, datetime.time):
+        return value.strftime("%H:%M")
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
 
 
 def _cell_text(cell, datemode: int) -> str:
