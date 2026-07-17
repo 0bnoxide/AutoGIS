@@ -31,7 +31,7 @@ class _Cursor:
 
 class _FakeArcPy:
     def __init__(self, tmp_path, triangle_rows=(), license_status="Available",
-                 vertical_reference=None):
+                 vertical_reference=None, checkout_status="CheckedOut"):
         self.env = SimpleNamespace(scratchGDB=str(tmp_path / "scratch.gdb"))
         self.copied = []
         self.added = []
@@ -40,6 +40,7 @@ class _FakeArcPy:
         self.update_cursors = {}
         self.triangle_rows = list(triangle_rows)
         self.license_status = license_status
+        self.checkout_status = checkout_status
         self.vertical_reference = vertical_reference
         self.checked_out = []
         self.checked_in = []
@@ -78,6 +79,7 @@ class _FakeArcPy:
 
     def CheckOutExtension(self, extension):
         self.checked_out.append(extension)
+        return self.checkout_status
 
     def CheckInExtension(self, extension):
         self.checked_in.append(extension)
@@ -203,6 +205,18 @@ def test_export_tin_landxml_rejects_unavailable_license(tmp_path):
             surface_name="Groundwater", crs="EPSG:2256",
             linear_unit="USSurveyFoot")
     assert not arcpy.checked_out
+
+
+def test_export_tin_landxml_rejects_failed_license_checkout(tmp_path):
+    arcpy = _FakeArcPy(tmp_path, checkout_status="Unavailable")
+    with pytest.raises(ValueError, match="license checkout failed"):
+        export_tin_landxml(
+            arcpy, "groundwater_tin", tmp_path / "surface.xml",
+            surface_name="Groundwater", crs="EPSG:2256",
+            linear_unit="USSurveyFoot")
+    assert arcpy.checked_out == ["3D"]
+    assert not arcpy.checked_in
+    assert not arcpy.triangulated
 
 
 def test_export_tin_landxml_releases_license_when_extraction_fails(tmp_path):

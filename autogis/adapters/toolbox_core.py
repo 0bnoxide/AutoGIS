@@ -189,7 +189,11 @@ def export_tin_landxml(arcpy_module, input_tin: str, output_path: Path, *,
     )
     acquired_3d = False
     try:
-        arcpy_module.CheckOutExtension("3D")
+        checkout_status = arcpy_module.CheckOutExtension("3D")
+        if checkout_status != "CheckedOut":
+            raise ValueError(
+                f"3D Analyst license checkout failed ({checkout_status}); "
+                "TIN LandXML export was not started.")
         acquired_3d = True
         # Let TinTriangle use its documented z-factor default. Passing an
         # explicit z-factor is unavailable when the TIN defines a VCS.
