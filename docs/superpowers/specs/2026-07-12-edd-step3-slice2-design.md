@@ -2,35 +2,41 @@
 
 **Date:** 2026-07-12
 **Status:** PR 2a section **superseded by ADR-0084** (see banner below); PR 2b
-section (R1–R8) remains the approved, live design (user-approved in session;
-slice 2 of the decomposed Step 3)
+section (R1–R9) remains the live design — R1–R8 user-approved in session, R9
+added 2026-07-16 from the PR #243 review, R4 gated on an explicit ADR-0075
+amendment (slice 2 of the decomposed Step 3)
 **Program:** Step 3 of the ADR-0075 lab analytical ingestion program. Slice 1 =
 PR #229 / ADR-0082 (EQuIS WMRD + `Env_QCResults`). This slice opens with the
 frozen-key redesign per **issue #230** — the recorded decision that the slice-2
 spec leads with the key decision, since every additional EQuIS dialect
 multiplies exposure to the same collision classes.
-**Companion evidence:** `.superpowers/sdd/task-9-report.md` on branch
-`spec/edd-step3-equis-wmrd` (real-file collision row values), ADR-0082 "Known
-limitation" section.
+**Companion evidence:** ADR-0082 "Known limitation" section + ADR-0084
+"Context" (the real-file `B25030623` collision classes and row values:
+242/243 analytical, 328/332 QC distinct). An uncommitted scratch report
+(`task-9-report.md`) was cited here originally; that pointer was dead on
+every branch and is removed (PR #243 review).
 
 > **⚠ SUPERSEDED IN PART — 2026-07-16.** This spec was written 2026-07-12 in a
 > session that lost its remote connection before landing; while it sat
 > unshipped, issue #230 was resolved on `main` by a different mechanism
-> (PRs #234–#236, **ADR-0084**, 2026-07-15): the analytical method
+> (PRs #235–#236, **ADR-0084**, 2026-07-15): the analytical method
 > discriminator is folded into the per-reader `MethodDilutionKey` *value
 > recipe* (the ADR-0075 §3 escape hatch) — the frozen key compositions were
 > **not** widened, and ADR-0084 lists key-widening (this spec's K1/K2) as a
 > rejected alternative. ADR-0084's post-merge revision further established
 > (P1a/P1b) that **any within-file run-instance ordinal — including K2's
 > value-tuple variant — is cohort-dependent and cannot satisfy cross-batch
-> determinism**; the QC half of #230 is reopened as a known limitation pending
-> a source-provided run identity or a DB-aware import strategy.
+> determinism**; the QC half of #230 is reopened as a known limitation —
+> tracked in **#244** (#230 itself stays closed for the resolved analytical
+> half) — pending a source-provided run identity or a DB-aware import
+> strategy.
 >
 > Consequently the **"PR 2a decisions" section and the "Testing / 2a"
 > paragraph below are superseded — do not implement them** (retained for the
 > decision history; a partial implementation is archived on branch
 > `spec/edd-step3-slice2-keys-dialects`). The **template facts, the
-> "PR 2b decisions" (R1–R8), the 2b testing plan, and the deferred-slices
+> "PR 2b decisions" (R1–R9; R4 gated on an explicit ADR-0075 amendment — see
+> its governance note), the 2b testing plan, and the deferred-slices
 > record remain the live design** — none of them depend on the key redesign.
 > One 2b-planning note: with the QC limitation open, dialect e2e fixtures must
 > avoid QC rerun collisions (or expect the blocking `edd_key_collision`
@@ -40,12 +46,14 @@ limitation" section.
 
 | PR | Content | Why split |
 |---|---|---|
-| **2a** | Unique-key redesign (analytical MethodID + QC RunInstance) | Small, high-value: real WMRD imports currently finalize ERROR on the within-file collision guard; 2a alone unblocks them |
+| **2a** *(historical — superseded)* | Unique-key redesign (analytical MethodID + QC RunInstance) | Superseded by ADR-0084: the analytical half shipped as the recipe fold; QC collisions **stay blocked by design** (#244) — nothing "unblocks" WMRD QC reruns yet |
 | **2b** | `equis_reader` structural extensions + `mining.yaml` / `epar4.yaml` / `nysdec.yaml` | Larger reader+profile effort with no real filled EDD to verify against |
 
-One new ADR covers the slice (number picked against origin/main **and open
-PRs** at merge time — ADR-0083 is already claimed by the unmerged
-`feat/report-template-system-163` branch).
+**[ADR note stale as of 2026-07-16]** ADR-0083 (report templates) and
+ADR-0084 (the key work) are both accepted on main. PR 2b mints its **own**
+ADR at the next-free number (draft with an `XXXX` heading; number against
+origin/main **and open PRs** at merge time), and that ADR must explicitly
+accept the R4 profile-shape amendment (see R4's governance note).
 
 ## Template facts that drove the design (verified 2026-07-12)
 
@@ -153,8 +161,12 @@ hoped for:
   `analytical_method_id → lab_anl_method_name`, `sample_fraction → fraction`,
   `result_value_unit → result_unit`, `lower_reporting_limit →
   reporting_detection_limit`, `lab_batch_id → test_batch_id`, `batch_type →
-  test_batch_type`, `lab_name → lab_name_code`. epar4: `total_or_dissolved →
-  fraction`, `lab_prep_method_name → prep_method`. Renames of profile-mapped
+  test_batch_type`, `lab_name → lab_name_code`, **`sample_type →
+  sample_type_code`** (P1, PR #243 review: the reader's stream discriminator
+  `_COL_SAMPLE_TYPE` reads only `sample_type_code`, so without this bridge a
+  Mining lab-QC row (`QC-LCS`) imports with empty QCType + a WARN and a field
+  duplicate (`FD`) silently routes as an ordinary analytical result). epar4:
+  `total_or_dissolved → fraction`, `lab_prep_method_name → prep_method`. Renames of profile-mapped
   canonical fields (analyte = `characteristic_name`, cas_number =
   `characteristic_id`, sample_id, location_id, dates) do NOT need aliases —
   they resolve through the ordinary `columns:` map; `source_aliases` exists
@@ -168,13 +180,24 @@ hoped for:
   (casefolded `test_type`, post-alias `fraction`) and merged under the result
   row (result columns win on collision — the existing join convention).
   Missing test-sheet entry → QA-WARN (`equis_missing_test`) + row imports
-  with empty test-side fields (D10 fail-safe policy).
+  with empty test-side fields (D10 fail-safe policy). **Governance (PR #243
+  review):** ADR-0075 holds `LabEDDProfile` "flat and 2-sheet-shaped
+  permanently"; `test_sheet:` is therefore a **proposed amendment** to that
+  frozen boundary (precedent: slice 1's `batch_sheet` key, ADR-0082) — the
+  2b ADR must explicitly accept it before R4 is implemented. Until then R4
+  is design-approved but not buildable.
 - **R5 — inline-batch fallback.** When `batch_sheet` is empty and the row
   carries `test_batch_type`/`test_batch_id` (natively or via aliases), the
   single per-row pair routes to `__equis_prep_batch` / `__equis_analysis_batch`
-  by its type value (same Prep/Analysis vocabulary the batch sheet uses;
-  unknown type → both empty + `equis_missing_batch`-style WARN). Covers
-  Mining and epar4.
+  by its type value, matched **case-insensitively** (PR #243 review: Mining's
+  enum records uppercase `PREP`/`ANALYSIS`; the batch-sheet path's exact-case
+  `Prep`/`Analysis` lookup is slice-1 WMRD vocabulary, not a contract; unknown
+  type → both empty + `equis_missing_batch`-style WARN). **Key-safety (P1,
+  PR #243 review):** the frozen `Env_QCResults` key contains `AnalysisBatchID`
+  and not `PrepBatchID`, so a prep-typed inline id additionally populates
+  `AnalysisBatchID` when no analysis-typed id is present — otherwise
+  otherwise-identical QC rows from two prep batches key identically and one
+  is silently lost to dedup. Covers Mining and epar4.
 - **R6 — batch join composite extends with `analysis_date`** when both the
   batch sheet and result sheet carry the column (NYSDEC `Batch_v5`); WMRD's
   5-column join is byte-identical when the column is absent (pinned).
@@ -189,8 +212,24 @@ hoped for:
   banners** (no real filled EDD exists — wqx.yaml precedent; do not remove
   until verified against a real deliverable). Every unmapped value still
   fails safe with a QA-WARN (ADR-0080/D10 policy).
-- **R8 — zero CLI change.** `autogis import-edd --profile-path nysdec.yaml
-  <file.xlsx> <gdb>` — dispatch entirely via `format: equis_xls`.
+- **R8 — zero CLI change.** `autogis envmon import-edd --edd <file.xlsx>
+  --profile-path nysdec.yaml --site <SITE> --gdb <gdb>` (the command lives in
+  the `envmon` group; `--edd`/`--site`/`--gdb` are required options — PR #243
+  review corrected the earlier bare-`import-edd` form) — dispatch entirely
+  via `format: equis_xls`.
+- **R9 — epar4 run-identity fold** (added 2026-07-16, PR #243 review, P1).
+  R4's join composite treats `analysis_date` + `analysis_time` as source test
+  identity, but neither survives into the frozen key (no `AnalysisDate` part)
+  or the unchanged `MethodDilutionKey` recipe — two valid reanalyses
+  differing only by date/time compute the same key (same-file: blocking
+  ERROR; later-file: silent skip). The epar4 reader therefore folds a
+  normalized, bounded date/time token (from the composite's
+  `analysis_date`/`analysis_time`; openpyxl `datetime`/`time` cells
+  normalized per R1's cell-text contract) into its `MethodDilutionKey`
+  composition — per-row, source-alone deterministic (ADR-0075 §3, the same
+  mechanism as ADR-0084 §1's method fold) and short enough to stay clear of
+  `detect_overlength_keys` (TEXT(64) guard). Also feeds the #244
+  run-identity design (a source-provided instance signal).
 
 ## Testing (arcpy-free)
 
@@ -203,8 +242,12 @@ analytical pair; identical surrogate pair) passing the guard end-to-end.
 
 **2b:** unit tests per structural extension (R1 xlsx engine incl. date/float
 cell normalization, R2 casefold + `#` strip incl. WMRD no-op pinning, R3
-alias application, R4 test-sheet join + miss path, R5 inline batch, R6
-extended batch composite + WMRD 5-col pinning); one small committed `.xlsx`
+alias application incl. Mining lab-QC + field-duplicate stream routing via
+the `sample_type` bridge, R4 test-sheet join + miss path, R5 inline batch
+incl. case-insensitive type matching + two-batch `compute_unique_key`
+distinctness, R6 extended batch composite + WMRD 5-col pinning, R9 two-run
+distinctness under differing `analysis_date`/`analysis_time` incl. openpyxl
+time-cell normalization); one small committed `.xlsx`
 fixture per dialect built by an openpyxl generator script under
 `tests/fixtures/` (template headers + synthetic rows only — no client data,
 no new dependency); per-dialect e2e: read → split → normalize both streams →
