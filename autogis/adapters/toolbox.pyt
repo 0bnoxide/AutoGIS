@@ -1042,15 +1042,16 @@ class BuildCADExportPackage(object):
                 + ". Project them first or pass their actual CRS.")
             return
 
-        # An associated projection file (<stem>.prj, or a folder-wide
-        # esri_cad.prj / *.uprj) makes Export To CAD project the output to
-        # THAT file's CRS while projection_note.txt still claims the source
-        # EPSG (issue #238). Refuse rather than parse/compare their WKT.
+        # An associated projection or world file (<stem>.prj/.wld, or a
+        # folder-wide esri_cad.prj/.wld / *.uprj / *.uwld) makes Export To
+        # CAD project/transform the output while projection_note.txt still
+        # claims the source EPSG (issue #238). Refuse rather than
+        # parse/compare their contents.
         output_file = p["output_file"].valueAsText
         prj_conflicts = find_prj_conflicts(Path(output_file))
         if prj_conflicts:
             messages.addErrorMessage(
-                "Associated CAD projection file(s) would reproject the "
+                "Associated CAD projection/world file(s) would move the "
                 "exported coordinates away from the source CRS: "
                 + "; ".join(str(f) for f in prj_conflicts)
                 + ". Remove them or export to a clean folder.")

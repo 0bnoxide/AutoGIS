@@ -44,20 +44,25 @@ def validate_crs(crs: str, *, qa: QACollector) -> bool:
     return True
 
 
-def find_prj_conflicts(cad_output_file: Path) -> list:
-    """Projection files that would make Export To CAD reproject its output.
+def find_prj_conflicts(cad_output_file: Path) -> "list[Path]":
+    """Projection/world files that would move Export To CAD's output.
 
-    A CAD file with an associated ``<same-stem>.prj``, or a folder-wide
-    ``esri_cad.prj`` / ``*.uprj``, gets its coordinates *projected to that
-    file's CRS* on export — silently breaking the "source coordinates pass
-    through unchanged" contract in projection_note.txt (issue #238).
+    A CAD file with an associated ``<same-stem>.prj`` (or folder-wide
+    ``esri_cad.prj`` / ``*.uprj``) gets its coordinates *projected to that
+    file's CRS* on export; an associated ``.wld`` (or ``esri_cad.wld`` /
+    ``*.uwld``) *transforms* them. Either silently breaks the "source
+    coordinates pass through unchanged" contract in projection_note.txt
+    (issue #238).
     Docs: pro.arcgis.com .../conversion/export-to-cad.htm (Usage);
     doc.esri.com .../help/data/cad/about-cad-coordinate-systems.html.
     """
     cad_output_file = Path(cad_output_file)
     folder = cad_output_file.parent
-    candidates = [cad_output_file.with_suffix(".prj"), folder / "esri_cad.prj"]
-    candidates += sorted(folder.glob("*.uprj")) if folder.is_dir() else []
+    candidates = [cad_output_file.with_suffix(".prj"),
+                  cad_output_file.with_suffix(".wld"),
+                  folder / "esri_cad.prj", folder / "esri_cad.wld"]
+    if folder.is_dir():
+        candidates += sorted(folder.glob("*.uprj")) + sorted(folder.glob("*.uwld"))
     return [f for f in candidates if f.is_file()]
 
 
