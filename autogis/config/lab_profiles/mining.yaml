@@ -1,0 +1,113 @@
+# autogis/config/lab_profiles/mining.yaml
+# MTDEQ Mining EDD (.xlsx, LabCollection + LabResult) — Step-3 slice 2b.
+#
+# *** DRAFT — verify against a real filled Mining EDD before first
+# production import; do not remove this banner until then (wqx.yaml
+# precedent). ***
+# Structure verified against the blank template + description workbook +
+# MTDEQ_Mining-enum.xml (2026-07-12 / 2026-07-17); no real filled EDD
+# exists yet. Headers are casefolded and '#'-stripped at load (R2), so all
+# names below are lowercase — TitleCase source headers (Detect_Flag,
+# Result_Value, ...) land on the EQuIS constants for free. Unmapped values
+# fail safe: unknown sample types import QC-flagged (hidden from canonical
+# reads) + QA-WARN; unmapped matrix codes pass through raw + WARN.
+# Reader: autogis/core/envmon/equis_reader.py (synthesized __equis_*).
+profile_id: mining
+lab_name: MTDEQ Mining EDD
+format: equis_xls
+date_format: "%m/%d/%Y"
+encoding: utf-8
+
+# Sheet names stay real-case; only headers are casefolded (R2/R7).
+sample_sheet: LabCollection
+result_sheet: LabResult
+# No batch sheet: Lab_Batch_ID / Batch_Type are inline on LabResult (R5).
+
+# R3: bridge Mining's renamed columns onto the EQuIS names the reader's
+# _COL_* synthesis rules read (post-R2, so keys are casefolded).
+source_aliases:
+  analytical_method_id: lab_anl_method_name
+  sample_fraction: fraction
+  result_value_unit: result_unit
+  lower_reporting_limit: reporting_detection_limit
+  lab_batch_id: test_batch_id
+  batch_type: test_batch_type
+  lab_name: lab_name_code
+  sample_type: sample_type_code
+
+columns:
+  # identity / joins
+  sample_id: sample_id
+  parent_sample_id: parent_sample_id
+  lab_sample_id: lab_sample_id
+  location_id: station_id
+  event_date: sample_date
+  matrix: matrix
+  depth_top_ft: sample_start_depth
+  depth_bot_ft: sample_end_depth
+  # analyte / method
+  analyte: characteristic_name
+  cas_number: characteristic_id
+  method: lab_anl_method_name
+  method_name: lab_anl_method_name
+  method_speciation: method_speciation
+  result_fraction: fraction
+  analysis_date: analysis_date
+  prep_method: prep_method
+  prep_date: prep_date
+  lab_name: lab_name_code
+  result_basis: basis
+  # reader-synthesized (__equis_*) keys
+  result: __equis_result
+  units: __equis_units
+  qualifier: __equis_qualifier
+  qc_type: __equis_qc_type
+  dilution_factor: __equis_method_dilution_key
+  is_reportable: __equis_is_reportable
+  reporting_limit: __equis_reporting_limit
+  detection_limit: __equis_detection_limit
+  quantitation_limit: __equis_quantitation_limit
+  prep_batch_id: __equis_prep_batch
+  analysis_batch_id: __equis_analysis_batch
+  # QC-only source columns (normalize_qc_rows)
+  qc_original_conc: qc_original_conc
+  qc_spike_added: qc_spike_added
+  qc_spike_measured: qc_spike_measured
+  qc_spike_recovery: qc_spike_recovery
+  qc_spike_lcl: qc_spike_lcl
+  qc_spike_ucl: qc_spike_ucl
+  qc_rpd: qc_rpd
+  qc_rpd_cl: qc_rpd_cl
+  qc_dup_original_conc: qc_dup_original_conc
+  qc_dup_spike_added: qc_dup_spike_added
+  qc_dup_spike_measured: qc_dup_spike_measured
+  qc_dup_spike_recovery: qc_dup_spike_recovery
+
+# rt_matrix codes (GW, SW, ...) largely match canonical usage already;
+# _TODO: seed after the first real filled EDD (unmapped codes warn, not
+# fail — same policy as wqx.yaml).
+matrix_map: {}
+
+nondetect_qualifiers: ["U", "UJ"]
+
+value_maps:
+  qc_sample_type:
+    # activity_type_code (MTDEQ_Mining-enum.xml) -> canonical QCType.
+    # Field samples map to "" (analytical stream, no QC flag). Codes with
+    # no canonical bucket (QC-FS, QC-DL, QC-IS, QC-MPS, QC-REFS, QC-FCC,
+    # QC-FSERB, QC-HABITAT, QC-MSR/OBS, QC-OTHER) are _TODO — they import
+    # with the raw code + QA-WARN (fail-safe).
+    "S-ROUTINE": ""
+    "S-FS": ""
+    "S-CWOP": ""
+    "S-IVP": ""
+    "S-OTHER": ""
+    "F-MSR/OBS": ""
+    "F-HA": ""
+    "F-DL": ""
+    "QC-FD": FIELD_DUP
+    "QC-FB": FIELD_BLANK
+    "QC-EB": EQUIPMENT_BLANK
+    "QC-TB": TRIP_BLANK
+    "QC-LMS": MS
+    "QC-LMSD": MSD
