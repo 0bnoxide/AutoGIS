@@ -27,15 +27,17 @@ DST="$(cd "$SCRIPT_DIR/../.." && pwd)/.claude/skills"
 # Locally installed plugin cache (user-scope; absent on cloud/other machines).
 CACHE_ROOT="$HOME/.claude/plugins/cache/ponytail/ponytail"
 if [ ! -d "$CACHE_ROOT" ]; then
-  echo "ponytail plugin not installed locally — nothing to sync." >&2
-  exit 0   # cloud/CI has no plugin; the vendored files ARE the source there.
+  # Silent in --check mode: absent plugin is the expected state on cloud/CI,
+  # where the vendored files ARE the source. Only speak up on an explicit run.
+  [ "$CHECK" = 0 ] && echo "ponytail plugin not installed locally — nothing to sync." >&2
+  exit 0
 fi
 
 # Highest installed version dir (version-sorted).
 VER="$(ls -1 "$CACHE_ROOT" 2>/dev/null | sort -V | tail -1)"
 SRC="$CACHE_ROOT/$VER/skills"
 if [ -z "$VER" ] || [ ! -d "$SRC" ]; then
-  echo "no ponytail skills found under $CACHE_ROOT/*/skills — nothing to sync." >&2
+  [ "$CHECK" = 0 ] && echo "no ponytail skills found under $CACHE_ROOT/*/skills — nothing to sync." >&2
   exit 0
 fi
 
