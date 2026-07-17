@@ -115,6 +115,15 @@ Other roadmap batches have been quietly fast-tracked before without a formal gat
 decision — treat "deferred"/"blocked" as binding until the user says otherwise, and
 record every gate change (like the 2026-07-15 reopening above) in this section.
 
+## Post-catalog production roadmap
+
+The user accepted the complementary-capabilities production sequence on
+2026-07-16. [`docs/production-roadmap.md`](docs/production-roadmap.md) is the
+authoritative living roadmap; ADR-0087 records the ordering decision. Each
+capability owns one production phase and must meet its exit gate before the next
+phase starts. Do not reorder or parallel fast-track phases without an explicit
+user decision. This roadmap does not reopen any deferred group above.
+
 ## Decision records
 
 Two separate records — easy to conflate, keep both:
