@@ -123,3 +123,21 @@ def test_build_cad_package_guard_headless(monkeypatch, tmp_path):
     assert result.exit_code != 0
     assert "arcpy" in result.output.lower()
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_find_prj_conflicts_detects_all_forms(tmp_path):
+    """<stem>.prj/.wld, esri_cad.prj/.wld, and *.uprj/*.uwld each move
+    Export To CAD output (issue #238)."""
+    from autogis.core.envmon.cad_layer_map import find_prj_conflicts
+
+    out = tmp_path / "site.dwg"
+    assert find_prj_conflicts(out) == []
+
+    expected = {"site.prj", "site.wld", "esri_cad.prj", "esri_cad.wld",
+                "statewide.uprj", "statewide.uwld"}
+    for name in expected:
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    (tmp_path / "other.prj").write_text("x", encoding="utf-8")  # unrelated stem
+    (tmp_path / "other.wld").write_text("x", encoding="utf-8")  # unrelated stem
+
+    assert {f.name for f in find_prj_conflicts(out)} == expected

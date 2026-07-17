@@ -1000,8 +1000,8 @@ class BuildCADExportPackage(object):
     def execute(self, parameters, messages):
         from autogis.core.common.landxml import parse_epsg
         from autogis.core.envmon.cad_layer_map import (
-            load_cad_mapping, resolve_cad_plan, write_mapping_report,
-            write_projection_note,
+            find_prj_conflicts, load_cad_mapping, resolve_cad_plan,
+            write_mapping_report, write_projection_note,
         )
         p = {q.name: q for q in parameters}
         raw_layers = p["layers"].valueAsText or ""
@@ -1042,13 +1042,32 @@ class BuildCADExportPackage(object):
                 + ". Project them first or pass their actual CRS.")
             return
 
+        # An associated projection or world file (<stem>.prj/.wld, or a
+        # folder-wide esri_cad.prj/.wld / *.uprj / *.uwld) makes Export To
+        # CAD project/transform the output while projection_note.txt still
+        # claims the source EPSG (issue #238). Refuse rather than
+        # parse/compare their contents.
+        output_file = p["output_file"].valueAsText
+        prj_conflicts = find_prj_conflicts(Path(output_file))
+        if prj_conflicts:
+            messages.addErrorMessage(
+                "Associated CAD projection/world file(s) would move the "
+                "exported coordinates away from the source CRS: "
+                + "; ".join(str(f) for f in prj_conflicts)
+                + ". Remove them or export to a clean folder.")
+            return
+
         export_dir = Path(p["export_dir"].valueAsText)
         write_projection_note(crs, export_dir / "projection_note.txt")
         report_path = write_mapping_report(plan, export_dir / "mapping_report.csv")
 
         output_type = p["output_type"].valueAsText or "DWG_R2018"
-        output_file = p["output_file"].valueAsText
-        arcpy.conversion.ExportCAD(layer_paths, output_type, output_file)
+        # Pin the Output Coordinate System environment to the validated
+        # source EPSG so an ambient env setting can't silently reproject
+        # the export (Export To CAD honors that environment; issue #238).
+        with arcpy.EnvManager(
+                outputCoordinateSystem=arcpy.SpatialReference(epsg)):
+            arcpy.conversion.ExportCAD(layer_paths, output_type, output_file)
 
         messages.addMessage(f"Exported {len(layer_paths)} layer(s) -> {output_file} ({output_type}).")
         messages.addMessage(f"Mapping report -> {report_path}")

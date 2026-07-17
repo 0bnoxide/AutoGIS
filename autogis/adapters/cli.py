@@ -4670,6 +4670,22 @@ def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
         build_pnezd, load_gwe_points_csv, write_pnezd_csv, write_pnezd_landxml,
         write_projection_note)
 
+    # Validate --landxml prerequisites before writing anything, so a usage
+    # error can't leave a partial package behind (issue #238).
+    if landxml:
+        if not units:
+            raise click.UsageError(
+                "--landxml requires --units (foot / USSurveyFoot / meter): "
+                "Civil 3D shifts or scales imports whose LandXML units are "
+                "missing and differ from the drawing's.")
+        from autogis.core.common.landxml import parse_epsg
+        if parse_epsg(crs) is None:
+            raise click.UsageError(
+                f"--landxml requires an EPSG-coded --crs (e.g. EPSG:2256): "
+                f"{crs!r} cannot be written as a machine-readable "
+                "<CoordinateSystem epsgCode>, so Civil 3D would silently "
+                "fall back to the drawing's coordinate system.")
+
     qa = QACollector()
     records = load_gwe_points_csv(Path(points_csv))
     pts = build_pnezd(records, crs=crs, start_number=start_number, qa=qa)
@@ -4679,11 +4695,6 @@ def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
     click.echo(f"{len(pts)} PNEZD point(s) -> {csv_path}")
     click.echo(f"Projection note -> {note_path}")
     if landxml:
-        if not units:
-            raise click.UsageError(
-                "--landxml requires --units (foot / USSurveyFoot / meter): "
-                "Civil 3D shifts or scales imports whose LandXML units are "
-                "missing and differ from the drawing's.")
         xml_path = write_pnezd_landxml(pts, out / "points_pnezd.xml",
                                        crs=crs, linear_unit=units)
         click.echo(f"LandXML CgPoints -> {xml_path}")
