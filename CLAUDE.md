@@ -79,6 +79,12 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
   `core/harvest/models.py` for back-compat.
 - Screening levels and the H281 parser profile are pre-production stubs — do not
   remove DRAFT banners or `_TODO` markers until verified against real data.
+- **arcpy IS runnable on this machine** — not in the dev venv (arcpy is
+  Pro-conda-only), but ArcGIS Pro 3.6.1 is installed and a cloned env
+  (`%LOCALAPPDATA%\ESRI\conda\envs\arcgispro-py3-autogis`) has AutoGIS
+  editable-installed. Use it for live arcpy QA (`python -m autogis` +
+  PYTHONPATH for worktrees); the test suite stays on the arcpy-free dev
+  venv. Full how-to + rebuild-after-Pro-upgrade: `docs/arcpy-environment.md`.
 - **arcpy calls MUST be doc-verified before shipping** (ADR-0077). Any new or
   edited arcpy call — including `.pyt` parameter/filter objects and reviewer-
   proposed fixes — gets its signature, keywords/enums, and deprecation status
