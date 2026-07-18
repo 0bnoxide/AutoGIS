@@ -373,3 +373,15 @@ def test_identical_duplicate_test_rows_do_not_block():
     assert not [r for r in qa.records
                 if r.category == "equis_test_key_collision"]
     assert len(out) == 1
+
+
+def test_test_type_case_variant_is_not_a_conflict():
+    # _test_key casefolds test_type, so 'initial'/'INITIAL' on two otherwise
+    # identical TST rows key together — the payload compare must not read that
+    # case difference as a conflicting duplicate (PR #253 cold-review nit).
+    out, qa = _run_epar4([_equis_sample()], [_res()],
+                         [_tst(test_type="initial"),
+                          _tst(test_type="INITIAL")])
+    assert not [r for r in qa.records
+                if r.category == "equis_test_key_collision"]
+    assert len(out) == 1

@@ -188,11 +188,20 @@ def _test_key(row: dict, sample_id: str) -> tuple:
             _get(row, _COL_TEST_TYPE).casefold())
 
 
+# Columns already pinned by _test_key — excluded from the payload compare so a
+# benign test_type case variant ('initial' vs 'INITIAL', which _test_key
+# casefolds together) is not misread as a conflicting duplicate (PR #253).
+_TEST_KEY_COLS = frozenset({_COL_METHOD, _COL_ANALYSIS_DATE, _COL_ANALYSIS_TIME,
+                            _COL_FRACTION, _COL_COLUMN_NUM, _COL_TEST_TYPE})
+
+
 def _test_payload(row: dict) -> dict:
-    """Non-bookkeeping fields of a test-sheet row — the content merged under
-    each result row. Used to tell a benign exact duplicate from a real
-    conflict when two rows share the same ``_test_key`` (PR #253)."""
-    return {k: v for k, v in row.items() if not k.startswith("__")}
+    """Fields of a test-sheet row NOT already fixed by ``_test_key`` — the
+    content merged under each result row. Compared to tell a benign exact
+    duplicate from a real conflict when two rows share the same key; key
+    columns are excluded so their case/format has no vote (PR #253)."""
+    return {k: v for k, v in row.items()
+            if not k.startswith("__") and k not in _TEST_KEY_COLS}
 
 
 def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
