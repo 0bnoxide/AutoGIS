@@ -241,3 +241,64 @@ def test_export_tin_landxml_releases_license_when_extraction_fails(tmp_path):
     assert arcpy.checked_out == ["3D"]
     assert arcpy.checked_in == ["3D"]
     assert len(arcpy.deleted) == 1
+
+
+def test_surface_from_triangle_json_applies_z_scale():
+    rows = [_triangle((0, 0, 100), (10, 0, 101), (0, 10, 102))[0]]
+    surface = surface_from_triangle_json(rows, "Groundwater", z_scale=2.0)
+    assert surface.points[1] == (0.0, 0.0, 200.0)
+    assert surface.points[2] == (0.0, 10.0, 202.0)
+    assert surface.points[3] == (10.0, 0.0, 204.0)
+
+
+def test_export_tin_landxml_converts_declared_meter_z_to_survey_feet(tmp_path):
+    # Undefined VCS + declared meters elevations on a survey-foot CRS:
+    # z is multiplied by the exact 3937/1200 ratio (100 m -> 328.0833... ft).
+    arcpy = _FakeArcPy(tmp_path, [
+        _triangle((1000, 2000, 100.0), (1010, 2000, 101.0), (1000, 2010, 102.0)),
+    ])
+    out = export_tin_landxml(
+        arcpy, "groundwater_tin", tmp_path / "surface.xml",
+        surface_name="Groundwater", crs="EPSG:2256",
+        linear_unit="USSurveyFoot", z_unit="meter")
+    assert "328.083" in out.read_text(encoding="utf-8")
+
+
+def test_export_tin_landxml_converts_mixed_unit_tin_with_matching_vcs(tmp_path):
+    # Previously hard-blocked: defined meter VCS on a survey-foot CRS now
+    # exports when the declaration matches the VCS.
+    arcpy = _FakeArcPy(
+        tmp_path,
+        [_triangle((1000, 2000, 100.0), (1010, 2000, 101.0), (1000, 2010, 102.0))],
+        vertical_reference=SimpleNamespace(metersPerUnit=1.0, direction=1),
+    )
+    out = export_tin_landxml(
+        arcpy, "groundwater_tin", tmp_path / "surface.xml",
+        surface_name="Groundwater", crs="EPSG:2256",
+        linear_unit="USSurveyFoot", z_unit="meter")
+    assert "328.083" in out.read_text(encoding="utf-8")
+
+
+def test_export_tin_landxml_rejects_z_unit_mismatching_defined_vcs(tmp_path):
+    # VCS says survey feet; declaring meters must fail, not silently convert.
+    arcpy = _FakeArcPy(
+        tmp_path,
+        vertical_reference=SimpleNamespace(metersPerUnit=1200.0 / 3937.0,
+                                           direction=1),
+    )
+    with pytest.raises(ValueError, match="vertical coordinates"):
+        export_tin_landxml(
+            arcpy, "groundwater_tin", tmp_path / "surface.xml",
+            surface_name="Groundwater", crs="EPSG:2256",
+            linear_unit="USSurveyFoot", z_unit="meter")
+    assert not arcpy.checked_out
+
+
+def test_export_tin_landxml_rejects_unknown_z_unit(tmp_path):
+    arcpy = _FakeArcPy(tmp_path)
+    with pytest.raises(ValueError, match="Unsupported TIN vertical unit"):
+        export_tin_landxml(
+            arcpy, "groundwater_tin", tmp_path / "surface.xml",
+            surface_name="Groundwater", crs="EPSG:2256",
+            linear_unit="USSurveyFoot", z_unit="fathom")
+    assert not arcpy.checked_out
