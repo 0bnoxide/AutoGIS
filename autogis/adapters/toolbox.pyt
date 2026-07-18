@@ -84,7 +84,11 @@ class HarvestAttachments(object):
         self.label = "Harvest Attachments"
         self.description = ("Download attachments from a hosted feature layer "
                             "into grouped/templated folders. Pure marshalling "
-                            "over autogis.core.harvest.")
+                            "over autogis.core.harvest. Exposes a subset of "
+                            "HarvestConfig — layer_index/all_sublayers/"
+                            "skip_existing/retries/backoff_seconds are not "
+                            "toolbox parameters; set them via the CLI's "
+                            "--config YAML path instead.")
         self.canRunInBackground = False
 
     def getParameterInfo(self):

@@ -124,30 +124,6 @@ def set_layer_visibility(aprx_path: Path, visible: Sequence[str],
     del aprx
 
 
-def apply_symbology(aprx_path: Path, lyrx_map: Dict[str, Path],
-                    qa: QACollector) -> None:
-    """Apply .lyrx symbology by layer name; missing files -> QA warning."""
-    arcpy = _arcpy()
-    aprx = arcpy.mp.ArcGISProject(str(aprx_path))
-    for m in aprx.listMaps():
-        for lyr in m.listLayers():
-            lyrx = lyrx_map.get(lyr.name)
-            if not lyrx:
-                continue
-            if not Path(lyrx).exists():
-                qa.add(QARecord(severity=SEV_WARNING, category="lyrx_missing",
-                                message=f"Symbology file missing for "
-                                        f"{lyr.name!r}: {lyrx}"))
-                continue
-            try:
-                arcpy.management.ApplySymbologyFromLayer(lyr, str(lyrx))
-            except Exception as exc:
-                qa.add(QARecord(severity=SEV_WARNING, category="lyrx_apply_failed",
-                                message=f"{lyr.name!r}: symbology failed ({exc})."))
-    aprx.save()
-    del aprx
-
-
 def load_layout_text_yaml(path: Path) -> Dict[str, str]:
     """Load a Tool 5.8 values file into the ``text_values`` dict that
     ``update_layout_text`` expects. Arcpy-free.

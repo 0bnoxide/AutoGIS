@@ -2,14 +2,14 @@
 
 Automation tools for ArcGIS Pro and ArcGIS Online / Survey123, delivered as a single suite:
 the **Attachment Harvester** plus the **Environmental Monitoring tools**, folded into **one
-`autogis` package** — one shared core with three adapters (a `click` CLI, an ArcGIS Pro `.pyt`
-GUI, and the importable core itself).
+`autogis` package** — one shared core with four adapters (a `click` CLI, an ArcGIS Pro `.pyt`
+GUI, a unified PySide6 desktop GUI (`autogis-gui`, ADR-0050), and the importable core itself).
 
 ---
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-07-15**. The
+Status against the 79-tool environmental monitoring roadmap, as of **2026-07-18**. The
 Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
@@ -20,18 +20,20 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **112 `core/envmon/` + 11 `core/agol/` modules (123 total)**,
-**117 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
+The codebase now ships **114 `core/envmon/` + 11 `core/agol/` modules (125 total)**,
+**120 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
 `manage-callout-overrides`'s 4 subcommands counted individually), and an arcpy-free
 test suite — derive the live count with `python -m pytest --collect-only -q`; it is
 extras-dependent, so a `[dev]`-only env collects fewer tests than a full-extras env
-(module/CLI counts as of 2026-07-15 — derive live: `ls autogis/core/envmon/*.py | grep -v __init__ | wc -l`).
+(module/CLI counts as of 2026-07-18 — derive live: `ls autogis/core/envmon/*.py | grep -v __init__ | wc -l`).
 For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced well past that snapshot — batches merged through 2026-06-28 – 07-02
-(PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119), 07-07 (PRs #196-#200), and 07-08 – 07-15
+(PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119), 07-07 (PRs #196-#200), 07-08 – 07-15
 (EQuIS/WQX EDD import ADR-0080/0082, HTML report output ADR-0083, drone/geotech batch,
-OpenTopography DEM ADR-0078, Civil3D/CAD arcpy legs ADR-0088)).
+OpenTopography DEM ADR-0078, Civil3D/CAD arcpy legs ADR-0088), and 07-17 – 07-18
+(EQuIS dialect support — Mining/EPA Region 4/NYSDEC, ADR-0090; DEM output hardening +
+elevation conversion, PR #257)).
 
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
@@ -235,15 +237,18 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 
 ## Architecture
 
-### One core, three adapters
+### One core, four adapters
 
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (112 modules), and `autogis.core.agol` (publishing, 11 modules) sit on top of common
-- **Three adapters:** `autogis.adapters.cli` (Click CLI) and `autogis.adapters.toolbox.pyt`
-  (ArcGIS Pro GUI) both construct and validate the *same* config dataclasses and call the *same*
-  core functions — the two interfaces cannot drift
+  (114 modules), and `autogis.core.agol` (publishing, 11 modules) sit on top of common
+- **Four adapters:** the importable `autogis.core` library surface, `autogis.adapters.cli`
+  (Click CLI), `autogis.adapters.toolbox.pyt` (ArcGIS Pro GUI), and
+  `autogis.adapters.gui` (`autogis-gui`, a unified PySide6 desktop GUI that introspects the
+  CLI's command tree and can drive both headless and LOCAL tools — ADR-0050). The three user
+  interfaces construct and validate the *same* config dataclasses and call the *same* core
+  functions — the interfaces cannot drift
 
 ### Design invariants
 
@@ -412,6 +417,20 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 pip install -e ".[dev]"
 python -m pytest -q           # count is extras-dependent: python -m pytest --collect-only -q
 ```
+
+### Optional extras
+
+`pip install -e ".[extra]"` (comma-separate multiple, e.g. `".[dev,gui]"`):
+
+| Extra | Pulls in | Unlocks |
+|-------|----------|---------|
+| `dev` | pytest, Pillow, matplotlib, pyproj | test suite (importorskip-gated tests run) |
+| `cloud` | arcgis, setuptools | ArcGIS Online publishing (CLOUD tools) |
+| `gui` | PySide6 | `autogis-gui`, the unified desktop GUI (ADR-0050) |
+| `report` | Pillow | photo embedding in `generate-inspection-report` |
+| `profile` | matplotlib | subsurface profile rendering (`generate-subsurface-profile`) |
+| `opentopo` | pyproj | non-WGS84 AOI reprojection for `envmon download-dem` (headless path only) |
+| `ocr` | torch, transformers, pillow, pymupdf | boring-log OCR digitization (`draft-lithology-from-scan`, DRAFT tool) |
 
 ---
 
@@ -616,12 +635,13 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 112 modules
-│   └── agol/            # AGOL publishing
+│   ├── envmon/          # Environmental monitoring — 114 modules
+│   └── agol/            # AGOL publishing — 11 modules
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
 │   ├── toolbox.pyt      # ArcGIS Pro GUI
-│   └── toolbox_core.py  # Seam between .pyt and core
+│   ├── toolbox_core.py  # Seam between .pyt and core
+│   └── gui/             # Unified PySide6 desktop GUI (`autogis-gui`, ADR-0050)
 ├── config/
 │   ├── inspection-job.example.yaml
 │   ├── parser_profiles/        # Excel format definitions (YAML)
@@ -638,7 +658,7 @@ autogis/
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
 | `core/common/schema/` | 5 modules (attachments, boring, drone, envmon, survey) exporting ~21 typed dataclasses |
-| `core/envmon/` | 112 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/envmon/` | 114 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
@@ -697,8 +717,8 @@ before trusting outputs.
 | [`docs/production-roadmap.md`](docs/production-roadmap.md) | Authoritative post-catalog production phases and exit gates |
 | [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool (snapshot; headline counts above are current) |
 | [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
-| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 43 features (architecture, algorithm, data-model decisions) |
-| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 86 features (step-by-step execution guides) |
+| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 91 features (architecture, algorithm, data-model decisions) |
+| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 100 features (step-by-step execution guides) |
 | [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy, per-batch decisions (current list: the index in [`docs/adr/README.md`](docs/adr/README.md)) |
 | [`docs/adr/logs/`](docs/adr/logs/) | Daily agent-decision logs — autonomous judgment calls recorded for audit (a supplement to ADRs, not a substitute) |
 

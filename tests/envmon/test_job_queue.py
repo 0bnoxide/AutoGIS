@@ -86,6 +86,26 @@ def test_cli_generate_job_queue_end_to_end(tmp_path):
     assert all(set(j) == {"tool", "site_id", "runtime", "args", "order"} for j in queue)
 
 
+def test_cli_generate_job_queue_report_and_fail_on(tmp_path):
+    """--report must be written and --fail-on must gate exit code (regression:
+    the command built a QACollector but never called _render_qa)."""
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text(yaml.dump({
+        "sites": ["H281"],
+        "tools": ["no-such-tool"],
+    }), encoding="utf-8")
+    out = tmp_path / "queue.json"
+    report = tmp_path / "report.json"
+    result = CliRunner().invoke(autogis, [
+        "envmon", "generate-job-queue",
+        "--manifest", str(manifest), "--output", str(out),
+        "--report", str(report), "--fail-on", "warning",
+    ])
+    assert result.exit_code == 1, result.output
+    assert report.exists()
+    assert "unknown_tool" in report.read_text(encoding="utf-8")
+
+
 def test_cli_manifest_non_dict_errors(tmp_path):
     """A non-mapping --manifest YAML must fail cleanly, not traceback."""
     manifest = tmp_path / "manifest.yaml"
