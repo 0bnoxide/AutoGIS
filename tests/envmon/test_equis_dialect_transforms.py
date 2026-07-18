@@ -1,6 +1,6 @@
 """Slice-2b dialect transforms: R3 aliases, R5 inline batch, R6 extended
 batch join, R4 test-sheet join, R9 run token. Pure dict rows."""
-from autogis.core.common.qa import QACollector
+from autogis.core.common.qa import QACollector, SEV_ERROR
 from autogis.core.envmon.edd_profile import LabEDDProfile
 from autogis.core.envmon.equis_reader import transform_equis_sheets
 
@@ -308,8 +308,8 @@ def test_run_token_distinguishes_reanalyses():
         [_tst(analysis_time="10:00"), _tst(analysis_time="14:30")])
     keys = {r["__equis_method_dilution_key"] for r in out}
     assert len(keys) == 2
-    # bounded digits-only token, e.g. ...|031720251000
-    assert any(k.endswith("031720251000") for k in keys)
+    # '@'-joined date/time run token, e.g. ...|03/17/2025@10:00
+    assert any(k.endswith("03/17/2025@10:00") for k in keys)
 
 
 def test_run_token_absent_without_test_sheet():
@@ -333,3 +333,43 @@ def test_run_token_empty_dates_add_no_part():
                         [_res(analysis_date="", analysis_time="")],
                         [_tst(analysis_date="", analysis_time="")])
     assert not out[0]["__equis_method_dilution_key"].endswith("|")
+
+
+def test_run_token_no_collision_on_ambiguous_date_digits():
+    # PR #253 P1: '1/23/2025' and '12/3/2025' both digit-stripped to '1232025',
+    # so with time '4:56' the old token collided both to '1232025456' and one
+    # reanalysis silently lost the frozen key. The '@'-joined token keeps the
+    # two distinct source identities distinct.
+    out, _ = _run_epar4(
+        [_equis_sample()],
+        [_res(analysis_date="1/23/2025", analysis_time="4:56"),
+         _res(analysis_date="12/3/2025", analysis_time="4:56")],
+        [_tst(analysis_date="1/23/2025", analysis_time="4:56"),
+         _tst(analysis_date="12/3/2025", analysis_time="4:56")])
+    keys = {r["__equis_method_dilution_key"] for r in out}
+    assert len(keys) == 2
+
+
+def test_conflicting_test_rows_block_with_collision_error():
+    # PR #253 P1: two TST rows share the 7-column test key but carry different
+    # dilution (1 vs 5). Silently taking the last row makes the merged
+    # dilution/prep metadata — and the frozen MethodDilutionKey — depend on file
+    # order. Must emit a blocking collision instead of last-write-wins.
+    tst1 = _tst(dilution_factor="1")
+    tst5 = _tst(dilution_factor="5")
+    _, qa = _run_epar4([_equis_sample()], [_res()], [tst1, tst5])
+    errs = [r for r in qa.records if r.category == "equis_test_key_collision"]
+    assert len(errs) == 1
+    assert errs[0].severity == SEV_ERROR
+    # order-independent: reversing the two TST rows still flags the collision
+    _, qa_rev = _run_epar4([_equis_sample()], [_res()], [tst5, tst1])
+    assert [r for r in qa_rev.records
+            if r.category == "equis_test_key_collision"]
+
+
+def test_identical_duplicate_test_rows_do_not_block():
+    # exact duplicates are idempotent — keep one, no collision error
+    out, qa = _run_epar4([_equis_sample()], [_res()], [_tst(), _tst()])
+    assert not [r for r in qa.records
+                if r.category == "equis_test_key_collision"]
+    assert len(out) == 1

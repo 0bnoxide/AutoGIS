@@ -53,7 +53,7 @@ def test_reanalysis_pair_keys_distinct():
                                "Env_AnalyticalResults") for r in lead}
     assert len(keys) == 2
     tokens = {r.MethodDilutionKey.rsplit("|", 1)[-1] for r in lead}
-    assert tokens == {"031720251000", "031720251430"}
+    assert tokens == {"03/17/2025@10:00", "03/17/2025@14:30"}
 
 
 def test_test_sheet_fields_merged():

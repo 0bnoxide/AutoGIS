@@ -56,14 +56,16 @@ new dependency, zero CLI change):
   verified against a real deliverable (wqx.yaml precedent).
 - **R8** zero CLI change — dispatch entirely via `format: equis_xls`.
 - **R9** when a profile sets `test_sheet:` (epar4), the reader folds a
-  bounded digits-only token from the composite's
-  `analysis_date`+`analysis_time` into the `MethodDilutionKey` value recipe
-  (ADR-0075 §3 escape hatch, same mechanism as ADR-0084 §1's method fold) —
-  per-row, source-alone deterministic — so two reanalyses differing only by
-  date/time key distinctly on both tables (`MethodDilutionKey` is a frozen
-  key part of both). Worst-case composed value (4 run parts + method +
-  12-digit token) stays far below the TEXT(64) `detect_overlength_keys`
-  guard. The token also feeds the #244 run-identity design.
+  bounded `analysis_date`+`analysis_time` token — the two joined with `@`
+  (absent from normalized `m/d/Y` dates and `H:M` times, so the map from a
+  (date, time) pair to a token is injective) — into the `MethodDilutionKey`
+  value recipe (ADR-0075 §3 escape hatch, same mechanism as ADR-0084 §1's
+  method fold) — per-row, source-alone deterministic — so two reanalyses
+  differing only by date/time key distinctly on both tables
+  (`MethodDilutionKey` is a frozen key part of both). Worst-case composed
+  value (4 run parts + method + a ~20-char date/time token) stays far below
+  the TEXT(64) `detect_overlength_keys` guard. The token also feeds the #244
+  run-identity design.
 
 ## Consequences
 
@@ -76,6 +78,19 @@ new dependency, zero CLI change):
   be verified against a real deliverable before banner removal.
 - Committed fixtures are synthetic openpyxl-generated `.xlsx` (template
   headers + invented rows); no client data enters the repo.
+- **Post-review fixes (PR #253 codex, two data-integrity P1s):**
+  - *R9 token injectivity.* The original token stripped all non-digits and
+    concatenated, so `1/23/2025`+`4:56` and `12/3/2025`+`4:56` both became
+    `1232025456` and collapsed the frozen key. Replaced with the `@`-joined
+    form above; a regression pins the pair distinct.
+  - *Duplicate test-key collision.* Two `test_sheet` rows sharing the R4
+    7-column composite but carrying conflicting content (e.g. dilution 1 vs
+    5) used to last-write-wins, making the merged dilution/prep metadata —
+    and thus `MethodDilutionKey` — depend on file order. Now a blocking
+    `equis_test_key_collision` (`SEV_ERROR`) that `run_edd_import` folds into
+    the batch-integrity write-abort, matching the ADR-0084 within-file
+    key-collision guard's "reject the whole batch for adjudication" policy.
+    Exact duplicates stay idempotent (no error).
 
 ## Alternatives considered
 

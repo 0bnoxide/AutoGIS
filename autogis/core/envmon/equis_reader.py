@@ -14,11 +14,10 @@ arcpy-free; xlrd/openpyxl are lazy-imported in the sheet loaders only.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Optional
 
-from ..common.qa import QACollector, SEV_WARNING
+from ..common.qa import QACollector, SEV_ERROR, SEV_WARNING
 from ..common.units import UnitError, convert
 
 # EQuIS v1 family column names (TestResultQC_v1 / Sample_v1 / Batch_v1).
@@ -189,6 +188,13 @@ def _test_key(row: dict, sample_id: str) -> tuple:
             _get(row, _COL_TEST_TYPE).casefold())
 
 
+def _test_payload(row: dict) -> dict:
+    """Non-bookkeeping fields of a test-sheet row — the content merged under
+    each result row. Used to tell a benign exact duplicate from a real
+    conflict when two rows share the same ``_test_key`` (PR #253)."""
+    return {k: v for k, v in row.items() if not k.startswith("__")}
+
+
 def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
                            batch_rows: list[dict], profile,
                            qa: QACollector,
@@ -227,9 +233,24 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
     # R4 (ADR-0090): epar4 splits Test and Result into two sheets sharing a
     # 7-column composite; index the test sheet and merge under each result
     # row. fraction is the post-alias name (total_or_dissolved bridged by R3).
+    # Two test rows sharing the composite but carrying conflicting content
+    # (e.g. dilution 1 vs 5) would let file order pick which dilution/prep
+    # metadata rides a frozen key — a blocking, batch-gated collision, not a
+    # silent last-write-wins (PR #253; precedent ADR-0084 key-collision guard).
     test_index: dict[tuple, dict] = {}
     for t in test_rows:
-        test_index[_test_key(t, _get_sample_id(t, profile))] = t
+        key = _test_key(t, _get_sample_id(t, profile))
+        prior = test_index.get(key)
+        if prior is None:
+            test_index[key] = t
+        elif _test_payload(prior) != _test_payload(t):
+            qa.add(SEV_ERROR, "equis_test_key_collision",
+                   f"Test sheet '{profile.test_sheet}' rows "
+                   f"{prior.get('__sheet_row')} and {t.get('__sheet_row')} "
+                   f"share test key {key} with conflicting content — import "
+                   f"blocked (would attach order-dependent dilution/prep "
+                   f"metadata to a frozen key)",
+                   source_row=t.get("__sheet_row"))
 
     out = []
     for row_num, src in enumerate(result_rows, start=2):
@@ -260,9 +281,14 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
         _synthesize_qualifier(row)
         run_token = ""
         if profile.test_sheet:
-            run_token = re.sub(r"\D", "",
-                               _get(row, _COL_ANALYSIS_DATE)
-                               + _get(row, _COL_ANALYSIS_TIME))
+            # Injective run identity: join date & time with '@' — absent from
+            # normalized m/d/Y dates and H:M times, so distinct (date, time)
+            # pairs never collide. Stripping the separators did: '1/23/2025'
+            # + '4:56' and '12/3/2025' + '4:56' both became '1232025456' and
+            # collapsed the frozen key (PR #253).
+            date = _get(row, _COL_ANALYSIS_DATE)
+            time = _get(row, _COL_ANALYSIS_TIME)
+            run_token = f"{date}@{time}" if (date or time) else ""
         _compose_dilution_key(row, run_token)
         _route_limits(row, qa, row_num)
         _synthesize_reportable(row)
@@ -345,9 +371,9 @@ def _compose_dilution_key(row: dict, run_token: str = "") -> None:
     if row.get("__equis_stream") != "qc":
         parts.append(_na(_get(row, _COL_METHOD)))
     # R9 (ADR-0090): epar4's TST composite treats analysis date/time as the
-    # run identity, but neither survives into the frozen keys — the bounded
-    # token makes reanalyses key distinctly on both tables. Worst case
-    # (4 parts + method + 12 digits) stays far below the TEXT(64) guard.
+    # run identity, but neither survives into the frozen keys — the '@'-joined
+    # date/time token makes reanalyses key distinctly on both tables. Bounded
+    # (one date + one time, ~20 chars); the TEXT(64) overlength guard backs it.
     if run_token:
         parts.append(run_token)
     row["__equis_method_dilution_key"] = "|".join(p for p in parts if p)

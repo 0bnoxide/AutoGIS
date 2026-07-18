@@ -7,8 +7,8 @@
 # Structure verified against epar4_blank_edd.xlsx + its rt_* vocabulary
 # sheets (2026-07-12 / 2026-07-17); no real filled EDD exists yet.
 # Test/Result are split sheets joined on the shared 7-column composite
-# (test_sheet, R4/ADR-0090); test_batch ids are inline on RES (R5); a
-# digits-only analysis date/time token is folded into MethodDilutionKey
+# (test_sheet, R4/ADR-0090); test_batch ids are inline on RES (R5); an
+# '@'-joined analysis date/time token is folded into MethodDilutionKey
 # (R9) so reanalyses key distinctly. VI_* sheets are slice 4.
 profile_id: epar4
 lab_name: EPA Region 4 EQuIS
