@@ -1095,12 +1095,17 @@ class ExportContoursForCivil3D(object):
             _param("units", "Horizontal and elevation units", "GPString",
                    default="USSurveyFoot",
                    domain=("foot", "USSurveyFoot", "meter")),
+            _param("output_file", "Output LandXML surface", "DEFile",
+                   direction="Output"),
+            # Appended AFTER output_file: the arcpy-generated signature is
+            # positional in this order, so the optional parameter must not
+            # displace the pre-existing required slots (Esri: required
+            # parameters precede optional; PR #258 review P1). Order is
+            # pinned by test_toolbox_cad.test_export_civil3d_pyt_parameter_order.
             _param("z_unit", "TIN vertical unit (blank = same as units; "
                    "declare when the TIN's elevations use a different unit "
                    "-- they are converted by the exact factor)", "GPString",
                    required=False, domain=("foot", "USSurveyFoot", "meter")),
-            _param("output_file", "Output LandXML surface", "DEFile",
-                   direction="Output"),
         ]
 
     @toolbox_core.record_pyt_run(

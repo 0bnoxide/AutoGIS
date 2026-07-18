@@ -1,8 +1,11 @@
+import ast
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import autogis
 from autogis.adapters.toolbox_core import (
     export_tin_landxml,
     staged_cad_layers,
@@ -302,3 +305,26 @@ def test_export_tin_landxml_rejects_unknown_z_unit(tmp_path):
             surface_name="Groundwater", crs="EPSG:2256",
             linear_unit="USSurveyFoot", z_unit="fathom")
     assert not arcpy.checked_out
+
+
+def test_export_civil3d_pyt_parameter_order():
+    """Pin Tool 8.2's public arcpy signature (PR #258 review P1).
+
+    The generated tool signature is positional in getParameterInfo order, so
+    an inserted parameter silently breaks every positional script/model call.
+    New optional parameters must be APPENDED after output_file.
+    """
+    pyt = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
+    tree = ast.parse(pyt.read_text(encoding="utf-8"), filename=str(pyt))
+    cls = next(n for n in tree.body
+               if isinstance(n, ast.ClassDef)
+               and n.name == "ExportContoursForCivil3D")
+    get_info = next(n for n in cls.body
+                    if isinstance(n, ast.FunctionDef)
+                    and n.name == "getParameterInfo")
+    names = [call.args[0].value
+             for call in ast.walk(get_info)
+             if isinstance(call, ast.Call)
+             and getattr(call.func, "id", "") == "_param"]
+    assert names == ["input_tin", "surface_name", "crs", "units",
+                     "output_file", "z_unit"]
