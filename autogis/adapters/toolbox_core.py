@@ -87,8 +87,13 @@ def staged_cad_layers(arcpy_module, layer_paths, mappings):
 
     ``AddCADFields`` changes its input table. Copying selected features into
     ``scratchGDB`` first keeps the source GIS layers untouched while giving
-    Export To CAD the reserved ``Layer``/``LyrColor``/``LyrLnType`` values
-    it consumes.
+    Export To CAD the reserved ``LyrName``/``LyrColor``/``LyrLnType`` values
+    it consumes. ``AddCADFields(..., ADD_LAYER_PROPERTIES, ...)`` in ArcGIS
+    Pro 3.6.1 names the layer field ``LyrName`` (verified live; there is no
+    ``Layer`` field), so the update cursor must address ``LyrName`` — a
+    cursor over ``Layer`` raises ``Cannot find field 'Layer'`` and aborts
+    every export. Docs: doc.esri.com .../conversion/add-cad-fields.html;
+    .../conversion/export-to-cad.html (reserved CAD fields).
     """
     if len(layer_paths) != len(mappings):
         raise ValueError("CAD layer paths and mappings must have the same length.")
@@ -111,7 +116,7 @@ def staged_cad_layers(arcpy_module, layer_paths, mappings):
                 "NO_XDATA_PROPERTIES",
             )
             with arcpy_module.da.UpdateCursor(
-                    temp_path, ["Layer", "LyrColor", "LyrLnType"]) as cursor:
+                    temp_path, ["LyrName", "LyrColor", "LyrLnType"]) as cursor:
                 for row in cursor:
                     row[0] = mapping.cad_layer
                     row[1] = mapping.color

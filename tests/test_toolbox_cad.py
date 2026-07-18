@@ -57,8 +57,9 @@ class _FakeArcPy:
             SearchCursor=lambda _path, _fields: _Cursor(self.triangle_rows),
         )
 
-    def _update_cursor(self, path, _fields):
+    def _update_cursor(self, path, fields):
         cursor = _Cursor([[None, None, None], [None, None, None]])
+        cursor.fields = list(fields)
         self.update_cursors[path] = cursor
         return cursor
 
@@ -103,6 +104,12 @@ def test_staged_cad_layers_apply_properties_to_copies_and_clean_up(tmp_path):
         assert not arcpy.deleted
         assert [call[0] for call in arcpy.copied] == ["source/wells", "source/contours"]
         assert all(call[0] in staged for call in arcpy.added)
+        # AddCADFields(..., ADD_LAYER_PROPERTIES, ...) names the reserved
+        # layer field ``LyrName`` (not ``Layer``) — a cursor over ``Layer``
+        # raises "Cannot find field 'Layer'" against real arcpy and aborts
+        # every export. Pin the schema so that regression cannot recur.
+        assert arcpy.update_cursors[staged[0]].fields == [
+            "LyrName", "LyrColor", "LyrLnType"]
         assert arcpy.update_cursors[staged[0]].updated == [
             ("V-WELL", 3, "DASHED"), ("V-WELL", 3, "DASHED")]
         assert arcpy.update_cursors[staged[1]].updated == [
