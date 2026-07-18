@@ -4124,6 +4124,9 @@ def generate_job_queue_cmd(manifest, output, report, fail_on):
     out.write_text(_json.dumps([e.to_dict() for e in entries], indent=2),
                    encoding="utf-8")
     click.echo(f"Jobs: {len(entries)}  Output: {output}")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("draft-parser-profile")
 @click.argument("workbook", type=click.Path(exists=True))
 @click.option("--output", required=True, type=click.Path(),
