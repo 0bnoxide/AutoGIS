@@ -19,6 +19,13 @@ where things live; it does not replace reading the files themselves.
   helpers to reuse before writing a new envmon tool. Not dated/point-in-time;
   kept current, enforced by `envmon-spec-checker`.
 
+## Operational runbooks
+
+- **[`arcpy-environment.md`](arcpy-environment.md)** - the supported dev/Pro
+  two-environment setup and worktree launcher.
+- **[`arcpy-qa-routine.md`](arcpy-qa-routine.md)** - consolidated live-Pro QA
+  for the open ArcPy-dependent functional gates.
+
 ## Design history, per feature
 
 - **`superpowers/specs/YYYY-MM-DD-<topic>-design.md`** — brainstormed design docs,

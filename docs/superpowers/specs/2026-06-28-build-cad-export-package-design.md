@@ -6,6 +6,10 @@
 **Priority:** MEDIUM — Civil 3D-ready DWG/DXF exports for the survey/engineering handoff
 **Runtime:** LOCAL (arcpy) — routes through the `.pyt` toolbox (ADR-0006)
 
+**Implementation note (2026-07-17):** ADR-0089 applies the configured CAD
+layer name, color, and linetype to scratch feature-class copies before
+`ExportCAD`; source feature classes remain unchanged.
+
 ---
 
 ## Problem

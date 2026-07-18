@@ -44,6 +44,28 @@ def validate_crs(crs: str, *, qa: QACollector) -> bool:
     return True
 
 
+def find_prj_conflicts(cad_output_file: Path) -> "list[Path]":
+    """Projection/world files that would move Export To CAD's output.
+
+    A CAD file with an associated ``<same-stem>.prj`` (or folder-wide
+    ``esri_cad.prj`` / ``*.uprj``) gets its coordinates *projected to that
+    file's CRS* on export; an associated ``.wld`` (or ``esri_cad.wld`` /
+    ``*.uwld``) *transforms* them. Either silently breaks the "source
+    coordinates pass through unchanged" contract in projection_note.txt
+    (issue #238).
+    Docs: pro.arcgis.com .../conversion/export-to-cad.htm (Usage);
+    doc.esri.com .../help/data/cad/about-cad-coordinate-systems.html.
+    """
+    cad_output_file = Path(cad_output_file)
+    folder = cad_output_file.parent
+    candidates = [cad_output_file.with_suffix(".prj"),
+                  cad_output_file.with_suffix(".wld"),
+                  folder / "esri_cad.prj", folder / "esri_cad.wld"]
+    if folder.is_dir():
+        candidates += sorted(folder.glob("*.uprj")) + sorted(folder.glob("*.uwld"))
+    return [f for f in candidates if f.is_file()]
+
+
 def write_projection_note(crs: str, out_path: Path) -> Path:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,13 +81,7 @@ def write_projection_note(crs: str, out_path: Path) -> Path:
 
 
 def write_mapping_report(plan: "CADExportPlan", out_path: Path) -> Path:
-    """Write a CSV of gis_layer,cad_layer,color,linetype for the resolved plan.
-
-    Export-to-CAD names CAD layers after the source feature class (arcpy has
-    no verified per-feature Layer-property rename wired here yet -- see issue
-    #166); this report is the record of the intended mapping for manual
-    reclassification in the CAD package.
-    """
+    """Write an audit CSV of the CAD properties applied to each GIS layer."""
     import csv as _csv
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +89,8 @@ def write_mapping_report(plan: "CADExportPlan", out_path: Path) -> Path:
         writer = _csv.writer(fh)
         writer.writerow(["gis_layer", "cad_layer", "color", "linetype"])
         for m in plan.mappings:
-            writer.writerow([m.gis_layer, m.cad_layer, m.color or "", m.linetype or ""])
+            color = "" if m.color is None else m.color
+            writer.writerow([m.gis_layer, m.cad_layer, color, m.linetype or ""])
     return out_path
 
 

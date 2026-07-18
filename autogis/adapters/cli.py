@@ -4653,7 +4653,7 @@ def build_cad_package_cmd(layers, mapping, crs):
               help="First PNEZD point number.")
 @click.option("--landxml", is_flag=True, default=False,
               help="Also write points_pnezd.xml (LandXML CgPoints, headless). "
-                   "Contour polylines/TIN surfaces still require ArcGIS Pro.")
+                   "Use the .pyt tool to export an existing Pro TIN surface.")
 @click.option("--units", type=click.Choice(["foot", "USSurveyFoot", "meter"]),
               default=None,
               help="Linear unit of the point coordinates; required with "
@@ -4663,12 +4663,28 @@ def build_cad_package_cmd(layers, mapping, crs):
 def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
                        report, fail_on):
     """Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless);
-    --landxml adds a headless LandXML CgPoints export. Contour polylines /
-    TIN surfaces still require the .pyt toolbox (arcpy)."""
+    --landxml adds a headless LandXML CgPoints export. Existing Pro TINs use
+    the ExportContoursForCivil3D tool in the .pyt toolbox."""
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.civil3d_points import (
         build_pnezd, load_gwe_points_csv, write_pnezd_csv, write_pnezd_landxml,
         write_projection_note)
+
+    # Validate --landxml prerequisites before writing anything, so a usage
+    # error can't leave a partial package behind (issue #238).
+    if landxml:
+        if not units:
+            raise click.UsageError(
+                "--landxml requires --units (foot / USSurveyFoot / meter): "
+                "Civil 3D shifts or scales imports whose LandXML units are "
+                "missing and differ from the drawing's.")
+        from autogis.core.common.landxml import parse_epsg
+        if parse_epsg(crs) is None:
+            raise click.UsageError(
+                f"--landxml requires an EPSG-coded --crs (e.g. EPSG:2256): "
+                f"{crs!r} cannot be written as a machine-readable "
+                "<CoordinateSystem epsgCode>, so Civil 3D would silently "
+                "fall back to the drawing's coordinate system.")
 
     qa = QACollector()
     records = load_gwe_points_csv(Path(points_csv))
@@ -4679,11 +4695,6 @@ def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
     click.echo(f"{len(pts)} PNEZD point(s) -> {csv_path}")
     click.echo(f"Projection note -> {note_path}")
     if landxml:
-        if not units:
-            raise click.UsageError(
-                "--landxml requires --units (foot / USSurveyFoot / meter): "
-                "Civil 3D shifts or scales imports whose LandXML units are "
-                "missing and differ from the drawing's.")
         xml_path = write_pnezd_landxml(pts, out / "points_pnezd.xml",
                                        crs=crs, linear_unit=units)
         click.echo(f"LandXML CgPoints -> {xml_path}")

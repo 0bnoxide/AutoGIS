@@ -6,6 +6,11 @@
 **Priority:** LOW — Civil 3D surface-input handoff; narrower than BuildCADExportPackage (8.9)
 **Runtime:** CLI ✓ (point CSV + metadata, headless) / LOCAL (LandXML/DWG via `.pyt`)
 
+**Implementation note (2026-07-17):** ADR-0088 made point-only CgPoints
+LandXML headless. ADR-0089 completes the LOCAL path by exporting an existing
+ArcGIS Pro TIN as a named LandXML surface; Civil 3D derives contours from that
+surface, so no separate contour-polyline artifact is emitted.
+
 ---
 
 ## Relationship to BuildCADExportPackage (8.9)

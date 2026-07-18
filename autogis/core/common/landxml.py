@@ -1,12 +1,11 @@
-"""landxml.py — LandXML TIN surface parsing (read) + CgPoints export (write),
-stdlib only.
+"""landxml.py — LandXML TIN surface/CgPoints parsing and writing, stdlib only.
 
 Parses a ``<Surfaces><Surface><Definition>`` TIN block into points and
 triangle faces, for rasterizing/diffing against a drone DEM
 (:mod:`autogis.core.envmon.compare_drone_surfaces`). Also writes point-only
 ``<CgPoints>`` LandXML (control/survey points, no surface or alignment data)
 shared by ``export_survey_cad.py`` (RTK points, issue #164) and
-``civil3d_points.py`` (PNEZD points, issue #166).
+``civil3d_points.py`` (PNEZD points and TIN surfaces, issue #166).
 
 LandXML point order is (northing, easting, elevation) per the LandXML 1.2
 spec's default ``P`` element convention. Namespace-agnostic (``{*}tag``
@@ -18,6 +17,7 @@ values would silently swap the axes here — no validation catches it.
 """
 from __future__ import annotations
 
+import math
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -63,22 +63,13 @@ def parse_epsg(crs: Optional[str]) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-def write_cgpoints(points: Iterable[CgPoint], output_path: Path, *,
-                   crs: Optional[str] = None,
-                   linear_unit: Optional[str] = None) -> Path:
-    """Write a LandXML 1.2 ``<CgPoints>`` file: point-only export (control/
-    survey points), no surface or alignment data. Point text is "northing
-    easting elevation", the LandXML default convention.
-
-    *linear_unit* ("foot" / "USSurveyFoot" / "meter", per the LandXML-1.2
-    ``impLinear``/``metLinear`` enums) emits a ``<Units>`` block; *crs*
-    (e.g. ``"EPSG:2256"``) emits ``<CoordinateSystem>`` with ``epsgCode``
-    when the string carries an EPSG number. Civil 3D reads both on import —
-    without them it assumes the drawing's units and can shift/scale the
-    points. Omitting both keeps the bare legacy output.
-    """
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+def _landxml_root(*, crs: Optional[str], linear_unit: Optional[str]) -> ET.Element:
+    """Build the shared, coordinate-aware LandXML 1.2 document root."""
+    if crs and parse_epsg(crs) is None:
+        raise ValueError(
+            f"CRS {crs!r} carries no EPSG code (e.g. 'EPSG:2256'); a "
+            "<CoordinateSystem> without epsgCode is not machine-readable "
+            "on import.")
     now = datetime.now()
     root = ET.Element("LandXML", {
         "xmlns": _LANDXML_NS, "version": "1.2",
@@ -98,11 +89,37 @@ def write_cgpoints(points: Iterable[CgPoint], output_path: Path, *,
                 f"Unsupported LandXML linear unit {linear_unit!r}; expected "
                 f"one of {', '.join(SUPPORTED_LINEAR_UNITS)}.")
     if crs:
-        cs_attrs = {"name": crs}
-        epsg = parse_epsg(crs)
-        if epsg is not None:
-            cs_attrs["epsgCode"] = str(epsg)
-        ET.SubElement(root, "CoordinateSystem", cs_attrs)
+        ET.SubElement(root, "CoordinateSystem",
+                      {"name": crs, "epsgCode": str(parse_epsg(crs))})
+    return root
+
+
+def _write_tree(root: ET.Element, output_path: Path) -> Path:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
+    return output_path
+
+
+def write_cgpoints(points: Iterable[CgPoint], output_path: Path, *,
+                   crs: Optional[str] = None,
+                   linear_unit: Optional[str] = None) -> Path:
+    """Write a LandXML 1.2 ``<CgPoints>`` file: point-only export (control/
+    survey points), no surface or alignment data. Point text is "northing
+    easting elevation", the LandXML default convention.
+
+    *linear_unit* ("foot" / "USSurveyFoot" / "meter", per the LandXML-1.2
+    ``impLinear``/``metLinear`` enums) emits a ``<Units>`` block; *crs*
+    (e.g. ``"EPSG:2256"``) emits ``<CoordinateSystem>`` with ``epsgCode``.
+    A *crs* that carries no EPSG number raises ValueError — a name-only
+    ``<CoordinateSystem>`` is not machine-readable, so consumers would fall
+    back to the drawing's CRS while the file *looks* georeferenced (issue
+    #238). Civil 3D reads both blocks on import — without them it assumes
+    the drawing's units and can shift/scale the points. Omitting both keeps
+    the bare legacy output.
+    """
+    root = _landxml_root(crs=crs, linear_unit=linear_unit)
     cg_points = ET.SubElement(root, "CgPoints")
     for pt in points:
         attrs = {"name": pt.name}
@@ -112,9 +129,7 @@ def write_cgpoints(points: Iterable[CgPoint], output_path: Path, *,
             attrs["desc"] = pt.description
         el = ET.SubElement(cg_points, "CgPoint", attrs)
         el.text = f"{pt.northing} {pt.easting} {pt.elevation}"
-    ET.indent(root, space="  ")
-    ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
-    return output_path
+    return _write_tree(root, output_path)
 
 
 @dataclass
@@ -124,6 +139,52 @@ class LandXMLSurface:
     faces: list            # triples of point ids
     _grid: Optional[tuple] = field(default=None, init=False, repr=False,
                                    compare=False)
+
+
+def write_landxml_surface(surface: LandXMLSurface, output_path: Path, *,
+                          crs: str, linear_unit: str) -> Path:
+    """Write one triangulated ``<Surface>`` with explicit units and CRS.
+
+    ``surface.points`` values use this module's canonical
+    ``(northing, easting, elevation)`` order and each face references three
+    point ids. A named surface with at least one valid face is required so
+    Civil 3D exposes it in the LandXML import dialog.
+    """
+    if not surface.name.strip():
+        raise ValueError("LandXML surface name must not be blank.")
+    if not surface.points:
+        raise ValueError(f"LandXML surface {surface.name!r} has no points.")
+    if not surface.faces:
+        raise ValueError(f"LandXML surface {surface.name!r} has no faces.")
+    for point_id, coordinates in surface.points.items():
+        if len(coordinates) != 3 or not all(
+                math.isfinite(float(value)) for value in coordinates):
+            raise ValueError(
+                f"LandXML point {point_id!r} must have 3 finite coordinates.")
+    for face in surface.faces:
+        if len(face) != 3:
+            raise ValueError(f"LandXML TIN face must have 3 point ids: {face!r}.")
+        if len(set(face)) != 3:
+            raise ValueError(
+                f"LandXML TIN face must reference 3 distinct points: {face!r}.")
+        missing = [pid for pid in face if pid not in surface.points]
+        if missing:
+            raise ValueError(
+                f"Face {face} references unknown point id(s) {missing} — "
+                f"malformed LandXML surface {surface.name!r}.")
+
+    root = _landxml_root(crs=crs, linear_unit=linear_unit)
+    surfaces = ET.SubElement(root, "Surfaces")
+    surface_el = ET.SubElement(surfaces, "Surface", {"name": surface.name})
+    definition = ET.SubElement(surface_el, "Definition", {"surfType": "TIN"})
+    points_el = ET.SubElement(definition, "Pnts")
+    for point_id, (northing, easting, elevation) in sorted(surface.points.items()):
+        point_el = ET.SubElement(points_el, "P", {"id": str(point_id)})
+        point_el.text = f"{northing} {easting} {elevation}"
+    faces_el = ET.SubElement(definition, "Faces")
+    for face in surface.faces:
+        ET.SubElement(faces_el, "F").text = " ".join(str(pid) for pid in face)
+    return _write_tree(root, output_path)
 
 
 def parse_landxml_surface(path: Path, *, surface_name: str = "") -> LandXMLSurface:
