@@ -9,7 +9,7 @@ GUI, a unified PySide6 desktop GUI (`autogis-gui`, ADR-0050), and the importable
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-07-15**. The
+Status against the 79-tool environmental monitoring roadmap, as of **2026-07-18**. The
 Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
