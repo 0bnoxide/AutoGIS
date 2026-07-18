@@ -29,6 +29,10 @@ test_output.txt
 # CLI-seam run recorder output (ADR-0054) — runtime artifact, not source
 run_history.csv
 
+# arcpy toolbox-metadata droppings — ImportToolbox/Pro generate a
+# toolbox.<Tool>.pyt.xml sidecar per tool next to the .pyt on load
+*.pyt.xml
+
 # Project MCP server config — local-only per CLAUDE.md ("There is no project
 # .mcp.json"). Kept out of the repo so it never auto-loads for other sessions.
 .mcp.json
