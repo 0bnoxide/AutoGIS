@@ -1,0 +1,101 @@
+# autogis/config/lab_profiles/nysdec.yaml
+# NYSDEC EQuIS v5 EDD (.xlsx, Sample_v5 + TestResultQC_v5 + Batch_v5) —
+# Step-3 slice 2b.
+#
+# *** DRAFT — verify against a real filled NYSDEC EDD before first
+# production import; do not remove this banner until then (wqx.yaml
+# precedent). ***
+# Structure verified against the v5 blank template + description + valid-
+# values workbooks (2026-07-12 / 2026-07-17); no real filled EDD exists
+# yet. Same lowercase EQuIS column vocabulary as WMRD; Batch_v5 adds
+# analysis_date to the batch join composite (R6) and records uppercase
+# PREP/ANALYSIS batch types (matched case-insensitively, R5). Non-
+# analytical sheets (WaterLevel_v5, SoilGas_v5, FieldResults_v5, VI_*) are
+# out of scope for this slice.
+profile_id: nysdec
+lab_name: NYSDEC EQuIS v5
+format: equis_xls
+date_format: "%m/%d/%Y"
+encoding: utf-8
+
+sample_sheet: Sample_v5
+result_sheet: TestResultQC_v5
+batch_sheet: Batch_v5
+
+columns:
+  # identity / joins
+  sample_id: sys_sample_code
+  parent_sample_id: parent_sample_code
+  lab_sample_id: lab_sample_id
+  location_id: sys_loc_code
+  event_date: sample_date
+  matrix: sample_matrix_code
+  depth_top_ft: start_depth
+  depth_bot_ft: end_depth
+  # analyte / method
+  analyte: chemical_name
+  cas_number: cas_rn
+  method: lab_anl_method_name
+  method_name: lab_anl_method_name
+  result_fraction: fraction
+  analysis_date: analysis_date
+  prep_method: prep_method
+  prep_date: prep_date
+  lab_name: lab_name_code
+  result_basis: basis
+  # reader-synthesized (__equis_*) keys
+  result: __equis_result
+  units: __equis_units
+  qualifier: __equis_qualifier
+  qc_type: __equis_qc_type
+  dilution_factor: __equis_method_dilution_key
+  is_reportable: __equis_is_reportable
+  reporting_limit: __equis_reporting_limit
+  detection_limit: __equis_detection_limit
+  quantitation_limit: __equis_quantitation_limit
+  prep_batch_id: __equis_prep_batch
+  analysis_batch_id: __equis_analysis_batch
+  # QC-only source columns (normalize_qc_rows)
+  qc_original_conc: qc_original_conc
+  qc_spike_added: qc_spike_added
+  qc_spike_measured: qc_spike_measured
+  qc_spike_recovery: qc_spike_recovery
+  qc_spike_lcl: qc_spike_lcl
+  qc_spike_ucl: qc_spike_ucl
+  qc_rpd: qc_rpd
+  qc_rpd_cl: qc_rpd_cl
+  qc_dup_original_conc: qc_dup_original_conc
+  qc_dup_spike_added: qc_dup_spike_added
+  qc_dup_spike_measured: qc_dup_spike_measured
+  qc_dup_spike_recovery: qc_dup_spike_recovery
+
+# rt_matrix (NYSDEC): minimal, unambiguous mappings only (wqx.yaml
+# policy); everything else passes through + WARN. _TODO: extend after a
+# real EDD.
+matrix_map:
+  WG: GW
+  SO: SOIL
+  SS: SOIL
+  SIMP: SOIL
+  SE: SED
+  SED: SED
+
+nondetect_qualifiers: ["U", "UJ"]
+
+value_maps:
+  qc_sample_type:
+    # rt_sample_type (valid-values workbook) -> canonical QCType; unmapped
+    # codes (BS, BD, IB, PE, KD, RM, SD, SB, ...) are _TODO — they import
+    # with the raw code + QA-WARN (fail-safe).
+    "N": ""
+    "FD": FIELD_DUP
+    "FB": FIELD_BLANK
+    "EB": EQUIPMENT_BLANK
+    "TB": TRIP_BLANK
+    "LB": LAB_BLANK
+    "LCS": LCS
+    "LCSD": LCSD
+    "LD": LAB_DUP
+    "DUP": LAB_DUP
+    "MS": MS
+    "MSD": MSD

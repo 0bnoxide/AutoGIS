@@ -212,3 +212,24 @@ def test_run_edd_import_clean_file_still_passes(monkeypatch, tmp_path):
     assert seen["status"] == "PASS"
     assert seen["counts"]["analytical_results"] == 2
     assert seen["counts"]["analytical_skipped"] == 0
+
+
+def test_run_edd_import_test_key_collision_gates_write(monkeypatch, tmp_path):
+    # PR #253 P1: the equis reader flags a duplicate-test-key collision (two TST
+    # rows, same 7-col key, conflicting dilution) as blocking QA. run_edd_import
+    # must fold that into the batch-integrity abort — like a within-file key
+    # collision — so the order-dependent dilution/prep metadata never lands.
+    edd_importer, seen, appended = _import_harness(monkeypatch, [_flat_row()])
+
+    def _read(path, profile, qa=None):
+        qa.add(SEV_ERROR, "equis_test_key_collision", "conflicting test key")
+        return [_flat_row()]
+    monkeypatch.setattr(edd_importer, "read_edd_file", _read)
+
+    edd_importer.run_edd_import(
+        tmp_path / "f.csv", _flat_profile(), tmp_path / "g.gdb",
+        "site", {}, {})
+
+    assert appended == []                      # writer never invoked
+    assert seen["status"] == "ERROR"
+    assert seen["counts"]["analytical_results"] == 0
