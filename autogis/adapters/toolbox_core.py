@@ -32,6 +32,55 @@ from pathlib import Path
 from autogis.core.harvest.models import HarvestConfig, AttachmentResult
 
 
+ELEVATION_CONVERSIONS = {
+    "Meters to international feet": (1.0 / 0.3048, "m_to_intft"),
+    "Meters to US survey feet": (3937.0 / 1200.0, "m_to_usft"),
+    "International feet to meters": (0.3048, "intft_to_m"),
+    "US survey feet to meters": (1200.0 / 3937.0, "usft_to_m"),
+}
+
+
+def elevation_conversion_spec(conversion: str) -> tuple[float, str]:
+    """Return the exact cell-value multiplier and output-name suffix."""
+    try:
+        return ELEVATION_CONVERSIONS[conversion]
+    except KeyError:
+        raise ValueError(
+            f"Unknown elevation conversion {conversion!r}; expected one of "
+            f"{', '.join(ELEVATION_CONVERSIONS)}.") from None
+
+
+def convert_raster_elevation_units(
+        arcpy_module, input_path: Path, conversion: str) -> Path:
+    """Multiply raster cells by an exact unit factor using ArcGIS Times."""
+    factor, suffix = elevation_conversion_spec(conversion)
+    source = Path(input_path)
+    output = source.with_name(f"{source.stem}_{suffix}.tif")
+
+    extension = next(
+        (name for name in ("Spatial", "ImageAnalyst", "3D")
+         if arcpy_module.CheckExtension(name) == "Available"), None)
+    if extension is None:
+        raise ValueError(
+            "Raster elevation conversion license is unavailable; enable "
+            "Spatial Analyst, Image Analyst, or 3D Analyst, or turn off "
+            "elevation conversion.")
+
+    acquired = False
+    try:
+        checkout_status = arcpy_module.CheckOutExtension(extension)
+        if checkout_status != "CheckedOut":
+            raise ValueError(
+                f"{extension} license checkout failed ({checkout_status}); "
+                "elevation conversion was not started.")
+        acquired = True
+        arcpy_module.sa.Times(str(source), factor).save(str(output))
+        return output
+    finally:
+        if acquired:
+            arcpy_module.CheckInExtension(extension)
+
+
 @contextmanager
 def staged_cad_layers(arcpy_module, layer_paths, mappings):
     """Yield scratch copies carrying mapped CAD layer properties.

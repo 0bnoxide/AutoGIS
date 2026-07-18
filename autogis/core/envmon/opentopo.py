@@ -412,8 +412,15 @@ def download_dem(
     ds = get_dataset(dataset)
     box = resolve_bbox(bbox=bbox, aoi_path=aoi_path)
     key = resolve_api_key(api_key)
+    expected_ext = _FORMAT_EXT[output_format]
     out = Path(out_path) if out_path else Path(derive_out_name(
         ds, box, output_format))
+    if not out.suffix:
+        out = out.with_suffix(expected_ext)
+    elif out.suffix.lower() != expected_ext:
+        raise ValueError(
+            f"{output_format} output path must end in {expected_ext}; "
+            f"got {out.name!r}")
     if out.exists() and not overwrite:
         raise FileExistsError(
             f"{out} already exists; pass --overwrite to replace it")

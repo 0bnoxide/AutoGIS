@@ -1131,12 +1131,15 @@ class DownloadOpenTopoDEM(object):
             "map extent, a feature layer honoring any selection, or a manual "
             "WGS84 bbox) and optionally add it to the active map. Requires "
             "an OpenTopography API key ($OPENTOPOGRAPHY_API_KEY or the "
-            "API-key parameter). Writes a provenance/citation .json sidecar.")
+            "API-key parameter). Optionally reprojects horizontally and "
+            "converts elevation cell values between meters, international "
+            "feet, and US survey feet. Writes a provenance/citation .json "
+            "sidecar.")
         self.canRunInBackground = False
 
     def getParameterInfo(self):
         from autogis.core.envmon.opentopo import DEFAULT_DATASET, DEM_DATASETS
-        return [
+        parameters = [
             _param("dataset", "DEM dataset", "GPString",
                    default=DEFAULT_DATASET, domain=sorted(DEM_DATASETS)),
             _param("aoi_source", "AOI source", "GPString",
@@ -1156,7 +1159,19 @@ class DownloadOpenTopoDEM(object):
                    required=False, default=True),
             _param("reproject", "Reproject to map CRS (lossy resample)",
                    "GPBoolean", required=False, default=False),
+            _param("convert_elevation", "Convert elevation values (Raster Calculator)",
+                   "GPBoolean", required=False, default=False),
+            _param("elevation_conversion", "Elevation unit conversion", "GPString",
+                   required=False, default="Meters to international feet",
+                   domain=tuple(toolbox_core.ELEVATION_CONVERSIONS)),
         ]
+        parameters[-1].enabled = False
+        return parameters
+
+    def updateParameters(self, parameters):
+        p = {q.name: q for q in parameters}
+        p["elevation_conversion"].enabled = bool(
+            p["convert_elevation"].value)
 
     # ---- arcpy AOI resolution (Pro-only; untestable headless) ------------
     @staticmethod
@@ -1227,6 +1242,8 @@ class DownloadOpenTopoDEM(object):
         _msg(messages, result.qa)
         if not result.bytes_written:
             return
+        out = result.out_path
+        p["out_raster"].value = str(out)
         messages.addMessage(
             f"Wrote {result.out_path} ({result.bytes_written:,} bytes) + "
             f"provenance sidecar {result.out_path.name}.json")
@@ -1244,6 +1261,20 @@ class DownloadOpenTopoDEM(object):
                 str(out), str(projected), map_sr, "BILINEAR")
             add_path = projected
             messages.addMessage(f"Reprojected to {map_sr.name}: {projected}")
+        if bool(p["convert_elevation"].value):
+            conversion = (p["elevation_conversion"].valueAsText
+                          or "Meters to international feet")
+            try:
+                add_path = toolbox_core.convert_raster_elevation_units(
+                    arcpy, add_path, conversion)
+            except ValueError as err:
+                messages.addErrorMessage(str(err))
+                return
+            messages.addMessage(
+                f"Converted elevation values ({conversion}): {add_path}")
+            messages.addWarningMessage(
+                "Elevation conversion changed raster cell values only; "
+                "verify the output vertical coordinate system metadata.")
         if bool(p["add_to_map"].value) and active_map is not None:
             layer = active_map.addDataFromPath(str(add_path))
             view = aprx.activeView

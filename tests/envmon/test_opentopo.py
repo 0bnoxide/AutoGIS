@@ -294,6 +294,25 @@ def test_download_success_writes_file_and_sidecar(tmp_path, api_key_env):
     assert sidecar["downloaded_utc"]  # ISO timestamp present
 
 
+def test_download_appends_format_extension_when_output_has_none(
+        tmp_path, api_key_env):
+    result = download_dem(
+        "USGS10m", bbox=BBOX, out_path=tmp_path / "dem",
+        http_get=fake_get(200, b"GEOTIFF"))
+
+    assert result.out_path == tmp_path / "dem.tif"
+    assert result.out_path.read_bytes() == b"GEOTIFF"
+    assert (tmp_path / "dem.tif.json").exists()
+
+
+def test_download_rejects_extension_that_mismatches_format(
+        tmp_path, api_key_env):
+    with pytest.raises(ValueError, match=r"must end in \.tif"):
+        download_dem(
+            "USGS10m", bbox=BBOX, out_path=tmp_path / "dem.img",
+            http_get=lambda _url: pytest.fail("invalid path must fail before fetch"))
+
+
 def test_download_url_uses_key_and_routing(tmp_path, api_key_env):
     calls = []
     download_dem("COP30", bbox=BBOX, out_path=tmp_path / "d.tif",
