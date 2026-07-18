@@ -243,11 +243,12 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
   (114 modules), and `autogis.core.agol` (publishing, 11 modules) sit on top of common
-- **Four adapters:** `autogis.adapters.cli` (Click CLI), `autogis.adapters.toolbox.pyt`
-  (ArcGIS Pro GUI), and `autogis.adapters.gui` (`autogis-gui`, a unified PySide6 desktop GUI
-  that introspects the CLI's command tree and can drive both headless and LOCAL tools —
-  ADR-0050) all construct and validate the *same* config dataclasses and call the *same*
-  core functions — the interfaces cannot drift
+- **Four adapters:** the importable `autogis.core` library surface, `autogis.adapters.cli`
+  (Click CLI), `autogis.adapters.toolbox.pyt` (ArcGIS Pro GUI), and
+  `autogis.adapters.gui` (`autogis-gui`, a unified PySide6 desktop GUI that introspects the
+  CLI's command tree and can drive both headless and LOCAL tools — ADR-0050). The three user
+  interfaces construct and validate the *same* config dataclasses and call the *same* core
+  functions — the interfaces cannot drift
 
 ### Design invariants
 

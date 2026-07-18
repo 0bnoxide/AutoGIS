@@ -101,7 +101,7 @@ def test_cli_generate_job_queue_report_and_fail_on(tmp_path):
         "--manifest", str(manifest), "--output", str(out),
         "--report", str(report), "--fail-on", "warning",
     ])
-    assert result.exit_code != 0, result.output
+    assert result.exit_code == 1, result.output
     assert report.exists()
     assert "unknown_tool" in report.read_text(encoding="utf-8")
 
