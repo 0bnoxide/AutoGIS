@@ -135,14 +135,21 @@ AOI to avoid unnecessary API traffic.
 | Feature layer with a selection | Selected-feature extent is used |
 | Same layer with selection cleared | Whole-layer extent is used |
 | Manual `W S E N` bbox | Values pass through unchanged |
+| Output path entered without a suffix | `.tif` is appended; the sidecar is `<name>.tif.json`; no Esri Grid naming error |
 | Add to map on | Downloaded raster appears in the active map |
 | Reproject on | `_epsg<code>.tif` is produced with BILINEAR resampling and that raster is added |
+| Elevation conversion on | Final raster name records the selected direction (`_m_to_intft`, `_m_to_usft`, `_intft_to_m`, or `_usft_to_m`) and that raster is added |
 | Map view active | View zooms to the added layer and the message says so |
 | Layout view active | No false “zoomed” claim |
 | Missing/invalid key, empty AOI, oversized bbox | Readable error; no `.part`, partial `.tif`, or orphaned projected raster |
 
 Save the tool messages and output directory listing in `$QaEvidence`. Pass
 #222 only when all rows pass; delete the downloaded test rasters afterward.
+Elevation conversion uses the documented `Times` raster operation with exact
+unit factors and requires an available Spatial Analyst, Image Analyst, or 3D
+Analyst license only when its checkbox is enabled. It changes cell values, not
+vertical coordinate system metadata; verify that metadata before downstream
+elevation analysis.
 
 ## 5. CAD package and TIN LandXML (#238 / PR #251)
 
