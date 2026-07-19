@@ -1474,6 +1474,46 @@ def _render_qa(qa, report, fail_on):
 # reached when arcpy is present (in ArcGIS Pro). No rich ergonomics here; the
 # .pyt is their primary UI (Global Constraints).
 # --------------------------------------------------------------------------
+@envmon.command("qualify")
+@click.option("--out", "out_dir", required=True,
+              type=click.Path(file_okay=False),
+              help="Directory for qualification.json/.md and run history.")
+@click.option("--self-test", is_flag=True,
+              help="Run only the two detector canaries.")
+def qualify_cmd(out_dir, self_test):
+    """Qualify the installed ArcGIS Pro runtime and Python toolbox."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["AUTOGIS_RUN_HISTORY"] = str(out_dir / "run_history.csv")
+    try:
+        _guard("qualify")
+    except click.ClickException as exc:
+        click.echo(f"Precondition failed: {exc.format_message()}", err=True)
+        raise SystemExit(2)
+
+    from autogis.adapters.qualification import (
+        QualificationPreconditionError,
+        run_qualification,
+    )
+    try:
+        report, paths, exit_code = run_qualification(
+            out_dir, self_test=self_test)
+    except QualificationPreconditionError as exc:
+        click.echo(f"Precondition failed: {exc}", err=True)
+        raise SystemExit(2)
+
+    click.echo(f"Wrote report: {paths[0]}")
+    click.echo(f"Wrote report: {paths[1]}")
+    summary = report.summary
+    click.echo(
+        f"Summary: {summary['pass']} pass, {summary['fail']} fail, "
+        f"{summary['skip']} skip")
+    if self_test:
+        click.echo("Self-test: " + ("PASS" if exit_code == 0 else "FAIL"))
+    if exit_code:
+        raise SystemExit(exit_code)
+
+
 @envmon.command("import-gdb")
 @click.argument("site_config", type=click.Path(exists=True))
 @click.argument("workbook", type=click.Path(exists=True))

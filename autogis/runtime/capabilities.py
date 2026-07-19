@@ -20,6 +20,7 @@ TOOLS: dict[str, Runtime] = {
     "export-figures": Runtime.LOCAL,   # tool 6
     "full-pipeline": Runtime.LOCAL,    # tool 7
     "validate-db": Runtime.LOCAL,      # tool 8
+    "qualify": Runtime.LOCAL,          # ADR-0091 Pro qualification runner
     "validate-config": Runtime.CLOUD,
     "manage-analyte-dict": Runtime.CLOUD,
     "validate-units": Runtime.CLOUD,
@@ -238,6 +239,8 @@ _REGISTRY_SEED = [
      "Run the end-to-end local pipeline"),
     ("validate-db", "ValidateDatabase", "8", "LOCAL", "stable", "qa",
      "Validate the geodatabase contents"),
+    ("qualify", "QualifyArcGISPro", "", "LOCAL", "stable", "admin",
+     "Qualify the installed ArcGIS Pro runtime and Python toolbox"),
     ("build-survey-form", "BuildSurvey123Form", "7.1a", "CLOUD", "stable",
      "field", "Build a Survey123 XLSForm"),
     ("validate-rtk-survey", "ValidateRTKSurvey", "", "CLOUD", "stable", "field",
