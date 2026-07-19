@@ -1,7 +1,6 @@
 # ADR-0091: ArcGIS Pro qualification runner (roadmap Phase 1)
 
-**Status:** Proposed — owner merge of the ADR PR constitutes sign-off (roadmap
-shared gate item 1)
+**Status:** Accepted — owner sign-off for roadmap shared gate item 1
 
 **Date:** 2026-07-19
 
@@ -28,17 +27,26 @@ install exists or is planned.
 
 ### Architecture
 
-- **Core:** one new module `autogis/core/qualify.py` — check logic + report
-  model (`Check`, `QualificationReport`, `collect_environment`,
-  `check_toolbox`, `exercise_scratch_gdb`, `run_qualification`). arcpy-free at
-  import (arcpy reached only inside functions), auto-enforced by
-  `tests/test_boundary_imports.py`. No module-level `datetime`/`math`/`numpy`/
-  `time` names (`__main__` stomping hazard, see `cli.py` RecordingCommand
-  notes).
-- **Adapter:** CLI leaf `envmon qualify` in `autogis/adapters/cli.py`:
-  `_guard("qualify")` then call core. Inherits run-history recording for free
-  (RecordingCommand, ADR-0076). Registry: `TOOLS["qualify"] = Runtime.LOCAL`
-  plus one `_REGISTRY_SEED` entry (parity tests require both).
+- **Core:** one new module `autogis/core/qualify.py` — pure check/report logic
+  and models (`Check`, `QualificationReport`, result aggregation, JSON and
+  Markdown rendering). It receives plain values and `Check` records; it never
+  imports an adapter or touches arcpy. This keeps ADR-0001's dependency
+  direction intact and is enforced by `tests/test_boundary_imports.py` plus a
+  core-to-adapter import pin. No module-level `datetime`/`math`/`numpy`/`time`
+  names (`__main__` stomping hazard, see `cli.py` RecordingCommand notes).
+- **Live adapter:** one new module `autogis/adapters/qualification.py` owns
+  environment collection, toolbox loading/enumeration, parameter probing, the
+  scratch-GDB exercise, and `run_qualification`. It converts live results to
+  plain core `Check` records. Every direct arcpy access is function-scoped via
+  the canonical `autogis.runtime.sessions.arcpy_env` seam (ADR-0040), including
+  `ImportToolbox`; there is no raw `import arcpy` and no core → adapter call.
+  The implementation also normalizes the reused scratch-GDB core seams to
+  function-scope `arcpy_env` where this work touches them.
+- **CLI adapter:** leaf `envmon qualify` in `autogis/adapters/cli.py` calls
+  `_guard("qualify")`, then the live adapter. It inherits run-history recording
+  for free (RecordingCommand, ADR-0076). Registry:
+  `TOOLS["qualify"] = Runtime.LOCAL` plus one `_REGISTRY_SEED` entry (parity
+  tests require both).
 - **Invocation** (live QA): Pro conda python with `PYTHONPATH` per
   `docs/arcpy-environment.md`; `python -m autogis envmon qualify --out DIR`.
 
@@ -50,13 +58,14 @@ install exists or is planned.
   tools depend on — plus `sys.executable` and `autogis.__file__` provenance.
   These arcpy calls are themselves ADR-0077 subjects: doc-verified against
   current Esri pages in the implementing session, cited in the PR.
-- **Tier 1 (all 19 tools):** load `toolbox.pyt` via `importlib` SourceFileLoader,
-  enumerate `Toolbox().tools` at runtime (never a hardcoded list — parity
-  tests guarantee registration completeness), and per tool: instantiate, call
-  `getParameterInfo()` (the #214 crash site), assert unique parameter names,
-  call `updateParameters()` where present. One `arcpy.ImportToolbox()` pass so
-  Pro's own loader validates the file. Per-tool exceptions → `fail` with
-  traceback.
+- **Tier 1 (all 19 tools):** the live adapter loads `toolbox.pyt` via
+  `importlib` `SourceFileLoader`, enumerates `Toolbox().tools` at runtime (never
+  a hardcoded list — parity tests guarantee registration completeness), and per
+  tool: instantiates, calls `getParameterInfo()` (the #214 crash site), asserts
+  unique parameter names, and calls `updateParameters()` where present. One
+  `arcpy_env().ImportToolbox()` pass lets Pro's own loader validate the file.
+  The adapter converts per-tool results or exceptions to plain core `Check`
+  records; exceptions become `fail` with traceback.
 - **Tier 2 (scratch GDB, zero new arcpy surface):** in a temp dir, call the
   shipped seams `create_or_update_gdb_schema()` (creates the FileGDB plus full
   schema from nothing) then the core validate-database read-back. Windows
@@ -81,10 +90,10 @@ failures**:
 
 1. **Broken parameter definition:** an internal `_BrokenParamCanary` tool class
    whose `getParameterInfo` reproduces #214 (ValueList filter containing `""`),
-   injected through the identical `check_toolbox` path via an `extra_tools`
-   parameter. Implementation must live-verify the assignment raises in
-   standalone Pro python; documented fallback is a directly-raising canary
-   (weaker — records which variant shipped).
+   injected through the identical live-adapter toolbox-check path via an
+   `extra_tools` parameter. Implementation must live-verify the assignment
+   raises in standalone Pro python; documented fallback is a directly-raising
+   canary (weaker — records which variant shipped).
 2. **Failing scratch-GDB operation:** `exercise_scratch_gdb(doomed=True)`
    targets a GDB path whose parent is a plain file, guaranteeing the shipped
    seam fails. Same production code path, no mocks.
@@ -136,8 +145,9 @@ exiting 0 on the installed Pro, transcripts cited in the closing PR.
 ## Alternatives considered
 
 - **Standalone script / `python -m autogis.core.qualify`:** zero registry
-  footprint but re-implements or skips guard + run-history recording that the
-  CLI leaf gets free. Rejected.
+  footprint but would either pull live toolbox concerns into core or
+  re-implement/skip guard + run-history recording that the CLI leaf gets free.
+  Rejected.
 - **Full keystone-chain execution in slice 1:** closer to Pro reality but
   pulls fixture generation and execute()-driving forward; the gate's clauses
   are met without it and slice 2 is unchanged. Rejected for slice 1.
