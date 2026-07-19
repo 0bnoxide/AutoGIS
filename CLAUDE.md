@@ -130,6 +130,10 @@ capability owns one production phase and must meet its exit gate before the next
 phase starts. Do not reorder or parallel fast-track phases without an explicit
 user decision. This roadmap does not reopen any deferred group above.
 
+Gate changes (record each here): 2026-07-19 — Phase 1 gate's "Pro 3.5 + current
+release" leg amended to "currently installed Pro release" (user decision,
+ADR-0091); 3.5-floor compliance stays an authoring-time ADR-0077 duty.
+
 ## Decision records
 
 Two separate records — easy to conflate, keep both:

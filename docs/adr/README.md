@@ -109,6 +109,7 @@ Each ADR follows this structure:
 | [088](0088-civil3d-cad-export-arcpy-legs.md) | Civil3D/CAD arcpy legs (#166): shared LandXML CgPoints writer; headless `export-civil3d --landxml`; `.pyt` `BuildCADExportPackage` wired to doc-verified `arcpy.conversion.ExportCAD`. CAD layer rename (`AddCADFields`) and 8.2's contour/TIN leg deliberately deferred — not doc-verifiable / out of scope | Accepted | 2026-07-15 |
 | [089](0089-cad-layer-properties-and-civil3d-tin-landxml.md) | CAD layer properties + Civil 3D TIN LandXML (#166) | Proposed | 2026-07-17 |
 | [090](0090-edd-step3-slice2b-dialects.md) | EDD Step-3 slice 2b: EQuIS dialect support (mining/epar4/NYSDEC) — xlsx engine, header normalization, `source_aliases`/`test_sheet` profile keys (amends ADR-0075's 2-sheet freeze, precedent ADR-0082), inline-batch fallback, date-extended batch join, epar4 run-identity token in the `MethodDilutionKey` recipe; three DRAFT profiles | Accepted | 2026-07-17 |
+| [091](0091-arcgis-pro-qualification-runner.md) | ArcGIS Pro qualification runner (roadmap Phase 1): `core/qualify.py` + `envmon qualify` CLI leaf, Tier-1 param construction over all 19 tools + Tier-2 scratch-GDB via shipped schema seams, `--self-test` canaries; Phase 1 gate amended to installed-Pro (owner, 2026-07-19) | Proposed | 2026-07-19 |
 
 ## File naming
 

@@ -48,9 +48,13 @@ tool, validates parameter construction, exercises representative arcpy seams
 against a scratch geodatabase, and reports the Pro version, extensions, passes,
 failures, and skips in JSON plus a human-readable report.
 
-**Production gate:** the runner completes on ArcGIS Pro 3.5 and the current
-preferred Pro release, and detects a deliberately broken parameter definition
-and a deliberately failing scratch-GDB operation.
+**Production gate:** the runner completes on the currently installed Pro
+release, and detects a deliberately broken parameter definition and a
+deliberately failing scratch-GDB operation. *(Amended from "Pro 3.5 and the
+current preferred release" by owner decision 2026-07-19, recorded in ADR-0091:
+no Pro 3.5 install exists; the 3.5 compliance floor remains an authoring-time
+doc-verification duty per ADR-0077 that a runtime pass cannot prove. The
+runner stays version-agnostic so a 3.5 leg can be added later.)*
 
 ## Phase 2 — Event status and staleness checker
 
