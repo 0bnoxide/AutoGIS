@@ -12,7 +12,11 @@
 #       issues/{n}/comments  the PR conversation timeline
 #   - --paginate, so a PR with >30 comments doesn't silently truncate
 #   - emits POLL-FAIL <time> on any gh error instead of going quiet
-#   - dedups by id, so you're told about each item exactly once
+#   - dedups by "TYPE id" KEY, not the display line: inline comments' path:line
+#     shifts every time a commit lands on the PR (#261), and a mutable field in
+#     the dedup key re-emits every already-seen item on every push
+#   - the seen-file is append-only: a transiently short API response can never
+#     forget ids and resurrect them later
 #   - is foreground-testable with --once BEFORE you trust it in a Monitor
 #
 # Usage:
@@ -23,18 +27,28 @@
 #   watch-pr-reviews.sh <pr> --exclude LOGIN    skip a login (repeatable)
 #   watch-pr-reviews.sh <pr> --include-self     don't skip your own comments
 #   watch-pr-reviews.sh <pr> --continuous       keep emitting; don't exit on first
+#   watch-pr-reviews.sh <pr> --baseline         swallow pre-existing items on the
+#                                               first successful poll of THIS run
+#   watch-pr-reviews.sh <pr> --seen-file PATH   pin the seen-state file (default
+#                                               is under $TMPDIR, which some
+#                                               harnesses vary per invocation)
 #
 # By default it excludes the Copilot review bot and your own login, and EXITS 0
 # after the first new item so a `Monitor` fires once and stops (the common
 # "wake me when the review lands" case). Arm it with persistent:true.
+# For a long-lived watch, arm with --continuous --baseline so pre-existing
+# items don't fire the Monitor on the first poll. If you re-run --once in a
+# loop instead, pass --baseline only on the FIRST run (it swallows every poll
+# it baselines).
 #
-#   Monitor(command: 'bash .claude/scripts/watch-pr-reviews.sh 247',
+#   Monitor(command: 'bash .claude/scripts/watch-pr-reviews.sh 247 --continuous --baseline',
 #           description: 'reviews on PR #247', persistent: true)
 #
-# ponytail: gh + jq + a comm-based seen-file. No state DB, no extra deps.
+# ponytail: gh + awk key-set + an append-only seen-file. No state DB, no extra deps.
 set -uo pipefail   # NOT -e: a transient gh failure must become POLL-FAIL, not an exit
 
 PR=""; REPO=""; INTERVAL=45; ONCE=0; CONTINUOUS=0; INCLUDE_SELF=0
+BASELINE=0; SEEN_FILE=""; FIRST=1
 EXCLUDES=("copilot-pull-request-reviewer[bot]")
 
 while [ $# -gt 0 ]; do
@@ -45,7 +59,9 @@ while [ $# -gt 0 ]; do
     --include-self) INCLUDE_SELF=1; shift ;;
     --once) ONCE=1; shift ;;
     --continuous) CONTINUOUS=1; shift ;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+    --baseline) BASELINE=1; shift ;;
+    --seen-file) SEEN_FILE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
     [0-9]*) PR="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -67,10 +83,14 @@ _ex=""
 for e in "${EXCLUDES[@]}"; do _ex="${_ex:+$_ex,}\"$e\""; done
 EX="[$_ex]"
 
-SEEN="${TMPDIR:-/tmp}/watch-pr-reviews.${REPO//\//_}.${PR}.seen"
-touch "$SEEN"
+SEEN="${SEEN_FILE:-${TMPDIR:-/tmp}/watch-pr-reviews.${REPO//\//_}.${PR}.seen}"
+# Sentinel first line: keeps the seen-file non-empty so awk's NR==FNR two-file
+# idiom can't misread stdin as file one. Old-format files (full display lines)
+# stay compatible — lookups only ever use the first two fields.
+[ -s "$SEEN" ] || printf '# watch-pr-reviews seen-keys\n' > "$SEEN"
 
-# Emit new (id-deduped) items across all three surfaces; return 0 if any new.
+# Emit items whose "TYPE id" key is unseen, across all three surfaces; append
+# the new keys to $SEEN; return 0 if anything was emitted.
 poll() {
   local ok=1 r i s cur new
   r=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
@@ -84,10 +104,18 @@ poll() {
     return 1
   fi
   cur="$(printf '%s\n%s\n%s\n' "$r" "$i" "$s" | grep -v '^$' | sort -u)"
-  new="$(comm -13 <(sort -u "$SEEN") <(printf '%s\n' "$cur"))"
-  printf '%s\n' "$cur" > "$SEEN"
+  new="$(printf '%s\n' "$cur" | awk '
+      NR==FNR { seen[$1" "$2] = 1; next }
+      NF { k = $1" "$2; if (!(k in seen) && !dup[k]++) print }' "$SEEN" -)"
   if [ -n "$new" ]; then
-    printf 'NEW %s\n' "$new"
+    printf '%s\n' "$new" | awk 'NF { print $1" "$2 }' >> "$SEEN"
+  fi
+  if [ "$FIRST" = 1 ]; then
+    FIRST=0
+    if [ "$BASELINE" = 1 ]; then return 1; fi
+  fi
+  if [ -n "$new" ]; then
+    printf '%s\n' "$new" | sed 's/^/NEW /'
     return 0
   fi
   return 1
