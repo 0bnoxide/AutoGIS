@@ -116,7 +116,7 @@ class ToolCapability:
     name: str = ""
     roadmap_id: str = ""
     runtime: str = "CLOUD"     # CLOUD | LOCAL | DRAFT
-    status: str = "stable"     # stable | draft | planned
+    status: str = "stable"     # stable | draft | planned | deprecated
     domain: str = ""           # intake|qa|analysis|cartography|field|agol|reporting|admin
     description: str = ""
     plan_path: str = ""
@@ -223,10 +223,11 @@ _REGISTRY_SEED = [
      "Build the wide current-event table"),
     ("build-callouts", "BuildCallouts", "4", "LOCAL", "stable", "cartography",
      "Build analytical callout boxes"),
-    ("optimize-callouts", "BuildCalloutsHullCollision", "5.2", "LOCAL", "stable",
+    ("optimize-callouts", "BuildCalloutsHullCollision", "5.2", "LOCAL", "deprecated",
      "cartography",
      "Hull-collision callout placement — folded into build-callouts "
-     "--use-hull-collision / the BuildCallouts .pyt parameter (ADR-0020)"),
+     "--use-hull-collision / the BuildCallouts .pyt parameter (ADR-0020); "
+     "this command always raises and redirects, it never runs"),
     ("manage-callout-overrides", "ManageCalloutOverrides", "5.3", "LOCAL",
      "stable", "cartography",
      "CRUD for Env_CalloutPlacementOverrides (list/lock/unlock/clear)"),
