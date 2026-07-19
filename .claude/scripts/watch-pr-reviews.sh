@@ -39,9 +39,10 @@
 # For a long-lived watch, arm with --continuous --baseline so pre-existing
 # items don't fire the Monitor on the first poll. If you re-run --once in a
 # loop instead, pass --baseline only on the FIRST run (it swallows every poll
-# it baselines).
+# it baselines). AutoGIS cold reviews use the authenticated owner's login, so
+# its Monitor command must also pass --include-self and pin --repo explicitly.
 #
-#   Monitor(command: 'bash .claude/scripts/watch-pr-reviews.sh 247 --continuous --baseline',
+#   Monitor(command: 'bash .claude/scripts/watch-pr-reviews.sh 247 --repo 0bnoxide/AutoGIS --include-self --continuous --baseline',
 #           description: 'reviews on PR #247', persistent: true)
 #
 # ponytail: gh + awk key-set + an append-only seen-file. No state DB, no extra deps.

@@ -42,6 +42,15 @@ printf 'INLINE 1 alice f.py:99\n' > "$FIX/inline.txt"
 out="$(run)"
 [ -z "$out" ] || fail "line-churn on a seen id re-emitted: $out"
 
+# A temporarily short API response must not erase an item's identity and
+# resurrect it when the item returns on a later poll.
+: > "$FIX/inline.txt"
+out="$(run)"
+[ -z "$out" ] || fail "short response emitted an item: $out"
+printf 'INLINE 1 alice f.py:99\n' > "$FIX/inline.txt"
+out="$(run)"
+[ -z "$out" ] || fail "item resurrected after a short response: $out"
+
 printf 'INLINE 1 alice f.py:99\nINLINE 3 carol g.py:5\n' > "$FIX/inline.txt"
 out="$(run)"
 [ "$out" = 'NEW INLINE 3 carol g.py:5' ] || fail "genuinely new item, got: $out"
