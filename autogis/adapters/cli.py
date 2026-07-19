@@ -386,7 +386,12 @@ def validate_units_cmd(analytes, screening, report, fail_on):
 @qa_report_options
 def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
                             threshold, report, fail_on):
-    """Tool: pre-flight check that workbook location IDs match the well layer."""
+    """Tool: pre-flight check that workbook location IDs match the well layer.
+
+    SITE_CONFIG is not read by the headless (--wells-csv) check itself: it
+    supplies run-history site identity (ADR-0076), and the .pyt twin reads it
+    for the GDB well layer.
+    """
     from autogis.core.common.config import ParserProfile
     from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
     from autogis.core.envmon.reconcile_locations import (
@@ -2574,7 +2579,9 @@ def validate_drone_products_cmd(manifest_path, flight_id, check_paths, report, f
               help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
 @click.option("--flight-id", required=True,
               help="Drone flight ID. A matching DroneFlights row must already exist in the GDB.")
-@click.option("--site-id", required=True, help="Site identifier for logging.")
+@click.option("--site-id", required=True,
+              help="Site identifier stamped into run-history audit records "
+                   "(ADR-0076); not read by the import itself.")
 @click.option("--gdb", "gdb_path", required=True, type=click.Path(),
               help="File geodatabase path (ArcGIS Pro required).")
 @click.option("--catalog-name", default="DroneMosaicDataset", show_default=True,
@@ -3392,7 +3399,9 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
               help="Lab EDD CSV or XLSX.")
 @click.option("--edd-profile", "profile_path", required=True, type=click.Path(exists=True),
               help="Lab EDD profile YAML.")
-@click.option("--site", "site_id", required=True)
+@click.option("--site", "site_id", required=True,
+              help="Site identifier stamped into run-history audit records "
+                   "(ADR-0076); not read by the reconciliation itself.")
 @click.option("--threshold", type=float, default=0.85, show_default=True)
 @qa_report_options
 def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
@@ -3885,8 +3894,7 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
 @click.option("--site", "site_id", required=True)
 @click.option("--event", "event_id", required=True)
 @click.option("--prior-event", "prior_event_id", default=None)
-@click.option("--report", default=None, type=click.Path())
-def build_dashboard_data_mart_cmd(gdb, site_id, event_id, prior_event_id, report):
+def build_dashboard_data_mart_cmd(gdb, site_id, event_id, prior_event_id):
     """Tool 6.7: truncate + repopulate the Dash_* mart tables (ArcGIS Pro)."""
     _guard("build-dashboard-data-mart")
     from autogis.core.envmon.dashboard_data_mart import build_dashboard_data_mart
