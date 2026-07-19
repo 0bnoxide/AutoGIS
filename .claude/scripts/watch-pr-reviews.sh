@@ -41,6 +41,8 @@
 # loop instead, pass --baseline only on the FIRST run (it swallows every poll
 # it baselines). AutoGIS cold reviews use the authenticated owner's login, so
 # its Monitor command must also pass --include-self and pin --repo explicitly.
+# Under --once, inspect output (`NEW` / `POLL-FAIL`), not the exit status, which
+# remains zero after a completed poll for compatibility.
 #
 #   Monitor(command: 'bash .claude/scripts/watch-pr-reviews.sh 247 --repo 0bnoxide/AutoGIS --include-self --continuous --baseline',
 #           description: 'reviews on PR #247', persistent: true)
@@ -61,8 +63,10 @@ while [ $# -gt 0 ]; do
     --once) ONCE=1; shift ;;
     --continuous) CONTINUOUS=1; shift ;;
     --baseline) BASELINE=1; shift ;;
-    --seen-file) SEEN_FILE="$2"; shift 2 ;;
-    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
+    --seen-file)
+      [ $# -ge 2 ] && [[ "$2" != --* ]] || { echo "--seen-file requires PATH" >&2; exit 2; }
+      SEEN_FILE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,/^set -uo pipefail/ { /^set -uo pipefail/!p; }' "$0"; exit 0 ;;
     [0-9]*) PR="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -88,7 +92,10 @@ SEEN="${SEEN_FILE:-${TMPDIR:-/tmp}/watch-pr-reviews.${REPO//\//_}.${PR}.seen}"
 # Sentinel first line: keeps the seen-file non-empty so awk's NR==FNR two-file
 # idiom can't misread stdin as file one. Old-format files (full display lines)
 # stay compatible — lookups only ever use the first two fields.
-[ -s "$SEEN" ] || printf '# watch-pr-reviews seen-keys\n' > "$SEEN"
+if [ ! -s "$SEEN" ] && ! printf '# watch-pr-reviews seen-keys\n' > "$SEEN" 2>/dev/null; then
+  echo "POLL-FAIL $(date -u +%H:%M:%S) (cannot write seen-file: $SEEN)"
+  exit 2
+fi
 
 # Emit items whose "TYPE id" key is unseen, across all three surfaces; append
 # the new keys to $SEEN; return 0 if anything was emitted.

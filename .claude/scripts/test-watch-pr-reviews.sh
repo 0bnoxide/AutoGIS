@@ -63,4 +63,17 @@ printf 'ISSUE 9 dave\n' > "$FIX/issue.txt"
 out="$(run)"
 [ "$out" = 'NEW ISSUE 9 dave' ] || fail "post-baseline new item, got: $out"
 
+help="$(bash "$HERE/watch-pr-reviews.sh" --help)"
+[[ "$help" != *'set -uo pipefail'* ]] || fail "--help leaked executable code"
+
+if out="$(run --seen-file --continuous 2>&1)"; then
+  fail "--seen-file accepted a missing PATH"
+fi
+[[ "$out" = *'--seen-file requires PATH'* ]] || fail "missing PATH diagnostic: $out"
+
+if out="$(run --seen-file "$T/missing/seen" 2>&1)"; then
+  fail "unwritable --seen-file exited successfully"
+fi
+[[ "$out" = *'POLL-FAIL'*'cannot write seen-file'* ]] || fail "unwritable seen-file diagnostic: $out"
+
 echo "OK: all watch-pr-reviews dedup/baseline checks passed"
