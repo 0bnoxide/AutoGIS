@@ -1101,12 +1101,23 @@ class ExportContoursForCivil3D(object):
                    domain=("foot", "USSurveyFoot", "meter")),
             _param("output_file", "Output LandXML surface", "DEFile",
                    direction="Output"),
+            # Appended AFTER output_file: the arcpy-generated signature is
+            # positional in this order, so the optional parameter must not
+            # displace the pre-existing required slots (Esri: required
+            # parameters precede optional; PR #258 review P1). Order is
+            # pinned by test_toolbox_cad.test_export_civil3d_pyt_parameter_order.
+            _param("z_unit", "TIN vertical unit (blank = same as units; "
+                   "declare when the TIN's elevations use a different unit "
+                   "-- they are converted by the exact factor)", "GPString",
+                   required=False, domain=("foot", "USSurveyFoot", "meter")),
         ]
 
     @toolbox_core.record_pyt_run(
         "export-civil3d", gdb_param="input_tin", site_config_param=None)
     def execute(self, parameters, messages):
         p = {q.name: q for q in parameters}
+        units = p["units"].valueAsText
+        z_unit = p["z_unit"].valueAsText or None
         try:
             output = toolbox_core.export_tin_landxml(
                 arcpy,
@@ -1114,11 +1125,16 @@ class ExportContoursForCivil3D(object):
                 Path(p["output_file"].valueAsText),
                 surface_name=p["surface_name"].valueAsText,
                 crs=p["crs"].valueAsText,
-                linear_unit=p["units"].valueAsText,
+                linear_unit=units,
+                z_unit=z_unit,
             )
         except ValueError as exc:
             messages.addErrorMessage(str(exc))
             return
+        if z_unit and z_unit != units:
+            messages.addMessage(
+                f"Converted TIN elevations from {z_unit} to {units} by the "
+                f"exact unit ratio.")
         messages.addMessage(f"Civil 3D LandXML TIN surface -> {output}")
 
 

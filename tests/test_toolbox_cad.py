@@ -1,8 +1,11 @@
+import ast
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import autogis
 from autogis.adapters.toolbox_core import (
     export_tin_landxml,
     staged_cad_layers,
@@ -57,8 +60,9 @@ class _FakeArcPy:
             SearchCursor=lambda _path, _fields: _Cursor(self.triangle_rows),
         )
 
-    def _update_cursor(self, path, _fields):
+    def _update_cursor(self, path, fields):
         cursor = _Cursor([[None, None, None], [None, None, None]])
+        cursor.fields = list(fields)
         self.update_cursors[path] = cursor
         return cursor
 
@@ -103,6 +107,12 @@ def test_staged_cad_layers_apply_properties_to_copies_and_clean_up(tmp_path):
         assert not arcpy.deleted
         assert [call[0] for call in arcpy.copied] == ["source/wells", "source/contours"]
         assert all(call[0] in staged for call in arcpy.added)
+        # AddCADFields(..., ADD_LAYER_PROPERTIES, ...) names the reserved
+        # layer field ``LyrName`` (not ``Layer``) — a cursor over ``Layer``
+        # raises "Cannot find field 'Layer'" against real arcpy and aborts
+        # every export. Pin the schema so that regression cannot recur.
+        assert arcpy.update_cursors[staged[0]].fields == [
+            "LyrName", "LyrColor", "LyrLnType"]
         assert arcpy.update_cursors[staged[0]].updated == [
             ("V-WELL", 3, "DASHED"), ("V-WELL", 3, "DASHED")]
         assert arcpy.update_cursors[staged[1]].updated == [
@@ -234,3 +244,87 @@ def test_export_tin_landxml_releases_license_when_extraction_fails(tmp_path):
     assert arcpy.checked_out == ["3D"]
     assert arcpy.checked_in == ["3D"]
     assert len(arcpy.deleted) == 1
+
+
+def test_surface_from_triangle_json_applies_z_scale():
+    rows = [_triangle((0, 0, 100), (10, 0, 101), (0, 10, 102))[0]]
+    surface = surface_from_triangle_json(rows, "Groundwater", z_scale=2.0)
+    assert surface.points[1] == (0.0, 0.0, 200.0)
+    assert surface.points[2] == (0.0, 10.0, 202.0)
+    assert surface.points[3] == (10.0, 0.0, 204.0)
+
+
+def test_export_tin_landxml_converts_declared_meter_z_to_survey_feet(tmp_path):
+    # Undefined VCS + declared meters elevations on a survey-foot CRS:
+    # z is multiplied by the exact 3937/1200 ratio (100 m -> 328.0833... ft).
+    arcpy = _FakeArcPy(tmp_path, [
+        _triangle((1000, 2000, 100.0), (1010, 2000, 101.0), (1000, 2010, 102.0)),
+    ])
+    out = export_tin_landxml(
+        arcpy, "groundwater_tin", tmp_path / "surface.xml",
+        surface_name="Groundwater", crs="EPSG:2256",
+        linear_unit="USSurveyFoot", z_unit="meter")
+    assert "328.083" in out.read_text(encoding="utf-8")
+
+
+def test_export_tin_landxml_converts_mixed_unit_tin_with_matching_vcs(tmp_path):
+    # Previously hard-blocked: defined meter VCS on a survey-foot CRS now
+    # exports when the declaration matches the VCS.
+    arcpy = _FakeArcPy(
+        tmp_path,
+        [_triangle((1000, 2000, 100.0), (1010, 2000, 101.0), (1000, 2010, 102.0))],
+        vertical_reference=SimpleNamespace(metersPerUnit=1.0, direction=1),
+    )
+    out = export_tin_landxml(
+        arcpy, "groundwater_tin", tmp_path / "surface.xml",
+        surface_name="Groundwater", crs="EPSG:2256",
+        linear_unit="USSurveyFoot", z_unit="meter")
+    assert "328.083" in out.read_text(encoding="utf-8")
+
+
+def test_export_tin_landxml_rejects_z_unit_mismatching_defined_vcs(tmp_path):
+    # VCS says survey feet; declaring meters must fail, not silently convert.
+    arcpy = _FakeArcPy(
+        tmp_path,
+        vertical_reference=SimpleNamespace(metersPerUnit=1200.0 / 3937.0,
+                                           direction=1),
+    )
+    with pytest.raises(ValueError, match="vertical coordinates"):
+        export_tin_landxml(
+            arcpy, "groundwater_tin", tmp_path / "surface.xml",
+            surface_name="Groundwater", crs="EPSG:2256",
+            linear_unit="USSurveyFoot", z_unit="meter")
+    assert not arcpy.checked_out
+
+
+def test_export_tin_landxml_rejects_unknown_z_unit(tmp_path):
+    arcpy = _FakeArcPy(tmp_path)
+    with pytest.raises(ValueError, match="Unsupported TIN vertical unit"):
+        export_tin_landxml(
+            arcpy, "groundwater_tin", tmp_path / "surface.xml",
+            surface_name="Groundwater", crs="EPSG:2256",
+            linear_unit="USSurveyFoot", z_unit="fathom")
+    assert not arcpy.checked_out
+
+
+def test_export_civil3d_pyt_parameter_order():
+    """Pin Tool 8.2's public arcpy signature (PR #258 review P1).
+
+    The generated tool signature is positional in getParameterInfo order, so
+    an inserted parameter silently breaks every positional script/model call.
+    New optional parameters must be APPENDED after output_file.
+    """
+    pyt = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
+    tree = ast.parse(pyt.read_text(encoding="utf-8"), filename=str(pyt))
+    cls = next(n for n in tree.body
+               if isinstance(n, ast.ClassDef)
+               and n.name == "ExportContoursForCivil3D")
+    get_info = next(n for n in cls.body
+                    if isinstance(n, ast.FunctionDef)
+                    and n.name == "getParameterInfo")
+    names = [call.args[0].value
+             for call in ast.walk(get_info)
+             if isinstance(call, ast.Call)
+             and getattr(call.func, "id", "") == "_param"]
+    assert names == ["input_tin", "surface_name", "crs", "units",
+                     "output_file", "z_unit"]

@@ -18,9 +18,19 @@ Both paths require arcpy and therefore remain ArcGIS Pro toolbox operations.
 Core modules must remain arcpy-free (ADR-0002), and every arcpy call must meet
 ADR-0077's current-documentation bar. Current ArcGIS Pro 3.6 documentation now
 provides the missing evidence: `AddCADFields` creates reserved CAD fields, the
-DWG/DXF reserved-field reference identifies writable `Layer`, `LyrColor`, and
-`LyrLnType` fields, `ExportCAD` consumes those fields, and `TinTriangle`
-converts a TIN to triangle polygons.
+DWG/DXF reserved-field reference identifies writable layer-property fields,
+`ExportCAD` consumes those fields, and `TinTriangle` converts a TIN to
+triangle polygons.
+
+**Amended 2026-07-18 (PR #258, live-QA findings):** the reserved-field docs
+describe the layer-name override loosely as a field "with a name or alias of
+`Layer` or `Level`", but `AddCADFields(..., ADD_LAYER_PROPERTIES, ...)` in Pro
+3.6.1 actually creates the field as **`LyrName`** (real name *and* alias —
+verified live; no `Layer` field exists). An `UpdateCursor` addressed to
+`Layer` raises `Cannot find field 'Layer'` and aborted every export; the
+suite's fake cursor ignored field names, so only the live functional-QA pass
+caught it. The same pass added an optional declared TIN vertical unit to the
+LandXML export (details in the amended sections below).
 
 ## Decision
 
@@ -29,8 +39,10 @@ converts a TIN to triangle polygons.
 `BuildCADExportPackage` copies each validated input feature class into
 `arcpy.env.scratchGDB`, calls
 `arcpy.conversion.AddCADFields(..., "ADD_LAYER_PROPERTIES", ...)`, and fills
-`Layer`, `LyrColor`, and `LyrLnType` with an `arcpy.da.UpdateCursor`. The tool
-passes those staged copies to `ExportCAD` and deletes them in `finally`.
+`LyrName`, `LyrColor`, and `LyrLnType` with an `arcpy.da.UpdateCursor`
+(*amended 2026-07-18: originally written — and shipped — as `Layer`, which
+does not exist; see Context*). The tool passes those staged copies to
+`ExportCAD` and deletes them in `finally`.
 
 The original feature classes are never modified. This matters because
 `AddCADFields` changes its input table in place. The existing mapping report
@@ -46,11 +58,18 @@ Verified ArcGIS Pro 3.6 references:
 ### 2. Export existing Pro TINs as LandXML surfaces
 
 The `.pyt` toolbox adds `ExportContoursForCivil3D`. It accepts an existing TIN,
-surface name, EPSG code, linear unit, and output XML path. The adapter:
+surface name, EPSG code, linear unit, output XML path, and (*amended
+2026-07-18, PR #258*) an optional declared TIN vertical unit appended after
+`output_file` so the pre-existing positional tool signature is preserved.
+The adapter:
 
 1. verifies that the TIN is projected and that the requested EPSG code and
-   unit match its spatial reference, including a defined vertical coordinate
-   system;
+   unit match its spatial reference; a defined vertical coordinate system is
+   validated against the declared vertical unit (default: same as the LandXML
+   unit), and elevations are converted by the exact meter / international-foot
+   / US-survey-foot ratio when the declared unit differs — PR #257's optional
+   elevation-conversion pattern applied to extracted vertices in pure Python,
+   with no raster tool or extra license;
 2. verifies, checks out, and later checks in the 3D Analyst extension;
 3. calls `arcpy.ddd.TinTriangle` into the scratch geodatabase;
 4. reads each triangle as `SHAPE@JSON` with `arcpy.da.SearchCursor`;
@@ -98,8 +117,13 @@ preservation of faces:
 - LOCAL-tool calls cannot run end-to-end in headless CI. The arcpy seams are
   covered with fakes, but a real-Pro smoke test remains release QA.
 - When the TIN has no defined vertical coordinate system, the export must
-  trust that its z-values use the selected LandXML unit. A defined mismatched
-  or positive-down vertical coordinate system is blocked.
+  trust the declared vertical unit (default: the selected LandXML unit) — a
+  wrong declaration still mislabels or mis-scales elevations, exactly once. A
+  defined vertical coordinate system that contradicts the declaration, or is
+  positive-down, is blocked. (*Amended 2026-07-18: before `z_unit`, a
+  mixed-unit TIN — e.g. State Plane feet horizontal with meter elevations —
+  could not be exported validly at all: an undefined VCS silently mislabeled,
+  a defined one hard-blocked.*)
 
 ## Alternatives considered
 

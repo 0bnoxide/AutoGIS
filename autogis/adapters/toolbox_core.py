@@ -87,8 +87,13 @@ def staged_cad_layers(arcpy_module, layer_paths, mappings):
 
     ``AddCADFields`` changes its input table. Copying selected features into
     ``scratchGDB`` first keeps the source GIS layers untouched while giving
-    Export To CAD the reserved ``Layer``/``LyrColor``/``LyrLnType`` values
-    it consumes.
+    Export To CAD the reserved ``LyrName``/``LyrColor``/``LyrLnType`` values
+    it consumes. ``AddCADFields(..., ADD_LAYER_PROPERTIES, ...)`` in ArcGIS
+    Pro 3.6.1 names the layer field ``LyrName`` (verified live; there is no
+    ``Layer`` field), so the update cursor must address ``LyrName`` — a
+    cursor over ``Layer`` raises ``Cannot find field 'Layer'`` and aborts
+    every export. Docs: doc.esri.com .../conversion/add-cad-fields.html;
+    .../conversion/export-to-cad.html (reserved CAD fields).
     """
     if len(layer_paths) != len(mappings):
         raise ValueError("CAD layer paths and mappings must have the same length.")
@@ -111,7 +116,7 @@ def staged_cad_layers(arcpy_module, layer_paths, mappings):
                 "NO_XDATA_PROPERTIES",
             )
             with arcpy_module.da.UpdateCursor(
-                    temp_path, ["Layer", "LyrColor", "LyrLnType"]) as cursor:
+                    temp_path, ["LyrName", "LyrColor", "LyrLnType"]) as cursor:
                 for row in cursor:
                     row[0] = mapping.cad_layer
                     row[1] = mapping.color
@@ -126,12 +131,15 @@ def staged_cad_layers(arcpy_module, layer_paths, mappings):
                 pass  # scratch cleanup must not hide the export result/error
 
 
-def surface_from_triangle_json(geometry_rows, surface_name: str):
+def surface_from_triangle_json(geometry_rows, surface_name: str,
+                               z_scale: float = 1.0):
     """Build a LandXML TIN from Esri JSON triangle polygons.
 
     Esri JSON vertices are ``x, y, z`` (easting, northing, elevation); the
     shared LandXML model stores ``northing, easting, elevation``. Shared TIN
     vertices are deduplicated so adjacent faces reference the same point id.
+    ``z_scale`` multiplies each elevation by an exact unit factor (PR #257's
+    elevation-conversion pattern applied to TIN vertices; 1.0 = no-op).
     """
     from autogis.core.common.landxml import LandXMLSurface
 
@@ -149,7 +157,8 @@ def surface_from_triangle_json(geometry_rows, surface_name: str):
             if len(coordinate) < 3 or coordinate[2] is None:
                 raise ValueError("TIN triangle geometry is missing vertex elevations.")
             vertex = (
-                float(coordinate[1]), float(coordinate[0]), float(coordinate[2]))
+                float(coordinate[1]), float(coordinate[0]),
+                float(coordinate[2]) * z_scale)
             if not all(math.isfinite(value) for value in vertex):
                 raise ValueError("TIN triangle geometry contains a non-finite coordinate.")
             vertices.append(vertex)
@@ -175,8 +184,19 @@ def surface_from_triangle_json(geometry_rows, surface_name: str):
 
 
 def export_tin_landxml(arcpy_module, input_tin: str, output_path: Path, *,
-                       surface_name: str, crs: str, linear_unit: str) -> Path:
-    """Extract an ArcGIS Pro TIN and write a Civil 3D-ready LandXML surface."""
+                       surface_name: str, crs: str, linear_unit: str,
+                       z_unit: str | None = None) -> Path:
+    """Extract an ArcGIS Pro TIN and write a Civil 3D-ready LandXML surface.
+
+    ``z_unit`` declares the TIN's actual vertical unit when it differs from
+    the horizontal/LandXML unit (default: same as ``linear_unit``, no
+    conversion). Elevations are then multiplied by the exact unit ratio —
+    PR #257's optional elevation-conversion pattern, applied to extracted
+    TIN vertices in pure Python (no raster tool or extra license needed).
+    When the TIN defines a VCS, the declaration is validated against it;
+    with an undefined VCS the declaration is trusted (the caller must know
+    the data, e.g. a meters-elevation TIN on a State Plane feet CRS).
+    """
     from autogis.core.common.landxml import parse_epsg, write_landxml_surface
 
     if not surface_name or not surface_name.strip():
@@ -192,6 +212,11 @@ def export_tin_landxml(arcpy_module, input_tin: str, output_path: Path, *,
     if linear_unit not in expected_units:
         raise ValueError(
             f"Unsupported LandXML linear unit {linear_unit!r}; expected one "
+            f"of {', '.join(expected_units)}.")
+    z_unit = z_unit or linear_unit
+    if z_unit not in expected_units:
+        raise ValueError(
+            f"Unsupported TIN vertical unit {z_unit!r}; expected one "
             f"of {', '.join(expected_units)}.")
 
     spatial_reference = arcpy_module.Describe(input_tin).spatialReference
@@ -215,12 +240,13 @@ def export_tin_landxml(arcpy_module, input_tin: str, output_path: Path, *,
     vertical_reference = getattr(spatial_reference, "VCS", None)
     if vertical_reference is not None:
         vertical_meters_per_unit = float(vertical_reference.metersPerUnit)
-        if not math.isclose(vertical_meters_per_unit, expected_meters_per_unit,
+        if not math.isclose(vertical_meters_per_unit, expected_units[z_unit],
                             rel_tol=1e-9, abs_tol=1e-12):
             raise ValueError(
                 f"Input TIN vertical coordinates use {vertical_meters_per_unit:g} "
-                f"meters per unit, which does not match LandXML unit "
-                f"{linear_unit!r}.")
+                f"meters per unit, which does not match the TIN vertical unit "
+                f"{z_unit!r}; declare the TIN's actual vertical unit to "
+                f"convert elevations.")
         if getattr(vertical_reference, "direction", 1) != 1:
             raise ValueError(
                 "Input TIN vertical coordinate system is positive downward; "
@@ -247,9 +273,12 @@ def export_tin_landxml(arcpy_module, input_tin: str, output_path: Path, *,
         # Let TinTriangle use its documented z-factor default. Passing an
         # explicit z-factor is unavailable when the TIN defines a VCS.
         arcpy_module.ddd.TinTriangle(input_tin, triangles, "PERCENT")
+        # Exact unit ratio (1.0 when z_unit == linear_unit): e.g. a
+        # meters-elevation TIN exported as feet scales z by 1/0.3048.
+        z_scale = expected_units[z_unit] / expected_units[linear_unit]
         with arcpy_module.da.SearchCursor(triangles, ["SHAPE@JSON"]) as cursor:
             surface = surface_from_triangle_json(
-                (row[0] for row in cursor), surface_name)
+                (row[0] for row in cursor), surface_name, z_scale=z_scale)
         return write_landxml_surface(
             surface, output_path, crs=crs, linear_unit=linear_unit)
     finally:
