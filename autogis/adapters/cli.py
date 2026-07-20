@@ -67,10 +67,11 @@ def run(config_path, where, out, incremental, *, harvest_fn=None):
 # console script, CliRunner tests, GUI subprocess launches.
 # --------------------------------------------------------------------------
 _QA_COUNTS_META_KEY = "autogis.qa_counts"
-# ponytail: one-entry skip-list -- `agol promote` self-logs a richer record
-# (rows_copied etc.) via promote.py's _log_promotion; generalize only when a
-# second self-logging command exists.
-_SELF_LOGGING_COMMANDS = {"promote"}
+# Commands that self-log a richer RunRecord than the auto-recorder's empty
+# outputs={}: `agol promote` (rows_copied etc. via promote.py's _log_promotion)
+# and `event-status` (state counts + status='success' regardless of its semantic
+# nonzero exit code, so a stale-finding read isn't mislogged as an error).
+_SELF_LOGGING_COMMANDS = {"promote", "event-status"}
 
 
 def _record_tool_name(ctx) -> str:
@@ -1440,6 +1441,114 @@ def run_history_cmd(history_path, site_id, tool_name, status, since, limit, fmt)
                 f"{r.finished_at.isoformat():<20} {r.message[:40]}"
             )
         click.echo(f"\n{len(records)} record(s).")
+
+
+def _self_log_event_status(site_id, event_id, report):
+    """Write event-status's own RunRecord (it is in _SELF_LOGGING_COMMANDS).
+
+    A status check that *finds* stale artifacts did not *fail*, so this always
+    records status='success' with the state counts as outputs, regardless of the
+    semantic exit code. Best-effort; observability never alters the command.
+    Honors the same AUTOGIS_RUN_HISTORY destination ('off' disables) the auto-
+    recorder uses, so it stays independent of the --run-history read target.
+    """
+    try:
+        dest = os.environ.get("AUTOGIS_RUN_HISTORY", "")
+        if dest.lower() == "off":
+            return
+        from autogis.core.common.run_history import RunHistory, RunRecord
+        now = _dt.now()
+        RunHistory(Path(dest) if dest else Path.cwd() / "run_history.csv").write(
+            RunRecord(
+                run_id=str(uuid.uuid4()), tool_name="event-status",
+                site_id=site_id, event_id=event_id, started_at=now,
+                finished_at=now, status="success", inputs={},
+                outputs=report.summary, qa_count_error=0, qa_count_warning=0,
+                qa_count_info=0, message=f"worst={report.worst_state}"))
+    except Exception:
+        pass
+
+
+@envmon.command("event-status")
+@click.option("--site-id", required=True, help="Site ID.")
+@click.option("--event-id", required=True, help="Event ID.")
+@click.option("--run-history", "run_history_path", default="run_history.csv",
+              show_default=True, type=click.Path(),
+              help="run_history.csv the producers wrote (need not exist).")
+@click.option("--source-registry", "registry_path", default="source_docs.csv",
+              show_default=True, type=click.Path(),
+              help="Source/baseline registry CSV (need not exist).")
+@click.option("--workbook", default=None, type=click.Path(),
+              help="Current input workbook path.")
+@click.option("--site-config", default=None, type=click.Path(),
+              help="Current site config YAML path.")
+@click.option("--screening", "screening_path", default=None,
+              type=click.Path(), help="Current screening levels YAML path.")
+@click.option("--figure-spec", "figure_spec_path", default=None,
+              type=click.Path(), help="Current figure spec YAML path.")
+@click.option("--reviewer-tracker", "tracker_path", default=None,
+              type=click.Path(),
+              help="Reviewer-comment tracker CSV (awaiting-review signal).")
+@click.option("--accept", is_flag=True, default=False,
+              help="Record current input hashes as the baseline, then exit "
+                   "(run after a blessed build; classifies nothing).")
+@click.option("--format", "fmt", type=click.Choice(["table", "json"]),
+              default="table", show_default=True)
+def event_status_cmd(site_id, event_id, run_history_path, registry_path,
+                     workbook, site_config, screening_path, figure_spec_path,
+                     tracker_path, accept, fmt):
+    """Tool (roadmap Phase 2): classify each event artifact current/stale/
+    missing/failed/awaiting-review, naming the upstream change (ADR-0093).
+
+    Read-only w.r.t. production data. Compares current input hashes against
+    accepted baselines plus the run/registry ledgers. Run once with --accept
+    after a blessed build to record the baseline. Exit codes: 0 current,
+    3 stale, 4 missing, 5 failed, 6 awaiting-review. Closed-world: only declared
+    inputs and registered instances are classified.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    from autogis.core.common.run_history import RunHistory
+    from autogis.core.envmon.source_registry import SourceRegistry
+    from autogis.core.envmon import event_status as es
+    from autogis.core.envmon.ingest_reviewer_comments import read_tracker_csv
+
+    inputs = {
+        "workbook": Path(workbook) if workbook else None,
+        "site-config": Path(site_config) if site_config else None,
+        "screening": Path(screening_path) if screening_path else None,
+        "figure-spec": Path(figure_spec_path) if figure_spec_path else None,
+    }
+    registry = SourceRegistry(Path(registry_path))
+
+    if accept:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        recorded = es.accept_baseline(site_id=site_id, event_id=event_id,
+                                      inputs=inputs, source_registry=registry,
+                                      now=now)
+        click.echo(f"Accepted baseline for {site_id}/{event_id}: "
+                   + (", ".join(recorded) or "(no input files supplied)"))
+        return
+
+    history = RunHistory(Path(run_history_path))
+    open_review = 0
+    if tracker_path and Path(tracker_path).exists():
+        open_review = sum(1 for c in read_tracker_csv(Path(tracker_path))
+                          if c.status in ("OPEN", "IN_REVIEW"))
+    report = es.classify_event(
+        site_id=site_id, event_id=event_id, inputs=inputs,
+        run_history=history, source_registry=registry,
+        open_review_count=open_review)
+
+    if fmt == "json":
+        click.echo(_json.dumps(report.as_dict(), indent=2))
+    else:
+        click.echo(es.render_table(report))
+
+    _self_log_event_status(site_id, event_id, report)
+    code = report.exit_code()
+    if code:
+        raise SystemExit(code)
 
 
 def _render_qa(qa, report, fail_on):
