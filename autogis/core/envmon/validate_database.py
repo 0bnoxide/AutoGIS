@@ -44,7 +44,10 @@ def validate_database(gdb: Path, qa: QACollector,
     before = len(qa.records)
 
     # 1) Schema completeness
-    for name, schema in {**TABLE_SCHEMAS, **FEATURE_SCHEMAS}.items():
+    schemas = dict(TABLE_SCHEMAS)
+    schemas.update({name: fields
+                    for name, (_geometry, fields) in FEATURE_SCHEMAS.items()})
+    for name, schema in schemas.items():
         path = str(gdb / name)
         summary["tables_checked"] += 1
         if not arcpy.Exists(path):

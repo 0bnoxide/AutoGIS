@@ -558,9 +558,10 @@ def create_or_update_gdb_schema(gdb_path, spatial_reference=None,
     empty placeholder schemas and a QA ERROR is raised instead of inventing
     geometry (spec: missing inputs -> placeholder schema + QA error).
     """
-    import arcpy
+    from ...runtime.sessions import arcpy_env as _arcpy
     from pathlib import Path as _P
     from ..common.qa import QACollector, SEV_ERROR
+    arcpy = _arcpy()
     qa = qa or QACollector()
     gdb_path = _P(gdb_path)
     if not gdb_path.exists():

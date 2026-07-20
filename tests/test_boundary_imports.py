@@ -52,3 +52,24 @@ def test_pyt_toolbox_parses():
     # an ArcGIS Pro session to be discovered.
     src = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
     ast.parse(src.read_text(encoding="utf-8"), filename=str(src))
+
+
+def test_core_does_not_import_adapters():
+    core = Path(autogis.__file__).parent / "core"
+    violations = []
+    for path in core.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"))):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+                level = 0
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+                level = node.level
+            else:
+                continue
+            if any(name == "autogis.adapters"
+                   or name.startswith("autogis.adapters.")
+                   or (level and name == "adapters")
+                   for name in names):
+                violations.append(str(path.relative_to(core.parent)))
+    assert not violations, f"core -> adapter imports: {sorted(set(violations))}"
