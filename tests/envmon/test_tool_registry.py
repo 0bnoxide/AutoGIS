@@ -78,10 +78,12 @@ def test_filter_by_status():
 
 def test_registry_commands_exist_in_live_cli():
     """Drift guard (one-directional): every registered command must be a real
-    `envmon` click subcommand. (We deliberately do NOT assert the reverse —
-    top-level/agol/sub-group commands are intentionally out of the registry.)"""
-    from autogis.adapters.cli import envmon
+    click subcommand — bare names under `envmon`, group-qualified names
+    ("agol <name>") under the `agol` group (unified discovery, ADR-0092).
+    The reverse direction lives in test_capabilities.py."""
+    from autogis.adapters.cli import agol, envmon
     live = set(envmon.commands.keys())
+    live |= {f"agol {name}" for name in agol.commands}
     registered = {t.command for t in get_all_tools()}
     missing = sorted(registered - live)
     assert not missing, f"registry advertises non-existent commands: {missing}"

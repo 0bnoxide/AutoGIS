@@ -1,8 +1,13 @@
 """Runtime guard for the suite's adapters.
 
-LOCAL tools (the arcpy-touching envmon tools) are *registered* in the CLI
-(and, for tools 2-8, the ``.pyt``) but only *runnable* where ``arcpy`` is present (ArcGIS
-Pro). ``require_runtime(name)`` is the single gate: it consults the capability
+LOCAL tools (the arcpy-touching envmon tools) are *registered* in the CLI but
+only *runnable* where ``arcpy`` is present (ArcGIS Pro) -- with one
+exception: per ADR-0006, tools 2-8 (``import-gdb``, ``build-event``,
+``build-callouts``, ``gw-contours``, ``export-figures``, ``full-pipeline``,
+``validate-db``) always guard then redirect to the ``.pyt`` toolbox and never
+actually execute via the CLI, even with arcpy present -- the ``.pyt`` is their
+primary UI by design, not a headless-only fallback.
+``require_runtime(name)`` is the single gate: it consults the capability
 registry (``runtime.capabilities.requires_arcpy``) and, for a LOCAL tool with
 no arcpy on the path, raises a clear ``RuntimeUnavailable`` instead of letting
 a deep ``import arcpy`` blow up with a traceback. CLOUD/HYBRID tools pass

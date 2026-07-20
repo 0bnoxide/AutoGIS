@@ -3985,11 +3985,12 @@ def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
               type=click.Choice(["CLOUD", "LOCAL", "DRAFT"], case_sensitive=False))
 @click.option("--domain", default=None)
 @click.option("--status", default=None,
-              type=click.Choice(["stable", "draft", "planned"], case_sensitive=False))
+              type=click.Choice(["stable", "draft", "planned", "deprecated"],
+                                case_sensitive=False))
 @click.option("--search", default=None)
 @click.option("--verbose", is_flag=True, default=False)
 def list_tools_cmd(runtime_filter, domain, status, search, verbose):
-    """List available envmon tools with capability metadata (headless)."""
+    """List available envmon + agol tools with capability metadata (headless)."""
     from autogis.core.envmon.tool_registry import (
         get_all_tools, filter_tools, format_tool_table)
 

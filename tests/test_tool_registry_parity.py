@@ -80,8 +80,10 @@ def _pyt_classes() -> tuple[dict[str, ast.ClassDef], list[str]]:
 def test_no_ghost_seed_entries():
     """Reverse of test_every_envmon_command_registered_for_discovery: a seed
     entry whose command was renamed/removed makes `envmon list-tools`
-    advertise a command that doesn't exist."""
+    advertise a command that doesn't exist. Seed commands are bare envmon
+    names or group-qualified "agol <name>" entries (ADR-0092)."""
     live = set(cli.envmon.commands.keys())
+    live |= {f"agol {name}" for name in cli.agol.commands}
     ghosts = sorted({c for (c, *_rest) in _REGISTRY_SEED} - live)
     assert not ghosts, (
         f"_REGISTRY_SEED entries with no live envmon command "
@@ -119,8 +121,10 @@ def test_every_local_tool_is_guarded():
 def test_runtime_class_agrees_between_tools_and_seed():
     """TOOLS (drives the guard) and the seed (drives `list-tools` display)
     must agree on LOCAL-ness. Seed 'DRAFT' is a documented display state
-    (capabilities.py: 'may differ in spelling from the Runtime enum')."""
-    seed_rt = {c: rt for (c, _n, _rid, rt, *_rest) in _REGISTRY_SEED}
+    (capabilities.py: 'may differ in spelling from the Runtime enum').
+    Group-qualified seed commands ("agol sync-to-gdb") map to their bare
+    TOOLS key (last token) so agol entries stay covered."""
+    seed_rt = {c.split()[-1]: rt for (c, _n, _rid, rt, *_rest) in _REGISTRY_SEED}
     conflicts = [
         f"{c}: TOOLS={TOOLS[c].value} seed={seed_rt[c]}"
         for c in sorted(set(seed_rt) & set(TOOLS))

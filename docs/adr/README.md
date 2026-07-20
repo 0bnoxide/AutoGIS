@@ -110,6 +110,7 @@ Each ADR follows this structure:
 | [089](0089-cad-layer-properties-and-civil3d-tin-landxml.md) | CAD layer properties + Civil 3D TIN LandXML (#166) | Proposed | 2026-07-17 |
 | [090](0090-edd-step3-slice2b-dialects.md) | EDD Step-3 slice 2b: EQuIS dialect support (mining/epar4/NYSDEC) — xlsx engine, header normalization, `source_aliases`/`test_sheet` profile keys (amends ADR-0075's 2-sheet freeze, precedent ADR-0082), inline-batch fallback, date-extended batch join, epar4 run-identity token in the `MethodDilutionKey` recipe; three DRAFT profiles | Accepted | 2026-07-17 |
 | [091](0091-arcgis-pro-qualification-runner.md) | ArcGIS Pro qualification runner (roadmap Phase 1): pure `core/qualify.py` reporting + live `adapters/qualification.py` probing behind `envmon qualify`, Tier-1 param construction over all 19 tools + Tier-2 scratch-GDB via shipped schema seams, `--self-test` canaries; Phase 1 gate amended to installed-Pro (owner, 2026-07-19) | Accepted | 2026-07-19 |
+| [092](0092-unified-tool-discovery-agol-group.md) | Unified tool discovery: `agol` group commands join the `list-tools` registry as group-qualified entries, with bidirectional drift guards (user decision, reverses the envmon-only scoping) | Accepted | 2026-07-19 |
 
 ## File naming
 
