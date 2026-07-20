@@ -51,8 +51,9 @@ multi-value exit codes; (G6) a nonzero exit self-logs the read-only run as
   the `ArtifactState` vocabulary, a hardcoded `DEPENDENCY_GRAPH`, the
   classifier, exit-code mapping, JSON/table rendering, and `accept_baseline`.
   It receives plain values, a `RunHistory`, a `SourceRegistry`, and reviewer
-  comments; it never imports arcpy/arcgis or an adapter. `datetime` parsing
-  only (no module-level `datetime`/`math`/`numpy`/`time` names).
+  comments; it never imports arcpy/arcgis or an adapter (the `__main__`-stomping
+  hazard that bans module-level `datetime`/`math` names is a `cli.py`/adapter
+  concern; this core module is never `__main__`, like `run_history.py`).
 - **CLI adapter:** leaf `envmon event-status` in `cli.py`. No `_guard` (headless,
   `Runtime.CLOUD`). One `_REGISTRY_SEED` entry (parity tests require it); **not**
   in `TOOLS` (only guarded LOCAL tools are).
@@ -72,7 +73,7 @@ equality fragile).
 An artifact is **current** iff its producer's latest run for `(tool, site,
 event)` ended `success`/`warning` **and** every declared file input's current
 `compute_sha256` equals its latest baseline hash **and** that baseline was not
-registered at/after the build **and** no upstream artifact was rebuilt at/after
+registered at/after the build **and** no upstream artifact was rebuilt after
 this build or is itself not-current. Otherwise:
 
 - producer never ran → **missing**; last run `error` → **failed**; last run
@@ -83,12 +84,20 @@ this build or is itself not-current. Otherwise:
   partial rebuild classify correctly:* change → stale(drift) → `--accept` →
   stale(rebuild-pending) → rebuild in order → current, each transition naming
   its cause. A pure hash-vs-accepted comparison cannot express it.
-- upstream rebuilt at/after this build, or upstream not-current → **stale**
+- upstream rebuilt after this build, or upstream not-current → **stale**
   (transitive), naming the upstream. Staleness propagates down the DAG, so a
   changed workbook (import stale) carries every downstream artifact to stale.
 
-Timestamps are parsed to `datetime` (never string-compared); a same-second tie
-classifies **stale** (safe direction: stale-when-fresh over fresh-when-stale).
+Timestamps are parsed to `datetime` (never string-compared; tz-aware values are
+normalized to naive so a caller-supplied baseline can't raise against
+run-history's naive `finished_at`). The same-second tie policy **differs by
+clause**, matched to the expected ordering: a baseline is accepted *before* a
+build, so a baseline registered in the same second as the build is treated as
+newer → rebuild-pending (`>=`, safe); an upstream naturally finishes
+*before-or-with* its dependent in one pipeline, so a same-second upstream run is
+a co-build, not a rebuild (strict `>`). The `--accept` stamp is local-naive to
+match run-history's `finished_at` convention — a UTC stamp would skew the
+comparison in every non-UTC timezone.
 
 ### Dependency graph — hardcoded, tested as a matrix (G1)
 
@@ -125,7 +134,14 @@ outrank it (precedence below). Documented ceilings: **revocation is invisible**
 success still reads approved — the GDB is truth, RunHistory a proxy); the
 **ledger is the horizon** (runs recorded to a different `run_history.csv` are
 invisible — hence explicit `--run-history`/`--source-registry` paths defaulting
-to the producers' defaults).
+to the producers' defaults); and **event scoping is coarse** — most slice-1
+producers (`import-edd`, `apply-screening`, `export-figures`,
+`run-gw-model-pipeline`, `approve-gw-model`) record `event_id=None` (they take no
+`--event`), so for them the `(tool, site, event)` rule degenerates to the latest
+run at the site regardless of event. The tool is meant for the active/latest
+event; precise historical per-event scoping needs the deferred producer-side
+event tagging. A failed/cancelled `approve-gw-model` run is never counted as an
+approval (only the latest **successful** approval that postdates the build).
 
 ### Exit codes — semantic, always (G5/G6)
 
@@ -177,8 +193,12 @@ needs it).
 - Easier: a repeatable, scriptable answer to "what must be rebuilt for this
   event, and why" with a stable exit code; the five gate inputs each invalidate
   exactly their downstream set, proven by the matrix test.
-- Duties: the baseline is operator-maintained (`--accept` after a blessed
-  build). Closed-world — classification covers declared input kinds and
+- Duties: the baseline is operator-maintained — `--accept` the blessed inputs,
+  then (re)build, since a producer run must post-date the latest `--accept` to
+  read current (accept-then-build, per the transition narrative above). Note
+  `--accept` is not a no-op: a content-identical re-accept after a build
+  deliberately re-flags the dependents rebuild-pending until they rebuild.
+  Closed-world — classification covers declared input kinds and
   registered instances; an unregistered second workbook or an undeclared config
   is invisible, stated in help text. The approved-model leg is inference with
   documented ceilings until the deferred arcpy-gated read lands.

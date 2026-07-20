@@ -5,7 +5,8 @@ CLI contract: --accept round-trip, JSON output shape, and the semantic exit
 codes automation depends on.
 """
 import json
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
 from click.testing import CliRunner
 
@@ -92,6 +93,42 @@ def test_changed_screening_exits_stale_code_3(tmp_path):
     states = {a["kind"]: a["state"] for a in payload["artifacts"]}
     assert states["screening-evaluation"] == "stale"
     assert states["figures"] == "current"  # ONLY correct downstream
+
+
+def test_accept_stamp_is_local_not_utc(tmp_path, monkeypatch):
+    """P1-1: --accept must stamp the baseline in the same (local) clock as
+    run_history's finished_at. A UTC stamp skews the comparison in non-UTC
+    timezones, marking a freshly-built event stale for the offset's duration.
+    Forces a non-UTC zone so a UTC regression would flip the result to stale.
+    """
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    runner = CliRunner()
+    paths = _write_inputs(tmp_path)
+    registry = tmp_path / "src.csv"
+    runner.invoke(autogis, _base_args(tmp_path, paths, registry) + ["--accept"])
+
+    # producers build a few seconds AFTER the accept, in the same local clock
+    built = datetime.now() + timedelta(seconds=5)
+    h = RunHistory(tmp_path / "rh.csv")
+    for tool in ("import-edd", "export-snapshot", "apply-screening",
+                 "export-figures", "run-gw-model-pipeline"):
+        h.write(RunRecord(run_id=tool, tool_name=tool, site_id=SITE,
+                          event_id=EVENT, started_at=built, finished_at=built,
+                          status="success", inputs={}, outputs={},
+                          qa_count_error=0, qa_count_warning=0, qa_count_info=0,
+                          message=""))
+    ap = built + timedelta(seconds=1)
+    h.write(RunRecord(run_id="ap", tool_name="approve-gw-model", site_id=SITE,
+                      event_id=EVENT, started_at=ap, finished_at=ap,
+                      status="success", inputs={}, outputs={}, qa_count_error=0,
+                      qa_count_warning=0, qa_count_info=0, message=""))
+
+    res = runner.invoke(autogis, _base_args(tmp_path, paths, registry)
+                        + ["--run-history", str(tmp_path / "rh.csv"),
+                           "--format", "json"])
+    assert res.exit_code == 0, res.output
+    assert json.loads(res.output)["summary"]["current"] == 5
 
 
 def test_missing_run_history_reports_missing_exit_4(tmp_path):

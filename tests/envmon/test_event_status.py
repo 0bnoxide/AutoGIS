@@ -10,7 +10,7 @@ import pytest
 
 from autogis.core.common.run_history import RunHistory, RunRecord
 from autogis.core.envmon import event_status as es
-from autogis.core.envmon.source_registry import SourceRegistry
+from autogis.core.envmon.source_registry import SourceDocRecord, SourceRegistry
 
 SITE, EVENT = "H281", "2026-Q2"
 T0 = datetime(2026, 1, 1, 9, 0, 0)    # baseline accepted (before builds)
@@ -136,6 +136,47 @@ def test_rebaseline_then_rebuild_two_ledger_rule(tmp_path):
     _run(h, "apply-screening", datetime(2026, 1, 1, 13, 0, 0))
     _report2, states2 = _states(files, reg, h)
     assert states2["screening-evaluation"] == es.CURRENT
+
+
+def test_failed_approval_does_not_count_as_approval(tmp_path):
+    """P1-2: a failed approve-gw-model run must NOT bless the surface."""
+    files, reg, h = _world(tmp_path, approve=False)
+    _run(h, "approve-gw-model", T2, status="error")  # failed, after the build
+    _report, states = _states(files, reg, h)
+    assert states["groundwater-surface"] == es.AWAITING_REVIEW
+
+
+def test_foreign_registry_row_does_not_hijack_baseline(tmp_path):
+    """P2-2: a register-source-doc row whose notes match a kind but tool differs
+    must not become the baseline."""
+    files, reg, h = _world(tmp_path)
+    reg.register(SourceDocRecord(
+        registered_at=datetime(2026, 1, 1, 14, 0, 0).isoformat(),
+        file_path="/elsewhere/other.xlsx", sha256="de" * 32, file_size_bytes=1,
+        site_id=SITE, event_id=EVENT, tool="register-source-doc",
+        notes="workbook"))  # notes collides with the workbook kind
+    _report, states = _states(files, reg, h)
+    assert states["canonical-import"] == es.CURRENT  # own baseline still wins
+
+
+def test_tz_aware_baseline_timestamp_does_not_crash(tmp_path):
+    """P2-3: a tz-aware registered_at must be normalized, not raise."""
+    files = {}
+    for kind, content in (("workbook", "WB"), ("site-config", "SC"),
+                          ("screening", "SL"), ("figure-spec", "FS")):
+        p = tmp_path / f"{kind}.dat"
+        p.write_text(content)
+        files[kind] = p
+    reg = SourceRegistry(tmp_path / "src.csv")
+    es.accept_baseline(site_id=SITE, event_id=EVENT, inputs=files,
+                       source_registry=reg,
+                       now="2026-01-01T09:00:00+05:00")  # tz-aware baseline
+    h = RunHistory(tmp_path / "rh.csv")
+    for tool in _PRODUCERS:
+        _run(h, tool, T1)
+    _run(h, "approve-gw-model", T2)
+    _report, states = _states(files, reg, h)  # must not raise
+    assert states["canonical-import"] == es.CURRENT  # 09:00 (naive) < T1
 
 
 def test_exit_code_precedence_is_not_numeric_max():

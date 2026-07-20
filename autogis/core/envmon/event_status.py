@@ -8,8 +8,13 @@ that caused the state. Pure and arcpy-free: it reads two append-only ledgers
 The freshness rule joins both ledgers (ADR-0093): an artifact is current only if
 its producer ran, every declared input's current hash equals its latest accepted
 baseline hash, that baseline predates the build, and no upstream artifact was
-rebuilt at/after the build or is itself not-current. Same-second ties classify
-stale (safe direction).
+rebuilt after the build or is itself not-current.
+
+Same-second tie policy differs by clause, matched to the expected ordering: a
+baseline is accepted *before* a build, so a baseline registered in the same
+second as the build is treated as newer -> rebuild-pending (>=, safe); an
+upstream naturally finishes *before-or-with* its dependent in one pipeline, so a
+same-second upstream run is a co-build, not a rebuild (strict >).
 """
 from __future__ import annotations
 
@@ -128,25 +133,45 @@ class EventStatusReport:
 
 # --- ledger helpers ---------------------------------------------------------
 
+# Producer run statuses that count as "a build happened" (warning still produces
+# artifacts; error/cancelled do not).
+_BUILT_STATUSES = ("success", "warning")
+
+
 def _parse_dt(value: str) -> Optional[datetime]:
-    """Parse a registry ISO timestamp; None if unparseable (treated as oldest)."""
+    """Parse a registry ISO timestamp to a naive datetime; None if unparseable.
+
+    Timestamps are normalized to naive (tzinfo stripped) so a caller-supplied
+    tz-aware baseline never raises against run-history's naive, second-precision
+    finished_at. None is returned only for genuinely unparseable values; callers
+    treat that conservatively (stale), never as "oldest".
+    """
     try:
-        return datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(value)
     except (ValueError, TypeError):
         return None
+    return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 
 
 def _latest_run(history: RunHistory, tool: str, site_id: str,
-                event_id: Optional[str]) -> Optional[RunRecord]:
-    """Latest run for (tool, site), honoring event scope.
+                event_id: Optional[str],
+                statuses: Optional[tuple[str, ...]] = None) -> Optional[RunRecord]:
+    """Latest run for (tool, site), honoring event scope and optional status.
 
     A run whose event_id is None is event-agnostic (many headless producers take
     no --event) and matches any event; an event-tagged run must match. Uses
     query()+manual filter, never latest() (which keys on tool+site only).
+
+    CEILING (ADR-0093): because most slice-1 producers record event_id=None, this
+    degenerates to (tool, site) for them — the latest run at the site wins
+    regardless of event. Precise per-event history needs producer-side event
+    tagging (deferred). Intended use is the active/latest event.
     """
     runs = history.query(site_id=site_id, tool_name=tool)
     if event_id is not None:
         runs = [r for r in runs if r.event_id in (None, event_id)]
+    if statuses is not None:
+        runs = [r for r in runs if r.status in statuses]
     if not runs:
         return None
     return max(enumerate(runs), key=lambda ix: (ix[1].finished_at, ix[0]))[1]
@@ -160,8 +185,10 @@ def _latest_baseline(registry: SourceRegistry, site_id: str,
     Matched on kind (notes), not path — path equality is fragile across OS case
     and abs/rel drift. Append-only, so the last matching row is the latest.
     """
+    # tool=="event-status" so a free-text register-source-doc row that happens to
+    # use an input-kind as its notes cannot hijack the baseline (P2-2).
     rows = [r for r in registry.list_records(site_id=site_id, event_id=event_id)
-            if r.notes == kind]
+            if r.notes == kind and r.tool == "event-status"]
     if not rows:
         return None
     row = rows[-1]
@@ -186,14 +213,18 @@ def _stale_causes(spec: ArtifactSpec, built_at: datetime,
             continue
         base_sha, base_at = base
         path = inputs.get(kind)
-        if path is None or not Path(path).exists():
-            causes.append(f"{kind}: input file not found")
+        if path is None:
+            causes.append(f"{kind}: input path not supplied (pass --{kind})")
+            continue
+        if not Path(path).exists():
+            causes.append(f"{kind}: input file not found at {path}")
             continue
         if compute_sha256(Path(path)) != base_sha:
             causes.append(f"{kind} changed since baseline")
-        elif base_at is not None and base_at >= built_at:
-            # baseline re-accepted at/after the build: rebuild pending. >= so a
-            # same-second tie is treated as pending (safe direction).
+        elif base_at is None or base_at >= built_at:
+            # baseline re-accepted at/after the build (or its timestamp is
+            # unreadable): rebuild pending. >= so a same-second tie is treated as
+            # pending (safe direction: a baseline is accepted *before* a build).
             causes.append(f"rebuild pending after re-baseline of {kind}")
 
     for up in spec.upstream:
@@ -221,8 +252,12 @@ def _review_state(spec: ArtifactSpec, built_at: datetime,
         if open_review_count > 0:
             return f"{open_review_count} open reviewer comment(s)"
     elif spec.review == "approved-model":
-        approve = _latest_run(history, "approve-gw-model", site_id, event_id)
-        if approve is None or approve.finished_at < built_at:
+        # Latest *successful* approval strictly after the build (P1-2: a failed
+        # approve-gw-model run is not an approval). <= built_at means no approval
+        # postdates this build -> awaiting (same-second tie -> awaiting, safe).
+        approve = _latest_run(history, "approve-gw-model", site_id, event_id,
+                              statuses=_BUILT_STATUSES)
+        if approve is None or approve.finished_at <= built_at:
             return "model run not yet approved"
     return None
 

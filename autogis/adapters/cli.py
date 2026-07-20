@@ -1443,14 +1443,16 @@ def run_history_cmd(history_path, site_id, tool_name, status, since, limit, fmt)
         click.echo(f"\n{len(records)} record(s).")
 
 
-def _self_log_event_status(site_id, event_id, report):
+def _self_log_event_status(site_id, event_id, *, status, outputs, message):
     """Write event-status's own RunRecord (it is in _SELF_LOGGING_COMMANDS).
 
-    A status check that *finds* stale artifacts did not *fail*, so this always
-    records status='success' with the state counts as outputs, regardless of the
-    semantic exit code. Best-effort; observability never alters the command.
-    Honors the same AUTOGIS_RUN_HISTORY destination ('off' disables) the auto-
-    recorder uses, so it stays independent of the --run-history read target.
+    A status check that *finds* stale artifacts did not *fail*, so classification
+    completing records status='success' with the state counts as outputs
+    regardless of the semantic exit code; a genuine crash records 'error' (ADR-
+    0093), and --accept records its own run so the only mutating mode is audited.
+    Best-effort; observability never alters the command. Honors the same
+    AUTOGIS_RUN_HISTORY destination ('off' disables) the auto-recorder uses, so it
+    stays independent of the --run-history read target.
     """
     try:
         dest = os.environ.get("AUTOGIS_RUN_HISTORY", "")
@@ -1462,9 +1464,9 @@ def _self_log_event_status(site_id, event_id, report):
             RunRecord(
                 run_id=str(uuid.uuid4()), tool_name="event-status",
                 site_id=site_id, event_id=event_id, started_at=now,
-                finished_at=now, status="success", inputs={},
-                outputs=report.summary, qa_count_error=0, qa_count_warning=0,
-                qa_count_info=0, message=f"worst={report.worst_state}"))
+                finished_at=now, status=status, inputs={}, outputs=outputs,
+                qa_count_error=0, qa_count_warning=0, qa_count_info=0,
+                message=message))
     except Exception:
         pass
 
@@ -1490,8 +1492,9 @@ def _self_log_event_status(site_id, event_id, report):
               type=click.Path(),
               help="Reviewer-comment tracker CSV (awaiting-review signal).")
 @click.option("--accept", is_flag=True, default=False,
-              help="Record current input hashes as the baseline, then exit "
-                   "(run after a blessed build; classifies nothing).")
+              help="Record current input hashes as the baseline, then exit. "
+                   "Accept the blessed inputs, then (re)build; producers must "
+                   "post-date the accept to read current. Classifies nothing.")
 @click.option("--format", "fmt", type=click.Choice(["table", "json"]),
               default="table", show_default=True)
 def event_status_cmd(site_id, event_id, run_history_path, registry_path,
@@ -1501,13 +1504,17 @@ def event_status_cmd(site_id, event_id, run_history_path, registry_path,
     missing/failed/awaiting-review, naming the upstream change (ADR-0093).
 
     Read-only w.r.t. production data. Compares current input hashes against
-    accepted baselines plus the run/registry ledgers. Run once with --accept
-    after a blessed build to record the baseline. Exit codes: 0 current,
-    3 stale, 4 missing, 5 failed, 6 awaiting-review. Closed-world: only declared
-    inputs and registered instances are classified.
+    accepted baselines plus the run/registry ledgers. Record the baseline with
+    --accept, then (re)build: a producer run must post-date the latest --accept
+    to read current; re-accept when an input changes and rebuild the affected
+    artifacts. Exit codes: 0 current, 3 stale, 4 missing, 5 failed,
+    6 awaiting-review (worst state wins by failed>missing>stale>awaiting>current).
+    Closed-world: only declared inputs and registered instances are classified.
+    Event scoping: producers that record no event id are matched by latest run at
+    the site (ADR-0093 ceiling) — intended for the active event.
     """
     import json as _json
-    from datetime import datetime, timezone
+    from datetime import datetime
     from autogis.core.common.run_history import RunHistory
     from autogis.core.envmon.source_registry import SourceRegistry
     from autogis.core.envmon import event_status as es
@@ -1522,30 +1529,42 @@ def event_status_cmd(site_id, event_id, run_history_path, registry_path,
     registry = SourceRegistry(Path(registry_path))
 
     if accept:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        # Local naive stamp to match run_history's finished_at convention
+        # (RecordingCommand uses _dt.now()); a UTC stamp would skew the
+        # baseline-vs-build comparison in every non-UTC timezone.
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         recorded = es.accept_baseline(site_id=site_id, event_id=event_id,
                                       inputs=inputs, source_registry=registry,
                                       now=now)
         click.echo(f"Accepted baseline for {site_id}/{event_id}: "
                    + (", ".join(recorded) or "(no input files supplied)"))
+        _self_log_event_status(site_id, event_id, status="success",
+                               outputs={"accepted": recorded},
+                               message="baseline accepted")
         return
 
-    history = RunHistory(Path(run_history_path))
-    open_review = 0
-    if tracker_path and Path(tracker_path).exists():
-        open_review = sum(1 for c in read_tracker_csv(Path(tracker_path))
-                          if c.status in ("OPEN", "IN_REVIEW"))
-    report = es.classify_event(
-        site_id=site_id, event_id=event_id, inputs=inputs,
-        run_history=history, source_registry=registry,
-        open_review_count=open_review)
+    try:
+        history = RunHistory(Path(run_history_path))
+        open_review = 0
+        if tracker_path and Path(tracker_path).exists():
+            open_review = sum(1 for c in read_tracker_csv(Path(tracker_path))
+                              if c.status in ("OPEN", "IN_REVIEW"))
+        report = es.classify_event(
+            site_id=site_id, event_id=event_id, inputs=inputs,
+            run_history=history, source_registry=registry,
+            open_review_count=open_review)
+        if fmt == "json":
+            click.echo(_json.dumps(report.as_dict(), indent=2))
+        else:
+            click.echo(es.render_table(report))
+    except BaseException as exc:  # self-log the crash, then let it propagate
+        _self_log_event_status(site_id, event_id, status="error", outputs={},
+                               message=f"{type(exc).__name__}: {exc}")
+        raise
 
-    if fmt == "json":
-        click.echo(_json.dumps(report.as_dict(), indent=2))
-    else:
-        click.echo(es.render_table(report))
-
-    _self_log_event_status(site_id, event_id, report)
+    _self_log_event_status(site_id, event_id, status="success",
+                           outputs=report.summary,
+                           message=f"worst={report.worst_state}")
     code = report.exit_code()
     if code:
         raise SystemExit(code)
