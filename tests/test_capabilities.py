@@ -36,6 +36,21 @@ def test_every_envmon_command_registered_for_discovery():
         f"(invisible to `envmon list-tools`): {missing}")
 
 
+def test_every_agol_command_registered_for_discovery():
+    """Every live `agol` click command has a group-qualified ("agol <name>")
+    _REGISTRY_SEED entry (unified discovery, ADR-0092) -- otherwise it's
+    invisible to `envmon list-tools`, the #98 bug class the envmon guard
+    above already pins."""
+    from autogis.adapters.cli import agol
+
+    registered = {command for (command, *_rest) in _REGISTRY_SEED}
+    missing = sorted(f"agol {name}" for name in agol.commands
+                     if f"agol {name}" not in registered)
+    assert not missing, (
+        f"agol commands missing from capabilities._REGISTRY_SEED "
+        f"(invisible to `envmon list-tools`): {missing}")
+
+
 def test_every_guarded_command_is_in_tools():
     """Every name passed to cli._guard(...) must resolve in capabilities.TOOLS,
     or the guard raises a KeyError at runtime instead of a clean click error

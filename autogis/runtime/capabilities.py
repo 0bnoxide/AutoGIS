@@ -116,7 +116,7 @@ class ToolCapability:
     name: str = ""
     roadmap_id: str = ""
     runtime: str = "CLOUD"     # CLOUD | LOCAL | DRAFT
-    status: str = "stable"     # stable | draft | planned
+    status: str = "stable"     # stable | draft | planned | deprecated
     domain: str = ""           # intake|qa|analysis|cartography|field|agol|reporting|admin
     description: str = ""
     plan_path: str = ""
@@ -192,7 +192,7 @@ _REGISTRY_SEED = [
      "4.4", "CLOUD", "stable", "analysis",
      "Build exceedance event dataset with ratio/tier enrichment"),
     ("list-tools", "ListAvailableEnvTools", "10.1", "CLOUD", "stable", "admin",
-     "List available envmon tools with capability metadata"),
+     "List available envmon + agol tools with capability metadata"),
     ("build-dashboard-data-mart", "BuildDashboardDataMart", "6.7", "LOCAL",
      "stable", "analysis", "Build denormalized dashboard mart tables"),
     ("estimate-gw-flow-direction", "EstimateGWFlowDirection", "", "CLOUD",
@@ -223,10 +223,11 @@ _REGISTRY_SEED = [
      "Build the wide current-event table"),
     ("build-callouts", "BuildCallouts", "4", "LOCAL", "stable", "cartography",
      "Build analytical callout boxes"),
-    ("optimize-callouts", "BuildCalloutsHullCollision", "5.2", "LOCAL", "stable",
+    ("optimize-callouts", "BuildCalloutsHullCollision", "5.2", "LOCAL", "deprecated",
      "cartography",
-     "Hull-collision callout placement — folded into build-callouts "
-     "--use-hull-collision / the BuildCallouts .pyt parameter (ADR-0020)"),
+     "Hull-collision callout placement -- folded into build-callouts "
+     "--use-hull-collision / the BuildCallouts .pyt parameter (ADR-0020); "
+     "this command always raises and redirects, it never runs"),
     ("manage-callout-overrides", "ManageCalloutOverrides", "5.3", "LOCAL",
      "stable", "cartography",
      "CRUD for Env_CalloutPlacementOverrides (list/lock/unlock/clear)"),
@@ -311,6 +312,31 @@ _REGISTRY_SEED = [
      "analysis", "Raster-diff a drone DEM against a prior flight or LandXML design surface"),
     ("index-field-attachments", "SyncFieldAttachments", "6.5", "CLOUD", "stable",
      "agol", "Index a harvester manifest into the AttachmentIndex table"),
+    # `agol` group commands (unified discovery, ADR-0092). Group-qualified
+    # command strings ("agol <name>") because these live under the top-level
+    # `agol` click group, not `envmon`.
+    ("agol publish-layer", "PublishEnvironmentalLayersToAGOL", "6.1", "CLOUD",
+     "stable", "agol", "Publish or overwrite a hosted AGOL feature service"),
+    ("agol sync-to-gdb", "SyncAGOLFeatureLayerToGDB", "6.2", "LOCAL", "stable",
+     "agol", "Download hosted feature layer edits into the local FGDB "
+     "(--out-csv dump is headless; --gdb upsert needs arcpy)"),
+    ("agol update-webmap", "UpdateAGOLWebMapFromFigureSpec", "6.3", "CLOUD",
+     "stable", "agol", "Push a figure spec's display config into an AGOL web map"),
+    ("agol refresh-dashboard", "RefreshMonitoringDashboardData", "6.4", "CLOUD",
+     "stable", "agol", "Push local Dash_* data-mart tables to hosted AGOL layers"),
+    ("agol audit-schema", "AuditAGOLSchemaAgainstLocalConfig", "6.6", "CLOUD",
+     "stable", "agol", "Compare a hosted AGOL feature layer schema against a "
+     "local spec"),
+    ("agol publish-dashboard", "PublishDashboardFromSpec", "6.8", "CLOUD",
+     "stable", "agol", "Compile a YAML dashboard spec and create-or-update the "
+     "AGOL Dashboard item"),
+    ("agol audit-dependencies", "AuditAGOLItemDependencies", "6.9", "CLOUD",
+     "stable", "agol", "Find items that reference/depend on an AGOL item"),
+    ("agol promote", "PromoteAGOLDataBetweenStages", "6.10", "CLOUD", "stable",
+     "agol", "Promote an AGOL layer's data between DEV/QA/PROD stages"),
+    ("agol create-views", "CreateHostedViewsForStakeholders", "6.11", "CLOUD",
+     "stable", "agol", "Create/update audience-specific hosted views "
+     "(sensitive-field leak is blocking)"),
     ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "stable",
      "cartography", "Export GIS layers to a DWG/DXF CAD file (arcpy Export-to-CAD, "
      "ADR-0088) with mapped CAD layer name/color/linetype on scratch copies, "

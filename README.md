@@ -103,7 +103,7 @@ elevation conversion, PR #257)).
 | [PromoteAGOLDataBetweenStages](autogis/core/agol/promote.py) | 6.10 | `agol promote` | Tool 6.10: promote an AGOL layer's data between DEV/QA/PROD stages |
 | [UpdateWellElevationsFromLevelLoop](autogis/core/envmon/level_loop.py) | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* | Tool 8.2: push a closed level-loop run's elevations to MonitoringWells.TOC_ft |
 | [ExportContoursForCivil3D](autogis/core/envmon/civil3d_points.py) | 8.2 | `envmon export-civil3d` | Tool 8.2: PNEZD point CSV + projection note + `--landxml` CgPoints export, all headless (ADR-0088); the `.pyt` tool exports an existing Pro TIN as a triangulated LandXML surface (ADR-0089) |
-| [GenerateSubsurfaceProfileFromBorings](autogis/core/envmon/generate_subsurface_profile.py) | — | `envmon generate-subsurface-profile` | Render a subsurface profile figure from borings projected onto a line (headless; `profile` extra for matplotlib) |
+| [GenerateSubsurfaceProfileFromBorings](autogis/core/envmon/subsurface_profile.py) | — | `envmon generate-subsurface-profile` | Render a subsurface profile figure from borings projected onto a line (headless; `profile` extra for matplotlib) |
 | [DraftLithologyFromScan](autogis/core/envmon/draft_lithology_from_scan.py) | — | `envmon draft-lithology-from-scan` (DRAFT, unreviewed OCR output) | Draft a lithology CSV from a scanned boring log via a Table-Transformer + TrOCR pipeline (ADR-0074, headless; `ocr` extra) |
 | [UpdateAGOLWebMapFromFigureSpec](autogis/core/agol/webmap.py) | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) | Tool 6.3: push a figure spec's display config into an AGOL web map |
 | [CreateHostedViewsForStakeholders](autogis/core/agol/hosted_views.py) | 6.11 | `agol create-views` | Tool 6.11: create/update audience-specific hosted views (sensitive-field leak is blocking) |
@@ -216,9 +216,12 @@ ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 **AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
 — all deferred pending LLM seam design
 
-**Conditional / geostatistical (Phase 5):** 3 tools — RunFieldToGroundwaterModelPipeline,
-BuildGroundwaterSurfaceModel, BuildAnalyticalConcentrationSurface (kriging / EBK / surface
-modeling) — blocked on architecture review; see `docs/CONDITIONAL_TOOLS_REVIEW.md`. The other
+**Conditional / geostatistical (Phase 5) — REOPENED 2026-07-15 (user decision):** 3 tools —
+RunFieldToGroundwaterModelPipeline, BuildGroundwaterSurfaceModel, BuildAnalyticalConcentrationSurface
+(kriging / EBK / surface modeling). Reopened ≠ implement-first: the group's own exit criteria still
+require the architecture review to land as an ADR (user-signed) before any per-tool spec or
+implementation — see `docs/CONDITIONAL_TOOLS_REVIEW.md` and
+`docs/HANDOFF-2026-07-15-geostat.md` for the shipped-infrastructure inventory. The other
 6 tools originally reviewed there have shipped (see issue #167 and ADR-0061), including
 DEMConditioningPipeline, CompareDroneSurfaces and GenerateSubsurfaceProfileFromBorings, which
 turned out to be drone-raster/geotech-graphics work rather than geostatistical modeling.
@@ -349,7 +352,7 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon generate-inspection-report` | CLOUD | `core/envmon/well_inspection_photo_report.py` (photo embedding needs Pillow) |
 | `autogis envmon download-dem` | CLOUD | `core/envmon/opentopo.py` (`.pyt` add-to-map/reproject path is LOCAL) |
 | `autogis envmon export-civil3d` | CLOUD | `core/envmon/civil3d_points.py` (PNEZD CSV + `--landxml` CgPoints, both headless, ADR-0088; existing TIN surface export is available in the Pro `.pyt` toolbox, ADR-0089) |
-| `autogis envmon generate-subsurface-profile` | CLOUD | `core/envmon/generate_subsurface_profile.py` (`profile` extra for matplotlib) |
+| `autogis envmon generate-subsurface-profile` | CLOUD | `core/envmon/subsurface_profile.py` (`profile` extra for matplotlib) |
 | `autogis envmon draft-lithology-from-scan` | CLOUD | `core/envmon/draft_lithology_from_scan.py` (DRAFT; `ocr` extra) |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
@@ -639,14 +642,20 @@ autogis/
 │   └── agol/            # AGOL publishing — 11 modules
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
+│   ├── guard.py         # Runtime capability guard (arcpy presence checks)
 │   ├── toolbox.pyt      # ArcGIS Pro GUI
 │   ├── toolbox_core.py  # Seam between .pyt and core
 │   └── gui/             # Unified PySide6 desktop GUI (`autogis-gui`, ADR-0050)
 ├── config/
 │   ├── inspection-job.example.yaml
-│   ├── parser_profiles/        # Excel format definitions (YAML)
-│   ├── screening_levels/       # Regulatory thresholds — ship null, populate before production
-│   └── figure_specs/           # Cartography layout templates
+│   ├── analytes/                # Analyte dictionary YAML
+│   ├── event_configs/           # Per-event monitoring config
+│   ├── lab_profiles/            # LabEDD profile YAML (EQuIS/WQX/dialect variants)
+│   ├── parser_profiles/         # Excel format definitions (YAML)
+│   ├── placement_overrides/     # Locked/preferred callout placement overrides
+│   ├── screening_levels/        # Regulatory thresholds — ship null, populate before production
+│   ├── figure_specs/            # Cartography layout templates
+│   └── sites/                   # Per-site config bundles
 ├── runtime/             # arcpy / arcgis session providers + capability guards
 └── tests/               # arcpy-free test suite (count: pytest --collect-only -q)
 ```
