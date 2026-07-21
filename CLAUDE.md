@@ -205,3 +205,16 @@ Two separate records — easy to conflate, keep both:
   COORD="$(git rev-parse --git-common-dir)/.."   # main tree root
   python "$COORD/.claude/coordination/coord_cli.py" resync --session "$SESSION_ID"
   ```
+
+## Claude↔Codex shared-memory channel
+
+Claude Code and Codex share context through the Mnemoverse domain
+**`collab:autogis`** (both agents, one account). **When the Mnemoverse tools
+are present**, read the channel at session start — two queries, one for
+`STATUS handoff` and one for `BLOCKER` — before taking over shared work, and
+write on handoff/decision/blocker per the protocol. The canonical protocol
+(message types, GitHub-first routing rule, supersession/filtered-write
+mechanics) is **ADR-0095** — read it before writing to the channel. Context
+only: the channel never locks anything (locking = coordination hook +
+ADR-0094 shim), and GitHub/repo remain source of truth. Tools absent
+(cloud/web sessions) → skip; the ritual is best-effort by design.

@@ -111,6 +111,8 @@ Each ADR follows this structure:
 | [090](0090-edd-step3-slice2b-dialects.md) | EDD Step-3 slice 2b: EQuIS dialect support (mining/epar4/NYSDEC) — xlsx engine, header normalization, `source_aliases`/`test_sheet` profile keys (amends ADR-0075's 2-sheet freeze, precedent ADR-0082), inline-batch fallback, date-extended batch join, epar4 run-identity token in the `MethodDilutionKey` recipe; three DRAFT profiles | Accepted | 2026-07-17 |
 | [091](0091-arcgis-pro-qualification-runner.md) | ArcGIS Pro qualification runner (roadmap Phase 1): pure `core/qualify.py` reporting + live `adapters/qualification.py` probing behind `envmon qualify`, Tier-1 param construction over all 19 tools + Tier-2 scratch-GDB via shipped schema seams, `--self-test` canaries; Phase 1 gate amended to installed-Pro (owner, 2026-07-19) | Accepted | 2026-07-19 |
 | [092](0092-unified-tool-discovery-agol-group.md) | Unified tool discovery: `agol` group commands join the `list-tools` registry as group-qualified entries, with bidirectional drift guards (user decision, reverses the envmon-only scoping) | Accepted | 2026-07-19 |
+| [094](0094-codex-coordination-shim.md) | Codex coordination shim: Codex `PreToolUse` hook reuses `hook_check.decide()` via in-repo adapter (V4A patch-path parsing) — enforcement parity for read-only-`main` + claims across harnesses | Accepted | 2026-07-20 |
+| [095](0095-claude-codex-shared-memory-protocol.md) | Claude↔Codex correspondence protocol over Mnemoverse `collab:autogis`: three literal message types, GitHub-first routing rule, self-service supersession, filtered-write check, two-query read ritual — context only, locking stays with ADR-0094 | Accepted | 2026-07-21 |
 
 ## File naming
 
