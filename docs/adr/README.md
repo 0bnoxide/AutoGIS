@@ -115,6 +115,7 @@ Each ADR follows this structure:
 | [094](0094-codex-coordination-shim.md) | Codex coordination shim: Codex `PreToolUse` hook reuses `hook_check.decide()` via in-repo adapter (V4A patch-path parsing) — enforcement parity for read-only-`main` + claims across harnesses | Accepted | 2026-07-20 |
 | [095](0095-claude-codex-shared-memory-protocol.md) | Claude↔Codex correspondence protocol over Mnemoverse `collab:autogis`: three literal message types, GitHub-first routing rule, self-service supersession, filtered-write check, automatic three-query startup retrieval — context only, ADR-0094 locking parity conditional pending #270 | Accepted | 2026-07-21 |
 | [096](0096-build-current-event-select-samples-kwarg.md) | Fix BuildCurrentEvent/BuildCallouts `select_samples` kwarg drift (`target_analyte_name`→`target_analyte`; both LOCAL tools raised TypeError on every run) + arcpy-free ast/signature regression pin; found via live execute-body testing (issue #272 Option 2 prototype); sibling findings F1 (ScreeningLevelSource field length) + F3 (missing Env_AnalyticalKey) tracked separately | Accepted | 2026-07-21 |
+| [097](0097-screening-level-source-field-length.md) | Widen `Env_AnalyticalResults.ScreeningLevelSource` TEXT(64)→256 (production screening sources are 128–162 chars → arcpy INSERT failed; F1 from the #272 campaign) + increase-only `AlterField` migration in `upgrade_gdb_schema` for existing GDBs (doc-verified per ADR-0077), SCHEMA_VERSION 2.5→2.6, arcpy-free field-fits-config regression pin | Accepted | 2026-07-21 |
 
 ## File naming
 
