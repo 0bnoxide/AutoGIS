@@ -72,3 +72,32 @@ def test_build_insert_rows_truncates_label_and_value():
 def test_build_insert_rows_empty_wide():
     assert build_insert_rows([], ["Benzene"], site_id="S", figure_spec_id="F",
                              event_dt=None, matrix="GW") == []
+
+
+def test_build_current_event_wide_calls_select_samples_with_valid_kwargs():
+    """Regression pin for the target_analyte_name kwarg drift (ADR-0096).
+
+    build_current_event_wide() runs only inside the arcpy shell (# pragma: no
+    cover), so a keyword mismatch against the arcpy-free select_samples()
+    shipped a TypeError on *every* BuildCurrentEvent / BuildCallouts run — the
+    headless suite never reached the call. This ast+signature pin catches that
+    class arcpy-free: every select_samples() call site must use only kwargs the
+    function actually accepts.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    import autogis.core.envmon.build_current_event as mod
+
+    valid = set(inspect.signature(mod.select_samples).parameters)
+    tree = ast.parse(textwrap.dedent(inspect.getsource(mod.build_current_event_wide)))
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Name) and n.func.id == "select_samples"]
+    assert calls, "no select_samples() call found in build_current_event_wide"
+    for call in calls:
+        used = {kw.arg for kw in call.keywords if kw.arg}
+        assert used <= valid, (
+            f"build_current_event_wide passes unknown kwarg(s) "
+            f"{sorted(used - valid)} to select_samples(); accepts {sorted(valid)}")
