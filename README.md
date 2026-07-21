@@ -129,6 +129,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ValidateLabProfile](autogis/core/envmon/edd_profile.py) | `envmon validate-lab-profile` | Tool 2.3b: validate a LabEDD profile YAML is well-formed (headless) |
 | [RTKControlCheckReport](autogis/core/envmon/rtk_control_check.py) | `envmon rtk-control-check` | Compare RTK-surveyed control shots to published benchmarks (headless) |
 | [GeneratePortfolioMetrics](autogis/core/envmon/portfolio_metrics.py) | `envmon portfolio-metrics` | Roll up per-site report readiness across a multi-site run history |
+| [EventStatus](autogis/core/envmon/event_status.py) | `envmon event-status` | Roadmap Phase 2: classify each event artifact current/stale/missing/failed/awaiting-review from input hashes + run/registry ledgers, with stable exit codes (`--accept` records the baseline; ADR-0093) |
 | [EvaluateGroundwaterSurfaceModels](autogis/core/envmon/evaluate_gw_models.py) | `envmon evaluate-gw-models` | Cross-validate interpolation model predictions against observed values |
 | [ExportSurveyToCADGIS](autogis/core/envmon/export_survey_cad.py) | `envmon export-survey-cad` | Export RTK survey points to feature-code-mapped CSV/GeoJSON/LandXML layers (headless; `--landxml` per ADR-0071) |
 | [GenerateWellInspectionReports](autogis/core/envmon/well_inspection_report.py) | `envmon well-inspection-report` | Generate well inspection reports (Markdown or `--format html` with a photo grid, ADR-0083) + a site summary (headless) |

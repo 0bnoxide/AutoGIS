@@ -63,6 +63,30 @@ printf 'ISSUE 9 dave\n' > "$FIX/issue.txt"
 out="$(run)"
 [ "$out" = 'NEW ISSUE 9 dave' ] || fail "post-baseline new item, got: $out"
 
+# --baseline keys off seen-file freshness: a FRESH seen-file is baselined
+# (swallowed), but re-arming the same command against an EXISTING seen-file must
+# FIRE the gap -- a review that landed while a torn-down Monitor was offline --
+# not swallow it silently.
+rm -f "$T/seen"
+printf 'REVIEW 2 bob APPROVED\n' > "$FIX/reviews.txt"
+: > "$FIX/inline.txt"; : > "$FIX/issue.txt"
+out="$(run --baseline)"
+[ -z "$out" ] || fail "fresh --baseline should swallow pre-existing, got: $out"
+printf 'REVIEW 2 bob APPROVED\nREVIEW 5 codex COMMENTED\n' > "$FIX/reviews.txt"
+out="$(run --baseline)"
+[ "$out" = 'NEW REVIEW 5 codex COMMENTED' ] \
+  || fail "re-arm --baseline swallowed the gap instead of firing it, got: $out"
+
+# --reviews-only ignores the conversation timeline (self/user replies share the
+# owner login) but still surfaces reviews.
+rm -f "$T/seen"
+printf 'REVIEW 2 bob APPROVED\n' > "$FIX/reviews.txt"
+: > "$FIX/inline.txt"
+printf 'ISSUE 9 dave\n' > "$FIX/issue.txt"
+out="$(run --reviews-only)"
+[ "$out" = 'NEW REVIEW 2 bob APPROVED' ] \
+  || fail "--reviews-only should emit only the review, got: $out"
+
 help="$(bash "$HERE/watch-pr-reviews.sh" --help)"
 [[ "$help" != *'set -uo pipefail'* ]] || fail "--help leaked executable code"
 

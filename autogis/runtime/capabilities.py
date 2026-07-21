@@ -72,6 +72,7 @@ TOOLS: dict[str, Runtime] = {
     "survey-to-well-elevation": Runtime.LOCAL,  # tool 8.5 GDB write (--gdb path)
     "rtk-control-check": Runtime.CLOUD,  # RTK control-network check, headless
     "portfolio-metrics": Runtime.CLOUD,  # cross-site readiness rollup, headless
+    "event-status": Runtime.CLOUD,  # roadmap Phase 2 staleness checker, headless
     "evaluate-gw-models": Runtime.CLOUD,  # model prediction cross-validation, headless
     "export-survey-cad": Runtime.CLOUD,  # feature-code CSV/GeoJSON export, headless
     "well-inspection-report": Runtime.CLOUD,  # Markdown well inspection report, headless
@@ -147,6 +148,8 @@ _REGISTRY_SEED = [
      "Evaluate relative percent difference for duplicates"),
     ("evaluate-readiness", "EvaluateReportReadiness", "", "CLOUD", "stable",
      "qa", "Evaluate report readiness against QA history"),
+    ("event-status", "EventStatus", "2", "CLOUD", "stable", "qa",
+     "Classify event artifacts current/stale/missing/failed/awaiting-review"),
     ("identify-data-gaps", "IdentifyMonitoringDataGaps", "4.10", "CLOUD",
      "stable", "qa", "Identify missing wells/analytes/events"),
     ("compare-schedule-vs-actual", "CompareScheduleVsActual", "", "CLOUD",
