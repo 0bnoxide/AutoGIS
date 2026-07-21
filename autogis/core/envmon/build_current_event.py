@@ -416,7 +416,7 @@ def build_current_event_wide(
         event_date=event_date or spec.get("event_date"),
         date_range=tuple(spec.data["date_range"]) if spec.get("date_range") else None,
         sample_ids=spec.get("sample_ids"),
-        target_analyte_name=spec.get("max_rule_analyte"),
+        target_analyte=spec.get("max_rule_analyte"),
     )
     selected = apply_duplicate_rule(
         selected, spec.get("duplicate_handling_rule", "prefer_parent"), qa

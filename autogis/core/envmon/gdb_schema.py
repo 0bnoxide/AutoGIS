@@ -61,7 +61,7 @@ TABLE_SCHEMAS = {
         ("IsEstimated", SH, None), ("IsDiluted", SH, None),
         ("IsNotAnalyzed", SH, None), ("IsNotSampled", SH, None),
         ("IsNotMeasured", SH, None), ("ScreeningLevel", D, None),
-        ("ScreeningLevelSource", T, 64), ("ExceedsScreeningLevel", SH, None),
+        ("ScreeningLevelSource", T, 256), ("ExceedsScreeningLevel", SH, None),
         ("DisplayText", T, 64), ("DisplayColorClass", T, 16),
         # --- Step-1 canonical expansion (ADR-0075, SCHEMA_VERSION 2.2) ---
         ("ResultFraction", T, 32), ("QCType", T, 32),

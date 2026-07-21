@@ -9,7 +9,49 @@ from autogis.core.envmon.upgrade_schema import SCHEMA_VERSION
 
 
 def test_schema_version_bumped():
-    assert SCHEMA_VERSION == "2.5"
+    assert SCHEMA_VERSION == "2.6"
+
+
+def test_screening_level_source_field_fits_config_sources():
+    """Regression pin (ADR-0097 / F1).
+
+    Env_AnalyticalResults.ScreeningLevelSource must hold every `source` string
+    the importer can write from the canonical screening_levels.yaml. It was
+    TEXT(64) while production sources are 128-162 chars, so real arcpy imports
+    failed with 'Field length exceeded' — a write-time constraint this arcpy-free
+    suite never saw. Assert the field length covers the longest configured source.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    import autogis
+    from autogis.core.envmon.gdb_schema import TABLE_SCHEMAS
+
+    lengths = {f[0]: f[2] for f in TABLE_SCHEMAS["Env_AnalyticalResults"]}
+    field_len = lengths["ScreeningLevelSource"]
+
+    cfg = (Path(autogis.__file__).parent / "config" / "screening_levels"
+           / "screening_levels.yaml")
+    data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    sources: list[str] = []
+
+    def _walk(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k == "source" and isinstance(v, str):
+                    sources.append(v)
+                else:
+                    _walk(v)
+        elif isinstance(obj, list):
+            for x in obj:
+                _walk(x)
+
+    _walk(data)
+    longest = max((len(s) for s in sources), default=0)
+    assert longest <= field_len, (
+        f"ScreeningLevelSource is TEXT({field_len}) but the longest configured "
+        f"source is {longest} chars; widen the field in gdb_schema.py")
 
 
 def test_env_qcresults_table_declared():
