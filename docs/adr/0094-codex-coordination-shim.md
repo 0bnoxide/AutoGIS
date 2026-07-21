@@ -55,6 +55,14 @@ enforced org-wide install) with `matcher = "^(Bash|apply_patch)$"` pointing
 `command_windows` at the shim. No logic lives on the Codex side; the shim ships
 in-repo beside `hook_check.py`, so the two stay version-locked.
 
+**The shim must live in-repo, not under `~/.codex/hooks/`.** It resolves
+`hook_check` as a sibling (`sys.path.insert(0, dirname(__file__))`), so relocating
+it out of `.claude/coordination/` breaks the import and severs the version lock.
+Codex permits this: `command`/`command_windows` accept any absolute path (the docs
+*recommend* git-root resolution for repo-local hooks, not `~/.codex/hooks/`), and
+hook trust keys on the command hash, not the script's directory — so the repo
+path is trusted once and re-reviewed only if the command string changes.
+
 ## Consequences
 
 ### Positive consequences
