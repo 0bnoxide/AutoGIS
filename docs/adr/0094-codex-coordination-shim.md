@@ -34,7 +34,10 @@ The shim bridges only the **input** shapes, because the two harnesses' tool
 vocabularies differ:
 
 - **`Bash`** — identical payload (`tool_input.command`); passed straight to
-  `decide()`.
+  `decide()`. It is *also* scanned for V4A patch headers: Codex can surface
+  `apply_patch` as a shell heredoc/argv, and a patch piped through the shell
+  performs no git write, so without this a `main`-tree edit would slip past the
+  Bash branch as a silent allow (caught only at a later `git commit`).
 - **`apply_patch`** (Codex's edit tool) — the payload carries the *patch
   string* in `tool_input.command`, not a `file_path`, but `decide()` keys the
   main-read-only and claimed-file checks on `file_path`. The shim parses target
@@ -51,8 +54,10 @@ open** (any error → allow) — this is a coordination guardrail, not a securit
 boundary.
 
 Codex wires it from `~/.codex/config.toml` (or managed `requirements.toml` for
-enforced org-wide install) with `matcher = "^(Bash|apply_patch)$"` pointing
-`command_windows` at the shim. No logic lives on the Codex side; the shim ships
+enforced org-wide install) with `matcher = "^(Bash|apply_patch|Edit|Write)$"`
+(Codex's documented edit identifiers — the payload still reports
+`tool_name:"apply_patch"` for all of them) pointing `command_windows` at the
+shim. No logic lives on the Codex side; the shim ships
 in-repo beside `hook_check.py`, so the two stay version-locked.
 
 **The shim must live in-repo, not under `~/.codex/hooks/`.** It resolves
@@ -90,6 +95,12 @@ path is trusted once and re-reviewed only if the command string changes.
   `coord_cli.py` and passing a stable `session_id` (present in Codex's payload);
   a stranger session id degrades to the main-guard only, which is the
   safe direction.
+- The guard binds only when Codex's `cwd` is inside the AutoGIS working tree:
+  `_reg_path` resolves the registry from `cwd`, so with `cwd` elsewhere an
+  absolute header path pointing *into* the repo classifies as out-of-repo and is
+  allowed. This is parity with Claude's project-scoped hook (which likewise only
+  governs in-repo work), not a new gap — but the config.toml entry is global, so
+  it is worth knowing the guard is effectively repo-scoped by `cwd`.
 
 ## Alternatives considered
 

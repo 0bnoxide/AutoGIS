@@ -29,7 +29,7 @@ coordination guardrail, not a security boundary.
 Wire from ~/.codex/config.toml (or managed requirements.toml):
 
     [[hooks.PreToolUse]]
-    matcher = "^(Bash|apply_patch)$"
+    matcher = "^(Bash|apply_patch|Edit|Write)$"   # edits report tool_name=apply_patch
     [[hooks.PreToolUse.hooks]]
     type = "command"
     command_windows = 'python "C:/Users/ichbi/AutoGIS/.claude/coordination/codex_coord_shim.py"'
@@ -67,43 +67,57 @@ def _patch_paths(patch):
     return [m.group(1) or m.group(2) for m in _PATCH_PATH.finditer(patch or "")]
 
 
+def _edit(base, path):
+    """One Edit payload, path absolutised against cwd -- decide() resolves a
+    file's branch via os.path.realpath, which must bind to Codex's cwd, not the
+    hook process's."""
+    ap = path if os.path.isabs(path) else os.path.join(base["cwd"] or ".", path)
+    return {**base, "tool_name": "Edit", "tool_input": {"file_path": ap}}
+
+
 def _edits(payload):
     """Yield Claude-shaped payload(s) for one Codex payload.
 
-    Bash -> passthrough. apply_patch/Edit/Write -> one Edit payload per target
-    file, path absolutised against cwd. An apply_patch whose paths don't parse
-    still yields one cwd-anchored sentinel so the main-read-only guard fires
-    (fail toward checking, not toward a silent allow, on the highest-value rule).
-    Any other tool -> nothing (allow).
+    Bash -> passthrough, PLUS an Edit per file if the command body carries V4A
+    patch headers (Codex may surface apply_patch as a shell heredoc/argv; a
+    patch piped through Bash makes no git write, so without this it slips past
+    as a silent allow). apply_patch/Edit/Write -> one Edit per target file. An
+    apply_patch whose paths don't parse still yields one cwd-anchored sentinel
+    so the main-read-only guard fires (fail toward checking on the highest-value
+    rule). Any other tool -> nothing (allow).
     """
     tool = payload.get("tool_name", "")
+    ti = payload.get("tool_input") or {}
     base = {"session_id": payload.get("session_id", ""),
             "cwd": payload.get("cwd", "")}
     if tool == "Bash":
-        yield {**base, "tool_name": "Bash",
-               "tool_input": payload.get("tool_input") or {}}
+        yield {**base, "tool_name": "Bash", "tool_input": ti}
+        for p in _patch_paths(ti.get("command", "")):
+            yield _edit(base, p)
         return
     if tool in ("apply_patch", "Edit", "Write", "MultiEdit"):
-        ti = payload.get("tool_input") or {}
         fp = ti.get("file_path")
         if fp:  # already path-shaped (Edit/Write variant) -- pass through
-            yield {**base, "tool_name": "Edit", "tool_input": {"file_path": fp}}
+            yield _edit(base, fp)
             return
-        paths = _patch_paths(ti.get("command", ""))
-        if not paths:  # unparseable patch -> guard the cwd branch anyway
-            paths = [os.path.join(base["cwd"] or ".", "UNKNOWN")]
-        for p in paths:
-            ap = p if os.path.isabs(p) else os.path.join(base["cwd"] or ".", p)
-            yield {**base, "tool_name": "Edit", "tool_input": {"file_path": ap}}
+        # unparseable patch -> sentinel so the cwd branch is still guarded
+        for p in _patch_paths(ti.get("command", "")) or ["UNKNOWN"]:
+            yield _edit(base, p)
 
 
 def check(payload, branch_func=None, main_tree_func=None):
     """First *deny* verdict among the payload's synthesised edits, else None.
-    Warns are treated as allow (dropped). branch_func/main_tree_func are the
-    same injection seams decide() exposes -- used by the self-test."""
+    Warns are treated as allow (dropped). The registry path is resolved once
+    (constant across a payload's edits -- bounds git subprocess calls under the
+    hook timeout); the per-file branch lookup stays inside decide() so a
+    `git -C <other>` in a Bash command is judged by ITS dir, not cwd (#136).
+    branch_func/main_tree_func are decide()'s injection seams -- exercised by
+    the self-test's real-decide() integration case."""
+    reg = None
     for p in _edits(payload):
-        out = hook_check.decide(p, hook_check._reg_path(p),
-                                branch_func=branch_func,
+        if reg is None:
+            reg = hook_check._reg_path(p)
+        out = hook_check.decide(p, reg, branch_func=branch_func,
                                 main_tree_func=main_tree_func)
         if out and (out.get("hookSpecificOutput", {})
                     .get("permissionDecision") == "deny"):
@@ -143,12 +157,22 @@ def _selftest():
     # absolutised against cwd so decide()'s realpath binds to Codex's cwd
     assert all(os.path.isabs(f) and f.startswith(cwd) for f in fps), fps
 
-    # Bash passes through unchanged
+    # plain Bash passes through unchanged (no patch headers -> no extra edits)
     b = {"tool_name": "Bash", "cwd": "/r", "session_id": "s",
          "tool_input": {"command": "git commit"}}
     assert list(_edits(b)) == [{"session_id": "s", "cwd": "/r",
                                 "tool_name": "Bash",
                                 "tool_input": {"command": "git commit"}}]
+
+    # Bash carrying an apply_patch heredoc -> passthrough PLUS an Edit per file,
+    # so a patch piped through the shell can't dodge the main/claims guard.
+    bp = {"tool_name": "Bash", "cwd": cwd, "session_id": "s",
+          "tool_input": {"command": "apply_patch <<'EOF'\r\n"
+                         "*** Update File: core/x.py \r\n*** End Patch\r\nEOF"}}
+    bpe = list(_edits(bp))
+    assert bpe[0]["tool_name"] == "Bash", bpe
+    assert [os.path.basename(e["tool_input"]["file_path"])
+            for e in bpe[1:]] == ["x.py"], bpe  # CRLF + trailing space tolerated
 
     # non-edit tool -> allow (no synthesised edits)
     assert list(_edits({"tool_name": "WebSearch", "cwd": "/r"})) == []
@@ -158,6 +182,19 @@ def _selftest():
                         "session_id": "s", "tool_input": {"command": "garbage"}}))
     assert len(sent) == 1 and os.path.basename(
         sent[0]["tool_input"]["file_path"]) == "UNKNOWN", sent
+
+    # REAL integration (no mock): synthesised Edit -> real hook_check.decide()
+    # -> main-read-only deny. Uses this file's own dir (always inside the repo)
+    # as cwd so _reg_path resolves via git; branch forced 'main' via decide()'s
+    # seam. This is the load-bearing path; the mocked cases below only cover
+    # verdict routing.
+    here = os.path.dirname(os.path.abspath(__file__))
+    real = check({"tool_name": "apply_patch", "cwd": here,
+                  "session_id": "selftest",
+                  "tool_input": {"command": "*** Update File: README.md\n"}},
+                 branch_func=lambda d: "main", main_tree_func=lambda d: False)
+    assert real and real["hookSpecificOutput"][
+        "permissionDecision"] == "deny", real
 
     # check(): first deny wins; warn-only -> allow. Monkeypatch decide() to
     # exercise the shim's verdict routing without touching git/claims.json.
