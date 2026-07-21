@@ -37,9 +37,12 @@ version was 2.5.
    {clear_field_alias})`. On a populated table the only permitted length change
    is an **increase** — exactly this operation — so it is safe on GDBs that
    already hold data. Not deprecated at Pro 3.5+.
-   Sources: pro.arcgis.com "Alter Field (Data Management)"
-   (`.../data-management/alter-field-properties.htm`); Esri KB 000012081
-   ("Can the Field Length in an Attribute Table Be Modified?").
+   Source: pro.arcgis.com "Alter Field (Data Management)"
+   (`.../data-management/alter-field-properties.htm`), which states a populated
+   text field's length may be increased. (Esri KB 000012081 is *not* cited: it
+   is ArcMap-scoped and says the length cannot be changed — the pre-Pro
+   limitation that `AlterField` lifted — so it contradicts, not supports, this
+   Pro migration.)
 
 3. **SCHEMA_VERSION 2.5 → 2.6.** The upgrade report gains a `fields_widened`
    count (per-table + total).
