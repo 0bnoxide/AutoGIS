@@ -67,10 +67,11 @@ def run(config_path, where, out, incremental, *, harvest_fn=None):
 # console script, CliRunner tests, GUI subprocess launches.
 # --------------------------------------------------------------------------
 _QA_COUNTS_META_KEY = "autogis.qa_counts"
-# ponytail: one-entry skip-list -- `agol promote` self-logs a richer record
-# (rows_copied etc.) via promote.py's _log_promotion; generalize only when a
-# second self-logging command exists.
-_SELF_LOGGING_COMMANDS = {"promote"}
+# Commands that self-log a richer RunRecord than the auto-recorder's empty
+# outputs={}: `agol promote` (rows_copied etc. via promote.py's _log_promotion)
+# and `event-status` (state counts + status='success' regardless of its semantic
+# nonzero exit code, so a stale-finding read isn't mislogged as an error).
+_SELF_LOGGING_COMMANDS = {"promote", "event-status"}
 
 
 def _record_tool_name(ctx) -> str:
@@ -915,8 +916,16 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
               help="Screening levels YAML (analyte -> matrix -> {unit, level, source}).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output CSV path (updated records).")
+@click.option("--site", "site_id", default="",
+              help="Site ID stamped on the run-history record so event-status "
+                   "can find this screening-evaluation run (without it the record "
+                   "carries no site and the checker never matches it).")
+@click.option("--event", "event_id", default="",
+              help="Event ID label for event-status scoping. Matched verbatim "
+                   "against `event-status --event-id`.")
 @qa_report_options
-def apply_screening_cmd(results_csv, screening_path, output, report, fail_on):
+def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
+                        report, fail_on):
     """Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless)."""
     import yaml as _yaml
     from autogis.core.common.qa import QACollector
@@ -1442,6 +1451,144 @@ def run_history_cmd(history_path, site_id, tool_name, status, since, limit, fmt)
         click.echo(f"\n{len(records)} record(s).")
 
 
+def _self_log_event_status(site_id, event_id, *, status, outputs, message):
+    """Write event-status's own RunRecord (it is in _SELF_LOGGING_COMMANDS).
+
+    A status check that *finds* stale artifacts did not *fail*, so classification
+    completing records status='success' with the state counts as outputs
+    regardless of the semantic exit code; a genuine crash records 'error' (ADR-
+    0093), and --accept records its own run so the only mutating mode is audited.
+    Best-effort; observability never alters the command. Honors the same
+    AUTOGIS_RUN_HISTORY destination ('off' disables) the auto-recorder uses, so it
+    stays independent of the --run-history read target.
+    """
+    try:
+        dest = os.environ.get("AUTOGIS_RUN_HISTORY", "")
+        if dest.lower() == "off":
+            return
+        from autogis.core.common.run_history import RunHistory, RunRecord
+        now = _dt.now()
+        RunHistory(Path(dest) if dest else Path.cwd() / "run_history.csv").write(
+            RunRecord(
+                run_id=str(uuid.uuid4()), tool_name="event-status",
+                site_id=site_id, event_id=event_id, started_at=now,
+                finished_at=now, status=status, inputs={}, outputs=outputs,
+                qa_count_error=0, qa_count_warning=0, qa_count_info=0,
+                message=message))
+    except Exception:
+        pass
+
+
+@envmon.command("event-status")
+@click.option("--site-id", required=True, help="Site ID.")
+@click.option("--event-id", required=True, help="Event ID.")
+@click.option("--run-history", "run_history_path", default="run_history.csv",
+              show_default=True, type=click.Path(),
+              help="run_history.csv the producers wrote (need not exist).")
+@click.option("--source-registry", "registry_path", default="source_docs.csv",
+              show_default=True, type=click.Path(),
+              help="Source/baseline registry CSV (need not exist).")
+@click.option("--workbook", default=None, type=click.Path(),
+              help="Current input workbook path.")
+@click.option("--site-config", default=None, type=click.Path(),
+              help="Current site config YAML path.")
+@click.option("--screening", "screening_path", default=None,
+              type=click.Path(), help="Current screening levels YAML path.")
+@click.option("--figure-spec", "figure_spec_path", default=None,
+              type=click.Path(), help="Current figure spec YAML path.")
+@click.option("--reviewer-tracker", "tracker_path", default=None,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Reviewer-comment tracker CSV (awaiting-review signal). "
+                   "Validated to exist: unlike the --workbook/--screening inputs "
+                   "(a missing one is a classified 'stale' cause), a missing "
+                   "tracker would silently read as zero open comments = approved, "
+                   "so a bad path is a usage error (exit 2), not a false pass.")
+@click.option("--accept", is_flag=True, default=False,
+              help="Record current input hashes as the baseline, then exit. "
+                   "Accept the blessed inputs, then (re)build; producers must "
+                   "post-date the accept to read current. Classifies nothing.")
+@click.option("--format", "fmt", type=click.Choice(["table", "json"]),
+              default="table", show_default=True)
+def event_status_cmd(site_id, event_id, run_history_path, registry_path,
+                     workbook, site_config, screening_path, figure_spec_path,
+                     tracker_path, accept, fmt):
+    """Tool (roadmap Phase 2): classify each event artifact current/stale/
+    missing/failed/awaiting-review, naming the upstream change (ADR-0093).
+
+    Read-only w.r.t. production data. Compares current input hashes against
+    accepted baselines plus the run/registry ledgers. Record the baseline with
+    --accept, then (re)build: a producer run must post-date the latest --accept
+    to read current; re-accept when an input changes and rebuild the affected
+    artifacts. Exit codes: 0 current, 3 stale, 4 missing, 5 failed,
+    6 awaiting-review (worst state wins by failed>missing>stale>awaiting>current).
+    Closed-world: only declared inputs and registered instances are classified.
+    Event scoping: producers that record no event id are matched by latest run at
+    the site (ADR-0093 ceiling) — intended for the active event.
+    """
+    import json as _json
+    from datetime import datetime
+    from autogis.core.common.run_history import RunHistory
+    from autogis.core.envmon.source_registry import SourceRegistry
+    from autogis.core.envmon import event_status as es
+    from autogis.core.envmon.ingest_reviewer_comments import read_tracker_csv
+
+    inputs = {
+        "workbook": Path(workbook) if workbook else None,
+        "site-config": Path(site_config) if site_config else None,
+        "screening": Path(screening_path) if screening_path else None,
+        "figure-spec": Path(figure_spec_path) if figure_spec_path else None,
+    }
+    registry = SourceRegistry(Path(registry_path))
+
+    try:
+        if accept:
+            # --accept is a mutating path (it appends baseline rows), so it must
+            # sit INSIDE this crash-logger too (codex PR#267 P2): a raise here
+            # -- e.g. a registry path that is a directory -> PermissionError --
+            # would otherwise return zero RunRecords, breaking ADR-0093's audit
+            # contract. Partial appends need no rollback: the registry is
+            # append-only and _latest_baseline is last-row-wins, so a re-`--accept`
+            # after the fix fully supersedes, and the interim reads stale (safe).
+            # Local naive stamp to match run_history's finished_at convention
+            # (RecordingCommand uses _dt.now()); a UTC stamp would skew the
+            # baseline-vs-build comparison in every non-UTC timezone.
+            now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            recorded = es.accept_baseline(site_id=site_id, event_id=event_id,
+                                          inputs=inputs, source_registry=registry,
+                                          now=now)
+            click.echo(f"Accepted baseline for {site_id}/{event_id}: "
+                       + (", ".join(recorded) or "(no input files supplied)"))
+            _self_log_event_status(site_id, event_id, status="success",
+                                   outputs={"accepted": recorded},
+                                   message="baseline accepted")
+            return
+
+        history = RunHistory(Path(run_history_path))
+        open_review = 0
+        if tracker_path:  # existence validated at parse (click.Path(exists=True))
+            open_review = sum(1 for c in read_tracker_csv(Path(tracker_path))
+                              if c.status in ("OPEN", "IN_REVIEW"))
+        report = es.classify_event(
+            site_id=site_id, event_id=event_id, inputs=inputs,
+            run_history=history, source_registry=registry,
+            open_review_count=open_review)
+        if fmt == "json":
+            click.echo(_json.dumps(report.as_dict(), indent=2))
+        else:
+            click.echo(es.render_table(report))
+    except BaseException as exc:  # self-log the crash, then let it propagate
+        _self_log_event_status(site_id, event_id, status="error", outputs={},
+                               message=f"{type(exc).__name__}: {exc}")
+        raise
+
+    _self_log_event_status(site_id, event_id, status="success",
+                           outputs=report.summary,
+                           message=f"worst={report.worst_state}")
+    code = report.exit_code()
+    if code:
+        raise SystemExit(code)
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     ctx = click.get_current_context(silent=True)
@@ -1710,7 +1857,15 @@ def run_gw_model_pipeline_cmd(site_config):
               help="Model name to approve (must have been in the run; any "
                    "rank — hydro judgment trumps the metric).")
 @click.option("--reviewer", default="", help="Reviewer name for the record.")
-def approve_gw_model_cmd(gdb, run_id, model, reviewer):
+@click.option("--site", "site_id", default="",
+              help="Site ID stamped on the run-history record so event-status "
+                   "can match this approval to the site's groundwater-surface "
+                   "artifact (run history is append-only — an untagged approval "
+                   "is permanently unmatchable).")
+@click.option("--event", "event_id", default="",
+              help="Event ID label for event-status scoping. Matched verbatim "
+                   "against `event-status --event-id`.")
+def approve_gw_model_cmd(gdb, run_id, model, reviewer, site_id, event_id):
     """BuildGroundwaterSurfaceModel approval verb: record the
     hydrogeologist's model choice on a DRAFT run (ArcGIS Pro)."""
     _guard("approve-gw-model")
@@ -1809,9 +1964,13 @@ def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fa
               help="Screening levels YAML (optional).")
 @click.option("--event-date", default=None,
               help="Override event date ISO8601 (YYYY-MM-DD).")
+@click.option("--event", "event_id", default="",
+              help="Event ID label (e.g. 2026-Q2) stamped on the run-history "
+                   "record for event-status scoping. Matched verbatim against "
+                   "`event-status --event-id` (case/format-sensitive).")
 @qa_report_options
 def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
-                   analytes, screening, event_date, report, fail_on):
+                   analytes, screening, event_date, event_id, report, fail_on):
     """Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro)."""
     _guard("import-edd")
     from autogis.core.envmon.edd_profile import LabEDDProfile

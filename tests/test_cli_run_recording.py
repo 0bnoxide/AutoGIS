@@ -196,6 +196,77 @@ def test_agol_promote_self_logs_exactly_one_record(tmp_path, monkeypatch):
     assert records[0].tool_name == "agol-promote"
 
 
+def test_import_edd_event_tag_reaches_record(tmp_path, monkeypatch):
+    # Producer event tagging (ADR-0093): --event must land on the run-history
+    # record so event-status scopes canonical-import to the right event. arcpy
+    # is absent, so the guard refuses and an ERROR record is written -- but the
+    # tag flows through ctx.params before the guard fires.
+    rh = tmp_path / "rh.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(rh))
+    edd = tmp_path / "edd.csv"
+    prof = tmp_path / "profile.yaml"
+    edd.write_text("x", encoding="utf-8")
+    prof.write_text("x", encoding="utf-8")
+
+    result = CliRunner().invoke(autogis, [
+        "envmon", "import-edd", "--edd", str(edd), "--profile-path", str(prof),
+        "--site", "H281", "--gdb", str(tmp_path / "out.gdb"),
+        "--event", "2026-Q2",
+    ])
+
+    assert result.exit_code != 0  # guard refusal (no arcpy)
+    rec = _records(rh)[0]
+    assert rec.tool_name == "import-edd"
+    assert rec.site_id == "H281"
+    assert rec.event_id == "2026-Q2"
+
+
+def test_apply_screening_site_and_event_tags_reach_record(tmp_path, monkeypatch):
+    # apply-screening is headless with no site concept of its own; --site/--event
+    # exist purely so its record is findable by event-status (without --site the
+    # record carried site_id="" and the checker never matched it -- ADR-0093).
+    rh = tmp_path / "rh.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(rh))
+    results = tmp_path / "results.csv"
+    screening = tmp_path / "screening.yaml"
+    results.write_text("", encoding="utf-8")
+    screening.write_text("{}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(autogis, [
+        "envmon", "apply-screening", "--results-csv", str(results),
+        "--screening", str(screening), "--output", str(tmp_path / "out.csv"),
+        "--site", "H281", "--event", "2026-Q2",
+    ])
+
+    # Tag flow is independent of screening internals; assert on the record only.
+    assert result.exit_code in (0, 1)
+    rec = _records(rh)[0]
+    assert rec.tool_name == "apply-screening"
+    assert rec.site_id == "H281"
+    assert rec.event_id == "2026-Q2"
+
+
+def test_approve_gw_model_site_and_event_tags_reach_record(tmp_path, monkeypatch):
+    # approve-gw-model feeds event-status's approved-model review overlay, which
+    # queries it site+event-scoped. Run history is append-only, so an untagged
+    # approval is permanently unmatchable (ADR-0093). Guard refuses (no arcpy)
+    # but the tags flow into the error record.
+    rh = tmp_path / "rh.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(rh))
+
+    result = CliRunner().invoke(autogis, [
+        "envmon", "approve-gw-model", "--gdb", str(tmp_path / "x.gdb"),
+        "--run-id", "R1", "--model", "M1",
+        "--site", "H281", "--event", "2026-Q2",
+    ])
+
+    assert result.exit_code != 0  # guard refusal (no arcpy)
+    rec = _records(rh)[0]
+    assert rec.tool_name == "approve-gw-model"
+    assert rec.site_id == "H281"
+    assert rec.event_id == "2026-Q2"
+
+
 def test_default_path_is_cwd_run_history_csv(tmp_path, monkeypatch):
     monkeypatch.delenv("AUTOGIS_RUN_HISTORY", raising=False)
     monkeypatch.chdir(tmp_path)
