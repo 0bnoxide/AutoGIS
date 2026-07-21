@@ -1,4 +1,4 @@
-﻿"""PromoteAGOLDataBetweenStages -- DEV->QA->PROD release discipline for AGOL (Tool 6.10).
+"""PromoteAGOLDataBetweenStages -- DEV->QA->PROD release discipline for AGOL (Tool 6.10).
 
 Stage-promotion driver on the injected-``gis`` / lazy-``arcgis`` contract (same
 seam as ``publish.py``). A promotion only copies data when:
