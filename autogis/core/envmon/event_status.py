@@ -255,6 +255,15 @@ def _review_state(spec: ArtifactSpec, built_at: datetime,
         # Latest *successful* approval strictly after the build (P1-2: a failed
         # approve-gw-model run is not an approval). <= built_at means no approval
         # postdates this build -> awaiting (same-second tie -> awaiting, safe).
+        # ponytail: matched by TIME only, not model identity -- a later approval of
+        # a DIFFERENT model falsely blesses a surface built as the old one (codex
+        # PR#267 P1). Unreachable in production today: run-gw-model-pipeline is
+        # .pyt-only and writes no run history, so groundwater-surface is always
+        # MISSING (or FAILED via the documented CLI-stub quirk, ADR-0093) and
+        # short-circuits before reaching here. The identity compare
+        # needs the pipeline's RunRecord to carry the built model, so it lands WITH
+        # the deferred .pyt run-history logging (ADR-0093 Deferred), not before --
+        # coding it now would target a producer schema that doesn't exist yet.
         approve = _latest_run(history, "approve-gw-model", site_id, event_id,
                               statuses=_BUILT_STATUSES)
         if approve is None or approve.finished_at <= built_at:

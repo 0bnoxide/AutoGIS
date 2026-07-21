@@ -209,6 +209,19 @@ needs it).
   `export-figures` / `run-gw-model-pipeline` artifacts are untrackable and their
   event tags are moot until the toolbox logs runs (arcpy-side, needs Pro to
   test — out of scope for the arcpy-free producer-tagging follow-up).
+  **Exit criterion for that work (codex PR#267 P1):** the `run-gw-model-pipeline`
+  `RunRecord` must capture the *built model* identity, and `_review_state`'s
+  approved-model branch must then compare it to the approval's `model` input —
+  not time alone. Until the pipeline logs runs, `groundwater-surface` is always
+  MISSING (or FAILED via the documented CLI-stub quirk above) and never reaches
+  `_review_state`, so the time-only overlay is
+  unreachable in production; but it is knowingly wrong for a later approval of a
+  *different* model (approve IDW-built surface, then approve TIN → surface reads
+  current). Acceptance test for the future fix: build the surface, approve model
+  A, then append a successful `approve-gw-model(model=B)` after the build → the
+  surface must NOT read current. Do not pin the current time-only behavior with a
+  test (it would lock in the known-wrong semantics); a `ponytail:` ceiling at
+  `event_status.py` `_review_state` marks the same debt for `/ponytail-debt`.
 
 ## Consequences
 

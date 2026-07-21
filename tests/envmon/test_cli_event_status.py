@@ -134,6 +134,43 @@ def test_accept_stamp_is_local_not_utc(tmp_path, monkeypatch):
     assert json.loads(res.output)["summary"]["current"] == 5
 
 
+def test_missing_reviewer_tracker_is_usage_error(tmp_path):
+    # F1 (codex PR#267): a given-but-nonexistent --reviewer-tracker must fail as a
+    # parse-time usage error (exit 2), never fall through to open_review=0 which
+    # reads as "approved". click.Path(exists=True) enforces it.
+    runner = CliRunner()
+    paths = _write_inputs(tmp_path)
+    registry = tmp_path / "src.csv"
+    runner.invoke(autogis, _base_args(tmp_path, paths, registry) + ["--accept"])
+
+    res = runner.invoke(autogis, _base_args(tmp_path, paths, registry)
+                        + ["--reviewer-tracker", str(tmp_path / "nope.csv")])
+    assert res.exit_code == 2  # Click UsageError on nonexistent path
+
+
+def test_accept_crash_self_logs_error_record(tmp_path, monkeypatch):
+    # F2 (codex PR#267): --accept mutates (appends baseline rows), so a raise
+    # mid-accept must still write an 'error' RunRecord (ADR-0093 audit contract) --
+    # it used to return before the crash-logger. A directory as the registry path
+    # makes register()'s file open raise; a real --workbook forces register() to
+    # actually run (accept skips inputs that aren't supplied).
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(tmp_path / "self.csv"))
+    paths = _write_inputs(tmp_path)
+    registry_dir = tmp_path / "reg_is_a_dir"
+    registry_dir.mkdir()
+
+    res = CliRunner().invoke(autogis, [
+        "envmon", "event-status", "--site-id", SITE, "--event-id", EVENT,
+        "--source-registry", str(registry_dir),
+        "--workbook", str(paths["workbook"]), "--accept",
+    ])
+    assert res.exit_code != 0  # the raise propagates
+    records = RunHistory(tmp_path / "self.csv").query()
+    assert len(records) == 1
+    assert records[0].status == "error"
+    assert records[0].tool_name == "event-status"
+
+
 def test_missing_run_history_reports_missing_exit_4(tmp_path):
     runner = CliRunner()
     paths = _write_inputs(tmp_path)

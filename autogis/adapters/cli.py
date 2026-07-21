@@ -1497,8 +1497,12 @@ def _self_log_event_status(site_id, event_id, *, status, outputs, message):
 @click.option("--figure-spec", "figure_spec_path", default=None,
               type=click.Path(), help="Current figure spec YAML path.")
 @click.option("--reviewer-tracker", "tracker_path", default=None,
-              type=click.Path(),
-              help="Reviewer-comment tracker CSV (awaiting-review signal).")
+              type=click.Path(exists=True, dir_okay=False),
+              help="Reviewer-comment tracker CSV (awaiting-review signal). "
+                   "Validated to exist: unlike the --workbook/--screening inputs "
+                   "(a missing one is a classified 'stale' cause), a missing "
+                   "tracker would silently read as zero open comments = approved, "
+                   "so a bad path is a usage error (exit 2), not a false pass.")
 @click.option("--accept", is_flag=True, default=False,
               help="Record current input hashes as the baseline, then exit. "
                    "Accept the blessed inputs, then (re)build; producers must "
@@ -1536,25 +1540,32 @@ def event_status_cmd(site_id, event_id, run_history_path, registry_path,
     }
     registry = SourceRegistry(Path(registry_path))
 
-    if accept:
-        # Local naive stamp to match run_history's finished_at convention
-        # (RecordingCommand uses _dt.now()); a UTC stamp would skew the
-        # baseline-vs-build comparison in every non-UTC timezone.
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        recorded = es.accept_baseline(site_id=site_id, event_id=event_id,
-                                      inputs=inputs, source_registry=registry,
-                                      now=now)
-        click.echo(f"Accepted baseline for {site_id}/{event_id}: "
-                   + (", ".join(recorded) or "(no input files supplied)"))
-        _self_log_event_status(site_id, event_id, status="success",
-                               outputs={"accepted": recorded},
-                               message="baseline accepted")
-        return
-
     try:
+        if accept:
+            # --accept is a mutating path (it appends baseline rows), so it must
+            # sit INSIDE this crash-logger too (codex PR#267 P2): a raise here
+            # -- e.g. a registry path that is a directory -> PermissionError --
+            # would otherwise return zero RunRecords, breaking ADR-0093's audit
+            # contract. Partial appends need no rollback: the registry is
+            # append-only and _latest_baseline is last-row-wins, so a re-`--accept`
+            # after the fix fully supersedes, and the interim reads stale (safe).
+            # Local naive stamp to match run_history's finished_at convention
+            # (RecordingCommand uses _dt.now()); a UTC stamp would skew the
+            # baseline-vs-build comparison in every non-UTC timezone.
+            now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            recorded = es.accept_baseline(site_id=site_id, event_id=event_id,
+                                          inputs=inputs, source_registry=registry,
+                                          now=now)
+            click.echo(f"Accepted baseline for {site_id}/{event_id}: "
+                       + (", ".join(recorded) or "(no input files supplied)"))
+            _self_log_event_status(site_id, event_id, status="success",
+                                   outputs={"accepted": recorded},
+                                   message="baseline accepted")
+            return
+
         history = RunHistory(Path(run_history_path))
         open_review = 0
-        if tracker_path and Path(tracker_path).exists():
+        if tracker_path:  # existence validated at parse (click.Path(exists=True))
             open_review = sum(1 for c in read_tracker_csv(Path(tracker_path))
                               if c.status in ("OPEN", "IN_REVIEW"))
         report = es.classify_event(
