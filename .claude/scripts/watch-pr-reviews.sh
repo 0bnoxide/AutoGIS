@@ -26,9 +26,17 @@
 #   watch-pr-reviews.sh <pr> --interval 30      seconds between polls (default 45)
 #   watch-pr-reviews.sh <pr> --exclude LOGIN    skip a login (repeatable)
 #   watch-pr-reviews.sh <pr> --include-self     don't skip your own comments
+#   watch-pr-reviews.sh <pr> --reviews-only     watch only REVIEW + INLINE surfaces,
+#                                               skip the conversation timeline (your
+#                                               own/user replies share the owner
+#                                               login with an AutoGIS cold review, so
+#                                               they can't be login-excluded)
 #   watch-pr-reviews.sh <pr> --continuous       keep emitting; don't exit on first
 #   watch-pr-reviews.sh <pr> --baseline         swallow pre-existing items on the
-#                                               first successful poll of THIS run
+#                                               first poll, but ONLY when the
+#                                               seen-file is created THIS run (a
+#                                               re-arm against a persisted seen-file
+#                                               fires the gap instead of swallowing)
 #   watch-pr-reviews.sh <pr> --seen-file PATH   pin the seen-state file (default
 #                                               is under $TMPDIR, which some
 #                                               harnesses vary per invocation)
@@ -37,10 +45,15 @@
 # after the first new item so a `Monitor` fires once and stops (the common
 # "wake me when the review lands" case). Arm it with persistent:true.
 # For a long-lived watch, arm with --continuous --baseline so pre-existing
-# items don't fire the Monitor on the first poll. If you re-run --once in a
-# loop instead, pass --baseline only on the FIRST run (it swallows every poll
-# it baselines). AutoGIS cold reviews use the authenticated owner's login, so
-# its Monitor command must also pass --include-self and pin --repo explicitly.
+# items don't fire the Monitor on the first poll. --baseline now keys off the
+# seen-file's freshness, so re-arming the SAME command after a session-boundary
+# teardown is safe: it fires anything that landed during the gap instead of
+# swallowing it (persist the seen-file with --seen-file for this to survive a
+# per-invocation $TMPDIR). If you re-run --once in a loop instead, --baseline is
+# a no-op after the first run for the same reason. AutoGIS cold reviews use the
+# authenticated owner's login, so a Monitor watching for one must pass
+# --include-self and pin --repo explicitly; add --reviews-only to suppress the
+# self/user conversation replies that share that login.
 # Under --once, inspect output (`NEW` / `POLL-FAIL`), not the exit status, which
 # remains zero after a completed poll for compatibility.
 #
@@ -51,7 +64,7 @@
 set -uo pipefail   # NOT -e: a transient gh failure must become POLL-FAIL, not an exit
 
 PR=""; REPO=""; INTERVAL=45; ONCE=0; CONTINUOUS=0; INCLUDE_SELF=0
-BASELINE=0; SEEN_FILE=""; FIRST=1
+BASELINE=0; SEEN_FILE=""; FIRST=1; REVIEWS_ONLY=0; FRESH_SEEN=0
 EXCLUDES=("copilot-pull-request-reviewer[bot]")
 
 while [ $# -gt 0 ]; do
@@ -60,6 +73,7 @@ while [ $# -gt 0 ]; do
     --interval) INTERVAL="$2"; shift 2 ;;
     --exclude) EXCLUDES+=("$2"); shift 2 ;;
     --include-self) INCLUDE_SELF=1; shift ;;
+    --reviews-only) REVIEWS_ONLY=1; shift ;;
     --once) ONCE=1; shift ;;
     --continuous) CONTINUOUS=1; shift ;;
     --baseline) BASELINE=1; shift ;;
@@ -92,9 +106,13 @@ SEEN="${SEEN_FILE:-${TMPDIR:-/tmp}/watch-pr-reviews.${REPO//\//_}.${PR}.seen}"
 # Sentinel first line: keeps the seen-file non-empty so awk's NR==FNR two-file
 # idiom can't misread stdin as file one. Old-format files (full display lines)
 # stay compatible — lookups only ever use the first two fields.
-if [ ! -s "$SEEN" ] && ! printf '# watch-pr-reviews seen-keys\n' > "$SEEN" 2>/dev/null; then
-  echo "POLL-FAIL $(date -u +%H:%M:%S) (cannot write seen-file: $SEEN)"
-  exit 2
+if [ ! -s "$SEEN" ]; then
+  FRESH_SEEN=1   # gate --baseline: a re-arm against an existing seen-file must
+                 # NOT swallow the gap (below), only a first-ever arm baselines.
+  if ! printf '# watch-pr-reviews seen-keys\n' > "$SEEN" 2>/dev/null; then
+    echo "POLL-FAIL $(date -u +%H:%M:%S) (cannot write seen-file: $SEEN)"
+    exit 2
+  fi
 fi
 
 # Emit items whose "TYPE id" key is unseen, across all three surfaces; append
@@ -105,8 +123,14 @@ poll() {
         --jq ".[] | select(.user.login as \$l | ($EX | index(\$l)) | not) | \"REVIEW \(.id) \(.user.login) \(.state)\"" 2>/dev/null) || ok=0
   i=$(gh api --paginate "repos/$REPO/pulls/$PR/comments" \
         --jq ".[] | select(.user.login as \$l | ($EX | index(\$l)) | not) | \"INLINE \(.id) \(.user.login) \(.path):\(.line // .original_line)\"" 2>/dev/null) || ok=0
-  s=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-        --jq ".[] | select(.user.login as \$l | ($EX | index(\$l)) | not) | \"ISSUE \(.id) \(.user.login)\"" 2>/dev/null) || ok=0
+  s=""   # --reviews-only skips the conversation timeline (where your own and the
+         # user's replies land -- same owner login as an AutoGIS cold review, so
+         # login-excludable is impossible); watches only the REVIEW + INLINE
+         # surfaces a reviewer's verdict actually uses.
+  if [ "$REVIEWS_ONLY" = 0 ]; then
+    s=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+          --jq ".[] | select(.user.login as \$l | ($EX | index(\$l)) | not) | \"ISSUE \(.id) \(.user.login)\"" 2>/dev/null) || ok=0
+  fi
   if [ "$ok" = 0 ]; then
     echo "POLL-FAIL $(date -u +%H:%M:%S) (gh error querying $REPO#$PR)"
     return 1
@@ -120,7 +144,14 @@ poll() {
   fi
   if [ "$FIRST" = 1 ]; then
     FIRST=0
-    if [ "$BASELINE" = 1 ]; then return 1; fi
+    # --baseline swallows pre-existing items on the first poll ONLY when the
+    # seen-file was created THIS run. On a re-arm against a persisted seen-file
+    # (e.g. after a session-boundary teardown killed the Monitor), the items that
+    # arrived while it was down are new since last session and MUST fire --
+    # baselining them silently drops a review that landed during the gap (the
+    # failure that hid a codex review this session). Old keys are already deduped
+    # by the awk pass above, so not swallowing here never re-emits them.
+    if [ "$BASELINE" = 1 ] && [ "$FRESH_SEEN" = 1 ]; then return 1; fi
   fi
   if [ -n "$new" ]; then
     printf '%s\n' "$new" | sed 's/^/NEW /'
