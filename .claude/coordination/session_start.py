@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.request
 
 
 def _git_branch(cwd):
@@ -58,8 +59,109 @@ _POLICY = (
     "subagents: use 'coord_cli.py whoami|release-mine|resync' instead."
 )
 
+_MNEMOVERSE_DOMAIN = "collab:autogis"
+_MNEMOVERSE_QUERIES = ("STATUS handoff", "BLOCKER", "DECISION")
+_MNEMOVERSE_TOP_K = 3
+_MNEMOVERSE_MAX_ITEMS = 5
+_MNEMOVERSE_ITEM_CHARS = 1200
 
-def additional_context(payload, reg_path):
+
+def _clip(text, limit):
+    text = str(text).strip().replace("\x00", "")
+    return text if len(text) <= limit else text[:limit - 14].rstrip() + " …[truncated]"
+
+
+def mnemoverse_context(environ=None, open_url=None):
+    """Read the three ADR-0095 queries and format bounded startup context.
+
+    One public batch endpoint keeps startup cheap while preserving three
+    targeted semantic queries. Failures never block the session; they leave a
+    visible instruction to use the already-configured MCP tool manually.
+    """
+    env = os.environ if environ is None else environ
+    api_key = env.get("MNEMOVERSE_API_KEY", "")
+    fallback = (
+        "[mnemoverse] Automatic collab:autogis retrieval unavailable. If the "
+        "MCP tools are present, run the ADR-0095 reads manually: STATUS "
+        "handoff, BLOCKER, DECISION."
+    )
+    if not api_key:
+        return fallback
+
+    base_url = env.get(
+        "MNEMOVERSE_API_URL", "https://core.mnemoverse.com/api/v1"
+    ).rstrip("/")
+    body = {"queries": [
+        {"query": query, "domain": _MNEMOVERSE_DOMAIN,
+         "top_k": _MNEMOVERSE_TOP_K, "include_associations": True}
+        for query in _MNEMOVERSE_QUERIES
+    ]}
+    try:
+        request = urllib.request.Request(
+            base_url + "/memory/read-batch",
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "AutoGIS-SessionStart/1.0",
+                "X-Api-Key": api_key,
+            },
+            method="POST",
+        )
+        opener = open_url or urllib.request.urlopen
+        with opener(request, timeout=5) as response:
+            results = json.load(response).get("results", [])
+        if (not isinstance(results, list)
+                or len(results) != len(_MNEMOVERSE_QUERIES)
+                or any(not isinstance(result, dict) for result in results)):
+            return fallback
+    except Exception:
+        return fallback
+
+    # Semantic queries overlap by design. Show each atom once and retain every
+    # query label that found it so startup context stays below Codex's hook cap.
+    matches = {}
+    for query, result in zip(_MNEMOVERSE_QUERIES, results):
+        items = result.get("items", [])
+        if not isinstance(items, list):
+            return fallback
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            atom_id = str(item.get("atom_id") or "")
+            content = _clip(item.get("content", ""), _MNEMOVERSE_ITEM_CHARS)
+            key = atom_id or content
+            if not key:
+                continue
+            if key not in matches:
+                matches[key] = {
+                    "atom_id": atom_id or "unknown",
+                    "content": content,
+                    "queries": [],
+                }
+            if query not in matches[key]["queries"]:
+                matches[key]["queries"].append(query)
+
+    lines = [
+        "[mnemoverse] Automatic collab:autogis startup retrieval completed.",
+        "GitHub/repo remain authoritative; these are context pointers.",
+    ]
+    if not matches:
+        lines.append("No matching STATUS handoff, BLOCKER, or DECISION entries.")
+    for match in list(matches.values())[:_MNEMOVERSE_MAX_ITEMS]:
+        labels = ", ".join(match["queries"])
+        lines.append(
+            "- [%s] atom_id=%s\n  %s"
+            % (labels, match["atom_id"], match["content"].replace("\n", "\n  "))
+        )
+    if len(matches) > _MNEMOVERSE_MAX_ITEMS:
+        lines.append(
+            "- %d additional match(es) omitted; use memory_read for details."
+            % (len(matches) - _MNEMOVERSE_MAX_ITEMS)
+        )
+    return "\n".join(lines)
+
+
+def additional_context(payload, reg_path, memory_context=""):
     """The SessionStart additionalContext: the standing policy, plus a one-time
     nudge to isolate into a worktree when another live session already shares
     this main working tree (the gotcha-#1 contention condition)."""
@@ -68,23 +170,27 @@ def additional_context(payload, reg_path):
     cwd = payload.get("cwd") or os.getcwd()
     sharers = registry.tree_sharers(reg_path, sid, registry.repo_root(cwd)) \
         if sid else []
-    if not sharers:
-        return _POLICY
-    nudge = (
-        "[coord] %d other session(s) share this main working tree. Concurrent "
-        "checkouts here will move your HEAD. Isolate now: EnterWorktree, then "
-        "run 'python .claude/coordination/coord_cli.py resync'."
-        % len(sharers))
-    return _POLICY + "\n\n" + nudge
+    parts = [_POLICY]
+    if sharers:
+        parts.append(
+            "[coord] %d other session(s) share this main working tree. "
+            "Concurrent checkouts here will move your HEAD. Isolate now: "
+            "EnterWorktree, then run 'python "
+            ".claude/coordination/coord_cli.py resync'." % len(sharers)
+        )
+    if memory_context:
+        parts.append(memory_context)
+    return "\n\n".join(parts)
 
 
 def main():
-    context = _POLICY
+    memory_context = mnemoverse_context()
+    context = _POLICY + "\n\n" + memory_context
     try:
         payload = json.load(sys.stdin)
         reg_path = _reg_path(payload)
         claim_session(payload, reg_path)
-        context = additional_context(payload, reg_path)
+        context = additional_context(payload, reg_path, memory_context)
     except Exception:
         pass
     # State the read-only-main policy (+ nudge, if contended) as session

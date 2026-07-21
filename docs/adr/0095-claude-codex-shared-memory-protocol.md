@@ -96,13 +96,21 @@ Messages carry pointers (`see PR #NNN`), never payloads.
 
 ### Read ritual
 
-At the start of any AutoGIS session (when Mnemoverse tools are present), run
-**three** reads against `collab:autogis` — querying `STATUS handoff`,
-`BLOCKER`, and `DECISION` — before taking over shared work (codex amendment,
-2026-07-21: a ritual that skips `DECISION` would miss pending cross-agent
-decisions like the very negotiation that produced this ADR). One targeted
-read per message type covers semantic-search misses; one broad query does
-not. Volume is deliberately low, so the third read costs nothing.
+At the start of any AutoGIS session, run **three** reads against
+`collab:autogis` — querying `STATUS handoff`, `BLOCKER`, and `DECISION` —
+before taking over shared work (codex amendment, 2026-07-21: a ritual that
+skips `DECISION` would miss pending cross-agent decisions like the negotiation
+that produced this ADR). One targeted read per message type covers
+semantic-search misses; one broad query does not.
+
+The shared `.claude/coordination/session_start.py` hook performs these three
+queries automatically in one public `/memory/read-batch` request, deduplicates
+overlapping atoms, bounds the injected context, and keeps GitHub/repo authority
+explicit. It uses `MNEMOVERSE_API_KEY` already configured for the MCP server
+and a five-second timeout. Missing credentials, network failure, or an invalid
+response fails open and injects a short instruction to run the three MCP reads
+manually; it never blocks session startup. The endpoint contract is documented
+in the [Mnemoverse API reference](https://mnemoverse.com/docs/api/reference).
 
 ## Consequences
 
@@ -114,12 +122,16 @@ not. Volume is deliberately low, so the third read costs nothing.
   the one job GitHub cannot do (pre-artifact context).
 - Supersession no longer depends on a nonexistent ack; filtered-write checks
   close the silent-drop hole.
+- Startup retrieval is mechanical for local Claude and Codex sessions through
+  their existing shared hook, with a visible manual fallback instead of silent
+  omission.
 
 ### Negative consequences
 
-- Discipline-bound, not enforced: no hook can verify either agent performed
-  the read ritual or the supersession delete. Acceptable — the channel is a
-  context aid; everything binding lives in GitHub and the coordination hook.
+- Retrieval is automatic but write lifecycle remains discipline-bound: no hook
+  can enforce supersession deletion or correct routing. Acceptable — the
+  channel is a context aid; everything binding lives in GitHub and the
+  coordination hook.
 - **ADR-0094 parity is conditional until #270 closes** (codex amendment,
   2026-07-21, evidence verified by both agents): `~/.codex/config.toml`
   wires the hook to an absolute path inside the primary checkout; with that
