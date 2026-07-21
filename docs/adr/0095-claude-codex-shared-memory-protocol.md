@@ -7,9 +7,11 @@
 ## Context
 
 Claude Code and Codex collaborate on this repo from the same machine but
-different harnesses. File/branch *locking* is already solved and symmetric:
-the coordination framework's `hook_check.decide()` binds Claude natively and
-Codex via the shim (ADR-0094). What locking does not carry is *context* —
+different harnesses. File/branch *locking* is handled by the coordination
+framework's `hook_check.decide()` — binding Claude natively and Codex via the
+shim (ADR-0094). **Parity is conditional, not absolute** (see Consequences
+and #270): the shim binds Codex only while the file exists at the absolute
+path wired in `~/.codex/config.toml`. What locking does not carry is *context* —
 handoffs, in-flight uncommitted state, durable decisions, blockers.
 
 Both agents share one Mnemoverse account (confirmed empirically 2026-07-20:
@@ -77,6 +79,13 @@ Messages carry pointers (`see PR #NNN`), never payloads.
   deletes their own `[STATUS]` N in the same sitting (`memory_delete`). No
   ack is required or waited for — acks exist only for `[BLOCKER]`s. Never
   delete the other agent's messages (downrank via `memory_feedback` at most).
+- **Lifecycle deletion (codex amendment, 2026-07-21):** a successor message
+  is not the only terminator. Delete your own pre-artifact `[STATUS]` when
+  the GitHub artifact is created, or the work completes or is abandoned —
+  otherwise the routing rule guarantees the last pre-artifact status goes
+  stale forever (status moves to GitHub, so no successor ever supersedes
+  it). Likewise the `[BLOCKER]` originator deletes their own blocker after
+  verified resolution or escalation to a GitHub issue.
 - **Check the write result.** If the importance gate reports *filtered*,
   enrich the message and rewrite — a filtered handoff is a silent drop.
 - **Low volume is a feature.** Write on ownership change, decision, or
@@ -88,9 +97,12 @@ Messages carry pointers (`see PR #NNN`), never payloads.
 ### Read ritual
 
 At the start of any AutoGIS session (when Mnemoverse tools are present), run
-**two** reads against `collab:autogis` — one querying `STATUS handoff`, one
-querying `BLOCKER` — before taking over shared work. Two targeted queries
-cover semantic-search misses; one broad query does not.
+**three** reads against `collab:autogis` — querying `STATUS handoff`,
+`BLOCKER`, and `DECISION` — before taking over shared work (codex amendment,
+2026-07-21: a ritual that skips `DECISION` would miss pending cross-agent
+decisions like the very negotiation that produced this ADR). One targeted
+read per message type covers semantic-search misses; one broad query does
+not. Volume is deliberately low, so the third read costs nothing.
 
 ## Consequences
 
@@ -108,6 +120,15 @@ cover semantic-search misses; one broad query does not.
 - Discipline-bound, not enforced: no hook can verify either agent performed
   the read ritual or the supersession delete. Acceptable — the channel is a
   context aid; everything binding lives in GitHub and the coordination hook.
+- **ADR-0094 parity is conditional until #270 closes** (codex amendment,
+  2026-07-21, evidence verified by both agents): `~/.codex/config.toml`
+  wires the hook to an absolute path inside the primary checkout; with that
+  checkout on a pre-#268 branch the shim file is absent and a live Codex
+  `apply_patch` probe in a main worktree was **silently allowed** — not the
+  block-all previously assumed for a missing shim (hook spawn-failure ≠
+  script exit 2). Until a current-harness main-write probe is denied and
+  enforcement survives old-branch checkouts, treat Codex-side locking as
+  best-effort and lean on the read ritual + read-only-`main` discipline.
 - Channel history is not versioned or auditable the way the repo is; durable
   decisions must therefore land as ADRs, with the channel entry pointing at
   them (as this one does).

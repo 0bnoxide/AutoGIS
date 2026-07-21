@@ -210,8 +210,8 @@ Two separate records — easy to conflate, keep both:
 
 Claude Code and Codex share context through the Mnemoverse domain
 **`collab:autogis`** (both agents, one account). **When the Mnemoverse tools
-are present**, read the channel at session start — two queries, one for
-`STATUS handoff` and one for `BLOCKER` — before taking over shared work, and
+are present**, read the channel at session start — three queries: `STATUS
+handoff`, `BLOCKER`, `DECISION` — before taking over shared work, and
 write on handoff/decision/blocker per the protocol. The canonical protocol
 (message types, GitHub-first routing rule, supersession/filtered-write
 mechanics) is **ADR-0095** — read it before writing to the channel. Context
