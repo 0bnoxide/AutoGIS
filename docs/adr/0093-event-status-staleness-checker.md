@@ -134,14 +134,32 @@ outrank it (precedence below). Documented ceilings: **revocation is invisible**
 success still reads approved — the GDB is truth, RunHistory a proxy); the
 **ledger is the horizon** (runs recorded to a different `run_history.csv` are
 invisible — hence explicit `--run-history`/`--source-registry` paths defaulting
-to the producers' defaults); and **event scoping is coarse** — most slice-1
-producers (`import-edd`, `apply-screening`, `export-figures`,
-`run-gw-model-pipeline`, `approve-gw-model`) record `event_id=None` (they take no
-`--event`), so for them the `(tool, site, event)` rule degenerates to the latest
-run at the site regardless of event. The tool is meant for the active/latest
-event; precise historical per-event scoping needs the deferred producer-side
-event tagging. A failed/cancelled `approve-gw-model` run is never counted as an
-approval (only the latest **successful** approval that postdates the build).
+to the producers' defaults); and **event scoping is coarse** — a run recorded
+with `event_id=None` is event-agnostic and matches any queried event, so an
+untagged producer degenerates the `(tool, site, event)` rule to the latest run
+at the site regardless of event. The tool is meant for the active/latest event.
+A failed/cancelled `approve-gw-model` run is never counted as an approval (only
+the latest **successful** approval that postdates the build).
+
+**Amendment (producer event tagging, follow-up to this ADR).** The CLI-real
+producers now accept optional `--event` (stamped onto their run-history record
+via the existing auto-logger): `import-edd` gained `--event` (it already had
+`--site`), and `apply-screening` and `approve-gw-model` each gained both `--site`
+and `--event` — without `--site` their real records carried `site_id=""` and the
+checker never matched them (a latent gap in slice 1, papered over only by tests injecting synthetic
+records). `export-snapshot` already carried both. Tags are optional (default
+empty → recorded `None`): required would break every existing invocation for no
+correctness gain, since the `event_id in (None, event_id)` fallback keeps an
+untagged run visible (the documented ceiling), whereas a *mistyped* required tag
+would silently exclude the run and flip the artifact to MISSING. The two
+`.pyt`-only producers (`export-figures`, `run-gw-model-pipeline`) remain
+untaggable — their CLI leaves are pure redirect stubs and the `.pyt` toolbox
+writes **no** run history at all, so figures/groundwater-surface tracking is
+blocked on a **distinct** deferred gap (`.pyt` run-history logging), not on event
+tagging. Known quirk, documented not fixed: invoking either `.pyt` stub from the
+CLI writes an ERROR record with a real `site_id` (resolved from the `site_config`
+arg), which flips that artifact from MISSING to FAILED site-wide until a real
+build is logged.
 
 ### Exit codes — semantic, always (G5/G6)
 
@@ -187,6 +205,10 @@ needs it).
   (transitive site-config→referenced-file), and per-build input-hash capture at
   the producer (would remove `--accept`, but is a producer-wide change for a
   consumer-side need).
+- `.pyt` run-history logging: the toolbox writes no `RunRecord`, so
+  `export-figures` / `run-gw-model-pipeline` artifacts are untrackable and their
+  event tags are moot until the toolbox logs runs (arcpy-side, needs Pro to
+  test — out of scope for the arcpy-free producer-tagging follow-up).
 
 ## Consequences
 

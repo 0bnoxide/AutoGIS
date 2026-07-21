@@ -8,6 +8,7 @@ import json
 import time
 from datetime import datetime, timedelta
 
+import pytest
 from click.testing import CliRunner
 
 from autogis.adapters.cli import autogis
@@ -95,6 +96,8 @@ def test_changed_screening_exits_stale_code_3(tmp_path):
     assert states["figures"] == "current"  # ONLY correct downstream
 
 
+@pytest.mark.skipif(not hasattr(time, "tzset"),
+                    reason="time.tzset is Unix-only; TZ is a no-op on Windows")
 def test_accept_stamp_is_local_not_utc(tmp_path, monkeypatch):
     """P1-1: --accept must stamp the baseline in the same (local) clock as
     run_history's finished_at. A UTC stamp skews the comparison in non-UTC

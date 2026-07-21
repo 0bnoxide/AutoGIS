@@ -916,8 +916,16 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
               help="Screening levels YAML (analyte -> matrix -> {unit, level, source}).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output CSV path (updated records).")
+@click.option("--site", "site_id", default="",
+              help="Site ID stamped on the run-history record so event-status "
+                   "can find this screening-evaluation run (without it the record "
+                   "carries no site and the checker never matches it).")
+@click.option("--event", "event_id", default="",
+              help="Event ID label for event-status scoping. Matched verbatim "
+                   "against `event-status --event-id`.")
 @qa_report_options
-def apply_screening_cmd(results_csv, screening_path, output, report, fail_on):
+def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
+                        report, fail_on):
     """Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless)."""
     import yaml as _yaml
     from autogis.core.common.qa import QACollector
@@ -1838,7 +1846,15 @@ def run_gw_model_pipeline_cmd(site_config):
               help="Model name to approve (must have been in the run; any "
                    "rank — hydro judgment trumps the metric).")
 @click.option("--reviewer", default="", help="Reviewer name for the record.")
-def approve_gw_model_cmd(gdb, run_id, model, reviewer):
+@click.option("--site", "site_id", default="",
+              help="Site ID stamped on the run-history record so event-status "
+                   "can match this approval to the site's groundwater-surface "
+                   "artifact (run history is append-only — an untagged approval "
+                   "is permanently unmatchable).")
+@click.option("--event", "event_id", default="",
+              help="Event ID label for event-status scoping. Matched verbatim "
+                   "against `event-status --event-id`.")
+def approve_gw_model_cmd(gdb, run_id, model, reviewer, site_id, event_id):
     """BuildGroundwaterSurfaceModel approval verb: record the
     hydrogeologist's model choice on a DRAFT run (ArcGIS Pro)."""
     _guard("approve-gw-model")
@@ -1937,9 +1953,13 @@ def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fa
               help="Screening levels YAML (optional).")
 @click.option("--event-date", default=None,
               help="Override event date ISO8601 (YYYY-MM-DD).")
+@click.option("--event", "event_id", default="",
+              help="Event ID label (e.g. 2026-Q2) stamped on the run-history "
+                   "record for event-status scoping. Matched verbatim against "
+                   "`event-status --event-id` (case/format-sensitive).")
 @qa_report_options
 def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
-                   analytes, screening, event_date, report, fail_on):
+                   analytes, screening, event_date, event_id, report, fail_on):
     """Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro)."""
     _guard("import-edd")
     from autogis.core.envmon.edd_profile import LabEDDProfile
