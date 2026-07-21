@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
-SCHEMA_VERSION = "2.5"
+SCHEMA_VERSION = "2.6"
 
 
 @dataclass
@@ -18,6 +18,7 @@ class TableUpgradeStatus:
     table_name: str
     status: str        # "CREATED" | "UPDATED" | "OK"
     fields_added: int
+    fields_widened: int = 0
 
 
 @dataclass
@@ -36,6 +37,10 @@ class UpgradeReport:
     def fields_added(self) -> int:
         return sum(t.fields_added for t in self.tables)
 
+    @property
+    def fields_widened(self) -> int:
+        return sum(t.fields_widened for t in self.tables)
+
 
 def format_report(report: UpgradeReport) -> str:
     lines = [
@@ -45,7 +50,12 @@ def format_report(report: UpgradeReport) -> str:
     ]
     for t in report.tables:
         tag = f"[{t.status}]"
-        detail = f"(+{t.fields_added} fields)" if t.fields_added else ""
+        bits = []
+        if t.fields_added:
+            bits.append(f"+{t.fields_added} fields")
+        if t.fields_widened:
+            bits.append(f"{t.fields_widened} widened")
+        detail = f"({', '.join(bits)})" if bits else ""
         lines.append(f"  {tag:<11} {t.table_name:<36} {detail}".rstrip())
 
     updated = sum(1 for t in report.tables if t.status == "UPDATED")
@@ -54,7 +64,8 @@ def format_report(report: UpgradeReport) -> str:
         "",
         (f"Summary: {report.tables_created} created, "
          f"{updated} updated, {ok_count} OK  "
-         f"| {report.fields_added} fields added"),
+         f"| {report.fields_added} fields added, "
+         f"{report.fields_widened} widened"),
         f"Elapsed: {report.elapsed_seconds:.1f} s",
     ]
     return "\n".join(lines)
@@ -74,7 +85,7 @@ def upgrade_gdb_schema(  # pragma: no cover
     """
     import arcpy
     from pathlib import Path as _P
-    from .gdb_schema import create_or_update_gdb_schema, TABLE_SCHEMAS
+    from .gdb_schema import create_or_update_gdb_schema, TABLE_SCHEMAS, T
 
     t0 = time.monotonic()
     gdb = str(gdb_path)
@@ -106,6 +117,27 @@ def upgrade_gdb_schema(  # pragma: no cover
     sr = arcpy.SpatialReference(spatial_reference)
     create_or_update_gdb_schema(gdb, spatial_reference=sr)
 
+    # --- widen text fields whose schema length grew (ADR-0097) -----------
+    # create_or_update_gdb_schema is additive-only: it never touches an
+    # existing field, so a widened text column (e.g. ScreeningLevelSource
+    # 64 -> 256) stays short on pre-existing GDBs and breaks inserts. On a
+    # populated file GDB the only permitted AlterField change is a length
+    # INCREASE (Esri "Alter Field": with data you can only increase length),
+    # so raising to the schema length is always safe here — we never shrink.
+    widened: dict[str, int] = {}
+    for tbl_name, tbl_fields in TABLE_SCHEMAS.items():
+        tpath = str(_P(gdb) / tbl_name)
+        if not arcpy.Exists(tpath):
+            continue
+        actual = {f.name.upper(): f for f in arcpy.ListFields(tpath)}
+        for fname, ftype, flen in tbl_fields:
+            if ftype != T or not flen:
+                continue
+            af = actual.get(fname.upper())
+            if af is not None and af.length and af.length < flen:
+                arcpy.management.AlterField(tpath, af.name, field_length=flen)
+                widened[tbl_name] = widened.get(tbl_name, 0) + 1
+
     # --- derive per-table status ----------------------------------------
     statuses: list[TableUpgradeStatus] = []
     for tbl_name in TABLE_SCHEMAS:
@@ -118,8 +150,9 @@ def upgrade_gdb_schema(  # pragma: no cover
                 1 for f in TABLE_SCHEMAS[tbl_name]
                 if f[0].upper() not in fields_before.get(tbl_name, set())
             )
+            w = widened.get(tbl_name, 0)
             statuses.append(TableUpgradeStatus(
-                tbl_name, "UPDATED" if added else "OK", added
+                tbl_name, "UPDATED" if (added or w) else "OK", added, w
             ))
 
     # --- write version row -----------------------------------------------
