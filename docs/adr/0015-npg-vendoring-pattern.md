@@ -56,6 +56,15 @@ Expose a clean public API via `autogis/core/common/numpy_geom.py`:
 4. **Reimplement from scratch:** Write equivalent pure-numpy algorithms without any vendored code.
    - **Rejected:** Unnecessary duplication of well-tested implementations; Dan Patterson's code is the reference for correctness.
 
+## Amendments
+
+**2026-07-21:** The public API grew a sixth function, `concave_hull` (wraps
+`npg_analysis.concave`, same `try/except` fallback pattern as the original
+five — falls back to `convex_hull` if `npg_analysis` is unavailable). Used by
+`draft_plume_boundary.py`. The "five functions" framing above is historical;
+`autogis/core/common/numpy_geom.py` is the current source of truth for the
+public surface.
+
 ## Related decisions
 
 - [ADR-002: Arcpy-free core invariant](0002-arcpy-free-core-invariant.md) — npg/ and numpy_geom.py uphold this invariant
