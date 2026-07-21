@@ -205,3 +205,17 @@ Two separate records — easy to conflate, keep both:
   COORD="$(git rev-parse --git-common-dir)/.."   # main tree root
   python "$COORD/.claude/coordination/coord_cli.py" resync --session "$SESSION_ID"
   ```
+
+## Claude↔Codex shared-memory channel
+
+Claude Code and Codex share context through the Mnemoverse domain
+**`collab:autogis`** (both agents, one account). The shared `SessionStart`
+hook automatically runs the three targeted queries — `STATUS handoff`,
+`BLOCKER`, `DECISION` — and injects bounded, deduplicated results before work
+starts. If it reports retrieval unavailable and the Mnemoverse MCP tools are
+present, run those three reads manually. Write on handoff/decision/blocker per
+the canonical protocol in **ADR-0095** (message types, GitHub-first routing,
+supersession/filtered-write mechanics); read it before writing to the channel.
+Context only: the channel never locks anything (locking = coordination hook +
+ADR-0094 shim), and GitHub/repo remain source of truth. No API key/tools in a
+cloud/web session means skip; startup remains fail-open by design.
