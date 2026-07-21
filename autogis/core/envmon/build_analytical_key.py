@@ -1,8 +1,9 @@
 """build_analytical_key.py — analytical key/legend table for map layouts (Tool 5.5).
 
-All functions here are arcpy-free (headless). The GDB write stub
-(write_analytical_key_gdb_table) requires ArcGIS Pro and is marked
-``# pragma: no cover``; ``import arcpy`` is deferred inside it.
+All functions here are arcpy-free (headless): the key is emitted as CSV / XLSX /
+Markdown. (A GDB-table writer for a planned Env_AnalyticalKey feature class was
+specced in 2026-06 but never wired — no table, no CLI option, no caller — and
+was removed as dead code in ADR-0098.)
 
 Default analyte selection = ``include_in_default_figures == True``, sorted by
 ``display_order`` then canonical name; override via ``analyte_filter``. All
@@ -198,31 +199,3 @@ def write_key_xlsx(rows: list, path: Path, matrix: str = "") -> None:
         ws.cell(row=len(rows) + 3, column=1, value=f"Matrix: {matrix}")
 
     wb.save(Path(path))
-
-
-def write_analytical_key_gdb_table(  # pragma: no cover
-    gdb_path: str,
-    site_id: str,
-    figure_spec_id: str,
-    rows: list,
-) -> None:
-    """Append rows to the Env_AnalyticalKey GDB table (ArcGIS Pro / arcpy only)."""
-    import arcpy
-    from datetime import datetime
-    from pathlib import Path as _P
-
-    table = str(_P(gdb_path) / "Env_AnalyticalKey")
-    fields = [
-        "SiteID", "FigureSpecID", "AnalyticalOrder", "CanonicalName",
-        "Abbreviation", "Units", "ScreeningValue", "ScreeningUnits",
-        "ScreeningSource", "LevelEstablished", "DraftFlag", "GeneratedDate",
-    ]
-    generated = datetime.now()
-    with arcpy.da.InsertCursor(table, fields) as cur:
-        for r in rows:
-            cur.insertRow([
-                site_id, figure_spec_id, r.display_order, r.canonical,
-                r.abbreviation, r.units, r.screening_value, r.screening_units,
-                r.screening_source, int(r.level_established), int(r.draft_flag),
-                generated,
-            ])
