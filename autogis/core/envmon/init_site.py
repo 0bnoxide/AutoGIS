@@ -131,6 +131,26 @@ def plan_site_skeleton(site_id: str, site_name: str,
     return planned
 
 
+# Regulatory content init-site deliberately does NOT scaffold: screening files
+# are passed explicitly to the tools (no per-site convention exists), so a new
+# site has none. Surfaced by the command so an operator configures it before
+# production rather than shipping figures with no exceedance criteria.
+REGULATORY_TODO: Tuple[str, ...] = (
+    "screening levels: author a screening-levels YAML covering this site's "
+    "analytes (cite the governing regulatory table in each entry's `source`) "
+    "and validate it with `envmon manage-screening-levels`. The importer's "
+    "primary source is the workbook RBSL row; this file is the secondary "
+    "fallback, and figures flag any result that has no screening level.",
+)
+
+
+def regulatory_gaps() -> List[str]:
+    """Regulatory content a freshly scaffolded site still needs but that
+    init-site does not create. A function (not just the constant) so a later
+    slice can make it dest-aware without changing callers."""
+    return list(REGULATORY_TODO)
+
+
 def scan_anchors(text: str) -> List[Tuple[int, str]]:
     """Return (line_no, stripped_line) for every ``_TODO`` anchor in *text*."""
     return [(i, line.strip())

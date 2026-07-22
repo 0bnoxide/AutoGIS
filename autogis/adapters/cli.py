@@ -324,7 +324,8 @@ def init_site_cmd(site_id, site_name, dest, force, dry_run):
     """
     import autogis
     from autogis.core.envmon.init_site import (
-        plan_site_skeleton, scan_anchors, validate_skeleton, write_skeleton)
+        plan_site_skeleton, regulatory_gaps, scan_anchors, validate_skeleton,
+        write_skeleton)
 
     config_root = (Path(dest) if dest
                    else Path(autogis.__file__).resolve().parent / "config")
@@ -353,6 +354,12 @@ def init_site_cmd(site_id, site_name, dest, force, dry_run):
             total += 1
             click.echo(f"  {sf.target.name}:{line_no}: {line}")
     click.echo(f"{total} _TODO anchor(s) across {len(files)} file(s).")
+
+    gaps = regulatory_gaps()
+    if gaps:
+        click.echo("Regulatory content to configure (NOT scaffolded):")
+        for g in gaps:
+            click.echo(f"  - {g}")
 
     if blocked or any(not ok for _, ok, _ in validation):
         raise SystemExit(1)
