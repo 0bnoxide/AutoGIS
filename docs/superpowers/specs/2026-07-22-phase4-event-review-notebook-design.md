@@ -11,8 +11,10 @@ recommended items, log your judgement")
 Ship **one** supported notebook that aggregates an event's review sections from
 **existing** core producers — an interactive review surface, not a fourth
 implementation. Per roadmap governance: reusable behavior stays in
-`autogis.core`; the notebook only imports and displays it. **Zero new core
-code.**
+`autogis.core`; the notebook only imports and displays it. **No new domain
+logic** (one incidental 1-line core fix: the event report now reads
+`compare-events`' `TrendClass` column so the trend section isn't all-`UNKNOWN`;
+regression-tested).
 
 ## Why a notebook when `generate_event_report` exists
 

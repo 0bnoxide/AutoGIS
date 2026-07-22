@@ -69,6 +69,36 @@ implementation is a decision point worth an independent check.
 
 **Revisit if:** the user changes the advisor model or cadence.
 
+## D7 — Fixed the compare-events → report TrendClass mismatch in core
+
+**Decision:** Applied a 1-line fix to `generate_event_report` so the trend
+section recognizes the `TrendClass` column `compare-events` emits (it read only
+`TrendLabel`/`TrendVsPrevious`, which no producer writes → the section rendered
+all-UNKNOWN). Added a focused regression test. Amended ADR-0099's "zero new core
+code" claim to reflect this.
+
+**Reasoning:** Root-cause fix (ponytail): the notebook's trend section depends on
+it, it's a genuine latent bug, and a 1-line change beats a per-notebook column
+rename hack. Pure stdlib `dict.get` — no arcpy, so no ADR-0077 doc-verify.
+
+**Revisit if:** compare-events' output column is renamed again — keep the report's
+recognized-column set in sync (or promote a shared column constant).
+
+## D8 — Verification env: fresh arcpy-free venv
+
+**Decision:** Ran the authoritative full-suite green check in a purpose-built
+arcpy-free venv (`pip install -e .[dev,notebook]`, Python 3.14, no arcpy) after
+finding both local envs unsuitable: system Python 3.14 has a **corrupted** autogis
+distribution (`~%togis`) that breaks subprocess-spawning tests, and the
+`autogis-py3` conda env **has arcpy** (from Pro) so every `*without_arcpy*` guard
+test fails there. Clean venv result: 2262 passed, 7 skipped, 0 failed (notebook
+test ran, not skipped).
+
+**Reasoning:** "Suite green" must be proven in the canonical arcpy-free
+environment, not one with known env-mismatch failures.
+
+**Revisit if:** a maintained arcpy-free dev venv is established — use it directly.
+
 ## D6 — ADR number 0099
 
 **Decision:** Assigned ADR-0099 (0098 highest on disk; no open PR claims 0099).

@@ -1,0 +1,3 @@
+comment_id,source_file,source_format,figure_ref,comment_text,reviewer,status,x,y,page_or_sheet,assigned_to,resolved_date,resolution_note
+C-001,event_map.pdf,pdf,Figure 2,"Confirm MW-1 benzene exceedance is flagged on the plume map.",J. Reviewer,OPEN,,,p2,analyst,,
+C-002,event_map.pdf,pdf,Figure 2,"Label MW-2 well ID.",J. Reviewer,RESOLVED,,,p2,analyst,2026-06-21,Added label in revised figure.

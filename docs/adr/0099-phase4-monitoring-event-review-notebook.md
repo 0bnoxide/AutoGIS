@@ -41,8 +41,12 @@ Two facts shaped the slice:
 ## Decision
 
 Ship one notebook, `notebooks/monitoring_event_review.ipynb`, that **only**
-imports existing core producers and displays their output — zero new core code,
-no domain logic in cells. Sections map to existing producers: provenance
+imports existing core producers and displays their output — no new domain logic,
+no logic in cells. (One incidental **1-line** core fix: `generate_event_report`
+now recognizes the `TrendClass` column that `compare-events` actually emits, so
+the trend section stops rendering all-`UNKNOWN` off real producer output — a
+latent integration bug surfaced while wiring the notebook, covered by a
+regression test. No other core change.) Sections map to existing producers: provenance
 (`importlib.metadata.version` with a pyproject fallback + `compute_sha256`),
 the five-section `generate_event_report_html` rendered inline via
 `IPython.display.HTML`, `results_to_feature_collection` for map-ready data,

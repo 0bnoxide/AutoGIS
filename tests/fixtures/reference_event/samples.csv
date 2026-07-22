@@ -1,0 +1,3 @@
+ImportBatchID,SiteID,Matrix,LocationID,SampleID,ParentSampleID,SampleDate,SampleDateRaw,DepthTop_ft,DepthBottom_ft,DepthIntervalText,IsDuplicate,DuplicateType,LabSampleID,SourceWorkbook,SourceSheet,SourceRow
+REF-2026Q2,H281,GW,MW-1,MW-1-Q2,,2026-06-15,2026-06-15,,,,0,,LAB-001,reference_event,samples,2
+REF-2026Q2,H281,GW,MW-1,MW-1-Q2-DUP,MW-1-Q2,2026-06-15,2026-06-15,,,,1,FIELD,LAB-002,reference_event,samples,3

@@ -99,7 +99,11 @@ def _gather_event_data(
     if comparisons:
         counts: dict = {}
         for r in comparisons:
-            t = str(r.get("TrendLabel", r.get("TrendVsPrevious", "UNKNOWN"))).upper()
+            # compare-events writes the trend under `TrendClass` (ComparisonRecord);
+            # older/other feeds use TrendLabel/TrendVsPrevious. Recognize all three
+            # so the section isn't silently all-UNKNOWN off real compare-events output.
+            t = str(r.get("TrendLabel") or r.get("TrendVsPrevious")
+                    or r.get("TrendClass") or "UNKNOWN").upper()
             counts[t] = counts.get(t, 0) + 1
         trend_rows = [[t, c] for t, c in sorted(counts.items())]
 
