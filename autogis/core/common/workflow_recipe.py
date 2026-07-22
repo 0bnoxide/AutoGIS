@@ -32,10 +32,13 @@ def validate_recipe(data: Mapping[str, Any]) -> None:
         raise ConfigError("recipe must be a mapping at the top level")
 
     version = data.get("version", RECIPE_VERSION)
-    if version != RECIPE_VERSION:
+    # require an exact int: bool is an int subclass (True == 1), and 1.0 / "1"
+    # also compare-equal, so `version: true` would otherwise sneak through as v1.
+    if (isinstance(version, bool) or not isinstance(version, int)
+            or version != RECIPE_VERSION):
         raise ConfigError(
             f"recipe version {version!r} is not supported "
-            f"(this build understands version {RECIPE_VERSION})")
+            f"(this build understands integer version {RECIPE_VERSION})")
 
     name = data.get("name")
     if not isinstance(name, str) or not name.strip():

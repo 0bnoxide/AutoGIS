@@ -58,6 +58,9 @@ def test_null_command_checkpoint_is_valid():
     {"name": "x", "steps": [{"command": None, "bogus": 1}]},    # unknown key
     {"name": "x", "steps": [{1: "a", "bogus": "b", "command": None}]},  # mixed-type unknown keys
     {"version": 2, "name": "x", "steps": [{"command": None}]},  # wrong version
+    {"version": True, "name": "x", "steps": [{"command": None}]},   # bool (True==1) rejected
+    {"version": 1.0, "name": "x", "steps": [{"command": None}]},    # float rejected
+    {"version": "1", "name": "x", "steps": [{"command": None}]},    # string rejected
     {"name": "x", "steps": [None]},                            # step not a mapping
 ])
 def test_validate_rejects_bad_recipe(bad):
