@@ -283,6 +283,70 @@ def figure_spec_cmd(spec):
     click.echo(f"Figure spec '{fs.figure_spec_id}' loaded.")
 
 
+def _validate_site_id(ctx, param, value):
+    # site_id flows into filenames under --dest; reject anything but
+    # letters/digits/'-'/'_' to block '../' traversal and path separators.
+    if not value.replace("-", "").replace("_", "").isalnum():
+        raise click.BadParameter(
+            "site id must be letters/digits with '-' or '_' only "
+            "(no path separators or dots)")
+    return value
+
+
+@envmon.command("init-site")
+@click.option("--site-id", required=True, callback=_validate_site_id,
+              help="Site identifier, e.g. H281 (letters/digits, '-' and '_' only).")
+@click.option("--site-name", required=True, help="Human-readable site name.")
+@click.option("--dest", type=click.Path(file_okay=False), default=None,
+              help="Config root to write under (default: the packaged autogis/config).")
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite existing target files (default: refuse).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Render, validate and report without writing any file.")
+def init_site_cmd(site_id, site_name, dest, force, dry_run):
+    """Phase 3: scaffold a new site's config skeleton from versioned templates.
+
+    Renders the site / event / parser / figure config-family skeletons with the
+    site identity substituted, guards existing files against overwrite, lists
+    every _TODO anchor to complete, and runs the existing loaders as structural
+    validators. Headless (arcpy-free).
+    """
+    import autogis
+    from autogis.core.envmon.init_site import (
+        plan_site_skeleton, scan_anchors, validate_skeleton, write_skeleton)
+
+    config_root = (Path(dest) if dest
+                   else Path(autogis.__file__).resolve().parent / "config")
+    files = plan_site_skeleton(site_id, site_name, config_root)
+    validation = validate_skeleton(files)   # validates rendered text; dry-run safe
+
+    blocked = []
+    if dry_run:
+        click.echo(f"[dry-run] would scaffold {len(files)} file(s) under {config_root}:")
+        for sf in files:
+            click.echo(f"  ({sf.family}) {sf.target}")
+    else:
+        written, blocked = write_skeleton(files, force=force)
+        for p in written:
+            click.echo(f"wrote {p}")
+        for p in blocked:
+            click.echo(f"[ERROR] exists, not overwritten (use --force): {p}")
+
+    for family, ok, msg in validation:
+        click.echo(f"validate {family}: {'OK' if ok else 'FAIL — ' + msg}")
+
+    click.echo("Anchors to complete before production use:")
+    total = 0
+    for sf in files:
+        for line_no, line in scan_anchors(sf.text):
+            total += 1
+            click.echo(f"  {sf.target.name}:{line_no}: {line}")
+    click.echo(f"{total} _TODO anchor(s) across {len(files)} file(s).")
+
+    if blocked or any(not ok for _, ok, _ in validation):
+        raise SystemExit(1)
+
+
 @envmon.command("validate-config")
 @click.argument("site_config", type=click.Path(exists=True))
 @click.option("--profile", "profiles", multiple=True, type=click.Path(exists=True),

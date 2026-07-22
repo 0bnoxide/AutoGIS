@@ -98,13 +98,14 @@ render report (human) + QA collector; exit code from QA severity
   genericized to `{site_id}` / `{site_name}` / `_TODO` placeholders. Every
   loader-required key is present so structural validation passes; every value an
   operator must supply is a `_TODO` marker.
-- **Substitution** — two `str.replace` calls for the only two tokens
-  (`{site_id}`, `{site_name}`). No template engine, no regex: the shared
-  `harvest/templates.render()` was considered but its `{field}` regex emits
-  `_unknown` for any brace token not in the attribute dict and would corrupt a
-  `{{layout placeholder}}`, so plain `str.replace` is both simpler and correct on
-  edge cases. Templates therefore contain no brace tokens other than the two
-  placeholders; test 1 asserts no residual `{`/`}` survives rendering.
+- **Substitution** — two `str.replace` calls for two sentinel tokens
+  `__SITE_ID__` and `__SITE_NAME__`. Sentinels (not `{site_id}`) are required
+  because figure specs and parser profiles legitimately carry `{site_id}` /
+  `{figure_spec_id}` as **runtime** placeholders (def-queries, filename
+  patterns) that the figure engine resolves per-invocation and that init-site
+  must leave intact. `__SITE_ID__` cannot collide with those. No template
+  engine, no regex; test 1 asserts no residual `__SITE_ID__` / `__SITE_NAME__`
+  survives rendering.
 - **`plan_site_skeleton(site_id, site_name, dest)`** — pure function returning
   the list of `(target_path, rendered_text, family)`; no filesystem side
   effects, so it is trivially testable and drives both real and `--dry-run`
@@ -129,8 +130,9 @@ render report (human) + QA collector; exit code from QA severity
 
 `tests/envmon/test_init_site.py`:
 
-1. `plan_site_skeleton` produces four files with `{site_id}` / `{site_name}`
-   substituted and no residual `{`/`}` brace token in any rendered file.
+1. `plan_site_skeleton` produces four files with `__SITE_ID__` / `__SITE_NAME__`
+   substituted and no residual sentinel token in any rendered file. (Runtime
+   `{site_id}` tokens in the figure/parser skeletons are preserved, not touched.)
 2. Every generated file passes its existing loader (`SiteConfig.load`, etc.) —
    this pins the templates as structurally valid.
 3. `scan_anchors` finds the known `_TODO` markers in the rendered site config.
@@ -146,6 +148,11 @@ render report (human) + QA collector; exit code from QA severity
   template dir). Rollback = revert the PR.
 - No data-loss path (overwrite guarded). No secrets in templates (placeholders
   only). No network, no arcpy.
+- **Path-injection guard:** `site_id` flows into filenames under `--dest`, so it
+  is validated at the CLI boundary against `^[A-Za-z0-9_-]+$` (reject via
+  `click.BadParameter`) before any path is built — blocks `../` traversal and
+  separators. Trust-boundary validation is not simplified away (ponytail
+  exemption).
 
 ## Decision record
 
