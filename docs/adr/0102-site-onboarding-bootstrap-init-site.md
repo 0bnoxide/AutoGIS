@@ -1,4 +1,4 @@
-# ADR-0100: Site onboarding bootstrap — `envmon init-site` (Phase 3, first slice)
+# ADR-0102: Site onboarding bootstrap — `envmon init-site` (Phase 3, first slice)
 
 **Status:** Accepted
 
@@ -96,7 +96,11 @@ regression tests:
 
 ## Notes
 
-Numbered ADR-0100 against `origin/main` (max 0098) and open PRs (PR #277 uses
-0099). Authored autonomously overnight on 2026-07-22 with the owner unavailable
-and explicit permission to write YAMLs and exercise judgement; judgement calls
+Originally numbered ADR-0100, but a concurrent session merged
+`0100-new-flight-yaml-scaffold.md` (PR #278) with the same number — a
+same-window collision `test_no_duplicate_adr_numbers` then caught on `main`.
+Renumbered to **0102** (0101 is taken by open PR #281); the new-flight-yaml ADR
+keeps 0100. Authored autonomously overnight on 2026-07-22 with the owner
+unavailable and explicit permission to write YAMLs and exercise judgement;
+judgement calls
 logged in `docs/adr/logs/2026-07-22-agent-decisions.md`.

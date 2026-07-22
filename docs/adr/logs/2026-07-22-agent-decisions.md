@@ -4,7 +4,7 @@ Context: The owner asked the agent to choose its own task, steered it to the
 production roadmap, approved the recommended Phase 3 design/scope, then went to
 bed granting explicit permission to write YAMLs and exercise judgement while
 unavailable. These are the autonomous judgement calls made in that window.
-Durable decision: ADR-0100. Spec:
+Durable decision: ADR-0102 (originally 0100; renumbered — see below). Spec:
 `docs/superpowers/specs/2026-07-22-site-onboarding-bootstrap-design.md`.
 
 ## Picked Phase 3 (`init-site`) as the task
@@ -113,3 +113,22 @@ bug worth the whole loop).
 **Revisit if:** the owner wants site names with embedded quotes supported (switch
 the boundary rejection to YAML serialization at the two double-quoted scalar
 positions).
+
+## Renumbered my ADR-0100 -> 0102 to resolve a same-window collision
+
+**Decision:** After #279 merged, `test_no_duplicate_adr_numbers` failed on
+`main`: a concurrent session had merged `0100-new-flight-yaml-scaffold.md`
+(PR #278) with the same 0100 I used. Renumbered **my** ADR (init-site) to 0102
+(0101 belongs to open PR #281), leaving the new-flight-yaml ADR at 0100, and
+updated its two references (this log + the ADR body). Shipped as a small
+separate fix PR so the broken test on `main` is unblocked for every session.
+
+**Reasoning:** I renumbered mine, not theirs, because I control all of my ADR's
+references and can update them safely without leaving dangling refs in another
+session's artifacts. The exact "number against origin/main AND all open PRs"
+gotcha my memory warns about — it still bit because two sessions picked the next
+number in the same window; the durable fix is the numbering test, which now
+catches it.
+
+**Revisit if:** the project adopts monotonic ADR-number allocation (e.g. a
+reserved-number file) so concurrent sessions can't collide in the first place.
