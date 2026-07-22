@@ -37,6 +37,12 @@ Add an optional `diff_raster_out` output to persist the difference raster.
   `overwriteOutput` lets a rerun regenerate the derived product — standard GP
   behaviour for a computed output, unlike the refuse-to-clobber stance for
   hand-authored inputs (ADR-0100).
+- **Overwrite-safety guard** (`validate_output_not_input`, codex #281 P1):
+  because the save runs under `overwriteOutput=True`, a `diff_raster_out`
+  resolving to the primary or baseline `ProductPath` would silently clobber a
+  registered source DEM while the registry still points at it. A pure
+  normcase/normpath path-collision check rejects that *before* the `sa.Minus`,
+  at the single chokepoint where both input paths are resolved.
 - **LandXML baseline is out of scope.** That branch builds a *filtered flat list*
   of per-cell diffs (skipping NoData / out-of-surface cells) with no aligned grid
   to save. Rather than reconstruct one via `NumPyArrayToRaster` (speculative,

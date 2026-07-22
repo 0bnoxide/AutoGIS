@@ -1,9 +1,11 @@
 """Tests for autogis/core/envmon/compare_drone_surfaces.py (arcpy-free logic)."""
+import os
+
 import pytest
 
 from autogis.core.envmon.compare_drone_surfaces import (
     CHANGE, NO_CHANGE, classify_diff, summarize_diffs, validate_baseline_args,
-    validate_diff_output,
+    validate_diff_output, validate_output_not_input,
 )
 
 
@@ -40,6 +42,33 @@ def test_validate_diff_output_noop_without_output():
     # no diff raster requested -> landxml baseline is unaffected
     validate_diff_output("", "surface.xml")
     validate_diff_output(None, "surface.xml")
+
+
+def test_validate_output_not_input_rejects_primary():
+    with pytest.raises(ValueError, match="input DEM"):
+        validate_output_not_input(
+            r"C:\gdb.gdb\dem_a", r"C:\gdb.gdb\dem_a", r"C:\gdb.gdb\dem_b")
+
+
+@pytest.mark.skipif(os.name != "nt",
+                    reason="normcase case/sep folding is Windows-only; the "
+                           "tool only runs on Windows/arcpy anyway")
+def test_validate_output_not_input_rejects_baseline_case_and_sep_insensitive():
+    # different casing + forward slashes must still be caught (Windows)
+    with pytest.raises(ValueError, match="input DEM"):
+        validate_output_not_input(
+            "C:/GDB.gdb/DEM_B", r"C:\gdb.gdb\dem_a", r"C:\gdb.gdb\dem_b")
+
+
+def test_validate_output_not_input_allows_distinct_path():
+    validate_output_not_input(
+        r"C:\gdb.gdb\CompareDiff", r"C:\gdb.gdb\dem_a", r"C:\gdb.gdb\dem_b")
+
+
+def test_validate_output_not_input_noop_without_output():
+    # no output requested -> nothing to collide
+    validate_output_not_input("", r"C:\gdb.gdb\dem_a")
+    validate_output_not_input(None, r"C:\gdb.gdb\dem_a")
 
 
 def test_classify_diff_within_lod_is_no_change():

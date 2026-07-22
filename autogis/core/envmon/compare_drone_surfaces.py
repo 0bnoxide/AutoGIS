@@ -9,6 +9,7 @@ dependency on that module's internals.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 CHANGE = "change"
@@ -37,6 +38,32 @@ def validate_diff_output(diff_raster_out, baseline_landxml) -> None:
         raise ValueError(
             "--diff-raster-out is only available when comparing two DEMs "
             "(--baseline-product-id), not a LandXML design surface.")
+
+
+def validate_output_not_input(diff_raster_out, *input_paths) -> None:
+    """Refuse to overwrite a registered source DEM with the diff raster.
+
+    Because the save runs under ``overwriteOutput=True``, a *diff_raster_out*
+    resolving to the primary or baseline ``ProductPath`` would clobber the
+    source raster while its ``DroneProductRegistry`` record still points at it
+    (silent data corruption). Reject a path collision before saving.
+    """
+    if not diff_raster_out:
+        return
+
+    def _norm(p):
+        return os.path.normcase(os.path.normpath(str(p)))
+
+    out = _norm(diff_raster_out)
+    for ip in input_paths:
+        # ponytail: normcase/normpath string compare -- catches the
+        # picker-selects-an-input case (casing + separators). Exotic
+        # equivalent-but-different catalog paths would need arcpy.Describe
+        # canonicalization; add that only if it ever bites.
+        if ip and _norm(ip) == out:
+            raise ValueError(
+                f"--diff-raster-out resolves to an input DEM ({ip}); refusing "
+                "to overwrite a registered source raster. Pick a new path.")
 
 
 def classify_diff(diff_ft: float, lod_threshold_ft: float) -> str:
@@ -125,6 +152,8 @@ def compare_surfaces(  # pragma: no cover
                 f"Baseline product {baseline_product_id!r} not found in "
                 f"{gdb_path}'s DroneProductRegistry.")
         baseline = _ax.Raster(baseline_path)
+        # Fail before the expensive Minus if the output would clobber a source.
+        validate_output_not_input(diff_raster_out, primary_path, baseline_path)
         # Two independently-read rasters need not share an origin, cell size,
         # or extent even when their row/col counts happen to match -- a raw
         # numpy subtraction of two separately-converted arrays would silently
