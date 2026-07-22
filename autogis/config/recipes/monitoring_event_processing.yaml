@@ -1,0 +1,36 @@
+# Example workflow recipe — monitoring-event processing (roadmap Phase 5).
+#
+# A STARTER template: the command SEQUENCE is real and validated, but each
+# step's `values:` is left empty for you to fill with that command's options
+# and your event's paths (run `envmon <command> --help` for each). Then:
+#   envmon validate-recipe monitoring_event_processing.yaml
+#   envmon run-recipe      monitoring_event_processing.yaml --continue-through-review
+# `command: null` steps are review checkpoints (run-recipe stops there unless
+# --continue-through-review).
+version: 1
+name: "Monitoring event processing"
+steps:
+  - command: [envmon, import-edd]
+    values: {}            # _TODO --edd-path / --profile / --site-id / --gdb ...
+    fail_on: error
+    message: "Import the lab EDD into the geodatabase."
+
+  - command: [envmon, reconcile-locations]
+    values: {}            # _TODO --results-csv / --wells-csv ...
+    pause_on_warning: true
+    message: "Reconcile sample location IDs against the well list."
+
+  - command: [envmon, apply-screening]
+    values: {}            # _TODO --results / --screening-levels ...
+    message: "Apply screening levels to normalized results."
+
+  - command: [envmon, build-exceedance-event]
+    values: {}            # _TODO --results / --output ...
+    message: "Build the exceedance-event dataset (ratio/tier enrichment)."
+
+  - command: null
+    message: "Review QA findings and exceedances before generating the report."
+
+  - command: [envmon, generate-event-report]
+    values: {}            # _TODO --output / event inputs ...
+    message: "Generate the monitoring-event report."
