@@ -10,6 +10,7 @@ the GUI maps ``Workflow <-> recipe dict`` on top of ``dump_recipe`` /
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -94,8 +95,9 @@ def load_recipe(path: Path) -> dict:
     path = Path(path)
     try:
         data = load_config(path)   # checks the file exists + is a mapping
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"recipe {path} is not valid YAML: {exc}") from exc
+    except (yaml.YAMLError, json.JSONDecodeError) as exc:
+        # load_config lets the parser errors through for both formats it reads.
+        raise ConfigError(f"recipe {path} is not valid YAML/JSON: {exc}") from exc
     validate_recipe(data)
     return data
 
