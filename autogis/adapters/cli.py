@@ -423,23 +423,29 @@ def run_recipe_cmd(recipe, job_root, local_python, timeout,
                f"({len(workflow.steps)} step(s)) under {root}")
 
     terminal = {RunState.DONE, RunState.HALTED, RunState.CANCELLED}
-    while runner.status not in terminal:
-        if runner.status is RunState.PAUSED:
-            if continue_through_review:
-                runner.resume()
-                continue
-            break
-        try:
-            result = runner.advance()
-        except (subprocess.TimeoutExpired, ValueError, OSError) as exc:
-            # run_step failed (timeout / missing local_python / bad command);
-            # the runner is already HALTED. Report and stop.
-            click.echo(f"[step {len(runner.results)}] ERROR: {exc}")
-            break
-        n = len(runner.results) - 1
-        click.echo(f"[step {n}] {result.decision.value}: {result.reason}"
-                   + (f" (exit {result.exit_code})"
-                      if result.exit_code is not None else ""))
+    try:
+        while runner.status not in terminal:
+            if runner.status is RunState.PAUSED:
+                if continue_through_review:
+                    runner.resume()
+                    continue
+                break
+            try:
+                result = runner.advance()
+            except (subprocess.TimeoutExpired, ValueError, OSError) as exc:
+                # run_step failed (timeout / missing local_python / bad command);
+                # the runner is already HALTED. Report and stop.
+                click.echo(f"[step {len(runner.results)}] ERROR: {exc}")
+                break
+            n = len(runner.results) - 1
+            click.echo(f"[step {n}] {result.decision.value}: {result.reason}"
+                       + (f" (exit {result.exit_code})"
+                          if result.exit_code is not None else ""))
+    except KeyboardInterrupt:
+        # Ctrl-C during a step: the runner already left the step (HALTED). Report
+        # the standard cancellation exit code rather than Click's Abort (exit 1).
+        click.echo("Interrupted.")
+        raise SystemExit(130)
 
     status = runner.status
     click.echo(f"Final: {status.value}")

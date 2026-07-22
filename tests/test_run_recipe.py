@@ -60,6 +60,22 @@ def test_run_recipe_continue_through_review_completes(tmp_path):
     assert "[step 0]" in r.output and "[step 1]" in r.output
 
 
+def test_run_recipe_ctrl_c_exits_130(tmp_path, monkeypatch):
+    """Ctrl-C during a step must return the standard cancellation code 130,
+    not Click's Abort (exit 1). Codex P2."""
+    from autogis.adapters.gui.runner import WorkflowRunner
+
+    def _interrupt(self):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(WorkflowRunner, "advance", _interrupt)
+
+    recipe = _write(tmp_path, [{"command": ["envmon", "inspect"]}])
+    r = CliRunner().invoke(autogis_cli, [
+        "envmon", "run-recipe", str(recipe), "--job-root", str(tmp_path / "j")])
+    assert r.exit_code == 130
+    assert "Interrupted" in r.output
+
+
 def test_run_recipe_bad_recipe_is_clean_error(tmp_path):
     bad = tmp_path / "bad.yaml"
     bad.write_text("name: x\nsteps: []\n", encoding="utf-8")
