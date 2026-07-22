@@ -189,31 +189,36 @@ def _fill_required_fields(win, form):
                 widget.setText("dummy")
 
 
-def test_window_forms_include_local_tools_with_class1_greyed():
+def test_window_forms_stamp_class1_unreachable_reason():
     forms = {f.label: f for f in _window_forms()}
     assert "envmon inspect" in forms                    # headless, always
     # class-2 LOCAL tool: shown, runnable once local_python is set (no reason)
     assert forms["envmon import-edd"].unreachable_reason is None
     assert needs_arcpy_env(forms["envmon import-edd"].path)
-    # class-1 redirect-only: shown but greyed, carries the reason
+    # class-1 redirect-only: raw introspect still stamps the reason (the window
+    # uses it to *hide* the command -- see test below).
     assert forms["envmon import-gdb"].unreachable_reason
 
 
-def test_class1_tool_disables_run_and_shows_reason(qapp, tmp_path):
+def test_class1_redirect_only_tools_hidden_from_picker(qapp, tmp_path):
+    """Class-1 redirect-only tools always HALT via the CLI, so the window omits
+    them from the command picker entirely rather than offering a greyed,
+    always-HALTing button ('only show what can run')."""
     win, _ = _win_with_store(tmp_path)
-    win._command_box.setCurrentText("envmon import-gdb")  # class-1 redirect-only
-    assert not win._run_button.isEnabled()
-    assert ".pyt" in win._status.text()
+    labels = {win._command_box.itemText(i) for i in range(win._command_box.count())}
+    assert "envmon import-gdb" not in labels             # class-1, hidden
+    assert "envmon import-gdb" not in win._forms
+    assert "envmon compare-drone-surfaces" not in labels  # newly-marked class-1
+    assert "envmon validate-db" in labels                # class-2 LOCAL stays
+    assert "envmon inspect" in labels                    # headless stays
 
 
-def test_class1_tool_stays_blocked_even_with_local_python(qapp, tmp_path):
-    """local_python must NOT un-block a redirect-only (unreachable) tool --
-    _run_blocked_reason checks unreachable before the local_python gate. Pins
-    that precedence against a future reorder."""
+def test_local_python_does_not_unhide_redirect_only_tools(qapp, tmp_path):
+    """Setting a local_python makes class-2 arcpy tools runnable but must never
+    surface a class-1 redirect-only tool -- it can only ever HALT."""
     win, _ = _win_with_store(tmp_path, local_python="C:/pro/python.exe")
-    win._command_box.setCurrentText("envmon import-gdb")  # class-1
-    assert not win._run_button.isEnabled()
-    assert ".pyt" in win._status.text()
+    labels = {win._command_box.itemText(i) for i in range(win._command_box.count())}
+    assert "envmon import-gdb" not in labels
 
 
 def test_class2_local_tool_gated_until_local_python_set(qapp, tmp_path):

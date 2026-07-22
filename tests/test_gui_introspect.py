@@ -70,6 +70,24 @@ def test_is_dir_flags_directory_only_path_params():
     assert recon["threshold"].is_dir is False
 
 
+def test_gdb_params_open_a_folder_picker():
+    """Every gdb param is a bare click.Path() (file_okay left True), so the
+    generic file_okay=False test can't see that a .gdb is a *directory*. The
+    gdb-name recognition marks it is_dir so Browse opens a folder picker, not a
+    save-file dialog (a .gdb's internal files aren't selectable there). Covers
+    both param spellings and an input vs an output/created gdb."""
+    forms = _by_label()
+
+    def field(label, name):
+        return {f.name: f for f in forms[label].fields}[name]
+
+    # input gdb, arg named "gdb" (validate-db); output/created gdb (upgrade-schema)
+    assert field("envmon validate-db", "gdb").is_dir is True
+    assert field("envmon upgrade-schema", "gdb").is_dir is True
+    # the "gdb_path" spelling (import-drone-products) is recognised too
+    assert field("envmon import-drone-products", "gdb_path").is_dir is True
+
+
 def test_xor_pairs_resolve_to_real_params():
     forms = _by_label()
     for label, pair in XOR_PAIRS.items():
