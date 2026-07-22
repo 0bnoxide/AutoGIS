@@ -55,7 +55,9 @@ def _validate_step(step: Any, i: int) -> None:
 
     unknown = set(step) - _STEP_KNOWN_KEYS
     if unknown:
-        raise ConfigError(f"{where}: unknown key(s) {sorted(unknown)}")
+        # sort on repr: step keys may be mixed scalar types (e.g. YAML `1:` and
+        # `foo:`) and sorting those directly raises TypeError, not ConfigError.
+        raise ConfigError(f"{where}: unknown key(s) {sorted(map(repr, unknown))}")
 
     command = step.get("command")  # None (checkpoint) or list[str]
     if command is not None:
@@ -87,8 +89,13 @@ def _validate_step(step: Any, i: int) -> None:
 
 
 def load_recipe(path: Path) -> dict:
-    """Load and validate a recipe YAML/JSON file. Raises ``ConfigError``."""
-    data = load_config(Path(path))   # checks the file exists + is a mapping
+    """Load and validate a recipe YAML/JSON file. Raises ``ConfigError`` (incl.
+    for a syntactically invalid file — load_config lets yaml.YAMLError through)."""
+    path = Path(path)
+    try:
+        data = load_config(path)   # checks the file exists + is a mapping
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"recipe {path} is not valid YAML: {exc}") from exc
     validate_recipe(data)
     return data
 

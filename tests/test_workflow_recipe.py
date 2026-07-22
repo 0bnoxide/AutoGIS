@@ -56,12 +56,26 @@ def test_null_command_checkpoint_is_valid():
     {"name": "x", "steps": [{"command": None, "pause_on_warning": "yes"}]},  # non-bool
     {"name": "x", "steps": [{"command": None, "values": [1]}]},  # values not a mapping
     {"name": "x", "steps": [{"command": None, "bogus": 1}]},    # unknown key
+    {"name": "x", "steps": [{1: "a", "bogus": "b", "command": None}]},  # mixed-type unknown keys
     {"version": 2, "name": "x", "steps": [{"command": None}]},  # wrong version
     {"name": "x", "steps": [None]},                            # step not a mapping
 ])
 def test_validate_rejects_bad_recipe(bad):
     with pytest.raises(ConfigError):
         validate_recipe(bad)
+
+
+def test_malformed_yaml_is_configerror_not_traceback(tmp_path):
+    """A syntactically invalid recipe file must surface as ConfigError (clean
+    CLI message), not an uncaught yaml.YAMLError traceback. Codex P2."""
+    bad = tmp_path / "broken.yaml"
+    bad.write_text("name: [unclosed\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_recipe(bad)
+    r = CliRunner().invoke(autogis_cli, ["envmon", "validate-recipe", str(bad)])
+    assert r.exit_code != 0
+    assert "not valid YAML" in r.output
+    assert "Traceback" not in r.output   # clean error, no stack trace
 
 
 def test_cli_validate_recipe(tmp_path):
