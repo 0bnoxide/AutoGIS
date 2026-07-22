@@ -140,7 +140,10 @@ REGULATORY_TODO: Tuple[str, ...] = (
     "analytes (cite the governing regulatory table in each entry's `source`) "
     "and validate it with `envmon manage-screening-levels`. The importer's "
     "primary source is the workbook RBSL row; this file is the secondary "
-    "fallback, and figures flag any result that has no screening level.",
+    "fallback. A result with NO screening level is left unevaluated — figures "
+    "render it as detected, never as an exceedance, and only the importer logs "
+    "a QA warning — so without screening levels, exceedances silently never "
+    "appear on figures.",
 )
 
 
