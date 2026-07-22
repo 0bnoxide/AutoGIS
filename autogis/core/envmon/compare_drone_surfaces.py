@@ -24,6 +24,21 @@ def validate_baseline_args(baseline_product_id, baseline_landxml) -> None:
             "--baseline-landxml.")
 
 
+def validate_diff_output(diff_raster_out, baseline_landxml) -> None:
+    """A diff raster can only be persisted in the two-DEM baseline mode.
+
+    The LandXML branch builds a filtered flat list of per-cell diffs (skipping
+    NoData and out-of-surface cells), so there is no aligned grid to save
+    without reconstructing one. Fail loud rather than silently drop the output.
+    """
+    # ponytail: forbid landxml+diff for now; add a NumPyArrayToRaster path here
+    # if LandXML diff rasters are ever needed.
+    if diff_raster_out and baseline_landxml:
+        raise ValueError(
+            "--diff-raster-out is only available when comparing two DEMs "
+            "(--baseline-product-id), not a LandXML design surface.")
+
+
 def classify_diff(diff_ft: float, lod_threshold_ft: float) -> str:
     """Classify one elevation diff against the limit of detection."""
     return CHANGE if abs(diff_ft) > lod_threshold_ft else NO_CHANGE
@@ -77,6 +92,7 @@ def compare_surfaces(  # pragma: no cover
     baseline_product_id: str = "",
     baseline_landxml_path: str = "",
     lod_threshold_ft: float = 0.2,
+    diff_raster_out: str = "",
 ) -> DiffSummary:
     """Diff the *primary_product_id* DEM against a baseline: either a second
     DroneProductRecord (raw or conditioned DEM) or a LandXML design surface.
@@ -84,6 +100,10 @@ def compare_surfaces(  # pragma: no cover
     Exactly one of *baseline_product_id* / *baseline_landxml_path* must be
     set (validated by the caller via :func:`validate_baseline_args`). Both
     product IDs are looked up in *gdb_path*'s ``DroneProductRegistry``.
+
+    If *diff_raster_out* is given, the (primary - baseline) difference raster
+    is persisted there so the change can be mapped, not just summarized. Only
+    valid in the two-DEM baseline mode (see :func:`validate_diff_output`).
     """
     import numpy as np
 
@@ -116,8 +136,15 @@ def compare_surfaces(  # pragma: no cover
         # dialog's own label for that setting) -- "INTERSECTION" is not a
         # valid value and raises at runtime.
         with _ax.EnvManager(snapRaster=primary, extent="MINOF",
-                            cellSize=primary.meanCellWidth):
+                            cellSize=primary.meanCellWidth,
+                            overwriteOutput=True):
             diff_raster = _ax.sa.Minus(primary, baseline)
+            # Persist under the same MINOF/snap env that produced it -- sa
+            # rasters can evaluate lazily, so save inside the block to pin the
+            # written grid to the aligned result. overwriteOutput lets a rerun
+            # regenerate the derived diff (standard GP tool behaviour).
+            if diff_raster_out:
+                diff_raster.save(diff_raster_out)
         diff_arr = _ax.RasterToNumPyArray(diff_raster, nodata_to_value=np.nan)
         diffs_ft = [float(d) for d in diff_arr.flatten() if not np.isnan(d)]
     else:

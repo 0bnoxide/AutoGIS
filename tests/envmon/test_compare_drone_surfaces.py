@@ -3,6 +3,7 @@ import pytest
 
 from autogis.core.envmon.compare_drone_surfaces import (
     CHANGE, NO_CHANGE, classify_diff, summarize_diffs, validate_baseline_args,
+    validate_diff_output,
 )
 
 
@@ -22,6 +23,23 @@ def test_validate_baseline_args_accepts_product_id():
 
 def test_validate_baseline_args_accepts_landxml():
     validate_baseline_args(None, "surface.xml")
+
+
+def test_validate_diff_output_rejects_landxml_baseline():
+    with pytest.raises(ValueError, match="two DEMs"):
+        validate_diff_output("out.tif", "surface.xml")
+
+
+def test_validate_diff_output_allows_two_dem_mode():
+    # diff raster requested, product-ID baseline (no landxml) -> fine
+    validate_diff_output("out.tif", None)
+    validate_diff_output("out.tif", "")
+
+
+def test_validate_diff_output_noop_without_output():
+    # no diff raster requested -> landxml baseline is unaffected
+    validate_diff_output("", "surface.xml")
+    validate_diff_output(None, "surface.xml")
 
 
 def test_classify_diff_within_lod_is_no_change():
