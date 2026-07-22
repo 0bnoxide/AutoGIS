@@ -169,10 +169,15 @@ def write_skeleton(files: List[SkeletonFile], *, force: bool
     written: List[Path] = []
     blocked: List[Path] = []
     for sf in files:
-        if sf.target.exists() and not force:
+        sf.target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            # "x" = exclusive create: atomically raises FileExistsError if the
+            # target already exists, closing the check-then-write race so two
+            # concurrent runs can't both slip past the no-force guard.
+            with open(sf.target, "w" if force else "x", encoding="utf-8") as fh:
+                fh.write(sf.text)
+        except FileExistsError:
             blocked.append(sf.target)
             continue
-        sf.target.parent.mkdir(parents=True, exist_ok=True)
-        sf.target.write_text(sf.text, encoding="utf-8")
         written.append(sf.target)
     return written, blocked
