@@ -136,6 +136,8 @@ _REGISTRY_SEED = [
      "Validate env config + filename patterns"),
     ("init-site", "InitSite", "", "CLOUD", "stable", "admin",
      "Scaffold a new site's config skeleton (site/event/parser/figure) from templates"),
+    ("validate-recipe", "ValidateWorkflowRecipe", "", "CLOUD", "stable", "admin",
+     "Validate a saved linear workflow-recipe YAML (Phase 5)"),
     ("manage-analyte-dict", "ManageAnalyteDict", "", "CLOUD", "stable", "admin",
      "Inspect/edit the analyte dictionary"),
     ("manage-screening-levels", "ManageScreeningLevels", "", "DRAFT", "draft",
