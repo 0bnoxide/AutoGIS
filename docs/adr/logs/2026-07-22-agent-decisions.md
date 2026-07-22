@@ -81,13 +81,35 @@ items" does not clearly cover it, and standing memory says to ask before
 self-generated follow-up PRs. Fix is ready (`fieldnames = union of all rows'
 keys`) pending a yes.
 
-## Followed the pre-authorized @codex review-then-merge loop
+## Ran the pre-authorized @codex review-then-merge loop (5 rounds)
 
-**Decision:** After opening the PR, mention @codex, poll ~15–20 min, apply the
-fixes it flags, and merge only when the review arrived, was addressed, the suite
-is green, and no REQUEST_CHANGES is open. If @codex is silent after ~20 min,
-leave the PR open with a status comment and stop — do not merge blind.
+**Decision:** Opened PR #279, ran @codex review, and applied fixes across five
+rounds before merging. Codex raised seven distinct findings, all fixed with
+regression tests: `site_id` YAML coercion; `site_name` YAML injection;
+incomplete control-char rejection; **P1** templates missing from the wheel
+(packaging); core (library-caller) injection point; **P1** sentinel-token path
+traversal (`--site-id __SITE_NAME__` chaining into an arbitrary-write filename);
+and a TOCTOU race in the no-force overwrite guard. Merged once the final fix was
+addressed, the suite was green (2349), the PR was MERGEABLE with `reviewDecision`
+empty (all reviews non-blocking COMMENTED), and Codex went silent on the final
+commit after a full poll window.
+
+**Judgement call — the one finding I did NOT implement as asked:** Codex re-raised
+"serialize site names before injecting into YAML" each round. I mitigated it via
+**boundary rejection** instead (reject `"`, `\`, non-printables, and the
+sentinels) — the alternative Codex's own round-1 comment offered — plus
+`validate_skeleton` as a load-time safety net. A printable, quote-free,
+backslash-free scalar is always valid inside a double-quoted YAML scalar, and
+env-site names never carry YAML metacharacters, so full serialization would be
+unused complexity (YAGNI). Explained on the PR; offered to switch if the owner
+prefers. This is the kind of judgment the owner asked me to log while unavailable.
 
 **Reasoning:** Owner pre-authorized "@codex review clears the merge" and noted
 minor fixes are usually needed first; "mention clears you to merge" means
-review-then-merge, not mention-then-merge (advisor-reinforced).
+review-then-merge, not mention-then-merge (advisor-reinforced). Every Codex
+finding was verified real before fixing (the traversal P1 was a genuine security
+bug worth the whole loop).
+
+**Revisit if:** the owner wants site names with embedded quotes supported (switch
+the boundary rejection to YAML serialization at the two double-quoted scalar
+positions).
