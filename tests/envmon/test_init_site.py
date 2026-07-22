@@ -10,8 +10,8 @@ from click.testing import CliRunner
 from autogis.adapters.cli import autogis as autogis_cli
 from autogis.core.common.config import FigureSpec, ParserProfile, SiteConfig
 from autogis.core.envmon.init_site import (
-    FAMILIES, plan_site_skeleton, scan_anchors, validate_skeleton,
-    write_skeleton,
+    FAMILIES, SkeletonFile, plan_site_skeleton, scan_anchors,
+    validate_skeleton, write_skeleton,
 )
 
 SITE_ID = "T99"
@@ -85,6 +85,36 @@ def test_cli_rejects_path_traversal_site_id(tmp_path):
         "--dest", str(tmp_path), "--dry-run"])
     assert result.exit_code != 0
     assert "site id must be" in result.output
+
+
+def test_coercion_prone_site_id_stays_a_string(tmp_path):
+    """A CLI-valid id like NO/on/123 must not be YAML-coerced to bool/int
+    (else `SiteID = '<id>'` queries break downstream). Codex P2 finding."""
+    for weird in ("NO", "on", "123", "true"):
+        write_skeleton(plan_site_skeleton(weird, "X", tmp_path), force=True)
+        cfg = SiteConfig.load(tmp_path / "sites" / f"{weird}.yaml")
+        assert cfg.site_id == weird and isinstance(cfg.site_id, str)
+        fig = FigureSpec.load(tmp_path / "figure_specs" / f"{weird}_GW_Analytical.yaml")
+        assert isinstance(fig.data["site_id"], str)
+
+
+def test_cli_rejects_yaml_breaking_site_name(tmp_path):
+    """A site name with a double-quote would produce invalid YAML and crash the
+    loaders; reject it at the boundary. Codex P2 finding."""
+    result = CliRunner().invoke(autogis_cli, [
+        "envmon", "init-site", "--site-id", SITE_ID,
+        "--site-name", 'North "A" Site', "--dest", str(tmp_path), "--dry-run"])
+    assert result.exit_code != 0
+    assert "double-quotes" in result.output
+
+
+def test_validate_skeleton_reports_not_raises_on_bad_yaml(tmp_path):
+    """validate_skeleton must degrade a malformed file to a FAIL result, never
+    let a yaml.YAMLError propagate out of the report tool."""
+    bad = [SkeletonFile("site", tmp_path / "sites" / "B.yaml", "a: b: c: broken")]
+    results = validate_skeleton(bad)
+    assert results == [("site", False, results[0][2])]
+    assert not results[0][1]  # ok is False, no exception escaped
 
 
 def test_cli_write_then_blocked_exit_code(tmp_path):

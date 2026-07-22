@@ -293,10 +293,22 @@ def _validate_site_id(ctx, param, value):
     return value
 
 
+def _validate_site_name(ctx, param, value):
+    # site_name is substituted into double-quoted YAML scalars; a '"' or '\\'
+    # (or a control char) would produce invalid YAML and crash the loaders.
+    # Reject them at the boundary so every generated skeleton stays parseable.
+    if any(c in value for c in '"\\') or any(ord(c) < 32 for c in value):
+        raise click.BadParameter(
+            "site name must not contain double-quotes, backslashes, or "
+            "control characters")
+    return value
+
+
 @envmon.command("init-site")
 @click.option("--site-id", required=True, callback=_validate_site_id,
               help="Site identifier, e.g. H281 (letters/digits, '-' and '_' only).")
-@click.option("--site-name", required=True, help="Human-readable site name.")
+@click.option("--site-name", required=True, callback=_validate_site_name,
+              help="Human-readable site name (no double-quotes or backslashes).")
 @click.option("--dest", type=click.Path(file_okay=False), default=None,
               help="Config root to write under (default: the packaged autogis/config).")
 @click.option("--force", is_flag=True, default=False,

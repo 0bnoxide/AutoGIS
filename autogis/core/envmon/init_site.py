@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-from ..common.config import ConfigError, FigureSpec, ParserProfile, SiteConfig
+from ..common.config import FigureSpec, ParserProfile, SiteConfig
 
 _TEMPLATE_DIR = (Path(__file__).resolve().parents[2]
                  / "config" / "_templates" / "site_skeleton")
@@ -101,8 +101,11 @@ def validate_skeleton(files: List[SkeletonFile]) -> List[Tuple[str, bool, str]]:
                 tmp.write_text(sf.text, encoding="utf-8")
                 validators[sf.family](tmp)
             results.append((sf.family, True, ""))
-        except ConfigError as exc:
-            results.append((sf.family, False, str(exc)))
+        except Exception as exc:  # noqa: BLE001 - a report tool must degrade to
+            # a FAIL line, never crash: ConfigError from the loader, but also a
+            # yaml.YAMLError (load_config doesn't wrap safe_load) from a template
+            # that renders to invalid YAML.
+            results.append((sf.family, False, f"{type(exc).__name__}: {exc}"))
     return results
 
 

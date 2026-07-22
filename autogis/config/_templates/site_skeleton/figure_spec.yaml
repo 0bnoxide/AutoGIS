@@ -3,8 +3,8 @@
 # against the site's template APRX before use. NOTE: {site_id}, {figure_number},
 # {figure_spec_id} and {event_date} below are RUNTIME placeholders resolved by
 # the figure engine per invocation — leave them as-is.
-figure_spec_id: __SITE_ID___GW_Analytical
-site_id: __SITE_ID__
+figure_spec_id: "__SITE_ID___GW_Analytical"
+site_id: "__SITE_ID__"          # quoted: keep IDs like NO/on/123 as strings
 map_type: GW_ANALYTICAL
 matrix: GW
 figure_number: "2"
