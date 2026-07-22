@@ -134,6 +134,8 @@ _REGISTRY_SEED = [
      "Load and validate a figure spec"),
     ("validate-config", "ValidateEnvConfig", "", "CLOUD", "stable", "admin",
      "Validate env config + filename patterns"),
+    ("init-site", "InitSite", "", "CLOUD", "stable", "admin",
+     "Scaffold a new site's config skeleton (site/event/parser/figure) from templates"),
     ("manage-analyte-dict", "ManageAnalyteDict", "", "CLOUD", "stable", "admin",
      "Inspect/edit the analyte dictionary"),
     ("manage-screening-levels", "ManageScreeningLevels", "", "DRAFT", "draft",

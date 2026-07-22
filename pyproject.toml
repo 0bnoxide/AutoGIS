@@ -36,3 +36,6 @@ include = ["autogis*"]
 
 [tool.setuptools.package-data]
 "autogis.core.common.report_assets" = ["*.css"]
+# init-site reads these at runtime via importlib.resources; without this a
+# wheel install would omit them and `envmon init-site` would FileNotFoundError.
+"autogis" = ["config/_templates/site_skeleton/*.yaml"]
