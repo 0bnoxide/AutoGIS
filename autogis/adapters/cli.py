@@ -2760,7 +2760,10 @@ def register_drone_flight_cmd(flight_yaml, gdb, dry_run, report, fail_on):
               help="Path to write the drone flight inventory YAML.")
 @click.option("--set", "overrides", multiple=True, metavar="KEY=VALUE",
               help="Pre-fill a field, e.g. --set site_id=H281_Glasgow. Repeatable.")
-def new_flight_yaml_cmd(output, overrides):
+@click.option("--overwrite", is_flag=True, default=False,
+              help="Overwrite --output if it already exists (default: refuse, so "
+                   "a rerun can't clobber a filled inventory).")
+def new_flight_yaml_cmd(output, overrides, overwrite):
     """Tool 8.6a: write a ready-to-edit drone flight inventory YAML (headless).
 
     Scaffolds the YAML that register-drone-flight consumes -- there was no
@@ -2786,6 +2789,11 @@ def new_flight_yaml_cmd(output, overrides):
         parsed[key] = val.strip()
 
     out = Path(output)
+    if out.exists() and not overwrite:
+        raise click.UsageError(
+            f"{out} already exists; refusing to overwrite (a rerun would replace "
+            f"a possibly-filled flight inventory with the blank template). Pass "
+            f"--overwrite to replace it, or choose a different --output.")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
         _yaml.dump(flight_yaml_template(parsed), allow_unicode=True,

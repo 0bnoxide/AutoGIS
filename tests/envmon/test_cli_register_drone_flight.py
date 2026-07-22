@@ -126,6 +126,21 @@ def test_new_flight_yaml_rejects_bad_set(tmp_path):
     assert r2.exit_code != 0 and "KEY=VALUE" in r2.output
 
 
+def test_new_flight_yaml_refuses_to_overwrite(tmp_path):
+    """A rerun must not clobber a filled inventory; --overwrite is the escape."""
+    out = tmp_path / "flight.yaml"
+    out.write_text("flight_id: KEEPME\nsite_id: H281\n", encoding="utf-8")
+    r = CliRunner().invoke(autogis, [
+        "envmon", "new-flight-yaml", "--output", str(out)])
+    assert r.exit_code != 0 and "already exists" in r.output
+    assert "KEEPME" in out.read_text(encoding="utf-8")  # left untouched
+    # --overwrite is the explicit escape hatch
+    r2 = CliRunner().invoke(autogis, [
+        "envmon", "new-flight-yaml", "--output", str(out), "--overwrite"])
+    assert r2.exit_code == 0, r2.output
+    assert "KEEPME" not in out.read_text(encoding="utf-8")
+
+
 def test_new_flight_yaml_roundtrips_into_register_dry_run(tmp_path):
     """A template with the required fields filled must validate clean through
     register-drone-flight --dry-run; an unfilled one must report missing."""
