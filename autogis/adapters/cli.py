@@ -365,6 +365,24 @@ def init_site_cmd(site_id, site_name, dest, force, dry_run):
         raise SystemExit(1)
 
 
+@envmon.command("validate-recipe")
+@click.argument("recipe", type=click.Path(exists=True, dir_okay=False))
+def validate_recipe_cmd(recipe):
+    """Phase 5: validate a saved linear workflow-recipe YAML (headless).
+
+    Checks the recipe structure (name, ordered steps, each step's command /
+    values / fail_on / pause_on_warning / message). The GUI workflow builder
+    saves/loads this format; a recipe can also be hand-authored and checked here.
+    """
+    from autogis.core.common.config import ConfigError
+    from autogis.core.common.workflow_recipe import load_recipe
+    try:
+        data = load_recipe(Path(recipe))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"Recipe '{data['name']}' OK — {len(data['steps'])} step(s).")
+
+
 @envmon.command("validate-config")
 @click.argument("site_config", type=click.Path(exists=True))
 @click.option("--profile", "profiles", multiple=True, type=click.Path(exists=True),
