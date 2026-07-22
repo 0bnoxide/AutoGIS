@@ -294,13 +294,15 @@ def _validate_site_id(ctx, param, value):
 
 
 def _validate_site_name(ctx, param, value):
-    # site_name is substituted into double-quoted YAML scalars; a '"' or '\\'
-    # (or a control char) would produce invalid YAML and crash the loaders.
-    # Reject them at the boundary so every generated skeleton stays parseable.
-    if any(c in value for c in '"\\') or any(ord(c) < 32 for c in value):
+    # site_name is substituted into double-quoted YAML scalars. Reject anything
+    # that would break YAML parsing: the double-quoted-scalar metacharacters
+    # ('"' and '\\'), and any non-printable character -- str.isprintable()
+    # rejects every C0/C1 control, DEL, and line/paragraph separator
+    # (U+2028/U+2029/U+0085) while still allowing normal spaces and punctuation.
+    if '"' in value or "\\" in value or not value.isprintable():
         raise click.BadParameter(
-            "site name must not contain double-quotes, backslashes, or "
-            "control characters")
+            "site name must be printable text without double-quotes or "
+            "backslashes")
     return value
 
 

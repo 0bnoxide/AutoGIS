@@ -99,13 +99,17 @@ def test_coercion_prone_site_id_stays_a_string(tmp_path):
 
 
 def test_cli_rejects_yaml_breaking_site_name(tmp_path):
-    """A site name with a double-quote would produce invalid YAML and crash the
-    loaders; reject it at the boundary. Codex P2 finding."""
-    result = CliRunner().invoke(autogis_cli, [
-        "envmon", "init-site", "--site-id", SITE_ID,
-        "--site-name", 'North "A" Site', "--dest", str(tmp_path), "--dry-run"])
-    assert result.exit_code != 0
-    assert "double-quotes" in result.output
+    """A site name with a double-quote, backslash, or ANY non-printable char
+    (control/DEL/C1/line-separator) would produce invalid YAML and crash the
+    loaders; reject them all at the boundary. Codex P2 findings (2 rounds)."""
+    for bad in ('North "A" Site', "back\\slash", "ctrl\x7fdel",
+                "nel\x85here", "lsep\u2028here", "para\u2029x"):
+        result = CliRunner().invoke(autogis_cli, [
+            "envmon", "init-site", "--site-id", SITE_ID,
+            "--site-name", bad, "--dest", str(tmp_path), "--dry-run"])
+        assert result.exit_code != 0, f"{bad!r} should be rejected"
+        # nothing must be written for a rejected name
+        assert list(tmp_path.rglob("*.yaml")) == []
 
 
 def test_validate_skeleton_reports_not_raises_on_bad_yaml(tmp_path):
