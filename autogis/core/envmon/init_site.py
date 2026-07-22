@@ -14,11 +14,15 @@ bootstrap-design.md.
 """
 from __future__ import annotations
 
+import re
 import tempfile
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
+
+_SENTINELS = ("__SITE_ID__", "__SITE_NAME__")
+_SENTINEL_RE = re.compile("|".join(_SENTINELS))
 
 from ..common.config import FigureSpec, ParserProfile, SiteConfig
 
@@ -43,6 +47,11 @@ def check_site_id(site_id: str) -> None:
     if not site_id.replace("-", "").replace("_", "").isalnum():
         raise ValueError("site id must be letters/digits with '-' or '_' only "
                          "(no path separators or dots)")
+    if any(tok in site_id for tok in _SENTINELS):
+        # e.g. site_id="__SITE_NAME__" passes the alnum test but would collide
+        # with substitution; forbid the sentinels outright.
+        raise ValueError("site id must not contain the substitution tokens "
+                         "__SITE_ID__ / __SITE_NAME__")
 
 
 def check_site_name(site_name: str) -> None:
@@ -52,6 +61,9 @@ def check_site_name(site_name: str) -> None:
     if '"' in site_name or "\\" in site_name or not site_name.isprintable():
         raise ValueError("site name must be printable text without "
                          "double-quotes or backslashes")
+    if any(tok in site_name for tok in _SENTINELS):
+        raise ValueError("site name must not contain the substitution tokens "
+                         "__SITE_ID__ / __SITE_NAME__")
 
 
 def _validate_event(path: Path) -> None:
@@ -94,7 +106,13 @@ class SkeletonFile:
 
 
 def _render(text: str, site_id: str, site_name: str) -> str:
-    return text.replace("__SITE_ID__", site_id).replace("__SITE_NAME__", site_name)
+    # Single pass: each sentinel in the TEMPLATE is replaced exactly once and
+    # substituted values are never re-scanned. Chained str.replace() would let a
+    # value that itself contains the other sentinel (e.g. site_id="__SITE_NAME__")
+    # be re-substituted -- an injection the guards also reject, but this makes
+    # the render correct by construction.
+    repl = {"__SITE_ID__": site_id, "__SITE_NAME__": site_name}
+    return _SENTINEL_RE.sub(lambda m: repl[m.group(0)], text)
 
 
 def plan_site_skeleton(site_id: str, site_name: str,

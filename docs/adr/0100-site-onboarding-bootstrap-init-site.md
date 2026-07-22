@@ -70,6 +70,30 @@ Key decisions:
   branching, batch multi-site onboarding, and regulatory-completeness rules
   beyond the `_TODO` anchor scan.
 
+## Review hardening (@codex, PR #279)
+
+Three review rounds tightened the input/packaging boundary; all fixed with
+regression tests:
+
+- **YAML type coercion** — `site_id` scalars are quoted so a valid id like
+  `NO`/`on`/`123` stays a string, not `False`/`True`/int.
+- **YAML injection / non-printables** — `site_name` is validated against `"`,
+  `\`, and any non-printable char (`str.isprintable()` covers C0/C1 controls,
+  DEL, and line/paragraph separators). The guard lives in **core**
+  (`check_site_id`/`check_site_name`, raising `ValueError`, called by
+  `plan_site_skeleton`) so a direct library caller is protected, not only the
+  CLI; the CLI callbacks delegate to it.
+- **Packaging** — templates are declared in `[tool.setuptools.package-data]`
+  and loaded via `importlib.resources.files("autogis")` (the `report_assets`
+  precedent), so a wheel install ships and finds them. Verified by building the
+  wheel.
+- **Sentinel-token traversal** — `site_id="__SITE_NAME__"` passed the alnum
+  guard and, via chained `str.replace`, let a path-bearing `site_name` leak into
+  the output filename and escape `--dest`. Fixed two ways: `_render` is now
+  single-pass (`re.sub` over both sentinels at once, values never re-scanned —
+  correct by construction), and the guards reject any value containing a
+  substitution token.
+
 ## Notes
 
 Numbered ADR-0100 against `origin/main` (max 0098) and open PRs (PR #277 uses

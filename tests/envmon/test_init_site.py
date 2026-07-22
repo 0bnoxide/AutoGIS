@@ -12,7 +12,7 @@ from autogis.core.common.config import FigureSpec, ParserProfile, SiteConfig
 import pytest
 
 from autogis.core.envmon.init_site import (
-    FAMILIES, SkeletonFile, plan_site_skeleton, scan_anchors,
+    FAMILIES, SkeletonFile, _render, plan_site_skeleton, scan_anchors,
     validate_skeleton, write_skeleton,
 )
 
@@ -123,6 +123,28 @@ def test_plan_site_skeleton_guards_library_callers(tmp_path):
     for bad_name in ('has "quote"', "back\\slash", "ctrl\x7f"):
         with pytest.raises(ValueError):
             plan_site_skeleton("OK", bad_name, tmp_path)
+
+
+def test_render_is_single_pass_no_sentinel_chaining(tmp_path):
+    """A value that itself contains the other sentinel must NOT be re-scanned
+    (single-pass), else site_id='__SITE_NAME__' would chain into site_name.
+    Codex P1: sentinel-token injection."""
+    out = _render("id=__SITE_ID__ name=__SITE_NAME__", "__SITE_NAME__", "ZZZ")
+    assert out == "id=__SITE_NAME__ name=ZZZ"  # first token kept literal
+
+
+def test_sentinel_site_id_rejected_no_traversal(tmp_path):
+    """The concrete exploit: --site-id __SITE_NAME__ + a path-bearing name must
+    be rejected outright, so no file escapes --dest. Codex P1."""
+    for sid in ("__SITE_NAME__", "__SITE_ID__"):
+        with pytest.raises(ValueError):
+            plan_site_skeleton(sid, "../../escaped", tmp_path)
+    dest = tmp_path / "cfg"
+    result = CliRunner().invoke(autogis_cli, [
+        "envmon", "init-site", "--site-id", "__SITE_NAME__",
+        "--site-name", "../../escaped", "--dest", str(dest), "--force"])
+    assert result.exit_code != 0
+    assert list(tmp_path.rglob("escaped*")) == []   # nothing written outside dest
 
 
 def test_validate_skeleton_reports_not_raises_on_bad_yaml(tmp_path):
