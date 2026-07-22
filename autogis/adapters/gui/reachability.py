@@ -52,4 +52,18 @@ UNREACHABLE: dict[str, str] = {
     # primary UI; the CLI always redirects, same as the tools 2-7 group above.
     "envmon build-cad-package":
         "Runs in ArcGIS Pro only; use the .pyt toolbox (ADR-0088).",
+    # ADR-0006 pattern: three more class-1 redirect-only bodies that were
+    # shipped without an UNREACHABLE entry, so the GUI offered a button that
+    # always HALTs (each _guard()s then unconditionally raises "use the .pyt").
+    # Verified against cli.py bodies: run-gw-model-pipeline (Spatial/Geostat,
+    # Phase-5 draft), condition-dem, compare-drone-surfaces (Spatial Analyst
+    # raster algebra). build-conc-surface is deliberately NOT here -- its
+    # --dry-run path runs headless, same reachable-via-a-headless-leg rationale
+    # as export-civil3d above.
+    "envmon run-gw-model-pipeline":
+        "Runs in ArcGIS Pro only; use the RunGWModelPipeline .pyt tool.",
+    "envmon condition-dem":
+        "Runs in ArcGIS Pro only; use the ConditionDEM .pyt tool.",
+    "envmon compare-drone-surfaces":
+        "Runs in ArcGIS Pro only; use the CompareDroneSurfaces .pyt tool.",
 }
