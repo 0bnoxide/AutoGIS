@@ -51,6 +51,8 @@ def test_null_command_checkpoint_is_valid():
     {"name": "x", "steps": [{"command": ["envmon", ""]}]},     # empty command element
     {"name": "x", "steps": [{"command": [1, 2]}]},             # non-str command element
     {"name": "x", "steps": [{"command": None, "fail_on": "boom"}]},   # bad fail_on
+    {"name": "x", "steps": [{"command": None, "fail_on": ["error"]}]},  # unhashable fail_on
+    {"name": "x", "steps": [{"command": None, "fail_on": {}}]},         # unhashable fail_on
     {"name": "x", "steps": [{"command": None, "pause_on_warning": "yes"}]},  # non-bool
     {"name": "x", "steps": [{"command": None, "values": [1]}]},  # values not a mapping
     {"name": "x", "steps": [{"command": None, "bogus": 1}]},    # unknown key

@@ -70,7 +70,10 @@ def _validate_step(step: Any, i: int) -> None:
         raise ConfigError(f"{where}: 'values' must be a mapping")
 
     fail_on = step.get("fail_on")
-    if fail_on is not None and fail_on not in _VALID_FAIL_ON:
+    # isinstance guard first: an unhashable value (list/dict) would raise
+    # TypeError on the set membership instead of a clean ConfigError.
+    if fail_on is not None and (not isinstance(fail_on, str)
+                                or fail_on not in _VALID_FAIL_ON):
         raise ConfigError(
             f"{where}: 'fail_on' must be one of {sorted(_VALID_FAIL_ON)} or null")
 
