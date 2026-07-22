@@ -72,8 +72,14 @@ def _validate_step(step: Any, i: int) -> None:
                 f"non-empty list of non-empty strings")
 
     values = step.get("values")
-    if values is not None and not isinstance(values, Mapping):
-        raise ConfigError(f"{where}: 'values' must be a mapping")
+    if values is not None:
+        if not isinstance(values, Mapping):
+            raise ConfigError(f"{where}: 'values' must be a mapping")
+        # keys are CLI parameter names -> must be strings, else build_argv's
+        # sort of mixed-type keys raises TypeError downstream at run time.
+        if not all(isinstance(k, str) for k in values):
+            raise ConfigError(
+                f"{where}: 'values' keys must be strings (CLI parameter names)")
 
     fail_on = step.get("fail_on")
     # isinstance guard first: an unhashable value (list/dict) would raise
