@@ -55,6 +55,7 @@ def test_null_command_checkpoint_is_valid():
     {"name": "x", "steps": [{"command": None, "fail_on": {}}]},         # unhashable fail_on
     {"name": "x", "steps": [{"command": None, "pause_on_warning": "yes"}]},  # non-bool
     {"name": "x", "steps": [{"command": None, "values": [1]}]},  # values not a mapping
+    {"name": "x", "steps": [{"command": None, "values": {1: "a"}}]},  # non-string values key
     {"name": "x", "steps": [{"command": None, "bogus": 1}]},    # unknown key
     {"name": "x", "steps": [{1: "a", "bogus": "b", "command": None}]},  # mixed-type unknown keys
     {"version": 2, "name": "x", "steps": [{"command": None}]},  # wrong version

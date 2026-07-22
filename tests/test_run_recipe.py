@@ -76,6 +76,15 @@ def test_run_recipe_ctrl_c_exits_130(tmp_path, monkeypatch):
     assert "Interrupted" in r.output
 
 
+def test_classify_exit_130_is_cancelled():
+    """A Ctrl-C run-recipe exits 130; run-history must record it as cancelled,
+    not error, so readiness/history consumers don't misreport it. Codex P2."""
+    from autogis.adapters.cli import _classify_exit
+    assert _classify_exit(SystemExit(130)) == "cancelled"
+    assert _classify_exit(SystemExit(1)) == "error"
+    assert _classify_exit(SystemExit(0)) == "success"
+
+
 def test_run_recipe_bad_recipe_is_clean_error(tmp_path):
     bad = tmp_path / "bad.yaml"
     bad.write_text("name: x\nsteps: []\n", encoding="utf-8")

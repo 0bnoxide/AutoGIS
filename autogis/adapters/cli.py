@@ -115,6 +115,8 @@ def _classify_exit(exc):
     if isinstance(exc, (KeyboardInterrupt, click.Abort)):
         return "cancelled"
     if isinstance(exc, SystemExit):
+        if exc.code == 130:      # 128 + SIGINT: a Ctrl-C cancellation
+            return "cancelled"
         return "success" if not exc.code else "error"
     return "error"
 
