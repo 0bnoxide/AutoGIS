@@ -36,3 +36,4 @@ run_history.csv
 # Project MCP server config — local-only per CLAUDE.md ("There is no project
 # .mcp.json"). Kept out of the repo so it never auto-loads for other sessions.
 .mcp.json
+build/

@@ -284,25 +284,22 @@ def figure_spec_cmd(spec):
 
 
 def _validate_site_id(ctx, param, value):
-    # site_id flows into filenames under --dest; reject anything but
-    # letters/digits/'-'/'_' to block '../' traversal and path separators.
-    if not value.replace("-", "").replace("_", "").isalnum():
-        raise click.BadParameter(
-            "site id must be letters/digits with '-' or '_' only "
-            "(no path separators or dots)")
+    # Delegate to the core guard (single source of truth); it also protects
+    # library callers of plan_site_skeleton.
+    from autogis.core.envmon.init_site import check_site_id
+    try:
+        check_site_id(value)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc))
     return value
 
 
 def _validate_site_name(ctx, param, value):
-    # site_name is substituted into double-quoted YAML scalars. Reject anything
-    # that would break YAML parsing: the double-quoted-scalar metacharacters
-    # ('"' and '\\'), and any non-printable character -- str.isprintable()
-    # rejects every C0/C1 control, DEL, and line/paragraph separator
-    # (U+2028/U+2029/U+0085) while still allowing normal spaces and punctuation.
-    if '"' in value or "\\" in value or not value.isprintable():
-        raise click.BadParameter(
-            "site name must be printable text without double-quotes or "
-            "backslashes")
+    from autogis.core.envmon.init_site import check_site_name
+    try:
+        check_site_name(value)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc))
     return value
 
 

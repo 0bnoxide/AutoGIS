@@ -9,6 +9,8 @@ from click.testing import CliRunner
 
 from autogis.adapters.cli import autogis as autogis_cli
 from autogis.core.common.config import FigureSpec, ParserProfile, SiteConfig
+import pytest
+
 from autogis.core.envmon.init_site import (
     FAMILIES, SkeletonFile, plan_site_skeleton, scan_anchors,
     validate_skeleton, write_skeleton,
@@ -110,6 +112,17 @@ def test_cli_rejects_yaml_breaking_site_name(tmp_path):
         assert result.exit_code != 0, f"{bad!r} should be rejected"
         # nothing must be written for a rejected name
         assert list(tmp_path.rglob("*.yaml")) == []
+
+
+def test_plan_site_skeleton_guards_library_callers(tmp_path):
+    """The identity guard lives in core, so a direct library caller (not just
+    the CLI) can't inject an unsafe id/name. Codex P2: core injection point."""
+    for bad_id in ("../evil", "a.b", "x/y"):
+        with pytest.raises(ValueError):
+            plan_site_skeleton(bad_id, "Name", tmp_path)
+    for bad_name in ('has "quote"', "back\\slash", "ctrl\x7f"):
+        with pytest.raises(ValueError):
+            plan_site_skeleton("OK", bad_name, tmp_path)
 
 
 def test_validate_skeleton_reports_not_raises_on_bad_yaml(tmp_path):

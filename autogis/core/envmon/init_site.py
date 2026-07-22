@@ -16,13 +16,42 @@ from __future__ import annotations
 
 import tempfile
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 from ..common.config import FigureSpec, ParserProfile, SiteConfig
 
-_TEMPLATE_DIR = (Path(__file__).resolve().parents[2]
-                 / "config" / "_templates" / "site_skeleton")
+# Templates ship as package data of the `autogis` package (see
+# pyproject [tool.setuptools.package-data]); load them via importlib.resources
+# so a wheel install works the same as an editable checkout -- Path(__file__)
+# traversal to ../../config would only find them on-disk in a source tree.
+_TEMPLATE_PARTS = ("config", "_templates", "site_skeleton")
+
+
+def _read_template(name: str) -> str:
+    return (files("autogis").joinpath(*_TEMPLATE_PARTS, name)
+            .read_text(encoding="utf-8"))
+
+
+# These guards live in core so EVERY caller (CLI and any library caller of
+# plan_site_skeleton) is protected -- not just the CLI callbacks. They raise
+# ValueError; the CLI callbacks translate that to click.BadParameter.
+def check_site_id(site_id: str) -> None:
+    """site_id flows into filenames under --dest: letters/digits/'-'/'_' only,
+    to block '../' traversal and path separators. Raises ValueError."""
+    if not site_id.replace("-", "").replace("_", "").isalnum():
+        raise ValueError("site id must be letters/digits with '-' or '_' only "
+                         "(no path separators or dots)")
+
+
+def check_site_name(site_name: str) -> None:
+    """site_name lands in double-quoted YAML scalars: reject the scalar
+    metacharacters ('"', '\\') and any non-printable (control/DEL/C1/line &
+    paragraph separators, via str.isprintable()). Raises ValueError."""
+    if '"' in site_name or "\\" in site_name or not site_name.isprintable():
+        raise ValueError("site name must be printable text without "
+                         "double-quotes or backslashes")
 
 
 def _validate_event(path: Path) -> None:
@@ -71,15 +100,17 @@ def _render(text: str, site_id: str, site_name: str) -> str:
 def plan_site_skeleton(site_id: str, site_name: str,
                        dest: Path) -> List[SkeletonFile]:
     """Render every family template to a target path. No writes — drives both
-    the real and ``--dry-run`` paths."""
+    the real and ``--dry-run`` paths. Raises ValueError on unsafe identity."""
+    check_site_id(site_id)
+    check_site_name(site_name)
     dest = Path(dest)
-    files: List[SkeletonFile] = []
+    planned: List[SkeletonFile] = []
     for fam in FAMILIES:
-        raw = (_TEMPLATE_DIR / fam.template).read_text(encoding="utf-8")
+        raw = _read_template(fam.template)
         text = _render(raw, site_id, site_name)
         name = _render(fam.dest_name, site_id, site_name)
-        files.append(SkeletonFile(fam.name, dest / fam.dest_subdir / name, text))
-    return files
+        planned.append(SkeletonFile(fam.name, dest / fam.dest_subdir / name, text))
+    return planned
 
 
 def scan_anchors(text: str) -> List[Tuple[int, str]]:
