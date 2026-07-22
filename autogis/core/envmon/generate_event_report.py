@@ -6,7 +6,7 @@ unrelated "Run History Dashboard Table" / WriteRunHistory — see issue #104.)
 
 Assembles a single .md review document from the outputs of:
   - import-edd / normalize-results (results CSV)
-  - compare-events (comparison CSV with TrendLabel column)
+  - compare-events (comparison CSV with a TrendClass column)
   - run-history-report (history summary CSV)
   - identify-data-gaps (gaps CSV)
   - evaluate-rpd-qa (RPD QA CSV)
@@ -168,7 +168,7 @@ def generate_event_report(
         site_id: Site identifier string.
         event_id: Event identifier string (e.g. "2026Q2").
         results_csv: Optional path to analytical results CSV.
-        comparison_csv: Optional path to compare-events CSV (TrendLabel column).
+        comparison_csv: Optional path to compare-events CSV (TrendClass column).
         history_csv: Optional path to run-history-report CSV.
         gaps_csv: Optional path to identify-data-gaps CSV.
         rpd_qa_csv: Optional path to evaluate-rpd-qa CSV.

@@ -1,0 +1,4 @@
+run_id,tool_name,site_id,event_id,started_at,finished_at,status,inputs,outputs,qa_count_error,qa_count_warning,qa_count_info,message
+ref-run-1,apply-screening,H281,2026Q2,2026-06-20T09:00:00,2026-06-20T09:00:01,success,{},{},0,0,1,reference event
+ref-run-2,compare-events,H281,2026Q2,2026-06-20T09:01:00,2026-06-20T09:01:01,success,{},{},0,0,1,reference event
+ref-run-3,run-history-report,H281,2026Q2,2026-06-20T09:02:00,2026-06-20T09:02:01,success,{},{},0,0,1,reference event
