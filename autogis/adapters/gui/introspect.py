@@ -161,6 +161,21 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
     # --analytes "a,b,c" — is deliberately plain text: the value passes
     # through unchanged and the option's help documents the format.
 
+    # A file geodatabase (.gdb) *is* a directory on disk, but CLI gdb params are
+    # declared inconsistently -- some bare click.Path() (file_okay left True, so
+    # the generic test above can't see the folder) and some a plain
+    # click.argument (STRING, e.g. upgrade-schema, which would render as a text
+    # field with no Browse at all). Recognise the gdb param family by name and
+    # force a folder picker for *every* tool's gdb: a directory path field whose
+    # Browse opens a folder chooser, not a save-file dialog (a .gdb's internal
+    # files aren't selectable there). Value passed to the CLI is unchanged.
+    # Only text/path spellings: a boolean --gdb flag (reconcile-locations'
+    # "also write to a gdb" toggle) is NOT a path and stays a checkbox.
+    is_gdb = param.name in ("gdb", "gdb_path") or param.name.endswith("_gdb")
+    if is_gdb and kind in ("text", "path"):
+        kind = "path"
+        is_dir = True
+
     xor_group = None
     if xor_pair and param.name in xor_pair:
         xor_group = "/".join(xor_pair)

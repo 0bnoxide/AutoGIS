@@ -35,5 +35,16 @@ def test_class1_redirect_only_tools_are_marked():
                   "envmon build-callouts", "envmon gw-contours",
                   "envmon export-figures", "envmon full-pipeline",
                   "envmon optimize-callouts",
-                  "envmon build-cad-package"):
+                  "envmon build-cad-package",
+                  # shipped without an entry, so the GUI offered an always-HALT
+                  # button -- each _guard()s then unconditionally redirects.
+                  "envmon run-gw-model-pipeline", "envmon condition-dem",
+                  "envmon compare-drone-surfaces"):
         assert label in UNREACHABLE
+
+
+def test_build_conc_surface_stays_reachable_via_dry_run():
+    # build-conc-surface has a headless --dry-run leg, so it must NOT be marked
+    # unreachable even though its arcpy write stage is Pro-only (cf. the module
+    # docstring's export-civil3d rationale).
+    assert "envmon build-conc-surface" not in UNREACHABLE
