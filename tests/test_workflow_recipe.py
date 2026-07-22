@@ -74,7 +74,7 @@ def test_malformed_yaml_is_configerror_not_traceback(tmp_path):
         load_recipe(bad)
     r = CliRunner().invoke(autogis_cli, ["envmon", "validate-recipe", str(bad)])
     assert r.exit_code != 0
-    assert "not valid" in r.output
+    assert "could not be parsed" in r.output
     assert "Traceback" not in r.output   # clean error, no stack trace
 
     # same for a malformed .json recipe (load_config also parses JSON)
@@ -82,6 +82,12 @@ def test_malformed_yaml_is_configerror_not_traceback(tmp_path):
     badjson.write_text('{"name": "x", ', encoding="utf-8")
     with pytest.raises(ConfigError):
         load_recipe(badjson)
+
+    # and for a file that isn't valid UTF-8 (read_text -> UnicodeDecodeError)
+    badbytes = tmp_path / "bytes.yaml"
+    badbytes.write_bytes(b"name: \xff\xfe not utf-8\n")
+    with pytest.raises(ConfigError):
+        load_recipe(badbytes)
 
 
 def test_cli_validate_recipe(tmp_path):

@@ -95,9 +95,14 @@ def load_recipe(path: Path) -> dict:
     path = Path(path)
     try:
         data = load_config(path)   # checks the file exists + is a mapping
-    except (yaml.YAMLError, json.JSONDecodeError) as exc:
-        # load_config lets the parser errors through for both formats it reads.
-        raise ConfigError(f"recipe {path} is not valid YAML/JSON: {exc}") from exc
+    except (yaml.YAMLError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        # load_config lets these through: YAML/JSON parse errors, and a
+        # UnicodeDecodeError from read_text on a file that isn't valid UTF-8.
+        # (ConfigError for missing-file / non-mapping is intentionally NOT
+        # caught here -- it is already a clean ConfigError.)
+        raise ConfigError(
+            f"recipe {path} could not be parsed (invalid YAML/JSON or not "
+            f"UTF-8): {exc}") from exc
     validate_recipe(data)
     return data
 

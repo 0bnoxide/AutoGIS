@@ -366,7 +366,7 @@ def init_site_cmd(site_id, site_name, dest, force, dry_run):
 
 
 @envmon.command("validate-recipe")
-@click.argument("recipe", type=click.Path(exists=True))
+@click.argument("recipe", type=click.Path(exists=True, dir_okay=False))
 def validate_recipe_cmd(recipe):
     """Phase 5: validate a saved linear workflow-recipe YAML (headless).
 
