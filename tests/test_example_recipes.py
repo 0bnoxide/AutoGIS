@@ -4,13 +4,13 @@ than none. Arcpy-free."""
 from pathlib import Path
 
 import autogis
-from autogis.adapters.gui.executor import _resolve_command
+from autogis.adapters.gui.executor import build_argv
 from autogis.core.common.workflow_recipe import load_recipe
 
 RECIPES = Path(autogis.__file__).resolve().parent / "config" / "recipes"
 
 
-def test_example_recipes_validate_and_commands_resolve():
+def test_example_recipes_validate_and_params_resolve():
     files = sorted(RECIPES.glob("*.yaml"))
     names = {f.name for f in files}
     assert {"monitoring_event_processing.yaml", "rtk_to_cad.yaml"} <= names
@@ -20,4 +20,6 @@ def test_example_recipes_validate_and_commands_resolve():
         for step in data["steps"]:
             cmd = step.get("command")
             if cmd:                         # skip review checkpoints (null)
-                _resolve_command(cmd)       # raises ValueError if not a real command
+                # build_argv resolves the command AND rejects unknown parameter
+                # names -> proves each step's `values` keys are real params.
+                build_argv(cmd, step.get("values") or {})
