@@ -81,6 +81,20 @@ def test_cli_dry_run_writes_nothing(tmp_path):
     assert "_TODO anchor" in result.output
 
 
+def test_cli_reports_missing_regulatory_content(tmp_path):
+    """init-site scaffolds no screening-levels file (no per-site convention), so
+    it must IDENTIFY that regulatory gap so a site isn't pushed to production
+    with no exceedance criteria (Phase 3 roadmap: 'missing regulatory content')."""
+    from autogis.core.envmon.init_site import regulatory_gaps
+    assert regulatory_gaps()  # non-empty
+    result = CliRunner().invoke(autogis_cli, [
+        "envmon", "init-site", "--site-id", SITE_ID, "--site-name", SITE_NAME,
+        "--dest", str(tmp_path / "cfg"), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Regulatory content" in result.output
+    assert "screening" in result.output.lower()
+
+
 def test_cli_rejects_path_traversal_site_id(tmp_path):
     result = CliRunner().invoke(autogis_cli, [
         "envmon", "init-site", "--site-id", "../evil", "--site-name", "x",

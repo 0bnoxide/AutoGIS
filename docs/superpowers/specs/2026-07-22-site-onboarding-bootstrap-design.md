@@ -159,3 +159,16 @@ render report (human) + QA collector; exit code from QA severity
 Ships a new headless tool + template set → an ADR is added at merge time
 (tool-batch scope per CLAUDE.md), referencing this spec and ADR-0087 (roadmap
 ordering).
+
+## Slice 2 — identify missing regulatory content (2026-07-22)
+
+The Phase 3 text also calls for identifying "missing regulatory content."
+Screening levels are the site's regulatory content, but they are passed
+explicitly to the tools (`--screening-levels PATH`) with no per-site file
+convention, so init-site does not (and should not, without a structural
+decision) scaffold them. Instead the command now **reports** the gap:
+`regulatory_gaps()` (core) returns the un-scaffolded regulatory items and the
+CLI prints a "Regulatory content to configure (NOT scaffolded)" section — so an
+operator can't unknowingly push a site to production with no exceedance
+criteria. Introducing a per-site screening-levels convention is deferred as a
+structural decision for the owner.
