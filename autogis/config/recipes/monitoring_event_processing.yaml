@@ -28,6 +28,7 @@ steps:
       site_config: "_TODO path/to/site.yaml"
       workbook: "_TODO path/to/workbook.xlsx"
       profile_path: "_TODO path/to/parser_profile.yaml"
+      wells_csv: "_TODO path/to/well_list.csv"   # headless well-list source (or use gdb)
     pause_on_warning: true
     message: "Reconcile sample location IDs against the well list."
 
