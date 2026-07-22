@@ -3102,14 +3102,20 @@ def condition_dem_cmd(gdb_path, flight_id, out_dir, fill_voids, smooth,
               help="Baseline: a LandXML design-surface file.")
 @click.option("--lod-threshold-ft", type=float, default=0.2, show_default=True,
               help="Elevation diff magnitude above which a cell counts as change.")
+@click.option("--diff-raster-out", "diff_raster_out", default=None,
+              type=click.Path(),
+              help="Optional: persist the (primary - baseline) diff raster "
+                   "here so the change can be mapped. Two-DEM baseline only.")
 def compare_drone_surfaces_cmd(gdb_path, primary_product_id,
                                baseline_product_id, baseline_landxml,
-                               lod_threshold_ft):
+                               lod_threshold_ft, diff_raster_out):
     """CompareDroneSurfaces: raster-diff a drone DEM against a prior flight
     or a LandXML design surface (ArcGIS Pro)."""
-    from autogis.core.envmon.compare_drone_surfaces import validate_baseline_args
+    from autogis.core.envmon.compare_drone_surfaces import (
+        validate_baseline_args, validate_diff_output)
     try:
         validate_baseline_args(baseline_product_id, baseline_landxml)
+        validate_diff_output(diff_raster_out, baseline_landxml)
     except ValueError as exc:
         raise click.ClickException(str(exc))
     _guard("compare-drone-surfaces")
