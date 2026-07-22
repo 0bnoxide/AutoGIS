@@ -80,6 +80,49 @@ def load_flight_yaml(path: Path) -> DroneFlight:
     )
 
 
+# new-flight-yaml scaffold. Keys mirror DroneFlight (exactly what load_flight_yaml
+# reads); required-first so the must-fill fields sit at the top of the emitted
+# file. Required fields default empty so `register-drone-flight --dry-run` reports
+# precisely which a 1-off still needs (validate_flight_record flags empties, and
+# an empty flight_date coerces to date.min -> a clean "missing" error, not a parse
+# crash). Optional fields carry sensible blanks/defaults. The loaders coerce
+# strings (a --set value arrives as text), so no per-field typing here.
+# test_flight_yaml_template pins this key set against DroneFlight against drift.
+_FLIGHT_REQUIRED: tuple[str, ...] = (
+    "flight_id", "site_id", "flight_date", "pilot", "drone_model", "sensor")
+_FLIGHT_OPTIONAL_DEFAULTS: dict = {
+    "project_id": "",
+    "flight_altitude_m": None,
+    "overlap_forward_pct": None,
+    "overlap_side_pct": None,
+    "gcp_used": False,
+    "checkpoint_count": 0,
+    "processing_software": "",
+    "output_crs": "",
+    "vertical_datum": "",
+    "orthomosaic_path": "",
+    "dsm_path": "",
+    "dem_path": "",
+    "point_cloud_path": "",
+    "qa_status": "pending",
+}
+
+
+def flight_yaml_template(overrides: dict | None = None) -> dict:
+    """Return a ready-to-edit DroneFlight inventory dict for `new-flight-yaml`.
+
+    Required keys come first, defaulting empty so `register-drone-flight
+    --dry-run` reports exactly which a 1-off must fill; optional keys carry
+    sensible defaults. ``overrides`` (caller-validated against the returned key
+    set) pre-fills any field, e.g. ``{"site_id": "H281_Glasgow"}``.
+    """
+    tpl: dict = {k: "" for k in _FLIGHT_REQUIRED}
+    tpl.update(_FLIGHT_OPTIONAL_DEFAULTS)
+    for k, v in (overrides or {}).items():
+        tpl[k] = v
+    return tpl
+
+
 def validate_flight_record(rec: DroneFlight, qa: QACollector) -> None:
     """Validate a :class:`DroneFlight`, writing issues to *qa*."""
     for f_name in ("flight_id", "site_id", "pilot", "drone_model", "sensor"):

@@ -277,6 +277,8 @@ _REGISTRY_SEED = [
      "intake", "Register an ingested source document (SHA-256 audit registry)"),
     ("register-drone-flight", "RegisterDroneFlight", "8.6", "LOCAL", "stable",
      "field", "Register a drone flight from an inventory YAML"),
+    ("new-flight-yaml", "NewFlightYaml", "8.6a", "CLOUD", "stable",
+     "admin", "Write a ready-to-edit drone flight inventory YAML template"),
     ("validate-drone-products", "ImportDroneProducts", "8.8", "CLOUD", "stable",
      "field", "Validate a drone product manifest (headless)"),
     ("import-drone-products", "ImportDroneProducts", "8.8", "LOCAL", "stable",
