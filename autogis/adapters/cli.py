@@ -2789,16 +2789,24 @@ def new_flight_yaml_cmd(output, overrides, overwrite):
         parsed[key] = val.strip()
 
     out = Path(output)
-    if out.exists() and not overwrite:
-        raise click.UsageError(
-            f"{out} already exists; refusing to overwrite (a rerun would replace "
-            f"a possibly-filled flight inventory with the blank template). Pass "
-            f"--overwrite to replace it, or choose a different --output.")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        _yaml.dump(flight_yaml_template(parsed), allow_unicode=True,
-                   sort_keys=False),
-        encoding="utf-8")
+    content = _yaml.dump(flight_yaml_template(parsed), allow_unicode=True,
+                         sort_keys=False)
+    if overwrite:
+        out.write_text(content, encoding="utf-8")
+    else:
+        # Exclusive create ("x" = O_EXCL): atomically fails if the path exists,
+        # closing the check-then-write race two concurrent runs would otherwise
+        # share (both passing an exists() check, the later clobbering the first).
+        try:
+            with out.open("x", encoding="utf-8") as fh:
+                fh.write(content)
+        except FileExistsError:
+            raise click.UsageError(
+                f"{out} already exists; refusing to overwrite (a rerun would "
+                f"replace a possibly-filled flight inventory with the blank "
+                f"template). Pass --overwrite to replace it, or choose a "
+                f"different --output.")
     click.echo(
         f"Flight YAML template written: {out}\n"
         f"Fill the required fields ({', '.join(_FLIGHT_REQUIRED)}), then "
