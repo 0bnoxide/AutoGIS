@@ -2755,6 +2755,65 @@ def register_drone_flight_cmd(flight_yaml, gdb, dry_run, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("new-flight-yaml")
+@click.option("--output", required=True, type=click.Path(),
+              help="Path to write the drone flight inventory YAML.")
+@click.option("--set", "overrides", multiple=True, metavar="KEY=VALUE",
+              help="Pre-fill a field, e.g. --set site_id=H281_Glasgow. Repeatable.")
+@click.option("--overwrite", is_flag=True, default=False,
+              help="Overwrite --output if it already exists (default: refuse, so "
+                   "a rerun can't clobber a filled inventory).")
+def new_flight_yaml_cmd(output, overrides, overwrite):
+    """Tool 8.6a: write a ready-to-edit drone flight inventory YAML (headless).
+
+    Scaffolds the YAML that register-drone-flight consumes -- there was no
+    generator, so a 1-off had to hand-author every key. Fill the required
+    fields, then validate headlessly:
+    `register-drone-flight <yaml> --gdb <gdb> --dry-run`.
+    """
+    import yaml as _yaml
+    from autogis.core.envmon.register_drone_flight import (
+        _FLIGHT_REQUIRED, flight_yaml_template)
+
+    keys = flight_yaml_template()
+    parsed: dict = {}
+    for item in overrides:
+        key, sep, val = item.partition("=")
+        key = key.strip()
+        if not sep:
+            raise click.UsageError(f"--set expects KEY=VALUE, got {item!r}.")
+        if key not in keys:
+            raise click.UsageError(
+                f"--set: unknown field {key!r}. Valid fields: "
+                f"{', '.join(keys)}.")
+        parsed[key] = val.strip()
+
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    content = _yaml.dump(flight_yaml_template(parsed), allow_unicode=True,
+                         sort_keys=False)
+    if overwrite:
+        out.write_text(content, encoding="utf-8")
+    else:
+        # Exclusive create ("x" = O_EXCL): atomically fails if the path exists,
+        # closing the check-then-write race two concurrent runs would otherwise
+        # share (both passing an exists() check, the later clobbering the first).
+        try:
+            with out.open("x", encoding="utf-8") as fh:
+                fh.write(content)
+        except FileExistsError:
+            raise click.UsageError(
+                f"{out} already exists; refusing to overwrite (a rerun would "
+                f"replace a possibly-filled flight inventory with the blank "
+                f"template). Pass --overwrite to replace it, or choose a "
+                f"different --output.")
+    click.echo(
+        f"Flight YAML template written: {out}\n"
+        f"Fill the required fields ({', '.join(_FLIGHT_REQUIRED)}), then "
+        f"validate:\n"
+        f"  autogis envmon register-drone-flight {out} --gdb <gdb> --dry-run")
+
+
 @envmon.command("validate-drone-products")
 @click.option("--manifest", "manifest_path", required=True, type=click.Path(exists=True),
               help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
