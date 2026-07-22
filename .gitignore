@@ -28,8 +28,6 @@ test_output.txt
 
 # CLI-seam run recorder output (ADR-0054) — runtime artifact, not source
 run_history.csv
-# ...except the committed reference-event fixture (Phase 4 notebook, ADR-0099)
-!tests/fixtures/reference_event/run_history.csv
 
 # arcpy toolbox-metadata droppings — ImportToolbox/Pro generate a
 # toolbox.<Tool>.pyt.xml sidecar per tool next to the .pyt on load

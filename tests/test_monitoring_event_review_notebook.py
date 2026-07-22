@@ -50,5 +50,5 @@ def test_restart_run_all_reference_event():
         for cell in nb.cells if cell.cell_type == "code"
         for out in cell.get("outputs", [])
     )
-    assert "Readiness: PASS" in text, "readiness cell did not render PASS"
+    assert "producers): PASS" in text, "readiness cell did not render PASS from the current run"
     assert "Executive Summary" in text, "event-report HTML did not render"

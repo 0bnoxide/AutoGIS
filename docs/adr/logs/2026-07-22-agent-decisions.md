@@ -99,6 +99,28 @@ environment, not one with known env-mismatch failures.
 
 **Revisit if:** a maintained arcpy-free dev venv is established — use it directly.
 
+## D9 — Readiness reads the notebook's own run, not a fixture (codex review R2)
+
+**Decision:** Round-1 committed a synthetic `run_history.csv` fixture and read
+readiness from it. Codex (R2) flagged that this renders `PASS` regardless of what
+the current run produced — stale/synthetic readiness. Repointed cell 7 at the
+notebook's OWN run (`WORK/run_history.csv`, written by cell 2 with
+`AUTOGIS_RUN_HISTORY` redirected), scoped `required_tools` to `["apply-screening"]`
+— the only headless producer this review runs that records a site identity — and
+**deleted the fixture** (also removing the `.gitignore` negation from R1).
+
+**Reasoning:** Codex is right — readiness must reflect the real run. Empirically,
+`compare-events`/`run-history-report` take no `--site`, so they can't satisfy a
+site-scoped readiness gate; `apply-screening` does. A cell note states the scope
+(a full pre-delivery gate also needs the LOCAL import→figures tools this headless
+review doesn't run). Deleting the fixture is the ponytail win — no gitignore trap,
+no synthetic data. (Aside: chased a phantom "RunHistory reads 0 records" while
+debugging — it was an MSYS `/tmp` vs Windows-path mismatch in the test shell, not
+a code bug.)
+
+**Revisit if:** the headless producers gain site tagging, or the readiness section
+should gate the real event-production toolchain.
+
 ## D6 — ADR number 0099
 
 **Decision:** Assigned ADR-0099 (0098 highest on disk; no open PR claims 0099).

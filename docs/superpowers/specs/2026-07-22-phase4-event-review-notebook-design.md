@@ -37,7 +37,7 @@ the notebook stays a thin shell.
 | Comparisons | `compare_events(current_event_date=, stable_threshold=)` | **needs ≥2 events** |
 | Trends | `build_history_report` + report HTML trend section | |
 | Map-ready data | `export_geojson.results_to_feature_collection` | display feature count / sample |
-| Readiness state | `evaluate_readiness(...)` (and/or `event_status`) | CLI auto-writes `run_history.csv` per command |
+| Readiness state | `evaluate_readiness(...)` | reads the notebook's OWN run (`WORK/run_history.csv`, `AUTOGIS_RUN_HISTORY`-redirected), scoped to producers that record a site identity (`apply-screening`) — not a canned fixture |
 | Reviewer decision | `ingest_reviewer_comments` tracker summary | "none yet" is valid |
 | 5-in-1 render | `generate_event_report_html(...)` via `IPython.display.HTML` | **public** renderer, not private `_gather_event_data` |
 
@@ -49,8 +49,10 @@ deferral already).
 
 1. Provenance: AutoGIS version (defensive) + SHA256 of every input CSV.
 2. Run the headless pipeline against the fixture event via the CLI
-   (`subprocess`): batch-import → screen → compare → history → gaps → rpd. This
-   populates `run_history.csv` for readiness for free.
+   (`subprocess`): screen → compare → history → gaps → rpd, with
+   `AUTOGIS_RUN_HISTORY` redirected into a temp `WORK` dir so the recorder never
+   touches a real `run_history.csv`. This populates the run history readiness
+   reads in cell 7 — no fixture run-history needed.
 3. Import summary: display manifest + QA CSVs.
 4. `generate_event_report_html(...)` inline — 5 sections at once.
 5. Map-ready: `results_to_feature_collection` summary (count + one sample).
