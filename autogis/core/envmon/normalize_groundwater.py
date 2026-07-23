@@ -21,6 +21,18 @@ from .table_normalizer import normalize_matrix_table
 _WL_TOLERANCE_FT = 0.02
 
 
+def _is_non_data_water_level(rec: WaterLevelRecord) -> bool:
+    """A footnote/annotation row masquerading as a water-level row: no valid
+    date AND no water-level measurement (no numeric MPE/DTW/GWE and no
+    recognized dry/NM/NS/NA status → MeasurementStatus 'UNKNOWN'). See
+    ADR-0106."""
+    return (rec.EventDate is None
+            and rec.MeasurementStatus == "UNKNOWN"
+            and rec.MonitoringPointElevation_ft is None
+            and rec.DepthToWater_ft is None
+            and rec.GroundwaterElevation_ft is None)
+
+
 def _water_level_for_row(reader: ProfileWorkbookReader, sheet: SheetProfile,
                          row: int, site_id: str, batch_id: str,
                          qa: QACollector,
@@ -154,8 +166,24 @@ def normalize_gw_table_2(workbook_path, profile: ParserProfile, site_id: str,
             continue
         if sheet.data_type != "GW_ANALYTICAL":
             for row in reader.iter_data_rows(sheet):
-                water_levels.append(_water_level_for_row(
-                    reader, sheet, row, site_id, batch_id, qa, gwe_range))
+                rec = _water_level_for_row(
+                    reader, sheet, row, site_id, batch_id, qa, gwe_range)
+                # A row with no valid date AND no water-level measurement (no
+                # numeric MPE/DTW/GWE and no recognized status) is not data —
+                # it is a footnote/annotation row whose label sits in the id
+                # column (e.g. H272 'NOTES:'). Skip it with a visible QA
+                # warning rather than import a bogus water level. See ADR-0106.
+                if _is_non_data_water_level(rec):
+                    qa.add(SEV_WARNING, "skipped_non_data_row",
+                           f"row {row} ('{rec.LocationID or '(blank)'}') has no "
+                           f"date and no water-level measurement; treated as a "
+                           f"non-data (footnote/annotation) row and skipped",
+                           site_id=site_id, location_id=rec.LocationID,
+                           import_batch_id=batch_id,
+                           source_workbook=reader.path.name,
+                           source_sheet=sheet.sheet_name, source_row=row)
+                    continue
+                water_levels.append(rec)
         if sheet.analyte_columns:
             s, r = normalize_matrix_table(
                 reader, sheet, matrix="GW", analytical_group="VPH_EPH_VOC",
