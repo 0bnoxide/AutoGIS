@@ -82,12 +82,21 @@ is unchanged; no field widths change.
   (`NOTES:`); cannot reach mid-block BOS annotation rows; fragile to label variants.
 - **Widen `ResultRawText`** — masks the bug by importing garbage instead of crashing.
 
-## Out of scope (reported to the user / #272, not fixed here)
+## Related decisions & out of scope
 
-- `GW Quality (2)` is a **DRAFT annotated variant** of `GW Quality` (the BOS-200
-  pilot-injection copy) — whether a draft sheet belongs in the production profile
-  is a profile-scope decision.
+- **`GW Quality (2)` dropped from the H272 profile (user decision, 2026-07-22)** —
+  it is a DRAFT variant annotated with BOS-200 pilot-injection results. Removing it
+  from `H272_Havre_GW_Analytical.yaml` (this PR) also moots its BOS annotation rows
+  and the cross-sheet dedup exposure below. Final analytical data lives on
+  `GW Quality` only.
+- **Separate latent finding (not fixed here, #272):** the `Env_AnalyticalResults`
+  idempotency key uses a bare `SourceCell` A1 ref (`"C9"`) with **no sheet
+  qualifier** (`SourceSheet` is not in the key). A row-aligned duplicate sheet can
+  therefore collide on position and silently drop a *corrected* value. Dropping the
+  DRAFT sheet removes the H272 exposure; the general fix (add `SourceSheet` to the
+  key) is a separate decision.
 - The `IBIs` sheet (inorganic indicator params) is absent from the H272 analytical
-  profile and is dropped with no sheet-coverage QA flag — a separate completeness gap.
+  profile and is dropped with no sheet-coverage QA flag — user accepted this as a
+  real-world durability datapoint (2026-07-22); left as-is.
 - Parsed **values** are not ground-truth-verified; this closes the code-path +
   row-integrity gap only.
