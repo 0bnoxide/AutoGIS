@@ -53,6 +53,19 @@ def detect_duplicate_sample(location_id: str, profile_markers: List[str]) -> boo
     return any(m in lid for m in markers)
 
 
+def _row_has_parseable_result(reader, sheet, row, col_meta) -> bool:
+    """True if any analyte cell holds a real result signal — numeric, a
+    non-detect, or a recognized status (NS/NM/NA/dry) — rather than merely a
+    blank or unparseable prose cell. Used to identify non-sample rows. See
+    ADR-0106."""
+    for col in col_meta:
+        code = parse_result_value(
+            reader.cell(sheet.sheet_name, row, col).value).status_code
+        if code not in ("BLANK", "UNPARSED"):
+            return True
+    return False
+
+
 def normalize_matrix_table(
         reader: ProfileWorkbookReader, sheet: SheetProfile, *,
         matrix: str, analytical_group: str, site_id: str, batch_id: str,
@@ -132,6 +145,24 @@ def normalize_matrix_table(
         sample_date = (parse_excel_date(date_cell.value, reader.date_system)
                        if date_cell else None)
         date_raw = date_cell.raw_text if date_cell else ""
+        # A row with no valid date AND no parseable result is not a sample — it
+        # is a footnote/legend or an inline annotation (e.g. the H272 'NOTES:'
+        # legend and 'BOS 200 Pilot Test...' event-marker rows). Emitting it
+        # produces bogus records and a long prose value overflows the
+        # ResultRawText TEXT field on GDB insert. Skip the whole row (no sample,
+        # no results) with a visible QA warning. Placed before the date-warning
+        # so a non-sample row does not raise a blocking invalid_sample_date
+        # ERROR. See ADR-0106. (Cell re-scan only runs for the rare dateless row.)
+        if (sample_date is None
+                and not _row_has_parseable_result(reader, sheet, row, col_meta)):
+            qa.add(SEV_WARNING, "skipped_non_sample_row",
+                   f"row {row} ('{location_id}') has no valid date and no "
+                   f"parseable result; treated as a non-data (footnote/"
+                   f"annotation) row and skipped",
+                   site_id=site_id, location_id=location_id,
+                   import_batch_id=batch_id, source_workbook=wb_name,
+                   source_sheet=sheet.sheet_name, source_row=row)
+            continue
         if sheet.date_column and sample_date is None:
             sev = SEV_WARNING if not date_raw else SEV_ERROR
             qa.add(sev, "missing_sample_date" if not date_raw else "invalid_sample_date",
