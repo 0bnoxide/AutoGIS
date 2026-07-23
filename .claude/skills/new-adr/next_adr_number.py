@@ -64,12 +64,36 @@ def _open_pr_max() -> int:
     return best
 
 
+def _scan_max(root: Path) -> int:
+    """Highest ADR number in local files + open PRs — no reservations, no +1."""
+    return max(_local_max(root / "docs" / "adr"), _open_pr_max())
+
+
+def _reserved_max() -> int:
+    """Highest live ADR number reserved in the coordination registry (0 if the
+    registry isn't reachable — e.g. a cloud checkout with no coordination dir).
+    """
+    try:
+        coord = Path(__file__).resolve().parents[2] / "coordination"
+        sys.path.insert(0, str(coord))
+        import registry  # type: ignore
+        vals = registry.live_values(registry.claims_path(), "adr")
+    except Exception:
+        return 0  # fail soft, same as gh being unavailable
+    best = 0
+    for v in vals:
+        try:
+            best = max(best, int(v))
+        except (TypeError, ValueError):
+            pass
+    return best
+
+
 def next_adr_number(repo_root: Path | None = None) -> int:
     # This file lives at <root>/.claude/skills/new-adr/ OR
     # <root>/.agents/skills/new-adr/ — both put root at parents[3].
     root = repo_root or Path(__file__).resolve().parents[3]
-    adr_dir = root / "docs" / "adr"
-    return max(_local_max(adr_dir), _open_pr_max()) + 1
+    return max(_scan_max(root), _reserved_max()) + 1
 
 
 def _check() -> None:
@@ -94,5 +118,9 @@ def _check() -> None:
 if __name__ == "__main__":
     if "--check" in sys.argv:
         _check()
+    elif "--base" in sys.argv:
+        # Scan floor only (local + open PRs, no reservations, no +1) — the input
+        # `coord reserve-adr` layers its atomic reservation on top of.
+        print(_scan_max(Path(__file__).resolve().parents[3]))
     else:
         print(f"{next_adr_number():04d}")

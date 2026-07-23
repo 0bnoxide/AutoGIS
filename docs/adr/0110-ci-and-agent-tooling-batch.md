@@ -1,4 +1,4 @@
-# ADR-0107: GitHub Actions CI + arcpy-doc-verifier agent + next-adr preflight
+# ADR-0110: GitHub Actions CI + arcpy-doc-verifier agent + next-adr preflight
 
 **Status:** Proposed
 
@@ -41,6 +41,15 @@ Add three pieces of workflow tooling (no product/architecture code changes):
 - **`.claude/skills/new-adr/next_adr_number.py`** — a preflight that numbers from
   local ADRs **and** open-PR diffs, failing soft to a local-only scan when `gh`
   is unavailable. `new-adr` step 1 now calls it.
+- **`coord reserve-adr`** (`registry.reserve_number` + a `coord_cli` subcommand)
+  — closes the pre-PR window the preflight can't: atomically claims the next free
+  number in the **shared** coordination registry (`claims.json`), so a second
+  session sees it immediately, before any PR exists. Reservations ride the
+  existing TTL/heartbeat, so an abandoned one auto-reaps. `next_adr_number.py`
+  honours live reservations too. Chosen over a star-in-filename convention
+  (2026-07-23 user decision, PR #295 thread): a placeholder *filename* on an
+  unmerged branch is invisible to other sessions — only a shared store closes
+  the gap, and the repo already has one.
 
 ## Consequences
 
@@ -50,16 +59,19 @@ Add three pieces of workflow tooling (no product/architecture code changes):
   authored them.
 - The most-lapsed invariant (ADR-0077 arcpy currency) gets a repeatable,
   doc-citing check instead of relying on memory.
-- ADR-number collisions are less frequent.
+- ADR-number collisions are less frequent (preflight) and, when `reserve-adr` is
+  used, prevented across live sessions before a PR exists.
 
 ### Negative consequences
 
 - windows-latest Actions minutes bill ~2× ubuntu; acceptable for this repo and
   it buys OS fidelity.
-- The preflight **reduces, not eliminates** collisions: two sessions that both
-  grab a number before either opens a PR are invisible to a PR scan. The `XXXX-`
-  placeholder route (README) remains the belt-and-suspenders option — this very
-  ADR used 0107 and may need renumbering at merge.
+- The **preflight alone** reduces, not eliminates, collisions (the pre-PR window);
+  `reserve-adr` closes that but only for sessions that opt to call it. This ADR
+  proved the point live: it was first drafted as 0107, collided with PR #296 (also
+  0107), and was renumbered to a `reserve-adr`-claimed **0110**.
+- reserve-adr adds a new claim *kind* (`adr`) to the shared registry; it reuses
+  the existing lock/TTL/reaping, so no new storage or lifecycle to maintain.
 
 ## Alternatives considered
 
