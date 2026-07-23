@@ -1,0 +1,16 @@
+# Sanitized reference-event monitoring schedule (Phase 4 notebook fixture).
+# Drives the completeness / data-gaps section. MW-2 requires Arsenic, which is
+# never sampled in results.csv -> a MISSING gap the notebook surfaces.
+site_id: H281
+event_label: 2026Q2
+wells:
+  - MW-1
+  - MW-2
+required_analytes:
+  - Benzene
+  - Toluene
+well_analytes:
+  MW-2:
+    - Benzene
+    - Toluene
+    - Arsenic
