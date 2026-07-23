@@ -91,6 +91,23 @@ for `envmon list-tools` discovery.
 - `advance --set` records details as free-form key/values (light bool/int/float
   coercion) — no per-state field schema/validation yet.
 
+### Deliberate slice boundaries / deferrals (gate items 3 & 6)
+
+- **No run-history write.** The per-COC audit trail is the custody audit record;
+  `coc` commands do not call `RunHistory.write`. This is consistent with the
+  Phase 2 precedent, where `.pyt`/CLI run-history logging was deferred. Add
+  run-history identity for COC transitions when the run-history surface itself
+  is generalized beyond tool runs.
+- **Field-duplicate reconciliation.** A COC's `sample_ids` includes `-FD` field
+  duplicates, but laboratories receive field dups under blind IDs, so a naive
+  match would report false missing/extra for them. Reference-event reconciliation
+  uses `dup_frequency: 0`. Blind-ID field-dup mapping is deferred to a later
+  slice; document the blind-ID convention with the lab before relying on
+  reconcile for dup-bearing events.
+- **`generate` refuses to overwrite** an existing COC in the store (data-loss
+  guard: re-generating would discard in-progress state + audit). Regenerate into
+  a fresh store. This handles gate item 6's data-loss implication.
+
 ## Alternatives considered
 
 - **Pure event-sourcing** (store only the append-only event log, derive state on

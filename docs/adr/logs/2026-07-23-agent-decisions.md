@@ -99,3 +99,19 @@ in-memory and never hits the Windows cp1252 console codec. A manual
 arrow character — and the crash happened *after* the state persisted but *before*
 `SystemExit`, so it also broke the reconcile exit code. Lesson reinforced: a real
 end-to-end console run catches what the test harness structurally cannot.
+
+## Post-advisor hardening (two correctness fixes before PR)
+
+**Decision:** After the advisor flagged them, (1) make `coc generate` refuse to
+overwrite COCs already in the store, and (2) guard `reconcile` to require
+`laboratory_received`/`results_received`.
+
+**Reasoning:** (1) All tests/manual runs used a fresh store, so re-generating
+onto an in-progress store — which would reset state and *discard the audit
+trail* — was unexercised. On an audit tool that is exactly the gate-item-6
+data-loss case; refuse-on-conflict is the minimal safe fix (regenerate into a
+fresh store). (2) Without the guard, a clean reconcile from `generated` errored
+(illegal →reconciled) while a discrepancy silently succeeded (→exception) —
+inconsistent; the guard makes both outcomes reject pre-lab-receipt. Deferrals
+the advisor surfaced (run-history logging, field-duplicate blind-ID
+reconciliation) are now recorded in ADR-0107 rather than left silent.

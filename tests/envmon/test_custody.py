@@ -293,6 +293,37 @@ def test_reconcile_received_file(tmp_path):
     assert res.exit_code == 0, res.output
 
 
+def test_generate_refuses_to_overwrite_in_progress(tmp_path):
+    """Re-running generate on a store with existing COCs must not discard their
+    state/audit — data-loss guard on an audit tool."""
+    store = _generate(tmp_path)
+    coc = sorted(custody.load_store(store))[0]
+    CliRunner().invoke(autogis, [
+        "envmon", "coc", "advance", "--store", str(store), "--coc", coc,
+        "--to", RELEASED, "--by", "c"])
+    site, event, analytes = _reference_event(tmp_path)
+    res = CliRunner().invoke(autogis, [
+        "envmon", "coc", "generate", "--site", str(site), "--event", str(event),
+        "--analytes", str(analytes), "--store", str(store), "--by", "planner2"])
+    assert res.exit_code != 0
+    assert "Refusing to overwrite" in res.output
+    # state preserved
+    assert custody.load_store(store)[coc].state == RELEASED
+
+
+def test_reconcile_requires_lab_received_state(tmp_path):
+    """A COC still in 'generated' cannot be reconciled — consistent for both
+    clean and discrepancy outcomes."""
+    store = _generate(tmp_path)
+    coc = sorted(custody.load_store(store))[0]
+    res = CliRunner().invoke(autogis, [
+        "envmon", "coc", "reconcile", "--store", str(store), "--coc", coc,
+        "--by", "rev", "--received-ids", "anything"])
+    assert res.exit_code != 0
+    assert "requires" in res.output
+    assert custody.load_store(store)[coc].state == GENERATED  # untouched
+
+
 def test_status_lists_states(tmp_path):
     store = _generate(tmp_path)
     res = CliRunner().invoke(autogis, ["envmon", "coc", "status", "--store", str(store)])

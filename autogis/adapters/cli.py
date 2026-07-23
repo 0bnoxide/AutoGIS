@@ -2384,6 +2384,15 @@ def coc_generate_cmd(site_path, event_path, analytes_path, store_path, actor):
     now = datetime.now()
     store = custody.load_store(Path(store_path))
     records = custody.records_from_plan(plan, at=now, actor=actor)
+    # Refuse to clobber in-progress COCs: re-running generate on a store that
+    # already holds these COC numbers would reset their state and discard their
+    # audit trail — data loss on an audit tool. Use a fresh store to regenerate.
+    conflicts = [r.coc_number for r in records if r.coc_number in store]
+    if conflicts:
+        raise click.ClickException(
+            f"Custody store {store_path} already has {len(conflicts)} of these "
+            f"COC(s): {', '.join(conflicts)}. Refusing to overwrite their state "
+            f"and audit trail - generate into a fresh store.")
     for rec in records:
         custody.transition(rec, custody.GENERATED, actor=actor, at=now,
                            note="generated from sampling event plan")
@@ -2465,6 +2474,14 @@ def coc_reconcile_cmd(store_path, coc, actor, received_ids, received_file):
         raise click.ClickException(
             f"COC {coc!r} not in store (have: {', '.join(sorted(store)) or 'none'})")
     rec = store[coc]
+    # Reconcile only makes sense once the lab has the samples. Guarding here
+    # keeps clean and discrepancy outcomes consistent (without it, a clean
+    # reconcile from an earlier state errors on the illegal →reconciled hop
+    # while a discrepancy silently succeeds via →exception).
+    if rec.state not in (custody.LAB_RECEIVED, custody.RESULTS_RECEIVED):
+        raise click.ClickException(
+            f"COC {coc} is {rec.state!r}; reconcile requires "
+            f"{custody.LAB_RECEIVED!r} or {custody.RESULTS_RECEIVED!r}.")
     result = custody.reconcile(rec, received)
 
     click.echo(f"COC {coc}: {len(result.matched)} matched, "
