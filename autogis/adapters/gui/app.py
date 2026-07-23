@@ -487,7 +487,7 @@ class MainWindow(QMainWindow):
         if enabled:
             self._refresh_step_controls()
         else:
-            for b in (self._run_wf_button, self._clear_button,
+            for b in (self._run_wf_button, self._clear_button, self._save_button,
                       self._remove_button, self._up_button, self._down_button):
                 b.setEnabled(False)
 

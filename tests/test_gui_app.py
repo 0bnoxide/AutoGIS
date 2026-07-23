@@ -710,6 +710,20 @@ def test_save_recipe_writes_valid_reloadable_recipe(qapp, tmp_path, monkeypatch)
     assert recipe_to_workflow(data).steps == tuple(win._steps)   # round-trips to the built steps
 
 
+def test_save_recipe_disabled_during_active_run(qapp):
+    """Save must be disabled while a run is active/paused (like the other step
+    controls), not merely no-op when clicked. Codex P2."""
+    win = MainWindow()
+    win._command_box.setCurrentText(win._forms["envmon validate-rtk-survey"].label)
+    win._field_widgets["csv_path"].setText("rtk.csv")
+    win._on_add_step()
+    assert win._save_button.isEnabled()
+    win._set_authoring_enabled(False)          # a run starts
+    assert not win._save_button.isEnabled()
+    win._set_authoring_enabled(True)           # run finished, steps remain
+    assert win._save_button.isEnabled()
+
+
 def test_save_recipe_noop_when_dialog_cancelled(qapp, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
     win = MainWindow()
