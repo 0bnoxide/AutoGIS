@@ -12,7 +12,7 @@ from typing import Any, Mapping
 
 from autogis.adapters.gui.executor import Step
 from autogis.adapters.gui.runner import Workflow
-from autogis.core.common.workflow_recipe import validate_recipe
+from autogis.core.common.workflow_recipe import RECIPE_VERSION, validate_recipe
 
 
 def recipe_to_workflow(data: Mapping[str, Any]) -> Workflow:
@@ -35,3 +35,29 @@ def recipe_to_workflow(data: Mapping[str, Any]) -> Workflow:
         for s in data["steps"]
     )
     return Workflow(name=data["name"], steps=steps)
+
+
+def workflow_to_recipe(workflow: Workflow) -> dict:
+    """Serialize a ``Workflow`` back to a recipe dict — the inverse of
+    :func:`recipe_to_workflow`, for the GUI's "save recipe" side.
+
+    Round-trips: ``recipe_to_workflow(workflow_to_recipe(wf))`` reproduces *wf*.
+    Optional fields at their defaults (empty ``values``, ``fail_on=None``,
+    ``pause_on_warning=False``, empty ``message``) are omitted so the saved YAML
+    stays minimal. The result is validated before returning.
+    """
+    steps: list[dict] = []
+    for s in workflow.steps:
+        step: dict = {"command": list(s.command) if s.command is not None else None}
+        if s.values:
+            step["values"] = dict(s.values)
+        if s.fail_on is not None:
+            step["fail_on"] = s.fail_on
+        if s.pause_on_warning:
+            step["pause_on_warning"] = True
+        if s.message:
+            step["message"] = s.message
+        steps.append(step)
+    data = {"version": RECIPE_VERSION, "name": workflow.name, "steps": steps}
+    validate_recipe(data)
+    return data
