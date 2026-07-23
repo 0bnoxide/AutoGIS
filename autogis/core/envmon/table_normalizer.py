@@ -57,11 +57,18 @@ def _row_has_parseable_result(reader, sheet, row, col_meta) -> bool:
     """True if any analyte cell holds a real result signal — numeric, a
     non-detect, or a recognized status (NS/NM/NA/dry) — rather than merely a
     blank or unparseable prose cell. Used to identify non-sample rows. See
-    ADR-0106."""
+    ADR-0106.
+
+    A formula cell with no cached value (``cached_missing``) also counts as
+    result-bearing: its value reads as ``None`` (BLANK), but it is meant to
+    hold a result, so the row must survive to the main loop, which emits the
+    mandatory ``formula_cell_missing_cached_value`` error (recalc-required).
+    Dropping it here would silently lose the row AND skip that blocking QA."""
     for col in col_meta:
-        code = parse_result_value(
-            reader.cell(sheet.sheet_name, row, col).value).status_code
-        if code not in ("BLANK", "UNPARSED"):
+        cell = reader.cell(sheet.sheet_name, row, col)
+        if cell.cached_missing:
+            return True
+        if parse_result_value(cell.value).status_code not in ("BLANK", "UNPARSED"):
             return True
     return False
 

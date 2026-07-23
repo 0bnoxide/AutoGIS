@@ -59,6 +59,7 @@ def parsed(tmp_path):
     a["A11"] = "ANN-1"; a["B11"] = None;       a["C11"] = BOS                        # BOS annotation -> drop
     a["A12"] = "NOTES:"; a["B12"] = "Red = concentration exceeds MDEQ RBSL"          # NOTES legend -> drop
     a["C12"] = LEGEND
+    a["A13"] = "MW-F"; a["B13"] = None;        a["C13"] = "=1+1"                      # dateless + FORMULA (no cached value) -> keep (formula QA)
     w = wb.create_sheet("GWL")
     w["C6"] = "GWE"
     w["A9"] = "MW-1"; w["B9"] = "2025-01-01"; w["C9"] = 2475.0                       # real
@@ -97,6 +98,18 @@ def test_dateless_but_numeric_row_survives(parsed):
     _wl, samples, results, _qa = parsed
     assert "MW-2" in {s.LocationID for s in samples}
     assert any(r.LocationID == "MW-2" for r in results)
+
+
+def test_dateless_formula_row_survives_and_flags(parsed):
+    """A dateless row whose only result is a formula with NO cached value must
+    survive — its value reads as blank, but dropping it would silently lose the
+    row AND skip the mandatory formula_cell_missing_cached_value error (codex P1)."""
+    _wl, samples, _results, qa = parsed
+    assert "MW-F" in {s.LocationID for s in samples}, \
+        "formula-backed dateless row must not be dropped"
+    codes = {getattr(m, "category", "") for m in qa.records}
+    assert "formula_cell_missing_cached_value" in codes, \
+        "the mandatory formula-recalc QA error must still fire"
 
 
 def test_footnote_row_dropped_water_level(parsed):
