@@ -1,4 +1,4 @@
-"""Phase 4 gate (ADR-0099): the monitoring-event review notebook must survive a
+"""Phase 4 gate (ADR-0105): the monitoring-event review notebook must survive a
 clean restart-and-run-all against the sanitized reference event.
 
 Opt-in: needs the `notebook` extra (nbclient + ipykernel) and a `python3`

@@ -87,7 +87,7 @@ def test_comparison_csv_produces_trend_section(tmp_path):
 
 def test_comparison_csv_reads_trendclass_column(tmp_path):
     # compare-events writes the trend under `TrendClass` (ComparisonRecord), not
-    # TrendLabel/TrendVsPrevious. Regression for the Phase 4 (ADR-0099) fix: the
+    # TrendLabel/TrendVsPrevious. Regression for the Phase 4 (ADR-0105) fix: the
     # report must bucket real compare-events output, not render it all UNKNOWN.
     comp_csv = tmp_path / "comparison.csv"
     comp_csv.write_text("TrendClass\nINCREASE\nDECREASE\n", encoding="utf-8")

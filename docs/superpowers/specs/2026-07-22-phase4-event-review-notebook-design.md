@@ -3,7 +3,7 @@
 **Status:** Approved (user, 2026-07-22 — recommended items, async: "I approve
 recommended items, log your judgement")
 **Roadmap:** `docs/production-roadmap.md` Phase 4; ordering per ADR-0087
-**Decision record:** ADR-0099
+**Decision record:** ADR-0105
 **Author judgment log:** `docs/adr/logs/2026-07-22-agent-decisions.md`
 
 ## Goal

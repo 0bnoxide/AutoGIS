@@ -9,6 +9,7 @@ dependency on that module's internals.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 CHANGE = "change"
@@ -22,6 +23,47 @@ def validate_baseline_args(baseline_product_id, baseline_landxml) -> None:
         raise ValueError(
             "Specify exactly one baseline: --baseline-product-id or "
             "--baseline-landxml.")
+
+
+def validate_diff_output(diff_raster_out, baseline_landxml) -> None:
+    """A diff raster can only be persisted in the two-DEM baseline mode.
+
+    The LandXML branch builds a filtered flat list of per-cell diffs (skipping
+    NoData and out-of-surface cells), so there is no aligned grid to save
+    without reconstructing one. Fail loud rather than silently drop the output.
+    """
+    # ponytail: forbid landxml+diff for now; add a NumPyArrayToRaster path here
+    # if LandXML diff rasters are ever needed.
+    if diff_raster_out and baseline_landxml:
+        raise ValueError(
+            "--diff-raster-out is only available when comparing two DEMs "
+            "(--baseline-product-id), not a LandXML design surface.")
+
+
+def validate_output_not_input(diff_raster_out, *input_paths) -> None:
+    """Refuse to overwrite a registered source DEM with the diff raster.
+
+    Because the save runs under ``overwriteOutput=True``, a *diff_raster_out*
+    resolving to the primary or baseline ``ProductPath`` would clobber the
+    source raster while its ``DroneProductRegistry`` record still points at it
+    (silent data corruption). Reject a path collision before saving.
+    """
+    if not diff_raster_out:
+        return
+
+    def _norm(p):
+        return os.path.normcase(os.path.normpath(str(p)))
+
+    out = _norm(diff_raster_out)
+    for ip in input_paths:
+        # ponytail: normcase/normpath string compare -- catches the
+        # picker-selects-an-input case (casing + separators). Exotic
+        # equivalent-but-different catalog paths would need arcpy.Describe
+        # canonicalization; add that only if it ever bites.
+        if ip and _norm(ip) == out:
+            raise ValueError(
+                f"--diff-raster-out resolves to an input DEM ({ip}); refusing "
+                "to overwrite a registered source raster. Pick a new path.")
 
 
 def classify_diff(diff_ft: float, lod_threshold_ft: float) -> str:
@@ -77,6 +119,7 @@ def compare_surfaces(  # pragma: no cover
     baseline_product_id: str = "",
     baseline_landxml_path: str = "",
     lod_threshold_ft: float = 0.2,
+    diff_raster_out: str = "",
 ) -> DiffSummary:
     """Diff the *primary_product_id* DEM against a baseline: either a second
     DroneProductRecord (raw or conditioned DEM) or a LandXML design surface.
@@ -84,6 +127,10 @@ def compare_surfaces(  # pragma: no cover
     Exactly one of *baseline_product_id* / *baseline_landxml_path* must be
     set (validated by the caller via :func:`validate_baseline_args`). Both
     product IDs are looked up in *gdb_path*'s ``DroneProductRegistry``.
+
+    If *diff_raster_out* is given, the (primary - baseline) difference raster
+    is persisted there so the change can be mapped, not just summarized. Only
+    valid in the two-DEM baseline mode (see :func:`validate_diff_output`).
     """
     import numpy as np
 
@@ -105,6 +152,8 @@ def compare_surfaces(  # pragma: no cover
                 f"Baseline product {baseline_product_id!r} not found in "
                 f"{gdb_path}'s DroneProductRegistry.")
         baseline = _ax.Raster(baseline_path)
+        # Fail before the expensive Minus if the output would clobber a source.
+        validate_output_not_input(diff_raster_out, primary_path, baseline_path)
         # Two independently-read rasters need not share an origin, cell size,
         # or extent even when their row/col counts happen to match -- a raw
         # numpy subtraction of two separately-converted arrays would silently
@@ -116,8 +165,15 @@ def compare_surfaces(  # pragma: no cover
         # dialog's own label for that setting) -- "INTERSECTION" is not a
         # valid value and raises at runtime.
         with _ax.EnvManager(snapRaster=primary, extent="MINOF",
-                            cellSize=primary.meanCellWidth):
+                            cellSize=primary.meanCellWidth,
+                            overwriteOutput=True):
             diff_raster = _ax.sa.Minus(primary, baseline)
+            # Persist under the same MINOF/snap env that produced it -- sa
+            # rasters can evaluate lazily, so save inside the block to pin the
+            # written grid to the aligned result. overwriteOutput lets a rerun
+            # regenerate the derived diff (standard GP tool behaviour).
+            if diff_raster_out:
+                diff_raster.save(diff_raster_out)
         diff_arr = _ax.RasterToNumPyArray(diff_raster, nodata_to_value=np.nan)
         diffs_ft = [float(d) for d in diff_arr.flatten() if not np.isnan(d)]
     else:

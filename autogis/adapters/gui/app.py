@@ -147,7 +147,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("AutoGIS -- GUI adapter (walking skeleton)")
         self._settings = settings_store  # None -> real per-user QSettings
         self._local_python = settings.get_local_python(settings_store)
-        self._forms = {f.label: f for f in _window_forms()}
+        # Only offer commands that can actually run here: class-1 redirect-only
+        # LOCAL tools (stamped unreachable_reason) always HALT with "use the
+        # .pyt toolbox", so they are hidden from the picker rather than shown
+        # disabled. Headless + class-2 (arcpy-executable, runnable once a
+        # local_python is set) tools stay listed.
+        self._forms = {f.label: f for f in _window_forms()
+                       if not f.unreachable_reason}
         self._field_widgets: dict[str, QWidget] = {}
         self._worker: _StepWorker | None = None
         self._job_root: Path | None = None

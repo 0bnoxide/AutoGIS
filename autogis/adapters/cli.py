@@ -115,6 +115,8 @@ def _classify_exit(exc):
     if isinstance(exc, (KeyboardInterrupt, click.Abort)):
         return "cancelled"
     if isinstance(exc, SystemExit):
+        if exc.code == 130:      # 128 + SIGINT: a Ctrl-C cancellation
+            return "cancelled"
         return "success" if not exc.code else "error"
     return "error"
 
@@ -281,6 +283,178 @@ def figure_spec_cmd(spec):
 
     fs = FigureSpec.load(Path(spec))
     click.echo(f"Figure spec '{fs.figure_spec_id}' loaded.")
+
+
+def _validate_site_id(ctx, param, value):
+    # Delegate to the core guard (single source of truth); it also protects
+    # library callers of plan_site_skeleton.
+    from autogis.core.envmon.init_site import check_site_id
+    try:
+        check_site_id(value)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc))
+    return value
+
+
+def _validate_site_name(ctx, param, value):
+    from autogis.core.envmon.init_site import check_site_name
+    try:
+        check_site_name(value)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc))
+    return value
+
+
+@envmon.command("init-site")
+@click.option("--site-id", required=True, callback=_validate_site_id,
+              help="Site identifier, e.g. H281 (letters/digits, '-' and '_' only).")
+@click.option("--site-name", required=True, callback=_validate_site_name,
+              help="Human-readable site name (no double-quotes or backslashes).")
+@click.option("--dest", type=click.Path(file_okay=False), default=None,
+              help="Config root to write under (default: the packaged autogis/config).")
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite existing target files (default: refuse).")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Render, validate and report without writing any file.")
+def init_site_cmd(site_id, site_name, dest, force, dry_run):
+    """Phase 3: scaffold a new site's config skeleton from versioned templates.
+
+    Renders the site / event / parser / figure config-family skeletons with the
+    site identity substituted, guards existing files against overwrite, lists
+    every _TODO anchor to complete, and runs the existing loaders as structural
+    validators. Headless (arcpy-free).
+    """
+    import autogis
+    from autogis.core.envmon.init_site import (
+        plan_site_skeleton, regulatory_gaps, scan_anchors, validate_skeleton,
+        write_skeleton)
+
+    config_root = (Path(dest) if dest
+                   else Path(autogis.__file__).resolve().parent / "config")
+    files = plan_site_skeleton(site_id, site_name, config_root)
+    validation = validate_skeleton(files)   # validates rendered text; dry-run safe
+
+    blocked = []
+    if dry_run:
+        click.echo(f"[dry-run] would scaffold {len(files)} file(s) under {config_root}:")
+        for sf in files:
+            click.echo(f"  ({sf.family}) {sf.target}")
+    else:
+        written, blocked = write_skeleton(files, force=force)
+        for p in written:
+            click.echo(f"wrote {p}")
+        for p in blocked:
+            click.echo(f"[ERROR] exists, not overwritten (use --force): {p}")
+
+    for family, ok, msg in validation:
+        click.echo(f"validate {family}: {'OK' if ok else 'FAIL — ' + msg}")
+
+    click.echo("Anchors to complete before production use:")
+    total = 0
+    for sf in files:
+        for line_no, line in scan_anchors(sf.text):
+            total += 1
+            click.echo(f"  {sf.target.name}:{line_no}: {line}")
+    click.echo(f"{total} _TODO anchor(s) across {len(files)} file(s).")
+
+    gaps = regulatory_gaps()
+    if gaps:
+        click.echo("Regulatory content to configure (NOT scaffolded):")
+        for g in gaps:
+            click.echo(f"  - {g}")
+
+    if blocked or any(not ok for _, ok, _ in validation):
+        raise SystemExit(1)
+
+
+@envmon.command("validate-recipe")
+@click.argument("recipe", type=click.Path(exists=True, dir_okay=False))
+def validate_recipe_cmd(recipe):
+    """Phase 5: validate a saved linear workflow-recipe YAML (headless).
+
+    Checks the recipe structure (name, ordered steps, each step's command /
+    values / fail_on / pause_on_warning / message). The GUI workflow builder
+    saves/loads this format; a recipe can also be hand-authored and checked here.
+    """
+    from autogis.core.common.config import ConfigError
+    from autogis.core.common.workflow_recipe import load_recipe
+    try:
+        data = load_recipe(Path(recipe))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"Recipe '{data['name']}' OK — {len(data['steps'])} step(s).")
+
+
+@envmon.command("run-recipe")
+@click.argument("recipe", type=click.Path(exists=True, dir_okay=False))
+@click.option("--job-root", type=click.Path(file_okay=False), default=None,
+              help="Directory for per-step outputs (default: a fresh temp dir).")
+@click.option("--local-python", type=click.Path(), default=None,
+              help="Python interpreter for LOCAL (arcpy) steps.")
+@click.option("--timeout", type=float, default=None,
+              help="Per-step timeout in seconds.")
+@click.option("--continue-through-review", is_flag=True, default=False,
+              help="Auto-resume past review checkpoints instead of stopping.")
+def run_recipe_cmd(recipe, job_root, local_python, timeout,
+                   continue_through_review):
+    """Phase 5: run a saved workflow recipe headlessly, one step at a time.
+
+    Loads/validates the recipe, then drives each step through the shared
+    WorkflowRunner, reporting each decision. Stops at a review checkpoint unless
+    --continue-through-review is given. Exit code: 0 done, 1 halted/errored,
+    2 paused-for-review, 130 cancelled.
+    """
+    import subprocess
+    import tempfile
+
+    from autogis.adapters.gui.runner import RunState, WorkflowRunner
+    from autogis.adapters.recipe_workflow import recipe_to_workflow
+    from autogis.core.common.config import ConfigError
+    from autogis.core.common.workflow_recipe import load_recipe
+
+    try:
+        workflow = recipe_to_workflow(load_recipe(Path(recipe)))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+
+    root = (Path(job_root) if job_root
+            else Path(tempfile.mkdtemp(prefix="autogis_recipe_")))
+    runner = WorkflowRunner(workflow, root, local_python=local_python,
+                            timeout=timeout)
+    click.echo(f"Running recipe '{workflow.name}' "
+               f"({len(workflow.steps)} step(s)) under {root}")
+
+    terminal = {RunState.DONE, RunState.HALTED, RunState.CANCELLED}
+    try:
+        while runner.status not in terminal:
+            if runner.status is RunState.PAUSED:
+                if continue_through_review:
+                    runner.resume()
+                    continue
+                break
+            try:
+                result = runner.advance()
+            except (subprocess.TimeoutExpired, ValueError, OSError) as exc:
+                # run_step failed (timeout / missing local_python / bad command);
+                # the runner is already HALTED. Report and stop.
+                click.echo(f"[step {len(runner.results)}] ERROR: {exc}")
+                break
+            n = len(runner.results) - 1
+            click.echo(f"[step {n}] {result.decision.value}: {result.reason}"
+                       + (f" (exit {result.exit_code})"
+                          if result.exit_code is not None else ""))
+    except KeyboardInterrupt:
+        # Ctrl-C during a step: the runner already left the step (HALTED). Report
+        # the standard cancellation exit code rather than Click's Abort (exit 1).
+        click.echo("Interrupted.")
+        raise SystemExit(130)
+
+    status = runner.status
+    click.echo(f"Final: {status.value}")
+    code = {RunState.DONE: 0, RunState.HALTED: 1, RunState.PAUSED: 2,
+            RunState.CANCELLED: 130}.get(status, 1)
+    if code:
+        raise SystemExit(code)
 
 
 @envmon.command("validate-config")
@@ -2755,6 +2929,65 @@ def register_drone_flight_cmd(flight_yaml, gdb, dry_run, report, fail_on):
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("new-flight-yaml")
+@click.option("--output", required=True, type=click.Path(),
+              help="Path to write the drone flight inventory YAML.")
+@click.option("--set", "overrides", multiple=True, metavar="KEY=VALUE",
+              help="Pre-fill a field, e.g. --set site_id=H281_Glasgow. Repeatable.")
+@click.option("--overwrite", is_flag=True, default=False,
+              help="Overwrite --output if it already exists (default: refuse, so "
+                   "a rerun can't clobber a filled inventory).")
+def new_flight_yaml_cmd(output, overrides, overwrite):
+    """Tool 8.6a: write a ready-to-edit drone flight inventory YAML (headless).
+
+    Scaffolds the YAML that register-drone-flight consumes -- there was no
+    generator, so a 1-off had to hand-author every key. Fill the required
+    fields, then validate headlessly:
+    `register-drone-flight <yaml> --gdb <gdb> --dry-run`.
+    """
+    import yaml as _yaml
+    from autogis.core.envmon.register_drone_flight import (
+        _FLIGHT_REQUIRED, flight_yaml_template)
+
+    keys = flight_yaml_template()
+    parsed: dict = {}
+    for item in overrides:
+        key, sep, val = item.partition("=")
+        key = key.strip()
+        if not sep:
+            raise click.UsageError(f"--set expects KEY=VALUE, got {item!r}.")
+        if key not in keys:
+            raise click.UsageError(
+                f"--set: unknown field {key!r}. Valid fields: "
+                f"{', '.join(keys)}.")
+        parsed[key] = val.strip()
+
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    content = _yaml.dump(flight_yaml_template(parsed), allow_unicode=True,
+                         sort_keys=False)
+    if overwrite:
+        out.write_text(content, encoding="utf-8")
+    else:
+        # Exclusive create ("x" = O_EXCL): atomically fails if the path exists,
+        # closing the check-then-write race two concurrent runs would otherwise
+        # share (both passing an exists() check, the later clobbering the first).
+        try:
+            with out.open("x", encoding="utf-8") as fh:
+                fh.write(content)
+        except FileExistsError:
+            raise click.UsageError(
+                f"{out} already exists; refusing to overwrite (a rerun would "
+                f"replace a possibly-filled flight inventory with the blank "
+                f"template). Pass --overwrite to replace it, or choose a "
+                f"different --output.")
+    click.echo(
+        f"Flight YAML template written: {out}\n"
+        f"Fill the required fields ({', '.join(_FLIGHT_REQUIRED)}), then "
+        f"validate:\n"
+        f"  autogis envmon register-drone-flight {out} --gdb <gdb> --dry-run")
+
+
 @envmon.command("validate-drone-products")
 @click.option("--manifest", "manifest_path", required=True, type=click.Path(exists=True),
               help="Product manifest CSV (product_type, path, crs, vertical_datum, resolution_m).")
@@ -2869,14 +3102,20 @@ def condition_dem_cmd(gdb_path, flight_id, out_dir, fill_voids, smooth,
               help="Baseline: a LandXML design-surface file.")
 @click.option("--lod-threshold-ft", type=float, default=0.2, show_default=True,
               help="Elevation diff magnitude above which a cell counts as change.")
+@click.option("--diff-raster-out", "diff_raster_out", default=None,
+              type=click.Path(),
+              help="Optional: persist the (primary - baseline) diff raster "
+                   "here so the change can be mapped. Two-DEM baseline only.")
 def compare_drone_surfaces_cmd(gdb_path, primary_product_id,
                                baseline_product_id, baseline_landxml,
-                               lod_threshold_ft):
+                               lod_threshold_ft, diff_raster_out):
     """CompareDroneSurfaces: raster-diff a drone DEM against a prior flight
     or a LandXML design surface (ArcGIS Pro)."""
-    from autogis.core.envmon.compare_drone_surfaces import validate_baseline_args
+    from autogis.core.envmon.compare_drone_surfaces import (
+        validate_baseline_args, validate_diff_output)
     try:
         validate_baseline_args(baseline_product_id, baseline_landxml)
+        validate_diff_output(diff_raster_out, baseline_landxml)
     except ValueError as exc:
         raise click.ClickException(str(exc))
     _guard("compare-drone-surfaces")
