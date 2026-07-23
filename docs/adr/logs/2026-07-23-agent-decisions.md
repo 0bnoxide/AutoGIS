@@ -115,3 +115,65 @@ fresh store). (2) Without the guard, a clean reconcile from `generated` errored
 inconsistent; the guard makes both outcomes reject pre-lab-receipt. Deferrals
 the advisor surfaced (run-history logging, field-duplicate blind-ID
 reconciliation) are now recorded in ADR-0107 rather than left silent.
+
+---
+
+# Phase 7 — longitudinal laboratory-QA trends (ADR-0108)
+
+After Phase 6 (PR #296), continued the roadmap to Phase 7 in the same autonomous
+session. Durable decision: ADR-0108. Branch `feat-phase7-labqa`, **stacked on the
+Phase 6 branch**.
+
+## Stacked Phase 7 on the Phase 6 branch (not fresh from main)
+
+**Decision:** Branch Phase 7 from the Phase 6 HEAD, not from origin/main.
+
+**Reasoning:** Phase 7 edits `cli.py` + `capabilities.py`, which Phase 6 also
+edited (both add an envmon command + TOOLS/seed rows in the same regions). A
+fresh-from-main branch would conflict with Phase 6 at whichever merges second;
+stacking makes Phase 7 build on Phase 6's edits, so the diffs compose. Advisor
+concurred. Strict phase ordering is preserved (Phase 6 gate met before Phase 7
+started; Phase 7 PR is based on the Phase 6 line).
+
+## Gate's "reproduce a manually reviewed historical set" leg — Proposed, not met
+
+**Decision:** Do NOT hand-build a "historical set" fixture and call the gate met;
+record that leg as a Proposed owner-sign-off item in ADR-0108.
+
+**Reasoning:** Authoring both the deterministic rule and its expected output is
+circular for the one thing that gate exists to test (do the rules match a real
+reviewer). Synthetic fixtures verify the *arithmetic*; real-historical acceptance
+needs owner data + judgment. Gate amendments are owner decisions (ADR-0091
+precedent). This is the recurring shape for phases 8–10 too — external verifiers
+(agency validator, live hosted service, real 6–9 output) can't be self-certified.
+
+## Input contract = Env_QCResults CSV; production scoped out of slice 1
+
+**Decision:** Define the tool's input as a `QCResultRecord`-shaped CSV read via
+`records_csv`; do not build the exporter that produces it in this slice.
+
+**Reasoning:** Verified (not inferred) that `export_event_snapshot` is arcpy-only
+GDB→GDB and nothing emits `Env_QCResults` to CSV headlessly. Rather than invent a
+schema, reuse the canonical `QCResultRecord`; note the headless exporter as a
+dependency. Advisor flagged nailing this before building — done.
+
+## Two dimensions, data-driven recovery membership
+
+**Decision:** Slice 1 = recovery + blank only (of five); recovery membership is
+"row has PercentRecovery," not a hardcoded QC-type list.
+
+**Reasoning:** Ponytail smallest-useful-slice; recovery + blank share one
+group/aggregate engine the other three plug into later. Data-driven membership
+avoids a drift-prone enum of lab QC-type spellings. "By laboratory" grouping
+deferred — `Env_QCResults` has no `LabName` column (documented).
+
+## Cited, configurable, in-output thresholds
+
+**Decision:** Every `LabQATrendRow` carries `threshold_applied` + `citation`;
+lab row-limits override cited defaults; missing blank RL flags a QA warning
+instead of guessing a limit.
+
+**Reasoning:** The gate explicitly requires thresholds "configurable, cited, and
+represented in QA output" — non-optional even in slice 1. Fabricating a limit
+when RL is absent would be a silent professional judgment; a QA warning keeps it
+honest.

@@ -47,6 +47,7 @@ TOOLS: dict[str, Runtime] = {
     "generate-event-changelog": Runtime.CLOUD,  # tool 9.3
     "export-lab-request": Runtime.CLOUD,  # tool 2.11 headless
     "coc": Runtime.CLOUD,  # Phase 6 chain-of-custody lifecycle (headless group)
+    "lab-qa-trends": Runtime.CLOUD,  # Phase 7 longitudinal lab-QA (headless)
     "generate-event-report": Runtime.CLOUD,  # tool 10.5
     "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
@@ -394,6 +395,10 @@ _REGISTRY_SEED = [
      "Advance a sampling event's COCs through generated -> released -> "
      "laboratory-received -> results-received -> reconciled/exception with a "
      "per-transition audit trail and planned-vs-received reconciliation (Phase 6)"),
+    ("lab-qa-trends", "LongitudinalLabQATrends", "", "CLOUD", "stable", "reporting",
+     "Longitudinal lab-QA trends across events: out-of-limit percent-recovery "
+     "and blank-detection frequencies per method/matrix/analyte, with the "
+     "configurable, cited threshold applied (Phase 7 slice 1)"),
     ("generate-inspection-report", "GenerateWellInspectionPhotoReport", "7.4",
      "CLOUD", "stable", "reporting",
      "Per-well inspection photo workbook (XLSX) from harvested attachments "

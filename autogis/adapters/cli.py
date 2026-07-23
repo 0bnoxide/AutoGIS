@@ -2525,6 +2525,54 @@ def coc_status_cmd(store_path, coc):
     click.echo(f"{len(numbers)} COC(s).")
 
 
+@envmon.command("lab-qa-trends")
+@click.option("--qc-results", "qc_paths", required=True, multiple=True,
+              type=click.Path(exists=True),
+              help="QC-results CSV (Env_QCResults export). Repeatable — pass "
+                   "one per event for a longitudinal set.")
+@click.option("--thresholds", "thresholds_path", default=None,
+              type=click.Path(exists=True),
+              help="Optional YAML/JSON overriding QA thresholds "
+                   "(recovery window, blank_rl_multiple, blank_qc_types).")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output trends CSV.")
+def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path):
+    """Phase 7: longitudinal laboratory-QA trends (headless, arcpy-free).
+
+    Reads one or more Env_QCResults CSV exports and writes a per
+    method/matrix/analyte trend summary: out-of-limit percent-recovery and
+    blank-detection frequencies, each row carrying the configurable, cited
+    threshold applied. Deterministic frequencies only — no professional
+    data-validation conclusions.
+    """
+    from autogis.core.common.records_csv import (
+        read_records_csv, write_records_csv)
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import QCResultRecord
+    from autogis.core.envmon.lab_qa_trends import (
+        LabQAThresholds, LabQATrendRow, compute_lab_qa_trends)
+
+    rows = []
+    for p in qc_paths:
+        rows.extend(read_records_csv(Path(p), QCResultRecord))
+    thresholds = LabQAThresholds()
+    if thresholds_path:
+        from autogis.core.common.config import load_config
+        thresholds = LabQAThresholds.from_dict(load_config(Path(thresholds_path)))
+
+    qa = QACollector()
+    trends = compute_lab_qa_trends(rows, thresholds, qa)
+    write_records_csv(trends, Path(out_path), record_class=LabQATrendRow)
+
+    n_rec = sum(1 for t in trends if t.metric == "recovery")
+    n_blank = sum(1 for t in trends if t.metric == "blank")
+    flagged = sum(t.n_flagged for t in trends)
+    click.echo(f"Lab-QA trends: {len(trends)} group(s) from {len(rows)} "
+               f"QC result(s) -> {out_path}")
+    click.echo(f"  {n_rec} recovery + {n_blank} blank group(s); "
+               f"{flagged} flagged QC result(s)")
+
+
 @envmon.command("build-fieldmaps")
 @click.option("--site-config", "site_path", required=True,
               type=click.Path(exists=True), help="Site config YAML.")
