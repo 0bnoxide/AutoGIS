@@ -686,6 +686,56 @@ def test_add_step_appends_to_list(qapp):
     assert win._run_wf_button.isEnabled()     # a step exists -> runnable
 
 
+def test_save_recipe_writes_valid_reloadable_recipe(qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    from autogis.adapters.recipe_workflow import recipe_to_workflow
+    from autogis.core.common.workflow_recipe import load_recipe
+
+    win = MainWindow()
+    form = win._forms["envmon validate-rtk-survey"]
+    win._command_box.setCurrentText(form.label)
+    win._field_widgets["csv_path"].setText("rtk.csv")
+    win._on_add_step()
+    assert win._save_button.isEnabled()          # enabled once a step exists
+
+    out = tmp_path / "wf.yaml"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (str(out), "")))
+    win._on_save_recipe()
+
+    assert out.exists()
+    data = load_recipe(out)                       # written file validates
+    assert data["steps"][0]["command"] == ["envmon", "validate-rtk-survey"]
+    assert recipe_to_workflow(data).steps == tuple(win._steps)   # round-trips to the built steps
+
+
+def test_save_recipe_disabled_during_active_run(qapp):
+    """Save must be disabled while a run is active/paused (like the other step
+    controls), not merely no-op when clicked. Codex P2."""
+    win = MainWindow()
+    win._command_box.setCurrentText(win._forms["envmon validate-rtk-survey"].label)
+    win._field_widgets["csv_path"].setText("rtk.csv")
+    win._on_add_step()
+    assert win._save_button.isEnabled()
+    win._set_authoring_enabled(False)          # a run starts
+    assert not win._save_button.isEnabled()
+    win._set_authoring_enabled(True)           # run finished, steps remain
+    assert win._save_button.isEnabled()
+
+
+def test_save_recipe_noop_when_dialog_cancelled(qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    win = MainWindow()
+    win._command_box.setCurrentText(win._forms["envmon validate-rtk-survey"].label)
+    win._field_widgets["csv_path"].setText("rtk.csv")
+    win._on_add_step()
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: ("", "")))   # cancelled
+    win._on_save_recipe()
+    assert list(tmp_path.iterdir()) == []         # nothing written
+
+
 def test_add_step_invalid_form_shows_error_adds_nothing(qapp):
     win = MainWindow()
     form = next(f for f in win._forms.values()

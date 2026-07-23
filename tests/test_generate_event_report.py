@@ -85,6 +85,22 @@ def test_comparison_csv_produces_trend_section(tmp_path):
     assert "DECREASE" in md
 
 
+def test_comparison_csv_reads_trendclass_column(tmp_path):
+    # compare-events writes the trend under `TrendClass` (ComparisonRecord), not
+    # TrendLabel/TrendVsPrevious. Regression for the Phase 4 (ADR-0105) fix: the
+    # report must bucket real compare-events output, not render it all UNKNOWN.
+    comp_csv = tmp_path / "comparison.csv"
+    comp_csv.write_text("TrendClass\nINCREASE\nDECREASE\n", encoding="utf-8")
+    qa = QACollector()
+    md = generate_event_report(
+        "H281", "2026Q2", comparison_csv=comp_csv, qa=qa,
+        generated_date=date(2026, 6, 28),
+    )
+    assert "## Trend vs Previous Event" in md
+    assert "INCREASE" in md and "DECREASE" in md
+    assert "UNKNOWN" not in md
+
+
 def test_gaps_csv_produces_data_gaps_section(tmp_path):
     gaps_csv = tmp_path / "gaps.csv"
     gaps_csv.write_text(

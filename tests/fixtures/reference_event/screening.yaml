@@ -1,0 +1,14 @@
+# Sanitized reference-event screening levels (Phase 4 notebook fixture, ADR-0105).
+# Shape required by apply_screening_levels: AnalyteCanonicalName -> Matrix ->
+# {unit, level, source}. This is NOT the config screening_levels.yaml shape and
+# does not touch the pre-production DRAFT stub — it is fixture-local synthetic data.
+Benzene:
+  GW:
+    unit: ug/L
+    level: 5.0
+    source: "Reference-event fixture (synthetic)"
+Toluene:
+  GW:
+    unit: ug/L
+    level: 1000.0
+    source: "Reference-event fixture (synthetic)"

@@ -1,0 +1,60 @@
+# Example workflow recipe — monitoring-event processing (roadmap Phase 5).
+#
+# A STARTER template. The command sequence and each step's `values:` keys are
+# real (click parameter names, verified in tests); replace every `_TODO` value
+# with your event's paths/ids. `values` keys are parameter NAMES (underscored),
+# not CLI flags -- run `envmon <command> --help` to see each.
+#
+# Copy this template to your working area, fill in the _TODO values, then run
+# the COPY by path (run-recipe takes a real file path, not a packaged name):
+#   envmon run-recipe /path/to/your/monitoring_event_processing.yaml \
+#       --continue-through-review
+# Steps marked (LOCAL) run arcpy — add a Pro python:
+#       --local-python "%LOCALAPPDATA%\ESRI\conda\envs\arcgispro-py3\python.exe"
+# `command: null` steps are review checkpoints (run-recipe stops there unless
+# --continue-through-review).
+version: 1
+name: "Monitoring event processing"
+steps:
+  - command: [envmon, import-edd]          # (LOCAL — needs --local-python)
+    values:
+      edd_path: "_TODO path/to/lab_edd.csv"
+      profile_path: "_TODO path/to/lab_edd_profile.yaml"   # a Lab EDD profile (config/lab_profiles/), NOT a parser profile
+      site_id: "_TODO H281"
+      gdb_path: "_TODO path/to/site.gdb"
+    fail_on: error
+    message: "Import the lab EDD into the geodatabase."
+
+  - command: [envmon, reconcile-locations]
+    values:
+      site_config: "_TODO path/to/site.yaml"
+      workbook: "_TODO path/to/workbook.xlsx"
+      profile_path: "_TODO path/to/parser_profile.yaml"
+      wells_csv: "_TODO path/to/well_list.csv"   # headless well-list source (or use gdb)
+    pause_on_warning: true
+    message: "Reconcile sample location IDs against the well list."
+
+  - command: [envmon, apply-screening]
+    values:
+      results_csv: "_TODO path/to/normalized_results.csv"
+      screening_path: "_TODO path/to/screening_levels.yaml"
+      output: "_TODO path/to/screened_results.csv"
+    message: "Apply screening levels to normalized results."
+
+  - command: [envmon, build-exceedance-event]
+    values:
+      results_path: "_TODO path/to/screened_results.csv"
+      sl_path: "_TODO path/to/screening_levels.yaml"
+      out: "_TODO path/to/exceedance_event.csv"
+    message: "Build the exceedance-event dataset (ratio/tier enrichment)."
+
+  - command: null
+    message: "Review QA findings and exceedances before generating the report."
+
+  - command: [envmon, generate-event-report]
+    values:
+      site_id: "_TODO H281"
+      event_id: "_TODO 2026Q1"
+      output: "_TODO path/to/event_report.md"
+      results_csv: "_TODO path/to/screened_results.csv"   # the apply-screening output, else the report is empty
+    message: "Generate the monitoring-event report."

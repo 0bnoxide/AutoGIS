@@ -939,25 +939,35 @@ class CompareDroneSurfaces(object):
                    required=False),
             _param("lod_threshold_ft", "LOD threshold (ft)", "GPDouble",
                    required=False, default=0.2),
+            # Appended last so the arcpy-generated positional signature keeps
+            # the pre-existing slots (never insert an optional param ahead of
+            # existing ones -- PR #258 review P1).
+            _param("diff_raster_out", "Output diff raster (two-DEM mode only)",
+                   "DERasterDataset", required=False, direction="Output"),
         ]
 
     @toolbox_core.record_pyt_run("compare-drone-surfaces", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.core.envmon.compare_drone_surfaces import (
-            compare_surfaces, validate_baseline_args)
+            compare_surfaces, validate_baseline_args, validate_diff_output)
         p = {q.name: q for q in parameters}
         baseline_product_id = p["baseline_product_id"].valueAsText or None
         baseline_landxml = p["baseline_landxml"].valueAsText or None
+        diff_raster_out = p["diff_raster_out"].valueAsText or ""
         validate_baseline_args(baseline_product_id, baseline_landxml)
+        validate_diff_output(diff_raster_out, baseline_landxml)
         lod_value = p["lod_threshold_ft"].value
         summary = compare_surfaces(
             p["gdb"].valueAsText, p["primary_product_id"].valueAsText,
             baseline_product_id=baseline_product_id or "",
             baseline_landxml_path=baseline_landxml or "",
-            lod_threshold_ft=float(lod_value if lod_value is not None else 0.2))
+            lod_threshold_ft=float(lod_value if lod_value is not None else 0.2),
+            diff_raster_out=diff_raster_out)
         messages.addMessage(
             f"{summary.change_count}/{summary.count} cell(s) changed "
             f"(max {summary.max_diff_ft:.2f} ft, mean {summary.mean_diff_ft:.2f} ft).")
+        if diff_raster_out:
+            messages.addMessage(f"Diff raster saved: {diff_raster_out}")
 
 
 _CAD_OUTPUT_TYPES = (

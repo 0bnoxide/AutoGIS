@@ -21,7 +21,7 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | **Catalog total (§2–11)** | **~79** | |
 
 The codebase now ships **116 `core/envmon/` + 11 `core/agol/` modules (127 total)**,
-**124 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
+**126 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
 `manage-callout-overrides`'s 4 subcommands counted individually), and an arcpy-free
 test suite — derive the live count with `python -m pytest --collect-only -q`; it is
 extras-dependent, so a `[dev]`-only env collects fewer tests than a full-extras env

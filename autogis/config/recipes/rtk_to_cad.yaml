@@ -1,0 +1,45 @@
+# Example workflow recipe — RTK survey to CAD/GIS (roadmap Phase 5).
+#
+# A STARTER template. The command sequence and each step's `values:` keys are
+# real (click parameter names, verified in tests); replace every `_TODO` value.
+# `values` keys are parameter NAMES (underscored), not CLI flags -- see
+# `envmon <command> --help`.
+#
+# Copy this template to your working area, fill in the _TODO values, then run
+# the COPY by path (run-recipe takes a real file path, not a packaged name):
+#   envmon run-recipe /path/to/your/rtk_to_cad.yaml --continue-through-review
+# Steps marked (LOCAL) run arcpy — add a Pro python:
+#       --local-python "%LOCALAPPDATA%\ESRI\conda\envs\arcgispro-py3\python.exe"
+# `command: null` steps are review checkpoints.
+version: 1
+name: "RTK survey to CAD"
+steps:
+  - command: [envmon, validate-rtk-survey]
+    values:
+      csv_path: "_TODO path/to/rtk_survey.csv"
+    fail_on: error
+    message: "Validate the RTK survey point file before import."
+
+  - command: [envmon, import-rtk-survey]    # (LOCAL — needs --local-python)
+    values:
+      csv_path: "_TODO path/to/rtk_survey.csv"
+      site_id: "_TODO H281"
+      gdb: "_TODO path/to/site.gdb"
+    message: "Import RTK survey points into the geodatabase."
+
+  - command: [envmon, survey-to-well-elevation]   # (LOCAL — needs --local-python)
+    values:
+      csv_path: "_TODO path/to/rtk_survey.csv"
+      site_id: "_TODO H281"
+      gdb: "_TODO path/to/site.gdb"           # GDB write target (tool 8.5)
+    message: "Update well elevations from the survey (tool 8.5)."
+
+  - command: null
+    message: "Review the updated well elevations before export."
+
+  - command: [envmon, export-survey-cad]
+    values:
+      csv_path: "_TODO path/to/rtk_survey.csv"
+      map_path: "_TODO path/to/feature_code_map.yaml"   # YAML feature-code -> layer-name map
+      output_dir: "_TODO path/to/output_dir"
+    message: "Export the survey features to CAD/GIS."

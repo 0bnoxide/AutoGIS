@@ -115,6 +115,8 @@ def _classify_exit(exc):
     if isinstance(exc, (KeyboardInterrupt, click.Abort)):
         return "cancelled"
     if isinstance(exc, SystemExit):
+        if exc.code == 130:      # 128 + SIGINT: a Ctrl-C cancellation
+            return "cancelled"
         return "success" if not exc.code else "error"
     return "error"
 
@@ -363,6 +365,96 @@ def init_site_cmd(site_id, site_name, dest, force, dry_run):
 
     if blocked or any(not ok for _, ok, _ in validation):
         raise SystemExit(1)
+
+
+@envmon.command("validate-recipe")
+@click.argument("recipe", type=click.Path(exists=True, dir_okay=False))
+def validate_recipe_cmd(recipe):
+    """Phase 5: validate a saved linear workflow-recipe YAML (headless).
+
+    Checks the recipe structure (name, ordered steps, each step's command /
+    values / fail_on / pause_on_warning / message). The GUI workflow builder
+    saves/loads this format; a recipe can also be hand-authored and checked here.
+    """
+    from autogis.core.common.config import ConfigError
+    from autogis.core.common.workflow_recipe import load_recipe
+    try:
+        data = load_recipe(Path(recipe))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"Recipe '{data['name']}' OK — {len(data['steps'])} step(s).")
+
+
+@envmon.command("run-recipe")
+@click.argument("recipe", type=click.Path(exists=True, dir_okay=False))
+@click.option("--job-root", type=click.Path(file_okay=False), default=None,
+              help="Directory for per-step outputs (default: a fresh temp dir).")
+@click.option("--local-python", type=click.Path(), default=None,
+              help="Python interpreter for LOCAL (arcpy) steps.")
+@click.option("--timeout", type=float, default=None,
+              help="Per-step timeout in seconds.")
+@click.option("--continue-through-review", is_flag=True, default=False,
+              help="Auto-resume past review checkpoints instead of stopping.")
+def run_recipe_cmd(recipe, job_root, local_python, timeout,
+                   continue_through_review):
+    """Phase 5: run a saved workflow recipe headlessly, one step at a time.
+
+    Loads/validates the recipe, then drives each step through the shared
+    WorkflowRunner, reporting each decision. Stops at a review checkpoint unless
+    --continue-through-review is given. Exit code: 0 done, 1 halted/errored,
+    2 paused-for-review, 130 cancelled.
+    """
+    import subprocess
+    import tempfile
+
+    from autogis.adapters.gui.runner import RunState, WorkflowRunner
+    from autogis.adapters.recipe_workflow import recipe_to_workflow
+    from autogis.core.common.config import ConfigError
+    from autogis.core.common.workflow_recipe import load_recipe
+
+    try:
+        workflow = recipe_to_workflow(load_recipe(Path(recipe)))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+
+    root = (Path(job_root) if job_root
+            else Path(tempfile.mkdtemp(prefix="autogis_recipe_")))
+    runner = WorkflowRunner(workflow, root, local_python=local_python,
+                            timeout=timeout)
+    click.echo(f"Running recipe '{workflow.name}' "
+               f"({len(workflow.steps)} step(s)) under {root}")
+
+    terminal = {RunState.DONE, RunState.HALTED, RunState.CANCELLED}
+    try:
+        while runner.status not in terminal:
+            if runner.status is RunState.PAUSED:
+                if continue_through_review:
+                    runner.resume()
+                    continue
+                break
+            try:
+                result = runner.advance()
+            except (subprocess.TimeoutExpired, ValueError, OSError) as exc:
+                # run_step failed (timeout / missing local_python / bad command);
+                # the runner is already HALTED. Report and stop.
+                click.echo(f"[step {len(runner.results)}] ERROR: {exc}")
+                break
+            n = len(runner.results) - 1
+            click.echo(f"[step {n}] {result.decision.value}: {result.reason}"
+                       + (f" (exit {result.exit_code})"
+                          if result.exit_code is not None else ""))
+    except KeyboardInterrupt:
+        # Ctrl-C during a step: the runner already left the step (HALTED). Report
+        # the standard cancellation exit code rather than Click's Abort (exit 1).
+        click.echo("Interrupted.")
+        raise SystemExit(130)
+
+    status = runner.status
+    click.echo(f"Final: {status.value}")
+    code = {RunState.DONE: 0, RunState.HALTED: 1, RunState.PAUSED: 2,
+            RunState.CANCELLED: 130}.get(status, 1)
+    if code:
+        raise SystemExit(code)
 
 
 @envmon.command("validate-config")
@@ -3010,14 +3102,20 @@ def condition_dem_cmd(gdb_path, flight_id, out_dir, fill_voids, smooth,
               help="Baseline: a LandXML design-surface file.")
 @click.option("--lod-threshold-ft", type=float, default=0.2, show_default=True,
               help="Elevation diff magnitude above which a cell counts as change.")
+@click.option("--diff-raster-out", "diff_raster_out", default=None,
+              type=click.Path(),
+              help="Optional: persist the (primary - baseline) diff raster "
+                   "here so the change can be mapped. Two-DEM baseline only.")
 def compare_drone_surfaces_cmd(gdb_path, primary_product_id,
                                baseline_product_id, baseline_landxml,
-                               lod_threshold_ft):
+                               lod_threshold_ft, diff_raster_out):
     """CompareDroneSurfaces: raster-diff a drone DEM against a prior flight
     or a LandXML design surface (ArcGIS Pro)."""
-    from autogis.core.envmon.compare_drone_surfaces import validate_baseline_args
+    from autogis.core.envmon.compare_drone_surfaces import (
+        validate_baseline_args, validate_diff_output)
     try:
         validate_baseline_args(baseline_product_id, baseline_landxml)
+        validate_diff_output(diff_raster_out, baseline_landxml)
     except ValueError as exc:
         raise click.ClickException(str(exc))
     _guard("compare-drone-surfaces")
