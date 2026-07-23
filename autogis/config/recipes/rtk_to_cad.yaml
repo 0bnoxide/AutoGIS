@@ -5,10 +5,11 @@
 # `values` keys are parameter NAMES (underscored), not CLI flags -- see
 # `envmon <command> --help`.
 #
-# Steps marked (LOCAL) run arcpy and need a Pro python:
-#   envmon run-recipe rtk_to_cad.yaml \
-#       --local-python "%LOCALAPPDATA%\ESRI\conda\envs\arcgispro-py3\python.exe" \
-#       --continue-through-review
+# Copy this template to your working area, fill in the _TODO values, then run
+# the COPY by path (run-recipe takes a real file path, not a packaged name):
+#   envmon run-recipe /path/to/your/rtk_to_cad.yaml --continue-through-review
+# Steps marked (LOCAL) run arcpy — add a Pro python:
+#       --local-python "%LOCALAPPDATA%\ESRI\conda\envs\arcgispro-py3\python.exe"
 # `command: null` steps are review checkpoints.
 version: 1
 name: "RTK survey to CAD"

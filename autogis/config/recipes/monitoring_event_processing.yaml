@@ -5,10 +5,12 @@
 # with your event's paths/ids. `values` keys are parameter NAMES (underscored),
 # not CLI flags -- run `envmon <command> --help` to see each.
 #
-# Steps marked (LOCAL) run arcpy and need a Pro python:
-#   envmon run-recipe monitoring_event_processing.yaml \
-#       --local-python "%LOCALAPPDATA%\ESRI\conda\envs\arcgispro-py3\python.exe" \
+# Copy this template to your working area, fill in the _TODO values, then run
+# the COPY by path (run-recipe takes a real file path, not a packaged name):
+#   envmon run-recipe /path/to/your/monitoring_event_processing.yaml \
 #       --continue-through-review
+# Steps marked (LOCAL) run arcpy — add a Pro python:
+#       --local-python "%LOCALAPPDATA%\ESRI\conda\envs\arcgispro-py3\python.exe"
 # `command: null` steps are review checkpoints (run-recipe stops there unless
 # --continue-through-review).
 version: 1
@@ -54,4 +56,5 @@ steps:
       site_id: "_TODO H281"
       event_id: "_TODO 2026Q1"
       output: "_TODO path/to/event_report.md"
+      results_csv: "_TODO path/to/screened_results.csv"   # the apply-screening output, else the report is empty
     message: "Generate the monitoring-event report."
