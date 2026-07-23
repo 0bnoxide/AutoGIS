@@ -60,15 +60,25 @@ class _ArcPy:
         self.calls.append(("CheckInExtension", extension))
 
 
-def test_convert_raster_elevation_units_uses_times_and_returns_license():
+@pytest.mark.parametrize(("conversion", "factor", "suffix"), [
+    ("Meters to international feet", 1.0 / 0.3048, "m_to_intft"),
+    ("Meters to US survey feet", 3937.0 / 1200.0, "m_to_usft"),
+    ("International feet to meters", 0.3048, "intft_to_m"),
+    ("US survey feet to meters", 1200.0 / 3937.0, "usft_to_m"),
+])
+def test_convert_raster_elevation_units_uses_times_and_returns_license(
+        conversion, factor, suffix):
+    # Issue #256: prove every direction's derivative name + exact Times factor
+    # end-to-end, not just Meters->intft, so the 3 live-QA directions are
+    # pinned in CI as well as via the human .pyt-in-Pro run.
     arcpy = _ArcPy()
     source = Path("site_epsg2256.tif")
 
     output = toolbox_core.convert_raster_elevation_units(
-        arcpy, source, "Meters to international feet")
+        arcpy, source, conversion)
 
-    assert output == Path("site_epsg2256_m_to_intft.tif")
-    assert ("Times", str(source), pytest.approx(1.0 / 0.3048)) in arcpy.calls
+    assert output == Path(f"site_epsg2256_{suffix}.tif")
+    assert ("Times", str(source), pytest.approx(factor)) in arcpy.calls
     assert ("save", str(output)) in arcpy.calls
     assert arcpy.calls[-1] == ("CheckInExtension", "Spatial")
 
@@ -101,3 +111,17 @@ def test_convert_raster_elevation_units_returns_license_when_times_fails():
             arcpy, Path("site.tif"), "Meters to international feet")
 
     assert arcpy.calls[-1] == ("CheckInExtension", "Spatial")
+
+
+def test_convert_raster_elevation_units_checkout_failure_leaves_no_license():
+    # Issue #256: a failed checkout must abort before Times and must NOT
+    # check a license back in (nothing was acquired) -- the other half of
+    # "acquired only when needed, returned after success/failure".
+    arcpy = _ArcPy(checkout_status="Failed")
+
+    with pytest.raises(ValueError, match="license checkout failed"):
+        toolbox_core.convert_raster_elevation_units(
+            arcpy, Path("site.tif"), "Meters to international feet")
+
+    assert not [call for call in arcpy.calls if call[0] == "Times"]
+    assert not [call for call in arcpy.calls if call[0] == "CheckInExtension"]
