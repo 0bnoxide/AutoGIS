@@ -37,12 +37,17 @@ Add an optional `diff_raster_out` output to persist the difference raster.
   `overwriteOutput` lets a rerun regenerate the derived product — standard GP
   behaviour for a computed output, unlike the refuse-to-clobber stance for
   hand-authored inputs (ADR-0100).
-- **Overwrite-safety guard** (`validate_output_not_input`, codex #281 P1):
+- **Two-layer overwrite safety** (`validate_output_not_input`, codex #281 P1):
   because the save runs under `overwriteOutput=True`, a `diff_raster_out`
   resolving to the primary or baseline `ProductPath` would silently clobber a
-  registered source DEM while the registry still points at it. A pure
-  normcase/normpath path-collision check rejects that *before* the `sa.Minus`,
-  at the single chokepoint where both input paths are resolved.
+  registered source DEM while the registry still points at it. The `.pyt`
+  `updateMessages` hook resolves both registered paths and marks a collision as
+  an error *before execution*, because ArcGIS can delete a managed Output before
+  `execute()` runs. A bare output name is first qualified against
+  `arcpy.env.workspace`, matching ArcGIS's documented base-name resolution, so
+  the relative-name collision cannot bypass the comparison. The pure
+  normcase/normpath check remains at the core save chokepoint as defense in depth
+  for direct callers.
 - **LandXML baseline is out of scope.** That branch builds a *filtered flat list*
   of per-cell diffs (skipping NoData / out-of-surface cells) with no aligned grid
   to save. Rather than reconstruct one via `NumPyArrayToRaster` (speculative,
@@ -61,6 +66,8 @@ Add an optional `diff_raster_out` output to persist the difference raster.
   summary tooltip is unchanged when the output is omitted (opt-in, zero cost).
 - LandXML + diff-raster is a documented, tested `ValueError`, not a silent no-op.
   A `NumPyArrayToRaster` LandXML path is the marked upgrade if ever needed.
+- Python-toolbox validation fails closed before execution if it cannot prove the
+  diff output is distinct from both registered DEM inputs.
 - New arcpy surface is `Raster.save({name})`, the `overwriteOutput` env keyword
   on `EnvManager`, and the `DERasterDataset` param type — all doc-verified
   against pro.arcgis.com 3.5 references per ADR-0077 (cited in the PR). The save

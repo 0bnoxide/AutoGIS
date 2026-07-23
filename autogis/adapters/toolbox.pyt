@@ -946,6 +946,52 @@ class CompareDroneSurfaces(object):
                    "DERasterDataset", required=False, direction="Output"),
         ]
 
+    def updateMessages(self, parameters):
+        """Reject unsafe outputs before geoprocessing can overwrite them."""
+        from autogis.core.envmon.compare_drone_surfaces import (
+            _product_path, validate_baseline_args, validate_diff_output,
+            validate_output_not_input)
+
+        p = {q.name: q for q in parameters}
+        output = p["diff_raster_out"]
+        if (output.message or "").startswith("AutoGIS output safety: "):
+            output.clearMessage()
+        diff_raster_out = output.valueAsText or ""
+        if not diff_raster_out:
+            return
+
+        baseline_product_id = p["baseline_product_id"].valueAsText or None
+        baseline_landxml = p["baseline_landxml"].valueAsText or None
+        try:
+            validate_baseline_args(baseline_product_id, baseline_landxml)
+            validate_diff_output(diff_raster_out, baseline_landxml)
+            if not Path(diff_raster_out).is_absolute():
+                if not arcpy.env.workspace:
+                    raise ValueError(
+                        "A relative diff output requires a current workspace.")
+                diff_raster_out = str(
+                    Path(arcpy.env.workspace) / diff_raster_out)
+            gdb_path = p["gdb"].valueAsText
+            primary_product_id = p["primary_product_id"].valueAsText
+            if not gdb_path or not primary_product_id:
+                return  # Required-parameter validation already blocks Run.
+            primary_path = _product_path(gdb_path, primary_product_id)
+            if not primary_path:
+                raise ValueError(
+                    f"Product {primary_product_id!r} not found in "
+                    f"{gdb_path}'s DroneProductRegistry.")
+            baseline_path = _product_path(gdb_path, baseline_product_id)
+            if not baseline_path:
+                raise ValueError(
+                    f"Baseline product {baseline_product_id!r} not found in "
+                    f"{gdb_path}'s DroneProductRegistry.")
+            validate_output_not_input(
+                diff_raster_out, primary_path, baseline_path)
+        except Exception as exc:
+            # Fail closed: GP manages Output parameters before execute() and
+            # may delete an existing dataset when overwrite is enabled.
+            output.setErrorMessage(f"AutoGIS output safety: {exc}")
+
     @toolbox_core.record_pyt_run("compare-drone-surfaces", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.core.envmon.compare_drone_surfaces import (

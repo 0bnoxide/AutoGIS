@@ -1,7 +1,76 @@
 import ast
 import importlib.util, pathlib
+from types import SimpleNamespace
 
 import autogis
+
+
+def _load_pyt_class(name):
+    """Load one .pyt class without importing the arcpy-only module."""
+    pyt = pathlib.Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
+    tree = ast.parse(pyt.read_text(encoding="utf-8"), filename=str(pyt))
+    cls = next(node for node in tree.body
+               if isinstance(node, ast.ClassDef) and node.name == name)
+    module = ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[]))
+    namespace = {
+        "Path": pathlib.Path,
+        "arcpy": SimpleNamespace(
+            env=SimpleNamespace(workspace=r"C:\data\site.gdb")),
+        "toolbox_core": SimpleNamespace(
+            record_pyt_run=lambda *args, **kwargs: lambda func: func),
+    }
+    exec(compile(module, str(pyt), "exec"), namespace)
+    return namespace[name]
+
+
+class _FakeParameter:
+    def __init__(self, name, value=""):
+        self.name = name
+        self.valueAsText = value
+        self.message = ""
+
+    def setErrorMessage(self, message):
+        self.message = message
+
+    def clearMessage(self):
+        self.message = ""
+
+
+def test_compare_drone_surfaces_preflight_rejects_output_input_collision(
+        monkeypatch):
+    """The GP Output must be blocked before ArcGIS can delete an input."""
+    from autogis.core.envmon import compare_drone_surfaces as compare
+
+    paths = {
+        "primary": r"C:\data\site.gdb\dem_a",
+        "baseline": r"C:\data\site.gdb\dem_b",
+    }
+    monkeypatch.setattr(
+        compare, "_product_path", lambda _gdb, product_id: paths[product_id])
+    parameters = [
+        _FakeParameter("gdb", r"C:\data\site.gdb"),
+        _FakeParameter("primary_product_id", "primary"),
+        _FakeParameter("baseline_product_id", "baseline"),
+        _FakeParameter("baseline_landxml"),
+        _FakeParameter("diff_raster_out", "dem_a"),
+    ]
+
+    tool = _load_pyt_class("CompareDroneSurfaces")()
+    tool.updateMessages(parameters)
+
+    output = next(p for p in parameters if p.name == "diff_raster_out")
+    assert "input DEM" in output.message
+
+    output.valueAsText = r"C:\data\site.gdb\diff"
+    tool.updateMessages(parameters)
+    assert output.message == ""
+
+    def fail_lookup(_gdb, _product_id):
+        raise RuntimeError("registry unavailable")
+
+    monkeypatch.setattr(compare, "_product_path", fail_lookup)
+    tool.updateMessages(parameters)
+    assert "registry unavailable" in output.message
 
 def test_marshal_helper_importable_without_arcpy():
     # The .pyt top-level imports arcpy; the marshalling helpers must live in a
