@@ -11,7 +11,7 @@ from click.testing import CliRunner
 
 from autogis.adapters.cli import autogis as autogis_cli
 from autogis.adapters.gui.executor import Step
-from autogis.adapters.recipe_workflow import recipe_to_workflow
+from autogis.adapters.recipe_workflow import recipe_to_workflow, workflow_to_recipe
 
 
 def test_recipe_to_workflow_maps_fields():
@@ -30,6 +30,46 @@ def test_recipe_to_workflow_maps_fields():
     assert s0.values == {"scan_rows": 10} and s0.fail_on == "error"
     assert s0.pause_on_warning is True and s0.message == "m"
     assert s1.command is None                     # checkpoint preserved
+
+
+def test_recipe_workflow_round_trips_both_ways():
+    recipe = {
+        "version": 1, "name": "wf",
+        "steps": [
+            {"command": ["envmon", "inspect"], "values": {"scan_rows": 10},
+             "fail_on": "error", "pause_on_warning": True, "message": "m"},
+            {"command": None, "message": "review"},
+        ],
+    }
+    wf = recipe_to_workflow(recipe)
+    assert workflow_to_recipe(wf) == recipe          # dict -> wf -> dict
+    assert recipe_to_workflow(workflow_to_recipe(wf)) == wf   # wf -> dict -> wf
+
+
+def test_workflow_tuple_values_survive_save_load(tmp_path):
+    """A GUI repeatable option is a tuple in Step.values; it must normalize to a
+    list so dump_recipe doesn't choke and the recipe survives save/load
+    unchanged. Codex P2."""
+    from autogis.adapters.gui.executor import Step
+    from autogis.adapters.gui.runner import Workflow
+    from autogis.core.common.workflow_recipe import load_recipe, save_recipe
+
+    wf = Workflow(name="w", steps=(
+        Step(command=("envmon", "validate-config"),
+             values={"profiles": ("p1.yaml", "p2.yaml")}),))
+    recipe = workflow_to_recipe(wf)
+    assert recipe["steps"][0]["values"]["profiles"] == ["p1.yaml", "p2.yaml"]  # tuple -> list
+    reloaded = load_recipe(save_recipe(recipe, tmp_path / "r.yaml"))  # no RepresenterError
+    assert reloaded == recipe                                          # stable across save/load
+    assert recipe_to_workflow(reloaded).steps[0].values["profiles"] == ["p1.yaml", "p2.yaml"]
+
+
+def test_workflow_to_recipe_omits_default_fields():
+    wf = recipe_to_workflow({"name": "w", "steps": [{"command": ["envmon", "inspect"]}]})
+    out = workflow_to_recipe(wf)
+    # empty values / default fail_on / pause / message are not written
+    assert out["steps"] == [{"command": ["envmon", "inspect"]}]
+    assert out["version"] == 1
 
 
 def _write(tmp_path, steps, name="R"):
