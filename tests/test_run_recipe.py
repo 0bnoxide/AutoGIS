@@ -46,6 +46,24 @@ def test_recipe_workflow_round_trips_both_ways():
     assert recipe_to_workflow(workflow_to_recipe(wf)) == wf   # wf -> dict -> wf
 
 
+def test_workflow_tuple_values_survive_save_load(tmp_path):
+    """A GUI repeatable option is a tuple in Step.values; it must normalize to a
+    list so dump_recipe doesn't choke and the recipe survives save/load
+    unchanged. Codex P2."""
+    from autogis.adapters.gui.executor import Step
+    from autogis.adapters.gui.runner import Workflow
+    from autogis.core.common.workflow_recipe import load_recipe, save_recipe
+
+    wf = Workflow(name="w", steps=(
+        Step(command=("envmon", "validate-config"),
+             values={"profiles": ("p1.yaml", "p2.yaml")}),))
+    recipe = workflow_to_recipe(wf)
+    assert recipe["steps"][0]["values"]["profiles"] == ["p1.yaml", "p2.yaml"]  # tuple -> list
+    reloaded = load_recipe(save_recipe(recipe, tmp_path / "r.yaml"))  # no RepresenterError
+    assert reloaded == recipe                                          # stable across save/load
+    assert recipe_to_workflow(reloaded).steps[0].values["profiles"] == ["p1.yaml", "p2.yaml"]
+
+
 def test_workflow_to_recipe_omits_default_fields():
     wf = recipe_to_workflow({"name": "w", "steps": [{"command": ["envmon", "inspect"]}]})
     out = workflow_to_recipe(wf)

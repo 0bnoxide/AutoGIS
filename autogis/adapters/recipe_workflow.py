@@ -37,20 +37,34 @@ def recipe_to_workflow(data: Mapping[str, Any]) -> Workflow:
     return Workflow(name=data["name"], steps=steps)
 
 
+def _yaml_native(obj: Any) -> Any:
+    """Recursively convert tuples to lists so a value is YAML-safe and stable
+    across dump/load. The GUI's ``forms._normalize`` stores a repeatable option
+    as a tuple (e.g. ``profiles=("p1.yaml",)``); ``yaml.safe_dump`` can't
+    represent a tuple, and a naive save would also reload it as a list and break
+    the round-trip. Normalizing to lists here makes the recipe canonical."""
+    if isinstance(obj, (list, tuple)):
+        return [_yaml_native(x) for x in obj]
+    if isinstance(obj, Mapping):
+        return {k: _yaml_native(v) for k, v in obj.items()}
+    return obj
+
+
 def workflow_to_recipe(workflow: Workflow) -> dict:
     """Serialize a ``Workflow`` back to a recipe dict — the inverse of
     :func:`recipe_to_workflow`, for the GUI's "save recipe" side.
 
-    Round-trips: ``recipe_to_workflow(workflow_to_recipe(wf))`` reproduces *wf*.
     Optional fields at their defaults (empty ``values``, ``fail_on=None``,
     ``pause_on_warning=False``, empty ``message``) are omitted so the saved YAML
-    stays minimal. The result is validated before returning.
+    stays minimal. Nested tuples in ``values`` (a GUI repeatable option) are
+    normalized to lists so the recipe survives ``dump_recipe``/``load_recipe``
+    unchanged; the result is validated before returning.
     """
     steps: list[dict] = []
     for s in workflow.steps:
         step: dict = {"command": list(s.command) if s.command is not None else None}
         if s.values:
-            step["values"] = dict(s.values)
+            step["values"] = {k: _yaml_native(v) for k, v in s.values.items()}
         if s.fail_on is not None:
             step["fail_on"] = s.fail_on
         if s.pause_on_warning:
