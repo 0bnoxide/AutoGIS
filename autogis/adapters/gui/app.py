@@ -248,12 +248,14 @@ class MainWindow(QMainWindow):
         self._run_wf_button.clicked.connect(self._on_run_workflow)
         self._clear_button = QPushButton("Clear")
         self._clear_button.clicked.connect(self._on_clear_steps)
+        self._save_button = QPushButton("Save recipe…")
+        self._save_button.clicked.connect(self._on_save_recipe)
         self._cancel_button = QPushButton("Cancel")
         self._cancel_button.clicked.connect(self._on_cancel)
         self._resume_button = QPushButton("Resume")
         self._resume_button.clicked.connect(self._on_resume)
         for _b in (self._remove_button, self._up_button, self._down_button,
-                   self._run_wf_button, self._clear_button,
+                   self._run_wf_button, self._clear_button, self._save_button,
                    self._cancel_button, self._resume_button):
             wf_row.addWidget(_b)
         steps_layout.addLayout(wf_row)
@@ -494,8 +496,30 @@ class MainWindow(QMainWindow):
         active = bool(self._steps) and self._runner is None
         self._run_wf_button.setEnabled(active)
         self._clear_button.setEnabled(active)
+        self._save_button.setEnabled(active)
         for b in (self._remove_button, self._up_button, self._down_button):
             b.setEnabled(active)
+
+    def _on_save_recipe(self) -> None:
+        """Serialize the built workflow to a reusable recipe YAML. Load is
+        deferred to the GUI workstream (it needs command->form reverse-mapping
+        and a UI representation for review checkpoints); the saved file can be
+        validated/run headlessly today via `envmon validate-recipe`/`run-recipe`."""
+        if self._runner is not None or not self._steps:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save workflow recipe", "", "YAML recipe (*.yaml *.yml)")
+        if not path:
+            return
+        from autogis.adapters.recipe_workflow import workflow_to_recipe
+        from autogis.core.common.workflow_recipe import save_recipe
+        try:
+            recipe = workflow_to_recipe(Workflow("gui-workflow", tuple(self._steps)))
+            save_recipe(recipe, Path(path))
+        except Exception as exc:  # noqa: BLE001 - surface any save error in-UI
+            self._status.setText(f"Save failed: {exc}")
+            return
+        self._status.setText(f"Saved recipe: {path}")
 
     def _step_summary(self, form_label: str, values: dict, pause: bool) -> str:
         """One-line row label: command + first non-empty text arg + pause tag."""
