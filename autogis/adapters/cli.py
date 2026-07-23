@@ -2573,6 +2573,84 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path):
                f"{flagged} flagged QC result(s)")
 
 
+@envmon.command("export-wqx")
+@click.option("--results", "results_paths", required=True, multiple=True,
+              type=click.Path(exists=True),
+              help="Canonical results CSV (WqxSourceRow shape). Repeatable for "
+                   "multiple events.")
+@click.option("--locations", "locations_path", required=True,
+              type=click.Path(exists=True),
+              help="Monitoring-location metadata CSV (location_id, latitude, "
+                   "longitude, horizontal_datum) — the coordinate source.")
+@click.option("--config", "config_path", default=None, type=click.Path(exists=True),
+              help="Optional YAML/JSON: allowed_qualifiers, default_datum.")
+@click.option("--out-dir", "out_dir", required=True, type=click.Path(),
+              help="Output dir for wqx_submission.csv, wqx_rejections.csv, "
+                   "wqx_provenance.json.")
+def export_wqx_cmd(results_paths, locations_path, config_path, out_dir):
+    """Phase 8: outbound WQX/regulatory submission mapping (headless).
+
+    Maps canonical result rows to WQX submission columns, validating
+    identifiers, coordinates, units, methods, and (optionally) qualifiers.
+    Valid rows -> wqx_submission.csv; invalid rows -> wqx_rejections.csv with a
+    reason (nothing silently disappears); source/config provenance ->
+    wqx_provenance.json. DRAFT: not certified against the agency validator.
+    """
+    import csv as _csv
+    import json as _json
+    from datetime import datetime
+    from autogis.core.common.records_csv import read_records_csv
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.wqx_outbound import (
+        WqxSourceRow, MonitoringLocation, WqxExportConfig, map_to_wqx,
+        SUBMISSION_COLUMNS)
+
+    rows = []
+    for p in results_paths:
+        rows.extend(read_records_csv(Path(p), WqxSourceRow))
+    locations = read_records_csv(Path(locations_path), MonitoringLocation)
+    cfg = WqxExportConfig()
+    if config_path:
+        from autogis.core.common.config import load_config
+        cfg = WqxExportConfig.from_dict(load_config(Path(config_path)))
+
+    qa = QACollector()
+    result = map_to_wqx(rows, locations, cfg, qa)
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    sub_path = out / "wqx_submission.csv"
+    with sub_path.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=SUBMISSION_COLUMNS)
+        w.writeheader()
+        w.writerows(result.submission)
+    rej_path = out / "wqx_rejections.csv"
+    with rej_path.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=["location_id", "sample_id",
+                                            "analyte", "reason"])
+        w.writeheader()
+        w.writerows(result.rejections)
+    prov = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "results_sources": [str(p) for p in results_paths],
+        "locations_source": str(locations_path),
+        "config_source": str(config_path) if config_path else None,
+        "allowed_qualifiers": sorted(cfg.allowed_qualifiers),
+        "default_datum": cfg.default_datum,
+        "counts": {"input": len(rows), "submitted": len(result.submission),
+                   "rejected": len(result.rejections)},
+        "status": "DRAFT - not certified against the agency WQX validator",
+    }
+    (out / "wqx_provenance.json").write_text(
+        _json.dumps(prov, indent=2), encoding="utf-8")
+
+    click.echo(f"WQX export -> {out}")
+    click.echo(f"  {len(result.submission)} submitted, "
+               f"{len(result.rejections)} rejected of {len(rows)} row(s)")
+    if result.rejections:
+        click.echo(f"  see {rej_path.name} for rejection reasons")
+
+
 @envmon.command("build-fieldmaps")
 @click.option("--site-config", "site_path", required=True,
               type=click.Path(exists=True), help="Site config YAML.")
