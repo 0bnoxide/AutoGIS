@@ -39,6 +39,6 @@ steps:
   - command: [envmon, export-survey-cad]
     values:
       csv_path: "_TODO path/to/rtk_survey.csv"
-      map_path: "_TODO path/to/feature_code_map.csv"
+      map_path: "_TODO path/to/feature_code_map.yaml"   # YAML feature-code -> layer-name map
       output_dir: "_TODO path/to/output_dir"
     message: "Export the survey features to CAD/GIS."
