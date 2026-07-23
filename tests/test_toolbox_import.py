@@ -13,6 +13,9 @@ def _load_pyt_class(name):
                if isinstance(node, ast.ClassDef) and node.name == name)
     module = ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[]))
     namespace = {
+        "Path": pathlib.Path,
+        "arcpy": SimpleNamespace(
+            env=SimpleNamespace(workspace=r"C:\data\site.gdb")),
         "toolbox_core": SimpleNamespace(
             record_pyt_run=lambda *args, **kwargs: lambda func: func),
     }
@@ -49,7 +52,7 @@ def test_compare_drone_surfaces_preflight_rejects_output_input_collision(
         _FakeParameter("primary_product_id", "primary"),
         _FakeParameter("baseline_product_id", "baseline"),
         _FakeParameter("baseline_landxml"),
-        _FakeParameter("diff_raster_out", paths["primary"]),
+        _FakeParameter("diff_raster_out", "dem_a"),
     ]
 
     tool = _load_pyt_class("CompareDroneSurfaces")()

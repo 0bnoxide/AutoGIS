@@ -965,6 +965,12 @@ class CompareDroneSurfaces(object):
         try:
             validate_baseline_args(baseline_product_id, baseline_landxml)
             validate_diff_output(diff_raster_out, baseline_landxml)
+            if not Path(diff_raster_out).is_absolute():
+                if not arcpy.env.workspace:
+                    raise ValueError(
+                        "A relative diff output requires a current workspace.")
+                diff_raster_out = str(
+                    Path(arcpy.env.workspace) / diff_raster_out)
             gdb_path = p["gdb"].valueAsText
             primary_product_id = p["primary_product_id"].valueAsText
             if not gdb_path or not primary_product_id:

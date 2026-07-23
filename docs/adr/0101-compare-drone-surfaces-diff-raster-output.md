@@ -43,8 +43,11 @@ Add an optional `diff_raster_out` output to persist the difference raster.
   registered source DEM while the registry still points at it. The `.pyt`
   `updateMessages` hook resolves both registered paths and marks a collision as
   an error *before execution*, because ArcGIS can delete a managed Output before
-  `execute()` runs. The pure normcase/normpath check remains at the core save
-  chokepoint as defense in depth for direct callers.
+  `execute()` runs. A bare output name is first qualified against
+  `arcpy.env.workspace`, matching ArcGIS's documented base-name resolution, so
+  the relative-name collision cannot bypass the comparison. The pure
+  normcase/normpath check remains at the core save chokepoint as defense in depth
+  for direct callers.
 - **LandXML baseline is out of scope.** That branch builds a *filtered flat list*
   of per-cell diffs (skipping NoData / out-of-surface cells) with no aligned grid
   to save. Rather than reconstruct one via `NumPyArrayToRaster` (speculative,
