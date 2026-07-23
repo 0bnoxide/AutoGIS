@@ -19,7 +19,7 @@ steps:
   - command: [envmon, import-edd]          # (LOCAL — needs --local-python)
     values:
       edd_path: "_TODO path/to/lab_edd.csv"
-      profile_path: "_TODO path/to/parser_profile.yaml"
+      profile_path: "_TODO path/to/lab_edd_profile.yaml"   # a Lab EDD profile (config/lab_profiles/), NOT a parser profile
       site_id: "_TODO H281"
       gdb_path: "_TODO path/to/site.gdb"
     fail_on: error
