@@ -9,7 +9,7 @@ GUI, a unified PySide6 desktop GUI (`autogis-gui`, ADR-0050), and the importable
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-07-18**. The
+Status against the 79-tool environmental monitoring roadmap, as of **2026-07-22**. The
 Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
@@ -20,20 +20,22 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **114 `core/envmon/` + 11 `core/agol/` modules (125 total)**,
-**120 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
+The codebase now ships **116 `core/envmon/` + 11 `core/agol/` modules (127 total)**,
+**126 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
 `manage-callout-overrides`'s 4 subcommands counted individually), and an arcpy-free
 test suite — derive the live count with `python -m pytest --collect-only -q`; it is
 extras-dependent, so a `[dev]`-only env collects fewer tests than a full-extras env
-(module/CLI counts as of 2026-07-18 — derive live: `ls autogis/core/envmon/*.py | grep -v __init__ | wc -l`).
+(module/CLI counts as of 2026-07-22 — derive live: `ls autogis/core/envmon/*.py | grep -v __init__ | wc -l`).
 For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced well past that snapshot — batches merged through 2026-06-28 – 07-02
 (PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119), 07-07 (PRs #196-#200), 07-08 – 07-15
 (EQuIS/WQX EDD import ADR-0080/0082, HTML report output ADR-0083, drone/geotech batch,
-OpenTopography DEM ADR-0078, Civil3D/CAD arcpy legs ADR-0088), and 07-17 – 07-18
+OpenTopography DEM ADR-0078, Civil3D/CAD arcpy legs ADR-0088), 07-17 – 07-18
 (EQuIS dialect support — Mining/EPA Region 4/NYSDEC, ADR-0090; DEM output hardening +
-elevation conversion, PR #257)).
+elevation conversion, PR #257), and 07-22 (drone flight YAML scaffold, ADR-0100;
+site onboarding bootstrap `init-site`, ADR-0102, production-roadmap Phase 3, PRs
+#279/#282/#283)).
 
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
@@ -123,6 +125,8 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ListAvailableEnvTools](autogis/core/envmon/tool_registry.py) | `envmon list-tools` | List available envmon tools with capability metadata (headless) |
 | [MergeEventResults](autogis/core/envmon/event_results_merger.py) | `envmon merge-event-results` | Merge multiple event result CSVs into one long-format file (headless) |
 | [ValidateFieldDataCompleteness](autogis/core/envmon/field_completeness_validator.py) | `envmon validate-field-completeness` | Compare sampling plan vs. lab results for completeness (headless) |
+| [InitSite](autogis/core/envmon/init_site.py) | `envmon init-site` | Production-roadmap Phase 3: scaffold a new site's config skeleton (site/event/parser/figure) from versioned templates, flagging unverified anchors and missing regulatory content (headless, ADR-0102) |
+| [NewFlightYaml](autogis/core/envmon/register_drone_flight.py) | `envmon new-flight-yaml` | Tool 8.6a: write a ready-to-edit drone flight inventory YAML for `register-drone-flight` (headless, ADR-0100) |
 | [ExportComparisonExcel](autogis/core/envmon/export_comparison_excel.py) | `envmon export-comparison-excel` | Tool 4.8: export comparison results to a formatted Excel workbook (headless) |
 | [DraftParserProfileFromWorkbook](autogis/core/envmon/excel_workbook_inspector.py) | `envmon draft-parser-profile` | Tool 2.1: inspect a workbook and write a draft parser profile YAML (headless) |
 | [DraftEDDProfile](autogis/core/envmon/edd_profile_draft.py) | `envmon draft-edd-profile` | Tool 2.3a: inspect a sample lab EDD and write a draft LabEDD profile YAML (headless) |
@@ -246,7 +250,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (114 modules), and `autogis.core.agol` (publishing, 11 modules) sit on top of common
+  (116 modules), and `autogis.core.agol` (publishing, 11 modules) sit on top of common
 - **Four adapters:** the importable `autogis.core` library surface, `autogis.adapters.cli`
   (Click CLI), `autogis.adapters.toolbox.pyt` (ArcGIS Pro GUI), and
   `autogis.adapters.gui` (`autogis-gui`, a unified PySide6 desktop GUI that introspects the
@@ -355,6 +359,8 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon export-civil3d` | CLOUD | `core/envmon/civil3d_points.py` (PNEZD CSV + `--landxml` CgPoints, both headless, ADR-0088; existing TIN surface export is available in the Pro `.pyt` toolbox, ADR-0089) |
 | `autogis envmon generate-subsurface-profile` | CLOUD | `core/envmon/subsurface_profile.py` (`profile` extra for matplotlib) |
 | `autogis envmon draft-lithology-from-scan` | CLOUD | `core/envmon/draft_lithology_from_scan.py` (DRAFT; `ocr` extra) |
+| `autogis envmon init-site` | CLOUD | `core/envmon/init_site.py` |
+| `autogis envmon new-flight-yaml` | CLOUD | `core/envmon/register_drone_flight.py` |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
@@ -459,6 +465,7 @@ autogis envmon inspect <workbook.xlsx>
 autogis envmon parser-profile <workbook.xlsx>
 autogis envmon figure-spec <output.yaml>
 autogis envmon validate-config <site-config.yaml>
+autogis envmon init-site --site-id H999 --site-name "New Site" --dry-run   # Phase 3, ADR-0102
 
 # Validation & QA
 autogis envmon validate-units --analytes <analyte-dict.yaml> --screening <levels.yaml>
@@ -495,6 +502,7 @@ autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --outp
 autogis envmon generate-inspection-report --inspections <inspections.csv> --manifest <manifest.csv> --harvest-dir <dir> --site <id> --out <report.xlsx>
 autogis envmon reconcile-survey123-lab --survey <s123.csv> --edd <lab.csv> --edd-profile <profile.yaml> --site <id>
 autogis envmon survey-to-well-elevation <rtk.csv> --site <id> --wells-csv <wells.csv>       # headless
+autogis envmon new-flight-yaml --output <flight.yaml> --set site_id=H281_Glasgow   # ADR-0100
 autogis envmon register-drone-flight <flight.yaml> --gdb <gdb> --dry-run                    # headless
 autogis envmon validate-boring-logs <input_dir>
 autogis envmon validate-drone-products --manifest <products.csv> --flight-id <id>
@@ -639,7 +647,7 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 114 modules
+│   ├── envmon/          # Environmental monitoring — 116 modules
 │   └── agol/            # AGOL publishing — 11 modules
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
@@ -668,7 +676,7 @@ autogis/
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
 | `core/common/schema/` | 5 modules (attachments, boring, drone, envmon, survey) exporting ~21 typed dataclasses |
-| `core/envmon/` | 114 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/envmon/` | 116 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
