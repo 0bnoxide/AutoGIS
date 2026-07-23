@@ -23,15 +23,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"   # matches ArcGIS Pro 3.6 bundled Python
-      - name: Use Git Bash, not the WSL stub, for shell-script tests
-        # windows-latest resolves bare `bash` to the WSL launcher
-        # (System32\bash.exe), which has NO distro installed and exits 1 on every
-        # call — so shell-script tests guarded only by `which("bash") is None`
-        # run against a broken bash instead of skipping. Prepend Git's bin so
-        # shutil.which("bash") finds a functional POSIX bash. Git\bin holds only
-        # bash/sh/git; it does NOT shadow Windows find/sort (those are in
-        # Git\usr\bin), so the rest of the suite is unaffected.
-        run: Add-Content -Path $env:GITHUB_PATH -Value "C:\Program Files\Git\bin"
       - name: Install (arcpy-free dev extras)
         run: python -m pip install -e ".[dev]"
       - name: Run test suite
