@@ -15,8 +15,28 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parent.parent / ".claude" / "scripts" / "sync-ponytail-skills.sh"
 
+
+def _bash_works() -> bool:
+    """A *functional* POSIX bash, resolved the SAME way the tests invoke it.
+
+    The tests spawn bare ``["bash", ...]``. On windows-latest that resolves via
+    CreateProcess / App-Execution-Alias to the WSL launcher
+    (C:\\Windows\\System32\\bash.exe), which has no distro installed and exits
+    nonzero — even when a working Git bash is elsewhere on PATH. So probe bare
+    ``"bash"`` too; ``shutil.which("bash")`` would find that *other* working bash
+    and wrongly report the tests as runnable (they'd then fail on the WSL stub).
+    """
+    try:
+        return subprocess.run(
+            ["bash", "-c", "exit 0"], capture_output=True, timeout=30
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 pytestmark = pytest.mark.skipif(
-    shutil.which("bash") is None, reason="bash required to run the sync shell script"
+    not _bash_works(),
+    reason="a functional POSIX bash is required (windows-latest exposes only the WSL stub)",
 )
 
 

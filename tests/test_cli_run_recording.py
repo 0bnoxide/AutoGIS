@@ -196,6 +196,19 @@ def test_agol_promote_self_logs_exactly_one_record(tmp_path, monkeypatch):
     assert records[0].tool_name == "agol-promote"
 
 
+def test_coc_group_does_not_write_run_history(tmp_path, monkeypatch):
+    rh = tmp_path / "rh.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(rh))
+    store = tmp_path / "custody.json"
+    store.write_text("{}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        autogis, ["envmon", "coc", "status", "--store", str(store)])
+
+    assert result.exit_code == 0
+    assert not rh.exists()
+
+
 def test_import_edd_event_tag_reaches_record(tmp_path, monkeypatch):
     # Producer event tagging (ADR-0093): --event must land on the run-history
     # record so event-status scopes canonical-import to the right event. arcpy
