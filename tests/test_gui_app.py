@@ -944,6 +944,35 @@ def test_second_workflow_run_resets_output_and_glyphs(qapp, monkeypatch):
     assert "run1-step2" not in win._output.toPlainText()
 
 
+def test_workflow_repaints_reset_and_each_completed_step(qapp, monkeypatch):
+    # #293 reproduced on a real display even though widget state was already
+    # correct: a fast step could queue the next worker before Qt painted the
+    # reset or the completed step. Pin the two visible repaint boundaries.
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.CONTINUE, "step1", exit_code=0),
+        StepResult(Decision.CONTINUE, "step2", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    snapshots = []
+    monkeypatch.setattr(
+        win, "_repaint_run_widgets",
+        lambda: snapshots.append((
+            win._output.toPlainText(),
+            tuple(win._step_list.item(i).text() for i in range(2)),
+        )),
+        raising=False,
+    )
+
+    win._on_run_workflow()
+    _pump_until(lambda: win._runner is None)
+
+    assert snapshots[0][0] == ""
+    assert not snapshots[0][1][0].startswith("✓")
+    assert "step1" in snapshots[1][0]
+    assert snapshots[1][1][0].startswith("✓")
+
+
 def test_close_while_paused_cleans_up_job_dir(qapp, monkeypatch):
     _script_run_step(monkeypatch, [
         StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
