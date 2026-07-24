@@ -24,6 +24,7 @@ _GLOBAL_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree",
 # guardrail against common agent mistakes, not a security boundary.
 _GIT_WRITE_SUBCMDS = {"commit", "push", "merge", "rebase", "cherry-pick",
                       "revert"}
+_REDIRECT_RE = re.compile(r"^(?:\d+|&)?(>>?)(.*)$")
 
 
 def _git_writes(cmd):
@@ -98,6 +99,94 @@ def _is_git_write(cmd):
     return next(_git_writes(cmd), None) is not None
 
 
+def _shell_file_writes(cmd):
+    """Yield (writer, dir, path) for common shell writes to named files.
+
+    This is deliberately a guardrail, not a shell interpreter: it recognizes
+    output redirection plus the ordinary file operands of tee, sed -i, dd
+    of=, and truncate. Sequential `cd` handling matches _git_writes(); complex
+    expansion, subshells, and arbitrary programs remain out of scope."""
+    cur = ""
+    parts = re.split(r"(&&|\|\||;|\||&|\n)", cmd)
+    for k in range(0, len(parts), 2):
+        if k > 0 and parts[k - 1] in ("|", "||", "&"):
+            cur = ""
+        seg = parts[k]
+        try:
+            toks = shlex.split(seg)
+        except ValueError:
+            toks = seg.split()
+        if not toks:
+            continue
+        if toks[0] == "cd" and len(toks) >= 2:
+            cur = toks[1]
+            continue
+
+        # `> file`, `>>file`, `2> error.log`; descriptor duplication such as
+        # `2>&1` is not a file write.
+        for i, tok in enumerate(toks):
+            match = _REDIRECT_RE.match(tok)
+            if not match:
+                continue
+            path = match.group(2)
+            if not path and i + 1 < len(toks):
+                path = toks[i + 1]
+            if path and not path.startswith("&"):
+                yield "redirection", cur, path
+
+        exe = os.path.basename(toks[0])
+        args = toks[1:]
+        if exe == "tee":
+            operands = False
+            for arg in args:
+                if arg == "--":
+                    operands = True
+                elif operands or not arg.startswith("-"):
+                    yield "tee", cur, arg
+        elif exe == "sed" and any(
+                arg == "-i" or arg.startswith("-i") or
+                arg == "--in-place" or arg.startswith("--in-place=")
+                for arg in args):
+            has_script_option = any(
+                arg in ("-e", "--expression", "-f", "--file") or
+                arg.startswith("--expression=") or arg.startswith("--file=")
+                for arg in args)
+            script_seen = has_script_option
+            skip = False
+            for arg in args:
+                if skip:
+                    skip = False
+                    continue
+                if arg in ("-e", "--expression", "-f", "--file"):
+                    skip = True
+                    continue
+                if arg.startswith("-"):
+                    continue
+                if not script_seen:
+                    script_seen = True
+                    continue
+                yield "sed -i", cur, arg
+        elif exe == "dd":
+            for arg in args:
+                if arg.startswith("of=") and len(arg) > 3:
+                    yield "dd", cur, arg[3:]
+        elif exe == "truncate":
+            skip = False
+            operands = False
+            for arg in args:
+                if skip:
+                    skip = False
+                    continue
+                if arg == "--":
+                    operands = True
+                elif not operands and arg in ("-s", "--size"):
+                    skip = True
+                elif not operands and arg.startswith("-"):
+                    continue
+                else:
+                    yield "truncate", cur, arg
+
+
 def _pushes_to_main(args):
     """True when a `git push`'s args update the remote 'main' ref: `push
     origin main`, `feat:main`, `+feat:main`, `HEAD:refs/heads/main`, or the
@@ -155,6 +244,21 @@ def _coord_root(reg_path):
     <root>/.claude/coordination/claims.json (see registry.claims_path)."""
     return os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(reg_path))))
+
+
+def _belongs_to_coord_repo(target, root):
+    """Whether target is in this checkout or one of its linked worktrees."""
+    t = os.path.normcase(os.path.realpath(target))
+    r = os.path.normcase(os.path.realpath(root))
+    if t == r or t.startswith(r.rstrip("\\/") + os.sep):
+        return True
+    existing = _first_existing(os.path.dirname(t))
+    common = _rev_parse(existing, "--git-common-dir").strip()
+    if not common:
+        return False
+    if not os.path.isabs(common):
+        common = os.path.join(existing, common)
+    return os.path.normcase(os.path.dirname(os.path.realpath(common))) == r
 
 
 def _foreign_repo(target, root):
@@ -286,7 +390,8 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
         return None
 
     if tool == "Bash":
-        writes = list(_git_writes(ti.get("command", "")))
+        command = ti.get("command", "")
+        writes = list(_git_writes(command))
         if writes:
             bf = branch_func or _git_branch
             root = _coord_root(reg_path)
@@ -326,6 +431,22 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
                                          main_tree_func)
                 if warn:
                     return warn
+        root = _coord_root(reg_path)
+        bf = branch_func or _git_branch
+        for writer, d, path in _shell_file_writes(command):
+            base = os.path.join(cwd, d) if d else cwd
+            path = os.path.expanduser(path)
+            target_path = os.path.abspath(os.path.join(base, path))
+            if not _belongs_to_coord_repo(target_path, root):
+                continue
+            target = _first_existing(
+                os.path.dirname(os.path.realpath(target_path)))
+            if (bf(target) or bf(cwd)) == "main":
+                return _deny(
+                    "[coord] 'main' is read-only — %s writing %s is blocked. "
+                    "Use a feature branch and claim the file before writing. "
+                    "Override: AUTOGIS_COORD_FORCE=1."
+                    % (writer, target_path))
         return None
 
     return None
