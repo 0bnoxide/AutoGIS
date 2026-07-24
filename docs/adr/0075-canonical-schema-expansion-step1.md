@@ -4,6 +4,11 @@
 
 **Date:** 2026-07-09
 
+**Amended:** 2026-07-24 by issue #304. `SourceSheet` now qualifies
+`SourceCell`, widening the analytical idempotency key from 11 to 12
+components. This is the narrow correction to the original freeze described
+below; no other discriminator was added.
+
 ## Context
 
 The canonical GDB schema (`Env_Samples` / `Env_AnalyticalResults`,
@@ -42,16 +47,32 @@ verbatim.
    `ResultBasis`, `MethodSpeciation`. Text/code key parts default `""`, never
    `None`; dates default `None`.
 
-2. **The frozen 11-component unique key (never widened again):**
+2. **The source-qualified 12-component unique key:** `SiteID, Matrix,
+   LocationID, SampleID, SampleDate, AnalyteCanonicalName,
+   DepthIntervalText, SourceSheet, SourceCell, ResultFraction, QCType,
+   MethodDilutionKey`.
+
+   The original accepted decision froze an 11-component key:
    `SiteID, Matrix, LocationID, SampleID, SampleDate, AnalyteCanonicalName,
    DepthIntervalText, SourceCell, ResultFraction, QCType, MethodDilutionKey`.
+   Issue #304 supersedes that freeze narrowly after live H272 evidence showed
+   that a bare A1 reference is not a source identity: the same cell on a
+   corrected sibling sheet collided across runs and the later result was
+   silently dropped. Both production analytical normalizers already populate
+   `SourceSheet`; the column already exists in stored GDB rows, so this changes
+   key computation without a schema or `SCHEMA_VERSION` migration.
+   Canonical-read then compares rows that share the same semantic grain,
+   fraction, and `MethodDilutionKey` across source sheets. Exact duplicates
+   collapse with INFO; conflicting payloads emit blocking ERROR and none reach
+   canonical consumers. Sheet names do not encode correction precedence, so
+   the policy never guesses which conflicting row is authoritative.
 
 3. **`MethodDilutionKey` composite convention:** a deterministic load-time
    composite built by each reader from its format's run discriminators —
    Step-1/flat-profile composition is the mapped `dilution_factor` column
    verbatim; Step 2/WQX adds `StatisticalBaseCode` and folds `ResultBasis` when
    dual-reported; Step 3 extends with EQuIS `test_type`/`column_number`.
-   **`ResultBasis` (wet/dry) is folded into this composite, NOT a 12th key
+   **`ResultBasis` (wet/dry) is folded into this composite, NOT a 13th key
    component** (user decision, open-Q#5). Extending the per-reader *value
    recipe* later is safe — the frozen things are the key composition and
    column names, not the recipe.
@@ -110,6 +131,10 @@ verbatim.
 - WQX Step 2 can ship its first real import without silently dropping
   Total/Dissolved fraction pairs or QC-flagged rows — the collision this ADR
   exists to close.
+- Corrected or duplicate workbook sheets no longer collide merely because
+  their results occupy the same A1 cell; same-sheet re-imports remain
+  idempotent. Conflicting sibling-sheet values remain stored for provenance
+  but are blocked from canonical consumers pending adjudication.
 - Every name and key composition frozen here was verified against 5 real
   formats before being written down, so Step 2 and Step 3 build on a
   paper-mapped foundation instead of a first-pass guess.
@@ -121,9 +146,9 @@ verbatim.
 
 ### Negative consequences
 
-- The 11-component key can never be widened again — any future discriminator
-  Step 3 discovers must fold into the `MethodDilutionKey` recipe or a new
-  table, not a 12th key component.
+- The 12-component key remains closed to further widening. `SourceSheet` is
+  the one evidence-backed correction to the original freeze; future run
+  discriminators still fold into `MethodDilutionKey` or require a new table.
 - The ~11 analyte-pivoting consumers named in decision 8 remain unconverted
   until Step 2's merge gate; until then they are only safe because
   discriminators stay `""`.
@@ -136,10 +161,15 @@ verbatim.
   real EQuIS data verifies the field list) carries no rename risk, unlike the
   `Env_AnalyticalResults` key and column names that WQX will populate
   immediately.
-- **Add `ResultBasis` as a 12th key component** instead of folding it into
+- **Add `ResultBasis` as a 13th key component** instead of folding it into
   `MethodDilutionKey`. Rejected (user decision, open-Q#5) — the key is frozen
   permanently, and the rare dual-reported wet+dry pair is adequately
   disambiguated via the composite fold without widening the key further.
+- **Keep bare `SourceCell` and fold sheet name into `MethodDilutionKey`.**
+  Rejected by issue #304: sheet and cell together are the existing source
+  locator, while `MethodDilutionKey` is reserved for analytical run identity.
+  Qualifying the locator is deterministic across batches and does not require
+  format-specific composition.
 - **`Qualifier` = raw lab qualifier, add `InterpretedQualifier` now.** Rejected
   (user decision, open-Q#4) — `IsEstimated` derivation needs one authoritative
   qualifier picked now; `InterpretedQualifier` can be added additively later
@@ -160,3 +190,6 @@ verbatim.
 - `docs/superpowers/specs/2026-07-09-edd-paper-mapping-outcome.md` — the
   6-format paper-mapping verification that amended the design to this
   minimal Step-1 freeze and resolved open-Q#3–6.
+- [Issue #304](https://github.com/0bnoxide/AutoGIS/issues/304) — live
+  cross-run data-loss evidence and the owner-filed decision to qualify
+  `SourceCell` with `SourceSheet`.

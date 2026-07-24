@@ -15,7 +15,7 @@ def _result_dict(**overrides) -> dict:
         "SiteID": "S1", "Matrix": "GW", "LocationID": "MW-1",
         "SampleID": "MW-1-0626", "SampleDate": dt.date(2026, 6, 26),
         "AnalyteCanonicalName": "Benzene", "DepthIntervalText": "",
-        "SourceCell": "",
+        "SourceSheet": "Results", "SourceCell": "",
     }
     d.update(overrides)
     return d
@@ -118,13 +118,13 @@ def test_field_projection_round_trip_every_new_field():
 
 
 # ---------------------------------------------------------------------------
-# Task 5 — frozen 11-component key + distinctness + backward compat
+# Task 5 — 12-component key + distinctness + backward compat
 # ---------------------------------------------------------------------------
 
-def test_unique_key_is_the_frozen_11():
+def test_unique_key_has_source_sheet_qualified_source_cell():
     assert UNIQUE_KEYS["Env_AnalyticalResults"] == [
         "SiteID", "Matrix", "LocationID", "SampleID", "SampleDate",
-        "AnalyteCanonicalName", "DepthIntervalText", "SourceCell",
+        "AnalyteCanonicalName", "DepthIntervalText", "SourceSheet", "SourceCell",
         "ResultFraction", "QCType", "MethodDilutionKey",
     ]
 
@@ -149,15 +149,24 @@ def test_dilution_rerun_distinct():
     assert _key(MethodDilutionKey="") != _key(MethodDilutionKey="D5")
 
 
-def test_legacy_shape_key_unchanged():
-    # Records in today's shape (discriminators absent -> defaulted "") must
-    # produce the OLD 8-part key extended by three "" parts — same relative
-    # uniqueness, so re-imports of pre-2.2 data still dedup identically.
-    legacy = compute_unique_key(_result_dict(), "Env_AnalyticalResults")
+def test_source_sheet_qualifies_source_cell():
+    assert _key(SourceSheet="GW Quality", SourceCell="C9") != _key(
+        SourceSheet="GW Quality (2)", SourceCell="C9")
+
+
+def test_same_sheet_and_cell_still_deduplicate():
+    assert _key(SourceSheet="GW Quality", SourceCell="C9") == _key(
+        SourceSheet=" gw quality ", SourceCell=" c9 ")
+
+
+def test_missing_step1_discriminators_default_empty():
+    # Records without the Step-1 discriminators must retain their nine
+    # source-qualified identity parts and gain three empty suffix parts.
+    missing = compute_unique_key(_result_dict(), "Env_AnalyticalResults")
     explicit = _key()
     # _result_dict has no discriminator keys -> None; records always carry ""
-    assert explicit[:8] == legacy[:8]
-    assert explicit[8:] == ("", "", "")
+    assert explicit[:9] == missing[:9]
+    assert explicit[9:] == ("", "", "")
 
 
 _TA_PROFILE_YAML = textwrap.dedent("""
@@ -238,7 +247,8 @@ def _normalize_testamerica_fixture(tmp_path):
 
 def test_backward_compat_testamerica_fixture_dedup_identical(tmp_path):
     # Run the existing TestAmerica EDD fixture through the real normalizer
-    # and the widened key: every record must carry "" discriminators, and
+    # and the source-qualified key: every record must carry a SourceSheet and
+    # "" discriminators, and
     # distinct-key count must equal the record count (no new collisions,
     # no new splits).
     from dataclasses import asdict as _as
@@ -247,4 +257,5 @@ def test_backward_compat_testamerica_fixture_dedup_identical(tmp_path):
     keys = [compute_unique_key(_as(r), "Env_AnalyticalResults")
             for r in results]
     assert len(set(keys)) == len(keys)
-    assert all(k[8:] == ("", "", "") for k in keys)
+    assert all(r.SourceSheet for r in results)
+    assert all(k[9:] == ("", "", "") for k in keys)
