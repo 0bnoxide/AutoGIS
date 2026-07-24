@@ -98,10 +98,14 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
   real defect in committed code/config: wrong behavior, crash, data loss, silent
   no-op/false-success, unhandled edge, security, or an incorrect/deprecated arcpy
   call. If you discover one — even if you can't fix it now, even if it's off-topic
-  from what you're doing — file it (`/new-issue` or `gh issue create`) so it gets
-  proper follow-up. Do **not** leave a discovered bug recorded only in a decision
-  log, PR comment, memory, or the collab channel. Check existing open+closed
-  issues first to avoid duplicates.
+  from what you're doing — file it through an available GitHub write path
+  (`/new-issue`, the Codex GitHub connector, or `gh issue create`) so it gets
+  proper follow-up. Check existing open+closed issues first to avoid duplicates.
+  If the session has no issue-creation tool or authentication, do not halt the
+  active task: provide a complete ready-to-file issue draft in the handoff/final
+  response, mark it **unfiled**, and require the next tool-enabled session to
+  file it. Otherwise, do **not** leave a discovered bug recorded only in a
+  decision log, PR comment, memory, or the collab channel.
 
 ## Deferred tool groups — phase-gate status
 
