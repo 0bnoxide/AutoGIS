@@ -71,7 +71,8 @@ _QA_COUNTS_META_KEY = "autogis.qa_counts"
 # outputs={}: `agol promote` (rows_copied etc. via promote.py's _log_promotion)
 # and `event-status` (state counts + status='success' regardless of its semantic
 # nonzero exit code, so a stale-finding read isn't mislogged as an error).
-_SELF_LOGGING_COMMANDS = {"promote", "event-status"}
+# `coc` uses its per-transition custody audit instead of run history (ADR-0107).
+_SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
 
 
 def _record_tool_name(ctx) -> str:
@@ -2383,7 +2384,10 @@ def coc_generate_cmd(site_path, event_path, analytes_path, store_path, actor):
 
     now = datetime.now()
     store = custody.load_store(Path(store_path))
-    records = custody.records_from_plan(plan, at=now, actor=actor)
+    try:
+        records = custody.records_from_plan(plan, at=now, actor=actor)
+    except custody.CustodyError as exc:
+        raise click.ClickException(str(exc))
     # Refuse to clobber in-progress COCs: re-running generate on a store that
     # already holds these COC numbers would reset their state and discard their
     # audit trail — data loss on an audit tool. Use a fresh store to regenerate.
