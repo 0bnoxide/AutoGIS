@@ -1,6 +1,6 @@
 # ADR-0110: GitHub Actions CI + arcpy-doc-verifier agent + next-adr preflight
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Date:** 2026-07-23
 
