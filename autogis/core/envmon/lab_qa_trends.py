@@ -63,6 +63,13 @@ class LabQAThresholds:
         base = cls()
         if not data:
             return base
+        if (
+            {"recovery_default_lower", "recovery_default_upper"} & data.keys()
+            and "recovery_citation" not in data
+        ):
+            raise ValueError(
+                "recovery_citation is required when overriding the default "
+                "recovery window")
         for k, v in data.items():
             if k == "blank_qc_types" and v is not None:
                 setattr(base, k, frozenset(str(x).upper() for x in v))
@@ -155,11 +162,20 @@ def compute_recovery_trends(
     for (matrix, method, analyte), grp in sorted(groups.items()):
         flagged = []
         worst = None  # (distance_outside, sample_id, recovery)
+        windows = set()
+        used_default = False
+        used_lab_limits = False
         for r in grp:
             lower = r.RecoveryLowerLimit if r.RecoveryLowerLimit is not None \
                 else thresholds.recovery_default_lower
             upper = r.RecoveryUpperLimit if r.RecoveryUpperLimit is not None \
                 else thresholds.recovery_default_upper
+            windows.add((lower, upper))
+            used_default |= (
+                r.RecoveryLowerLimit is None or r.RecoveryUpperLimit is None)
+            used_lab_limits |= (
+                r.RecoveryLowerLimit is not None
+                or r.RecoveryUpperLimit is not None)
             rec = r.PercentRecovery
             if rec < lower or rec > upper:
                 flagged.append(r)
@@ -167,17 +183,22 @@ def compute_recovery_trends(
                 if worst is None or dist > worst[0]:
                     worst = (dist, r.SampleID, rec)
         first, last = _date_span(grp)
+        window_text = ", ".join(
+            f"[{lower:g}, {upper:g}]%" for lower, upper in sorted(windows))
+        citations = []
+        if used_default:
+            citations.append(thresholds.recovery_citation)
+        if used_lab_limits:
+            citations.append(
+                "Lab EDD RecoveryLowerLimit/RecoveryUpperLimit values supplied "
+                "on the input rows.")
         out.append(LabQATrendRow(
             metric="recovery", matrix=matrix, method_id=method, analyte=analyte,
             n_total=len(grp), n_flagged=len(flagged),
             flag_rate=_rate(len(flagged), len(grp)),
             date_first=first, date_last=last,
-            threshold_applied=(
-                f"recovery within "
-                f"[{thresholds.recovery_default_lower:g}, "
-                f"{thresholds.recovery_default_upper:g}]% "
-                f"(lab EDD row limits used when present)"),
-            citation=thresholds.recovery_citation,
+            threshold_applied=f"recovery within {window_text}",
+            citation=" ".join(citations),
             worst_sample_id=worst[1] if worst else "",
             worst_value=worst[2] if worst else None,
         ))

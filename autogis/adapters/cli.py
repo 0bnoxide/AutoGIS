@@ -2540,7 +2540,8 @@ def coc_status_cmd(store_path, coc):
                    "(recovery window, blank_rl_multiple, blank_qc_types).")
 @click.option("--out", "out_path", required=True, type=click.Path(),
               help="Output trends CSV.")
-def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path):
+@qa_report_options
+def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path, report, fail_on):
     """Phase 7: longitudinal laboratory-QA trends (headless, arcpy-free).
 
     Reads one or more Env_QCResults CSV exports and writes a per
@@ -2562,7 +2563,11 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path):
     thresholds = LabQAThresholds()
     if thresholds_path:
         from autogis.core.common.config import load_config
-        thresholds = LabQAThresholds.from_dict(load_config(Path(thresholds_path)))
+        try:
+            thresholds = LabQAThresholds.from_dict(
+                load_config(Path(thresholds_path)))
+        except ValueError as exc:
+            raise click.ClickException(str(exc))
 
     qa = QACollector()
     trends = compute_lab_qa_trends(rows, thresholds, qa)
@@ -2575,6 +2580,7 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path):
                f"QC result(s) -> {out_path}")
     click.echo(f"  {n_rec} recovery + {n_blank} blank group(s); "
                f"{flagged} flagged QC result(s)")
+    _render_qa(qa, report, fail_on)
 
 
 @envmon.command("build-fieldmaps")
