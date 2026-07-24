@@ -66,6 +66,7 @@ def run(argv, reg_path, cwd=None, env=None, branch_func=None):
     sub.add_parser("whoami").add_argument("--session")
     sub.add_parser("release-mine").add_argument("--session")
     sub.add_parser("resync").add_argument("--session")
+    sub.add_parser("reserve-adr").add_argument("--session")
     args = ap.parse_args(argv)
 
     if args.cmd == "list":
@@ -118,7 +119,38 @@ def run(argv, reg_path, cwd=None, env=None, branch_func=None):
               % (sid, branch or "(detached)", os.path.abspath(cwd)))
         return 0
 
+    if args.cmd == "reserve-adr":
+        sid = resolve_sid(reg_path, cwd, env, args.session)
+        if not sid:
+            print(_UNRESOLVED, file=sys.stderr)
+            return 1
+        # base = highest ADR in local files + open PRs (the skill owns that
+        # scan); reserve_number atomically lifts it above any live reservation.
+        n = registry.reserve_number(reg_path, sid, "adr", _adr_scan_base(cwd))
+        print("%04d" % n)
+        return 0
+
     return 1
+
+
+def _adr_scan_base(cwd):
+    """Max ADR number already used by local files + open PRs, via the new-adr
+    skill's own scanner. 0 if it can't be imported (keeps reserve-adr working
+    off reservations alone).
+
+    Resolve the skill + docs/adr from THIS checkout (coord_cli's own tree), not
+    registry.repo_root() — that points at the shared *main* tree, but the ADRs
+    to count (and the skill script itself) live in the worktree this command
+    runs from.
+    """
+    tree = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sys.path.insert(0, os.path.join(tree, ".claude", "skills", "new-adr"))
+    try:
+        import next_adr_number
+        from pathlib import Path
+        return next_adr_number._scan_max(Path(tree))
+    except Exception:
+        return 0
 
 
 def _reg_path():

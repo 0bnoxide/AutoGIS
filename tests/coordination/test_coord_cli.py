@@ -118,3 +118,22 @@ def test_resync_detached_head_claims_only_worktree(tmp_path):
     assert rc == 0
     claims = {c["kind"]: c["value"] for c in registry.list_claims(p)}
     assert claims == {"worktree": os.path.abspath(new_wt)}
+
+
+# --- reserve-adr -------------------------------------------------------------
+
+def test_reserve_adr_reserves_and_increments(tmp_path, capsys, monkeypatch):
+    # Stub the file/PR scan so the test is offline and deterministic; the scan
+    # itself is exercised by the new-adr skill's own self-check.
+    monkeypatch.setattr(coord_cli, "_adr_scan_base", lambda cwd: 106)
+    p = tmp_path / "c.json"
+    assert coord_cli.run(["reserve-adr", "--session", "s1"], p) == 0
+    assert capsys.readouterr().out.strip() == "0107"
+    assert coord_cli.run(["reserve-adr", "--session", "s2"], p) == 0
+    assert capsys.readouterr().out.strip() == "0108"   # steps over s1's reservation
+    assert sorted(registry.live_values(p, "adr")) == ["107", "108"]
+
+
+def test_reserve_adr_needs_resolvable_session(tmp_path):
+    assert coord_cli.run(["reserve-adr"], tmp_path / "c.json", cwd="/nowhere",
+                         env={}) == 1
