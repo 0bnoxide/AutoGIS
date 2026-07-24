@@ -117,22 +117,26 @@ explicitly re-opening it first:
   `AIDraftFigureSpec`, `AIMapReviewChecklist` — deferred pending LLM seam design
   (`docs/superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md`).
   Binding until the user says otherwise — not a backlog to pick from when idle.
-- **Conditional / geostatistical (Phase 5) — REOPENED 2026-07-15 (user
-  decision):** 3 tools — RunFieldToGroundwaterModelPipeline,
-  BuildGroundwaterSurfaceModel, BuildAnalyticalConcentrationSurface (kriging / EBK /
-  surface modeling). Reopened ≠ implement-first: the group's own exit criteria still
-  require the **architecture review lands as an ADR (user-signed) before any
-  per-tool spec or implementation** (`docs/CONDITIONAL_TOOLS_REVIEW.md`,
-  `docs/superpowers/specs/2026-06-28-geostatistical-conditional-tools-design.md`).
-  Hand-off + shipped-infrastructure inventory: `docs/HANDOFF-2026-07-15-geostat.md`.
-  The other 6 tools originally reviewed there (SurveyToWellElevationUpdate,
-  GenerateRegulatoryTables, EvaluateGroundwaterSurfaceModels, DEMConditioningPipeline,
-  CompareDroneSurfaces, GenerateSubsurfaceProfileFromBorings) shipped earlier — see
-  issue #167 and ADR-0061.
+- **Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED:** the
+  required architecture review landed as **ADR-0085 (Accepted 2026-07-16)** and
+  both slices merged the same day — slice 1 (TIN/IDW pipeline, GW_ModelRun
+  registry, plume clip; PR #240) and slice 2 (EBK, uncertainty raster,
+  concentration surface, nondetect policy; PR #241, **ADR-0086 Accepted
+  2026-07-24** — user sign-off). All 3 tools exist
+  (RunFieldToGroundwaterModelPipeline, BuildGroundwaterSurfaceModel,
+  BuildAnalyticalConcentrationSurface). **Residual: live-Pro EBK/GA acceptance
+  run is pending owner QA** — workflow + synthetic data in
+  `docs/qa/geostat-live-pro-qa.md`. Do not re-freeze this group; the
+  2026-07-15 handoff (`docs/HANDOFF-2026-07-15-geostat.md`) describes the
+  pre-acceptance state and is historical. The other 6 tools originally
+  reviewed as conditional shipped earlier — see issue #167 and ADR-0061.
 
 Other roadmap batches have been quietly fast-tracked before without a formal gate
 decision — treat "deferred"/"blocked" as binding until the user says otherwise, and
 record every gate change (like the 2026-07-15 reopening above) in this section.
+Gate changes: 2026-07-15 — geostat group reopened (user); 2026-07-16 — ADR-0085
+accepted, slices 1+2 merged; 2026-07-24 — ADR-0086 accepted (user sign-off),
+gate closed with live-Pro QA leg pending owner availability.
 
 ## Post-catalog production roadmap
 

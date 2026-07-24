@@ -1,6 +1,10 @@
 # ADR-0086: Phase-5 slice 2 — EBK stage, uncertainty raster, concentration surface, nondetect policy
 
-**Status:** Proposed
+**Status:** Accepted (2026-07-24 — user sign-off in session: "take the sign
+down and mark it approved". The live-Pro EBK/Geostatistical Analyst
+acceptance run remains a residual QA task, deliberately decoupled from
+acceptance and scheduled for owner availability; workflow + synthetic data:
+`docs/qa/geostat-live-pro-qa.md`.)
 
 **Date:** 2026-07-16
 
