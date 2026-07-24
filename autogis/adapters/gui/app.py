@@ -467,7 +467,14 @@ class MainWindow(QMainWindow):
         self._job_root = Path(tempfile.mkdtemp(prefix="autogis-gui-"))
         self._runner = WorkflowRunner(Workflow(name, steps), self._job_root,
                                       local_python=self._local_python)
+        self._repaint_run_widgets()
         self._advance()
+
+    def _repaint_run_widgets(self) -> None:
+        """Paint run state before a fast worker queues the next transition."""
+        self._status.repaint()
+        self._output.repaint()
+        self._step_list.viewport().repaint()
 
     def _advance(self) -> None:
         """Run the runner's next step off the UI thread on a fresh worker."""
@@ -741,6 +748,7 @@ class MainWindow(QMainWindow):
             return  # a cancel/close finished the run while this delivery queued
         index = len(self._runner.results) - 1  # the step that just ran
         self._render_result(result, index)     # sets status to the decision label
+        self._repaint_run_widgets()
         state = self._runner.status
         if state is RunState.PENDING:
             self._advance()                     # loop to the next step
