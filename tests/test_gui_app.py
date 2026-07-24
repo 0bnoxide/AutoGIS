@@ -908,6 +908,42 @@ def test_cancel_during_running_step_ends_after_it_completes(qapp, monkeypatch):
     assert calls["n"] == 1                 # step 2 never ran
 
 
+def test_second_workflow_run_resets_output_and_glyphs(qapp, monkeypatch):
+    # Regression coverage for #293: a second "Run workflow" in the same
+    # session reported stale stdout and stale checkmarks carried over from
+    # the first run. No test ever ran a workflow twice on one MainWindow
+    # before this. Run 1 completes both steps (✓✓); run 2 HALTs on step 1,
+    # so step 2 never re-renders in run 2 -- its glyph must come back to the
+    # original unrun text, not keep run 1's stale ✓.
+    orig_texts = None
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.CONTINUE, "run1-step1", exit_code=0),
+        StepResult(Decision.CONTINUE, "run1-step2", exit_code=0)])
+    win = MainWindow()
+    _add_step(win, "envmon validate-rtk-survey", csv="a.csv")
+    _add_step(win, "envmon validate-rtk-survey", csv="b.csv")
+    orig_texts = [win._step_list.item(i).text() for i in range(2)]
+    win._on_run_workflow()
+    _pump_until(lambda: win._runner is None)
+    assert win._step_list.item(0).text().startswith("✓")
+    assert win._step_list.item(1).text().startswith("✓")
+    assert "run1-step2" in win._output.toPlainText()
+
+    _script_run_step(monkeypatch, [
+        StepResult(Decision.HALT, "run2-step1-fail", exit_code=1)])
+    win._on_run_workflow()
+    # Reset happens synchronously in _on_run_workflow/_start_run, before the
+    # worker thread for step 1 has even started.
+    assert win._output.toPlainText() == ""
+    assert win._step_list.item(0).text() == orig_texts[0]
+    assert win._step_list.item(1).text() == orig_texts[1]
+    _pump_until(lambda: win._runner is None)
+    assert win._step_list.item(0).text().startswith("✗")
+    assert win._step_list.item(1).text() == orig_texts[1]   # never re-ran in run 2
+    assert "run2-step1-fail" in win._output.toPlainText()
+    assert "run1-step2" not in win._output.toPlainText()
+
+
 def test_close_while_paused_cleans_up_job_dir(qapp, monkeypatch):
     _script_run_step(monkeypatch, [
         StepResult(Decision.PAUSE_FOR_REVIEW, "warnings", exit_code=0),
