@@ -39,13 +39,14 @@ Add `autogis/core/envmon/wqx_outbound.py` (headless, arcpy-free) and the
   the `wqx.yaml` direct-field names (MonitoringLocationIdentifier,
   ActivityIdentifier, ActivityStartDate, MeasureQualifierCode, method) — never
   hand-authored from memory. Media is the inverse of the reader's `matrix_map`.
-- **Input contracts:** a canonical results CSV (`WqxSourceRow`, field names ==
-  `wqx.yaml` `columns` keys) and a monitoring-location metadata CSV
-  (`MonitoringLocation`) for coordinates. Both via `records_csv`. `--results`
-  is repeatable (one CSV per event).
+- **Input contracts:** the repository's canonical `AnalyticalResultRecord` CSV,
+  translated to the internal `WqxSourceRow`, and a monitoring-location metadata
+  CSV (`MonitoringLocation`) for coordinates. Both use `records_csv`.
+  `--results` is repeatable (one CSV per event).
 - **Validation → rejections, not silent drops.** Hard-required: location and
-  activity identifiers, an ISO ActivityStartDate, CharacteristicName, a method,
-  a value+units for detections, and valid in-range coordinates. Failing rows go
+  activity identifiers, a calendar-valid ISO ActivityStartDate,
+  CharacteristicName, a method, a value+units for detections, a reporting
+  limit+units for non-detects, and valid in-range coordinates. Failing rows go
   to `wqx_rejections.csv` with a reason. Qualifier validation is opt-in via a
   configurable `allowed_qualifiers` set (default permissive) so it never
   false-rejects a project that hasn't supplied its domain list.

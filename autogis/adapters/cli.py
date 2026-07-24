@@ -2586,7 +2586,7 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path, report, fail_on):
 @envmon.command("export-wqx")
 @click.option("--results", "results_paths", required=True, multiple=True,
               type=click.Path(exists=True),
-              help="Canonical results CSV (WqxSourceRow shape). Repeatable for "
+              help="Canonical AnalyticalResultRecord CSV. Repeatable for "
                    "multiple events.")
 @click.option("--locations", "locations_path", required=True,
               type=click.Path(exists=True),
@@ -2611,13 +2611,16 @@ def export_wqx_cmd(results_paths, locations_path, config_path, out_dir):
     from datetime import datetime
     from autogis.core.common.records_csv import read_records_csv
     from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
     from autogis.core.envmon.wqx_outbound import (
-        WqxSourceRow, MonitoringLocation, WqxExportConfig, map_to_wqx,
-        SUBMISSION_COLUMNS)
+        MonitoringLocation, WqxExportConfig, map_to_wqx,
+        source_row_from_analytical, SUBMISSION_COLUMNS)
 
     rows = []
     for p in results_paths:
-        rows.extend(read_records_csv(Path(p), WqxSourceRow))
+        rows.extend(
+            source_row_from_analytical(row)
+            for row in read_records_csv(Path(p), AnalyticalResultRecord))
     locations = read_records_csv(Path(locations_path), MonitoringLocation)
     cfg = WqxExportConfig()
     if config_path:

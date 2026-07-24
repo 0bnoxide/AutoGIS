@@ -17,13 +17,13 @@ Design:
   feature class, LOCAL). So a monitoring-location metadata CSV is an explicit
   input contract for latitude/longitude/datum.
 - Hard-required fields (identifiers, coordinates, a value+units for detections,
-  a method) route failing rows to a rejections list with a reason; qualifier
-  validation is opt-in via a configurable allowed set.
+  a limit+units for non-detects, a method) route failing rows to a rejections
+  list with a reason; qualifier validation is opt-in via a configurable set.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Dict, List, Optional, Sequence
 
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
@@ -66,17 +66,13 @@ _MEDIA_OUT = {"GW": "Groundwater", "SOIL": "Soil", "SO": "Soil"}
 _ND_CONDITION = "Not Detected"
 _RL_TYPE = "Reporting Limit"
 
-_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
-
-
 # ---------------------------------------------------------------------------
 # Input contracts
 # ---------------------------------------------------------------------------
 
 @dataclass
 class WqxSourceRow:
-    """One canonical result to submit. Field names are canonical (== wqx.yaml
-    ``columns`` keys); round-trips via records_csv."""
+    """Internal normalized result used by the WQX mapper."""
     site_id: str
     location_id: str
     event_date: str          # ISO YYYY-MM-DD
@@ -90,6 +86,26 @@ class WqxSourceRow:
     method: str = ""
     method_name: str = ""
     is_nondetect: int = 0
+
+
+def source_row_from_analytical(row) -> WqxSourceRow:
+    """Translate the repository's canonical ``AnalyticalResultRecord``."""
+    sample_date = row.SampleDate
+    return WqxSourceRow(
+        site_id=row.SiteID,
+        location_id=row.LocationID,
+        event_date=sample_date.isoformat() if sample_date else "",
+        matrix=row.Matrix,
+        sample_id=row.SampleID,
+        analyte=row.AnalyteCanonicalName or row.AnalyteName,
+        result=row.ResultNumeric,
+        units=row.Units,
+        qualifier=row.Qualifier,
+        reporting_limit=row.ReportingLimit,
+        method=row.MethodID or row.MethodGroup,
+        method_name=row.MethodName,
+        is_nondetect=row.IsNonDetect,
+    )
 
 
 @dataclass
@@ -154,7 +170,9 @@ def _validate(row: WqxSourceRow, loc: Optional[MonitoringLocation],
         return "missing MonitoringLocationIdentifier (location_id)"
     if not (row.sample_id or "").strip():
         return "missing ActivityIdentifier (sample_id)"
-    if not _ISO_DATE.match((row.event_date or "").strip()):
+    try:
+        date.fromisoformat((row.event_date or "").strip())
+    except ValueError:
         return f"invalid/missing ActivityStartDate: {row.event_date!r}"
     if not (row.analyte or "").strip():
         return "missing CharacteristicName (analyte)"
@@ -165,6 +183,11 @@ def _validate(row: WqxSourceRow, loc: Optional[MonitoringLocation],
             return "detection has no ResultMeasureValue"
         if not (row.units or "").strip():
             return "detection has no ResultMeasure/MeasureUnitCode (units)"
+    else:
+        if row.reporting_limit is None:
+            return "non-detect has no detection/reporting limit"
+        if not (row.units or "").strip():
+            return "non-detect has no detection/reporting-limit units"
     coord_reason = _valid_coords(loc)
     if coord_reason:
         return coord_reason
@@ -189,7 +212,7 @@ def _to_wqx(row: WqxSourceRow, loc: MonitoringLocation,
         COL_LON: loc.longitude,
         COL_DATUM: loc.horizontal_datum or cfg.default_datum,
         COL_ACTIVITY: row.sample_id,
-        COL_ACTIVITY_DATE: row.event_date,
+        COL_ACTIVITY_DATE: row.event_date.strip(),
         COL_MEDIA: media or "",
         COL_CHARACTERISTIC: row.analyte,
         COL_RESULT: "" if row.is_nondetect else row.result,
