@@ -93,6 +93,15 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
   Pro **3.5** (prefer 3.6/3.7): anything deprecated at 3.5 is banned. Training-
   data recall of arcpy signatures is not evidence — the suite cannot catch these
   (arcpy seams are `pragma: no cover`), which is how #174/#214 shipped.
+- **Found a bug → file a GitHub issue for it, regardless of task.** Applies to
+  every session and every subagent (state it in subagent prompts). A "bug" is a
+  real defect in committed code/config: wrong behavior, crash, data loss, silent
+  no-op/false-success, unhandled edge, security, or an incorrect/deprecated arcpy
+  call. If you discover one — even if you can't fix it now, even if it's off-topic
+  from what you're doing — file it (`/new-issue` or `gh issue create`) so it gets
+  proper follow-up. Do **not** leave a discovered bug recorded only in a decision
+  log, PR comment, memory, or the collab channel. Check existing open+closed
+  issues first to avoid duplicates.
 
 ## Deferred tool groups — phase-gate status
 
