@@ -30,19 +30,23 @@ def _is_system_field(name: str) -> bool:
 
 
 def edits_where_clause(where: Optional[str] = None,
-                       since: Optional[date] = None) -> str:
-    """Combine a user where-clause with an ``EditDate`` cutoff.
+                       since: Optional[date] = None,
+                       *, edit_field: str = "EditDate") -> str:
+    """Combine a user where-clause with an edit-date cutoff.
 
-    ``since`` (a date, midnight UTC) becomes ``EditDate > <epoch ms>`` — the
-    same epoch-ms convention the attachment harvester's incremental mode uses.
-    The hosted layer needs editor tracking for ``EditDate`` to exist.
+    ``since`` (a date, midnight UTC) becomes ``<edit_field> > <epoch ms>`` —
+    the same epoch-ms convention the attachment harvester's incremental mode
+    uses.  ``edit_field`` defaults to ``EditDate`` (the AGOL hosted default);
+    callers with a layer whose ``editFieldsInfo.editDateField`` differs pass
+    it explicitly (Tool 7.5 does).  The hosted layer needs editor tracking
+    for the field to exist.
     """
     base = where or "1=1"
     if since is None:
         return base
     ms = int(datetime.combine(since, time(), tzinfo=timezone.utc)
              .timestamp() * 1000)
-    clause = f"EditDate > {ms}"
+    clause = f"{edit_field} > {ms}"
     return clause if base == "1=1" else f"({base}) AND {clause}"
 
 

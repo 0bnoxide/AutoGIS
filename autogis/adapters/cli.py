@@ -2841,6 +2841,127 @@ def audit_schema_cmd(spec_path, layer_url, item_id, layer_index, profile,
         raise SystemExit(1)
 
 
+@agol.command("fieldmaps-preflight")
+@click.option("--item-id", required=True,
+              help="AGOL item ID of the hosted feature service.")
+@click.option("--layer-index", type=int, default=0, show_default=True,
+              help="Sublayer id within the item (REST id).")
+@click.option("--profile", default=None,
+              help="ArcGIS API for Python profile name.")
+@click.option("--spec", "spec_path", default=None,
+              type=click.Path(exists=True),
+              help="Local layer schema spec (YAML/JSON) for the drift check.")
+@click.option("--local-csv", default=None, type=click.Path(exists=True),
+              help="Local snapshot CSV (e.g. from sync-to-gdb --out-csv) - "
+                   "the local side of the conflict check.")
+@click.option("--manifest", "manifest_path", default=None,
+              type=click.Path(exists=True),
+              help="Harvester manifest.csv for the attachment checks.")
+@click.option("--since", default=None,
+              help="ISO date - hosted edits after this count as pending.")
+@click.option("--key-field", default="GlobalID", show_default=True,
+              help="Identity key for duplicate/conflict matching.")
+@click.option("--max-replica-age-days", type=float, default=7.0,
+              show_default=True,
+              help="Replicas last synced longer ago than this are stale.")
+@click.option("--output", default=None, type=click.Path(),
+              help="Write report to this file path (stdout if omitted).")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]),
+              default="text", show_default=True, help="Output format.")
+@click.option("--fail-on-findings", is_flag=True, default=False,
+              help="Exit with status 1 if any WARNING finding is present.")
+def fieldmaps_preflight_cmd(item_id, layer_index, profile, spec_path,
+                            local_csv, manifest_path, since, key_field,
+                            max_replica_age_days, output, fmt,
+                            fail_on_findings):
+    """Tool 7.5: read-only Field Maps sync preflight report (Phase 9).
+
+    Reports pending hosted edits, replica/offline-area age, schema drift,
+    attachment staleness, duplicate identities, and conflict candidates for
+    a hosted service - without changing either side.  Slice 1 is headless:
+    the local side comes from --local-csv / --manifest snapshots; the arcpy
+    FGDB leg is a later slice (ADR-0111).
+    """
+    import csv as _csv
+    import json as _json
+    import time as _time
+    from datetime import date as _date
+
+    from autogis.core.agol import fieldmaps_preflight as fp
+    from autogis.core.agol import sync_layer
+    from autogis.core.agol.audit_schema import diff_schema
+    from autogis.core.common.config import load_config
+
+    gis = agol_from_profile(profile)
+    service_props, layer_props, layer_url = fp.fetch_service_state(
+        gis, item_id=item_id, layer_index=layer_index)
+    layer_name = str(layer_props.get("name", ""))
+    edate = fp.edit_date_field(layer_props)
+
+    findings = list(fp.check_sync_config(service_props, layer_props))
+    checks = ["sync_config", "hosted_edits", "replica_age", "duplicates"]
+
+    since_d = _date.fromisoformat(since) if since else None
+    records = sync_layer.fetch_layer_edits(
+        gis, layer_url=layer_url,
+        where=sync_layer.edits_where_clause(None, since_d, edit_field=edate))
+    findings += fp.check_pending_hosted_edits(records, since=since)
+
+    findings += fp.check_replica_age(
+        fp.fetch_replicas(gis, item_id=item_id),
+        now_ms=int(_time.time() * 1000),
+        max_age_days=max_replica_age_days)
+
+    if spec_path:
+        checks.append("schema_drift")
+        findings += fp.drift_findings(
+            diff_schema(layer_props, load_config(Path(spec_path))))
+
+    findings += fp.check_duplicate_identities(records, key_field=key_field)
+
+    if local_csv:
+        checks.append("conflicts")
+        with open(local_csv, newline="", encoding="utf-8-sig") as fh:
+            local_rows = list(_csv.DictReader(fh))
+        tracking = layer_props.get("editFieldsInfo") or {}
+        findings += fp.check_conflict_candidates(
+            records, local_rows, key_field=key_field,
+            exclude_fields={v for v in tracking.values() if v} | {edate})
+
+    if manifest_path and layer_props.get("hasAttachments"):
+        checks.append("attachments")
+        with open(manifest_path, newline="", encoding="utf-8-sig") as fh:
+            manifest_rows = list(_csv.DictReader(fh))
+        findings += fp.check_attachments(
+            fp.fetch_attachments(gis, layer_url=layer_url), manifest_rows,
+            source_table=layer_name)
+
+    report = fp.build_preflight_report(
+        item_id=item_id, layer_name=layer_name, checks_run=checks,
+        findings=findings)
+
+    if fmt == "text":
+        content = fp.format_preflight_report(report)
+    else:
+        content = _json.dumps({
+            "item_id": report.item_id,
+            "layer_name": report.layer_name,
+            "checks_run": report.checks_run,
+            "warning_count": len(report.warnings),
+            "findings": [dataclasses.asdict(f) for f in report.findings],
+        }, indent=2)
+
+    if output:
+        Path(output).write_text(content, encoding="utf-8")
+        click.echo(f"Report written: {output}  "
+                   f"({len(report.warnings)} warning(s))")
+    else:
+        click.echo(content)
+
+    if fail_on_findings and report.has_warnings:
+        raise SystemExit(1)
+
+
 @agol.command("audit-dependencies")
 @click.option("--item-id", required=True, help="AGOL item ID to audit.")
 @click.option("--profile", default=None, help="ArcGIS API for Python profile name")

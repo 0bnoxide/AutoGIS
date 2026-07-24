@@ -354,6 +354,10 @@ _REGISTRY_SEED = [
     ("agol create-views", "CreateHostedViewsForStakeholders", "6.11", "CLOUD",
      "stable", "agol", "Create/update audience-specific hosted views "
      "(sensitive-field leak is blocking)"),
+    ("agol fieldmaps-preflight", "FieldMapsSyncPreflight", "7.5", "CLOUD",
+     "stable", "field", "Read-only Field Maps sync preflight report "
+     "(pending edits, replica age, drift, attachments, duplicates, "
+     "conflicts)"),
     ("build-cad-package", "BuildCADExportPackage", "8.9", "LOCAL", "stable",
      "cartography", "Export GIS layers to a DWG/DXF CAD file (arcpy Export-to-CAD, "
      "ADR-0088) with mapped CAD layer name/color/linetype on scratch copies, "
