@@ -17,19 +17,18 @@ SCRIPT = Path(__file__).resolve().parent.parent / ".claude" / "scripts" / "sync-
 
 
 def _bash_works() -> bool:
-    """A *functional* POSIX bash, not just any `bash` on PATH.
+    """A *functional* POSIX bash, resolved the SAME way the tests invoke it.
 
-    windows-latest resolves bare `bash` to the WSL launcher
+    The tests spawn bare ``["bash", ...]``. On windows-latest that resolves via
+    CreateProcess / App-Execution-Alias to the WSL launcher
     (C:\\Windows\\System32\\bash.exe), which has no distro installed and exits
-    nonzero on every call — present, so `which` finds it, but unusable. Probe it
-    with a trivial command so these tests skip there instead of failing.
+    nonzero — even when a working Git bash is elsewhere on PATH. So probe bare
+    ``"bash"`` too; ``shutil.which("bash")`` would find that *other* working bash
+    and wrongly report the tests as runnable (they'd then fail on the WSL stub).
     """
-    exe = shutil.which("bash")
-    if exe is None:
-        return False
     try:
         return subprocess.run(
-            [exe, "-c", "exit 0"], capture_output=True, timeout=30
+            ["bash", "-c", "exit 0"], capture_output=True, timeout=30
         ).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
