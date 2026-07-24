@@ -48,6 +48,7 @@ TOOLS: dict[str, Runtime] = {
     "export-lab-request": Runtime.CLOUD,  # tool 2.11 headless
     "coc": Runtime.CLOUD,  # Phase 6 chain-of-custody lifecycle (headless group)
     "lab-qa-trends": Runtime.CLOUD,  # Phase 7 longitudinal lab-QA (headless)
+    "export-wqx": Runtime.CLOUD,  # Phase 8 outbound WQX submission (headless)
     "generate-event-report": Runtime.CLOUD,  # tool 10.5
     "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
@@ -399,6 +400,10 @@ _REGISTRY_SEED = [
      "Longitudinal lab-QA trends across events: out-of-limit percent-recovery "
      "and blank-detection frequencies per method/matrix/analyte, with the "
      "configurable, cited threshold applied (Phase 7 slice 1)"),
+    ("export-wqx", "OutboundWQXExport", "", "CLOUD", "DRAFT", "reporting",
+     "Map canonical results to WQX submission columns with identifier/coordinate/"
+     "unit/method/qualifier validation; valid rows -> submission CSV, invalid -> "
+     "rejections CSV, plus source/config provenance (Phase 8 slice 1, DRAFT)"),
     ("generate-inspection-report", "GenerateWellInspectionPhotoReport", "7.4",
      "CLOUD", "stable", "reporting",
      "Per-well inspection photo workbook (XLSX) from harvested attachments "

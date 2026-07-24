@@ -177,3 +177,65 @@ instead of guessing a limit.
 represented in QA output" — non-optional even in slice 1. Fabricating a limit
 when RL is absent would be a silent professional judgment; a QA warning keeps it
 honest.
+
+---
+
+# Phase 8 — outbound WQX/regulatory exchange (ADR-0109)
+
+Continued the roadmap to Phase 8, stacked on the Phase 7 branch. Durable
+decision: ADR-0109.
+
+## Anchored WQX column names on verified sources, not memory
+
+**Decision:** Take WQX target column names from `wqx_reader`'s verified `_COL_*`
+constants (synthesized fields) + `wqx.yaml` `columns` (direct fields); media is
+the inverse of the reader's `matrix_map`.
+
+**Reasoning:** ADR-0077/API-currency discipline applies to any external-schema
+mapping. The inbound reader's names were verified against real WQP exports
+(2026-07-09 paper mapping); reusing them keeps outbound and inbound in lockstep
+and avoids hand-authoring WQX field names from training recall. Inherited the
+inbound DRAFT status honestly rather than implying the outbound mapping is
+certified.
+
+## Monitoring-location metadata CSV as the coordinate input contract
+
+**Decision:** Coordinates come from a separate `MonitoringLocation` CSV input,
+not sourced from the GDB.
+
+**Reasoning:** Canonical result records carry no coordinates (they live on the
+wells feature class, LOCAL/arcpy). Reading them headlessly is impossible, so —
+same move as the Phase 7 QC-CSV — the coordinate source is an explicit input
+contract. Keeps the tool arcpy-free.
+
+## Rejections packaged with reasons; qualifier validation opt-in
+
+**Decision:** Hard-required fields (identifiers, coords, value+units for
+detections, method) route failing rows to `wqx_rejections.csv` with a reason;
+qualifier validation is opt-in via a configurable `allowed_qualifiers` set.
+
+**Reasoning:** The gate says "failed records cannot silently disappear" — so
+every reject is packaged, not dropped. But defaulting to reject-on-unknown-
+qualifier would false-reject any project that hasn't supplied its WQX domain
+list; opt-in keeps the default safe while still providing the validation
+mechanism the gate asks for.
+
+## Gate's "passes the agency validator" — Proposed, not met
+
+**Decision:** Record the validator-pass leg as a Proposed owner-sign-off item in
+ADR-0109; keep `export-wqx` at DRAFT status.
+
+**Reasoning:** Same non-self-certifiable pattern as Phase 7. The EPA WQX
+validator is external; a synthetic fixture verifies the mapping/validation
+rules, not agency acceptance. Owner runs the sanitized package through the
+validator to close it (ADR-0091 amendment precedent).
+
+## Session boundary note
+
+Phases 6, 7, 8 first-useful-slices shipped this session (PRs #296/#297/#298,
+stacked). Phase 9 (Field Maps sync preflight) is inherently about a live hosted
+AGOL service — likely no autonomously-verifiable headless slice — so it is the
+expected stopping point where the remaining work is genuinely external/owner-
+gated. Framed precisely: *first useful slice of each buildable phase shipped;
+later slices + external-gate legs (historical-set reproduction, WQX validator,
+live-service preflight) remain for owner direction.*
