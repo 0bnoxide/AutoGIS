@@ -10,10 +10,31 @@ Create the next sequential ADR from the project template.
 
 ## Steps
 
-1. List `docs/adr/NNNN-*.md` and find the highest 4-digit number. The new number
-   is that + 1, zero-padded to 4 digits (e.g. `0021` → `0022`). Only the
-   `NNNN-`-prefixed files count toward numbering — ignore the dated legacy
-   filenames (`2026-06-18-*.md`) and `README.md` / `TEMPLATE.md`.
+1. Get the next number from the preflight — it checks local ADRs **and** open
+   PRs, so concurrent sessions collide less often (the recurring `0099 → 0105`
+   renumber is what this targets):
+
+   ```bash
+   python .claude/skills/new-adr/next_adr_number.py   # prints e.g. 0107
+   ```
+
+   Only `NNNN-`-prefixed files count; dated legacy names (`2026-06-18-*.md`),
+   `README.md`, and `TEMPLATE.md` are ignored. If `gh` is offline/unauthed it
+   degrades to a local-only scan (still correct, just less protective).
+
+   The preflight **reduces, not eliminates** collisions — two sessions that both
+   grab a number *before either opens a PR* are invisible to the PR scan. When
+   other sessions are active, **reserve** the number instead so it's claimed in
+   the shared registry immediately (closes the pre-PR gap):
+
+   ```bash
+   python .claude/coordination/coord_cli.py reserve-adr --session "$AUTOGIS_SESSION_ID"
+   ```
+
+   It prints the reserved number (e.g. `0110`); the preflight then steps over it
+   for everyone else. The reservation auto-expires if the session dies before
+   merging; release it explicitly with
+   `coord_cli.py release --session "$SID" --kind adr` once merged.
 
 2. Slugify the title from the argument: lowercase, spaces → hyphens, strip
    punctuation. New path: `docs/adr/<NNNN>-<slug>.md`.
