@@ -14,7 +14,7 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~100 | ~79 numbered roadmap tools + 21 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | ~100 | ~79 numbered roadmap tools + 23 headless post-roadmap tools |
 | Foundation laid (partial code, not fully wired) | 0 | |
 | **Planned** (spec / plan written, not yet coded) | 0 | BatchEDDImport folded into Tool 2.2 `batch-import-workbooks` — see ADR-0048 |
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |

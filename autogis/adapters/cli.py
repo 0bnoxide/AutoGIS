@@ -71,7 +71,8 @@ _QA_COUNTS_META_KEY = "autogis.qa_counts"
 # outputs={}: `agol promote` (rows_copied etc. via promote.py's _log_promotion)
 # and `event-status` (state counts + status='success' regardless of its semantic
 # nonzero exit code, so a stale-finding read isn't mislogged as an error).
-_SELF_LOGGING_COMMANDS = {"promote", "event-status"}
+# `coc` uses its per-transition custody audit instead of run history (ADR-0107).
+_SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
 
 
 def _record_tool_name(ctx) -> str:
@@ -2276,6 +2277,391 @@ def create_sampling_event_cmd(site_path, event_path, analytes_path, out_dir):
                f"{sum(1 for r in plan.expected_samples if r.sample_type == 'Field Duplicate')} field dups)")
     click.echo(f"  {len(plan.crew_assignments)} wells assigned across "
                f"{len({r.assigned_to for r in plan.crew_assignments})} crew member(s)")
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — electronic chain-of-custody (COC) lifecycle
+# ---------------------------------------------------------------------------
+
+# Exit codes: 0 = ok / reconciled clean; 1 = usage/error (Click default);
+# 2 = reconciliation found discrepancies (stable code for automation).
+_COC_DISCREPANCY_EXIT = 2
+
+# Targets reachable via `advance`. `reconciled` is deliberately excluded — it
+# is only reachable through `reconcile`, so a COC cannot be marked reconciled
+# without a recorded planned-vs-received comparison (the Phase 6 gate).
+_COC_ADVANCE_TARGETS = [
+    "generated", "released", "laboratory_received",
+    "results_received", "exception",
+]
+
+
+def _coc_coerce(value: str):
+    """Light-coerce a --set detail value: bool, int, float, else str."""
+    low = value.strip().lower()
+    if low in ("true", "false"):
+        return low == "true"
+    for cast in (int, float):
+        try:
+            return cast(value)
+        except ValueError:
+            pass
+    return value
+
+
+def _coc_parse_details(pairs):
+    """Parse repeated ``key=value`` --set options into a details dict."""
+    details = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise click.ClickException(f"--set expects key=value, got: {pair!r}")
+        key, _, val = pair.partition("=")
+        details[key.strip()] = _coc_coerce(val)
+    return details
+
+
+def _coc_select(store, coc, all_):
+    """Resolve --coc / --all into the list of COC numbers to act on."""
+    if all_:
+        return sorted(store)
+    if not coc:
+        raise click.ClickException("Provide --coc <number> or --all")
+    if coc not in store:
+        raise click.ClickException(
+            f"COC {coc!r} not in store (have: {', '.join(sorted(store)) or 'none'})")
+    return [coc]
+
+
+@envmon.group("coc")
+def coc_group():
+    """Phase 6: electronic chain-of-custody lifecycle (headless, arcpy-free).
+
+    Advance a sampling event's COCs through generated → released →
+    laboratory-received → results-received → reconciled/exception, recording a
+    per-transition audit entry (timestamp, responsible party, details), and
+    reconcile planned vs laboratory-received sample IDs — no manual comparison
+    spreadsheet. State persists in one JSON store per event.
+    """
+
+
+@coc_group.command("generate")
+@click.option("--site", "site_path", required=True, type=click.Path(exists=True),
+              help="Site config YAML or JSON.")
+@click.option("--event", "event_path", required=True, type=click.Path(exists=True),
+              help="Event config YAML or JSON.")
+@click.option("--analytes", "analytes_path", required=True,
+              type=click.Path(exists=True), help="Analyte dictionary YAML or JSON.")
+@click.option("--store", "store_path", required=True, type=click.Path(),
+              help="Output custody store JSON (one file per event).")
+@click.option("--by", "actor", required=True, help="Responsible party generating the COCs.")
+def coc_generate_cmd(site_path, event_path, analytes_path, store_path, actor):
+    """Generate custody records from a sampling event plan (draft → generated).
+
+    Reuses the existing sampling-event planner: the plan's expected samples are
+    grouped by COC number into custody records, created as draft then advanced
+    to generated.
+    """
+    import uuid
+    from datetime import datetime
+    from autogis.core.common.config import (
+        SiteConfig, load_analyte_dictionary, ConfigError)
+    from autogis.core.envmon.create_sampling_event import (
+        build_sampling_event_plan, load_event_config)
+    from autogis.core.envmon import custody
+
+    try:
+        site_cfg = SiteConfig.load(Path(site_path))
+        event_cfg = load_event_config(Path(event_path))
+        analyte_dict = load_analyte_dictionary(Path(analytes_path))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+
+    try:
+        plan = build_sampling_event_plan(
+            site_cfg.data, event_cfg, analyte_dict, run_id=str(uuid.uuid4()))
+    except (ValueError, KeyError) as exc:
+        raise click.ClickException(str(exc))
+
+    now = datetime.now()
+    store = custody.load_store(Path(store_path))
+    try:
+        records = custody.records_from_plan(plan, at=now, actor=actor)
+    except custody.CustodyError as exc:
+        raise click.ClickException(str(exc))
+    # Refuse to clobber in-progress COCs: re-running generate on a store that
+    # already holds these COC numbers would reset their state and discard their
+    # audit trail — data loss on an audit tool. Use a fresh store to regenerate.
+    conflicts = [r.coc_number for r in records if r.coc_number in store]
+    if conflicts:
+        raise click.ClickException(
+            f"Custody store {store_path} already has {len(conflicts)} of these "
+            f"COC(s): {', '.join(conflicts)}. Refusing to overwrite their state "
+            f"and audit trail - generate into a fresh store.")
+    for rec in records:
+        custody.transition(rec, custody.GENERATED, actor=actor, at=now,
+                           note="generated from sampling event plan")
+        store[rec.coc_number] = rec
+    custody.save_store(Path(store_path), store)
+    click.echo(f"Generated {len(records)} COC record(s) -> {store_path}")
+    for rec in records:
+        click.echo(f"  {rec.coc_number}: {len(rec.sample_ids)} sample(s) [{rec.state}]")
+
+
+@coc_group.command("advance")
+@click.option("--store", "store_path", required=True, type=click.Path(exists=True),
+              help="Custody store JSON.")
+@click.option("--to", "to_state", required=True,
+              type=click.Choice(_COC_ADVANCE_TARGETS),
+              help="Target state.")
+@click.option("--by", "actor", required=True, help="Responsible party.")
+@click.option("--coc", "coc", default=None, help="COC number (omit for --all).")
+@click.option("--all", "all_", is_flag=True, help="Advance every COC in the store.")
+@click.option("--note", default="", help="Free-text note recorded in the audit entry.")
+@click.option("--set", "set_pairs", multiple=True, metavar="KEY=VALUE",
+              help="Detail to record (repeatable), e.g. --set temperature_c=4.0 "
+                   "--set temperature_ok=true --set carrier=FedEx --set reason='cooler warm'.")
+def coc_advance_cmd(store_path, to_state, actor, coc, all_, note, set_pairs):
+    """Advance one or all COCs to a new state, recording an audit entry.
+
+    Illegal transitions are rejected. Use --set to capture temperature checks,
+    carrier, sample counts, or an exception reason.
+    """
+    from datetime import datetime
+    from autogis.core.envmon import custody
+
+    store = custody.load_store(Path(store_path))
+    if not store:
+        raise click.ClickException(f"Empty custody store: {store_path}")
+    targets = _coc_select(store, coc, all_)
+    details = _coc_parse_details(set_pairs)
+    now = datetime.now()
+    for number in targets:
+        try:
+            custody.transition(store[number], to_state, actor=actor, at=now,
+                               note=note, details=details)
+        except custody.CustodyError as exc:
+            raise click.ClickException(str(exc))
+    custody.save_store(Path(store_path), store)
+    click.echo(f"Advanced {len(targets)} COC(s) -> {to_state}")
+
+
+@coc_group.command("reconcile")
+@click.option("--store", "store_path", required=True, type=click.Path(exists=True),
+              help="Custody store JSON.")
+@click.option("--coc", "coc", required=True, help="COC number to reconcile.")
+@click.option("--by", "actor", required=True, help="Responsible party.")
+@click.option("--received-ids", default=None,
+              help="Comma-separated sample IDs the lab received.")
+@click.option("--received-file", type=click.Path(exists=True), default=None,
+              help="File with one received sample ID per line (alternative to --received-ids).")
+def coc_reconcile_cmd(store_path, coc, actor, received_ids, received_file):
+    """Reconcile a COC's planned vs laboratory-received sample IDs.
+
+    A clean match advances the COC to reconciled; any missing or extra sample
+    routes it to exception with the discrepancy recorded. Exit code 2 signals
+    a discrepancy for automation.
+    """
+    from datetime import datetime
+    from dataclasses import asdict
+    from autogis.core.envmon import custody
+
+    if bool(received_ids) == bool(received_file):
+        raise click.ClickException("Provide exactly one of --received-ids or --received-file")
+    if received_file:
+        received = [ln.strip() for ln in Path(received_file).read_text(
+            encoding="utf-8").splitlines() if ln.strip()]
+    else:
+        received = [s.strip() for s in received_ids.split(",") if s.strip()]
+
+    store = custody.load_store(Path(store_path))
+    if coc not in store:
+        raise click.ClickException(
+            f"COC {coc!r} not in store (have: {', '.join(sorted(store)) or 'none'})")
+    rec = store[coc]
+    # Reconcile only makes sense once the lab has the samples. Guarding here
+    # keeps clean and discrepancy outcomes consistent (without it, a clean
+    # reconcile from an earlier state errors on the illegal →reconciled hop
+    # while a discrepancy silently succeeds via →exception).
+    if rec.state not in (custody.LAB_RECEIVED, custody.RESULTS_RECEIVED):
+        raise click.ClickException(
+            f"COC {coc} is {rec.state!r}; reconcile requires "
+            f"{custody.LAB_RECEIVED!r} or {custody.RESULTS_RECEIVED!r}.")
+    result = custody.reconcile(rec, received)
+
+    click.echo(f"COC {coc}: {len(result.matched)} matched, "
+               f"{len(result.missing)} missing, {len(result.extra)} extra")
+    if result.missing:
+        click.echo(f"  missing (planned, not received): {', '.join(result.missing)}")
+    if result.extra:
+        click.echo(f"  extra (received, not planned): {', '.join(result.extra)}")
+
+    now = datetime.now()
+    to_state = custody.RECONCILED if result.clean else custody.EXCEPTION
+    note = "reconciled clean" if result.clean else "reconciliation discrepancy"
+    try:
+        custody.transition(rec, to_state, actor=actor, at=now, note=note,
+                           details=asdict(result))
+    except custody.CustodyError as exc:
+        raise click.ClickException(str(exc))
+    custody.save_store(Path(store_path), store)
+    click.echo(f"COC {coc} -> {to_state}")
+    if not result.clean:
+        raise SystemExit(_COC_DISCREPANCY_EXIT)
+
+
+@coc_group.command("status")
+@click.option("--store", "store_path", required=True, type=click.Path(exists=True),
+              help="Custody store JSON.")
+@click.option("--coc", "coc", default=None, help="Show only this COC (default: all).")
+def coc_status_cmd(store_path, coc):
+    """Show current state and last audit entry for each COC in the store."""
+    from autogis.core.envmon import custody
+
+    store = custody.load_store(Path(store_path))
+    numbers = [coc] if coc else sorted(store)
+    if coc and coc not in store:
+        raise click.ClickException(f"COC {coc!r} not in store")
+    for number in numbers:
+        rec = store[number]
+        last = rec.audit[-1] if rec.audit else None
+        tail = f" - last: {last.to_state} by {last.actor} at {last.at}" if last else ""
+        click.echo(f"{number}: {rec.state} ({len(rec.sample_ids)} sample(s)){tail}")
+    click.echo(f"{len(numbers)} COC(s).")
+
+
+@envmon.command("lab-qa-trends")
+@click.option("--qc-results", "qc_paths", required=True, multiple=True,
+              type=click.Path(exists=True),
+              help="QC-results CSV (Env_QCResults export). Repeatable — pass "
+                   "one per event for a longitudinal set.")
+@click.option("--thresholds", "thresholds_path", default=None,
+              type=click.Path(exists=True),
+              help="Optional YAML/JSON overriding QA thresholds "
+                   "(recovery window, blank_rl_multiple, blank_qc_types).")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output trends CSV.")
+@qa_report_options
+def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path, report, fail_on):
+    """Phase 7: longitudinal laboratory-QA trends (headless, arcpy-free).
+
+    Reads one or more Env_QCResults CSV exports and writes a per
+    method/matrix/analyte trend summary: out-of-limit percent-recovery and
+    blank-detection frequencies, each row carrying the configurable, cited
+    threshold applied. Deterministic frequencies only — no professional
+    data-validation conclusions.
+    """
+    from autogis.core.common.records_csv import (
+        read_records_csv, write_records_csv)
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import QCResultRecord
+    from autogis.core.envmon.lab_qa_trends import (
+        LabQAThresholds, LabQATrendRow, compute_lab_qa_trends)
+
+    rows = []
+    for p in qc_paths:
+        rows.extend(read_records_csv(Path(p), QCResultRecord))
+    thresholds = LabQAThresholds()
+    if thresholds_path:
+        from autogis.core.common.config import load_config
+        try:
+            thresholds = LabQAThresholds.from_dict(
+                load_config(Path(thresholds_path)))
+        except ValueError as exc:
+            raise click.ClickException(str(exc))
+
+    qa = QACollector()
+    trends = compute_lab_qa_trends(rows, thresholds, qa)
+    write_records_csv(trends, Path(out_path), record_class=LabQATrendRow)
+
+    n_rec = sum(1 for t in trends if t.metric == "recovery")
+    n_blank = sum(1 for t in trends if t.metric == "blank")
+    flagged = sum(t.n_flagged for t in trends)
+    click.echo(f"Lab-QA trends: {len(trends)} group(s) from {len(rows)} "
+               f"QC result(s) -> {out_path}")
+    click.echo(f"  {n_rec} recovery + {n_blank} blank group(s); "
+               f"{flagged} flagged QC result(s)")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("export-wqx")
+@click.option("--results", "results_paths", required=True, multiple=True,
+              type=click.Path(exists=True),
+              help="Canonical AnalyticalResultRecord CSV. Repeatable for "
+                   "multiple events.")
+@click.option("--locations", "locations_path", required=True,
+              type=click.Path(exists=True),
+              help="Monitoring-location metadata CSV (location_id, latitude, "
+                   "longitude, horizontal_datum) — the coordinate source.")
+@click.option("--config", "config_path", default=None, type=click.Path(exists=True),
+              help="Optional YAML/JSON: allowed_qualifiers, default_datum.")
+@click.option("--out-dir", "out_dir", required=True, type=click.Path(),
+              help="Output dir for wqx_submission.csv, wqx_rejections.csv, "
+                   "wqx_provenance.json.")
+def export_wqx_cmd(results_paths, locations_path, config_path, out_dir):
+    """Phase 8: outbound WQX/regulatory submission mapping (headless).
+
+    Maps canonical result rows to WQX submission columns, validating
+    identifiers, coordinates, units, methods, and (optionally) qualifiers.
+    Valid rows -> wqx_submission.csv; invalid rows -> wqx_rejections.csv with a
+    reason (nothing silently disappears); source/config provenance ->
+    wqx_provenance.json. DRAFT: not certified against the agency validator.
+    """
+    import csv as _csv
+    import json as _json
+    from datetime import datetime
+    from autogis.core.common.records_csv import read_records_csv
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
+    from autogis.core.envmon.wqx_outbound import (
+        MonitoringLocation, WqxExportConfig, map_to_wqx,
+        source_row_from_analytical, SUBMISSION_COLUMNS)
+
+    rows = []
+    for p in results_paths:
+        rows.extend(
+            source_row_from_analytical(row)
+            for row in read_records_csv(Path(p), AnalyticalResultRecord))
+    locations = read_records_csv(Path(locations_path), MonitoringLocation)
+    cfg = WqxExportConfig()
+    if config_path:
+        from autogis.core.common.config import load_config
+        cfg = WqxExportConfig.from_dict(load_config(Path(config_path)))
+
+    qa = QACollector()
+    result = map_to_wqx(rows, locations, cfg, qa)
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    sub_path = out / "wqx_submission.csv"
+    with sub_path.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=SUBMISSION_COLUMNS)
+        w.writeheader()
+        w.writerows(result.submission)
+    rej_path = out / "wqx_rejections.csv"
+    with rej_path.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.DictWriter(fh, fieldnames=["location_id", "sample_id",
+                                            "analyte", "reason"])
+        w.writeheader()
+        w.writerows(result.rejections)
+    prov = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "results_sources": [str(p) for p in results_paths],
+        "locations_source": str(locations_path),
+        "config_source": str(config_path) if config_path else None,
+        "allowed_qualifiers": sorted(cfg.allowed_qualifiers),
+        "default_datum": cfg.default_datum,
+        "counts": {"input": len(rows), "submitted": len(result.submission),
+                   "rejected": len(result.rejections)},
+        "status": "DRAFT - not certified against the agency WQX validator",
+    }
+    (out / "wqx_provenance.json").write_text(
+        _json.dumps(prov, indent=2), encoding="utf-8")
+
+    click.echo(f"WQX export -> {out}")
+    click.echo(f"  {len(result.submission)} submitted, "
+               f"{len(result.rejections)} rejected of {len(rows)} row(s)")
+    if result.rejections:
+        click.echo(f"  see {rej_path.name} for rejection reasons")
 
 
 @envmon.command("build-fieldmaps")
