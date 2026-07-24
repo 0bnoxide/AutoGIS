@@ -1,6 +1,7 @@
 import dataclasses
 import json
 import os
+import sys
 import uuid
 from datetime import datetime as _dt
 from pathlib import Path
@@ -198,6 +199,17 @@ class RecordingCommand(click.Command):
 class RecordingGroup(click.Group):
     command_class = RecordingCommand
     group_class = type  # self-propagating: @group.group() subgroups record too
+
+    def main(self, *args, **kwargs):
+        # Configure before Click parses arguments: eager --help output can
+        # contain Unicode too. A stock Windows/redirected cp1252 stream cannot
+        # encode characters such as → and would otherwise abort mid-command.
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (AttributeError, OSError, ValueError):
+                pass
+        return super().main(*args, **kwargs)
 
 
 @click.group(cls=RecordingGroup)
