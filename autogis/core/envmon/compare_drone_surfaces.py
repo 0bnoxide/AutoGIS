@@ -9,7 +9,7 @@ dependency on that module's internals.
 """
 from __future__ import annotations
 
-import os
+import ntpath
 from dataclasses import dataclass
 
 CHANGE = "change"
@@ -52,7 +52,10 @@ def validate_output_not_input(diff_raster_out, *input_paths) -> None:
         return
 
     def _norm(p):
-        return os.path.normcase(os.path.normpath(str(p)))
+        # Catalog paths are Windows paths even when preflight runs on a
+        # POSIX host (arcpy-free suite, cloud sessions) — normalize with
+        # ntpath on every host; on Windows ntpath IS os.path. (#319)
+        return ntpath.normcase(ntpath.normpath(str(p)))
 
     out = _norm(diff_raster_out)
     for ip in input_paths:
