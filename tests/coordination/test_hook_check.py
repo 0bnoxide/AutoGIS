@@ -59,6 +59,19 @@ def test_shell_redirection_in_repo_on_main_is_denied(tmp_path):
     assert str(target) in out["hookSpecificOutput"]["permissionDecisionReason"]
 
 
+def test_shell_redirection_through_arbitrary_fd_on_main_is_denied(tmp_path):
+    coord = tmp_path / ".claude" / "coordination"
+    coord.mkdir(parents=True)
+    p = coord / "claims.json"
+    target = tmp_path / "README.md"
+    out = hook_check.decide(
+        _payload("Bash", {"command": "printf x 3> README.md >&3"},
+                 cwd=str(tmp_path)),
+        p, branch_func=lambda cwd: "main")
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert str(target) in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
 def test_sed_in_place_in_repo_on_main_is_denied(tmp_path):
     coord = tmp_path / ".claude" / "coordination"
     coord.mkdir(parents=True)
@@ -94,6 +107,17 @@ def test_shell_redirection_outside_repo_on_main_is_allowed(tmp_path):
     outside = tmp_path / "scratch.txt"
     out = hook_check.decide(
         _payload("Bash", {"command": "printf x > %s" % outside.as_posix()},
+                 cwd=str(repo)),
+        p, branch_func=lambda cwd: "main")
+    assert out is None
+
+
+def test_shell_redirection_to_home_on_main_is_allowed(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".claude" / "coordination").mkdir(parents=True)
+    p = repo / ".claude" / "coordination" / "claims.json"
+    out = hook_check.decide(
+        _payload("Bash", {"command": "printf x > ~/scratch.txt"},
                  cwd=str(repo)),
         p, branch_func=lambda cwd: "main")
     assert out is None

@@ -24,7 +24,7 @@ _GLOBAL_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree",
 # guardrail against common agent mistakes, not a security boundary.
 _GIT_WRITE_SUBCMDS = {"commit", "push", "merge", "rebase", "cherry-pick",
                       "revert"}
-_REDIRECT_RE = re.compile(r"^(?:[012]?|&)?(>>?)(.*)$")
+_REDIRECT_RE = re.compile(r"^(?:\d+|&)?(>>?)(.*)$")
 
 
 def _git_writes(cmd):
@@ -435,6 +435,7 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
         bf = branch_func or _git_branch
         for writer, d, path in _shell_file_writes(command):
             base = os.path.join(cwd, d) if d else cwd
+            path = os.path.expanduser(path)
             target_path = os.path.abspath(os.path.join(base, path))
             if not _belongs_to_coord_repo(target_path, root):
                 continue
