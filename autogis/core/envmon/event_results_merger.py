@@ -107,7 +107,8 @@ def merge_event_results(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if deduped:
         with out_path.open("w", newline="", encoding="utf-8") as fh:
-            w = csv.DictWriter(fh, fieldnames=list(deduped[0].keys()))
+            fields = list(dict.fromkeys(k for row in deduped for k in row))
+            w = csv.DictWriter(fh, fieldnames=fields)
             w.writeheader()
             for r in deduped:
                 w.writerow(r)
