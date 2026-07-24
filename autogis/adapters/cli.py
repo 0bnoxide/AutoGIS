@@ -2535,7 +2535,8 @@ def fieldmaps_preflight_cmd(item_id, layer_index, profile, spec_path,
         with open(manifest_path, newline="", encoding="utf-8-sig") as fh:
             manifest_rows = list(_csv.DictReader(fh))
         findings += fp.check_attachments(
-            fp.fetch_attachments(gis, layer_url=layer_url), manifest_rows)
+            fp.fetch_attachments(gis, layer_url=layer_url), manifest_rows,
+            source_table=layer_name)
 
     report = fp.build_preflight_report(
         item_id=item_id, layer_name=layer_name, checks_run=checks,

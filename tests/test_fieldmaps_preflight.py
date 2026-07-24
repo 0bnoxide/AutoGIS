@@ -198,6 +198,16 @@ def test_duplicates_blank_keys_warn():
     assert "2 hosted record(s) have no GlobalID" in blank.message
 
 
+def test_duplicates_capped_at_max_listed_with_aggregate():
+    # 25 duplicated keys -> 20 itemized + one "...and 5 more" aggregate.
+    records = [{"GlobalID": f"k{i:02d}"} for i in range(25)] * 2
+    warnings = _warnings(check_duplicate_identities(records))
+    itemized = [f for f in warnings if f.subject]
+    (aggregate,) = [f for f in warnings if not f.subject]
+    assert len(itemized) == 20
+    assert "...and 5 more duplicate GlobalID value(s)" in aggregate.message
+
+
 # -- check_conflict_candidates -------------------------------------------------
 
 def test_conflicts_differing_field_flagged():
@@ -214,7 +224,8 @@ def test_conflicts_identical_values_clean():
         [{"GlobalID": "a", "Depth": 5}],
         [{"GlobalID": "a", "Depth": "5"}])   # CSV strings == hosted ints
     assert not _warnings(findings)
-    assert "1 matched key(s), 0 conflict candidate(s)" in findings[-1].message
+    assert ("1 matched record(s), 0 conflict candidate(s)"
+            in findings[-1].message)
 
 
 def test_conflicts_excluded_and_system_fields_ignored():
@@ -231,6 +242,17 @@ def test_conflicts_hosted_only_counted():
     assert "1 hosted-only record(s)" in findings[-1].message
 
 
+def test_conflicts_duplicate_local_keys_warn():
+    findings = check_conflict_candidates(
+        [{"GlobalID": "a", "Depth": 5}],
+        [{"GlobalID": "a", "Depth": "5"},
+         {"GlobalID": "a", "Depth": "999"}])   # divergent second row
+    (collision,) = _warnings(findings)
+    assert "1 local CSV row(s) share a GlobalID" in collision.message
+    # first row wins the compare, so no conflict candidate:
+    assert "0 conflict candidate(s)" in findings[-1].message
+
+
 # -- check_attachments ---------------------------------------------------------
 
 _HOSTED_ATT = {"objectid": 1, "attachment_id": 10,
@@ -240,7 +262,8 @@ _HOSTED_ATT = {"objectid": 1, "attachment_id": 10,
 def test_attachments_all_present():
     (f,) = check_attachments(
         [_HOSTED_ATT],
-        [{"objectid": "1", "attachment_id": "10", "size": "2048"}])
+        [{"objectid": "1", "attachment_id": "10", "size": "2048",
+          "status": "downloaded", "saved_path": "Wells/photo.jpg"}])
     assert f.severity == SEV_INFO
 
 
@@ -252,8 +275,68 @@ def test_attachments_missing_locally():
 def test_attachments_size_mismatch_is_stale():
     (f,) = check_attachments(
         [_HOSTED_ATT],
-        [{"objectid": "1", "attachment_id": "10", "size": "999"}])
+        [{"objectid": "1", "attachment_id": "10", "size": "999",
+          "status": "downloaded", "saved_path": "Wells/photo.jpg"}])
     assert f.severity == SEV_WARNING and "stale local copy" in f.message
+
+
+def test_attachments_failed_harvest_counts_as_missing():
+    # Harvester writes failed rows with the hosted size preserved — a size
+    # match on a failed row must NOT read as "present locally".
+    (f,) = check_attachments(
+        [_HOSTED_ATT],
+        [{"objectid": "1", "attachment_id": "10", "size": "2048",
+          "status": "failed", "disposition": "failed", "saved_path": ""}])
+    assert f.severity == SEV_WARNING
+    assert "harvest failed" in f.message
+
+
+def test_attachments_skipped_rows_count_as_present():
+    # skipped = file already on disk from a previous run.
+    (f,) = check_attachments(
+        [_HOSTED_ATT],
+        [{"objectid": "1", "attachment_id": "10", "size": "2048",
+          "status": "skipped", "disposition": "skipped",
+          "saved_path": "Wells/photo.jpg"}])
+    assert f.severity == SEV_INFO
+
+
+def test_attachments_pathless_skipped_row_counts_as_missing():
+    (f,) = check_attachments(
+        [_HOSTED_ATT],
+        [{"objectid": "1", "attachment_id": "10", "size": "2048",
+          "status": "skipped", "disposition": "skipped",
+          "saved_path": ""}])
+    assert f.severity == SEV_WARNING
+    assert "no saved path" in f.message
+
+
+def test_attachments_scoped_to_selected_source_table():
+    (f,) = check_attachments(
+        [_HOSTED_ATT],
+        [
+            {"objectid": "1", "attachment_id": "10", "size": "2048",
+             "status": "downloaded", "saved_path": "Other/photo.jpg",
+             "source_table": "OtherLayer"},
+            {"objectid": "1", "attachment_id": "10", "size": "999",
+             "status": "downloaded", "saved_path": "Wells/photo.jpg",
+             "source_table": "MonitoringWells"},
+        ],
+        source_table="MonitoringWells",
+    )
+    assert f.severity == SEV_WARNING
+    assert "stale local copy" in f.message
+
+
+def test_attachments_missing_capped_with_aggregate():
+    hosted = [{"objectid": i, "attachment_id": 1, "name": "p.jpg",
+               "size": 10} for i in range(25)]
+    findings = check_attachments(hosted, [])
+    warnings = _warnings(findings)
+    itemized = [f for f in warnings if f.subject]
+    (aggregate,) = [f for f in warnings if not f.subject]
+    assert len(itemized) == 20
+    assert "...and 5 more missing attachment(s)" in aggregate.message
 
 
 # -- report assembly / formatting ----------------------------------------------

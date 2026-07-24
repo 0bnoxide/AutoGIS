@@ -233,13 +233,24 @@ def check_conflict_candidates(hosted_records: Sequence[dict],
     # "1" false-positives are possible); tighten per-type at the live gate if
     # they show up.
     excluded = {key_field, *exclude_fields}
-    local_by_key = {}
+    local_by_key: Dict[str, dict] = {}
+    local_collisions = 0
     for row in local_rows:
         key = row.get(key_field)
-        if key not in (None, ""):
-            local_by_key.setdefault(str(key), row)
+        if key in (None, ""):
+            continue
+        if str(key) in local_by_key:
+            local_collisions += 1
+        else:
+            local_by_key[str(key)] = row
 
     out: List[PreflightFinding] = []
+    if local_collisions:
+        out.append(PreflightFinding(
+            "conflicts", SEV_WARNING, "",
+            f"{local_collisions} local CSV row(s) share a {key_field} "
+            f"with an earlier row - only the first row per key is "
+            f"compared"))
     matched = hosted_only = 0
     conflicts: List[Tuple[str, List[str]]] = []
     for rec in hosted_records:
@@ -270,7 +281,7 @@ def check_conflict_candidates(hosted_records: Sequence[dict],
             f"candidate(s)"))
     out.append(PreflightFinding(
         "conflicts", SEV_INFO, "",
-        f"{matched} matched key(s), {len(conflicts)} conflict "
+        f"{matched} matched record(s), {len(conflicts)} conflict "
         f"candidate(s), {hosted_only} hosted-only record(s) with no "
         f"local row"))
     return out
@@ -278,30 +289,51 @@ def check_conflict_candidates(hosted_records: Sequence[dict],
 
 def check_attachments(hosted_attachments: Sequence[dict],
                       manifest_rows: Sequence[dict],
+                      *, source_table: Optional[str] = None,
                       ) -> List[PreflightFinding]:
     """Hosted attachment inventory vs the local harvester manifest.
 
     ``hosted_attachments`` are normalized dicts (see ``fetch_attachments``):
     objectid / attachment_id / name / size.  ``manifest_rows`` are harvester
-    ``manifest.csv`` rows (AttachmentResult columns).  Missing locally =
-    hosted attachment with no manifest row; stale = sizes differ.
+    ``manifest.csv`` rows (AttachmentResult columns).  When ``source_table``
+    is supplied, only rows for that selected sublayer participate.  Missing
+    locally = no matching manifest row OR a row without a downloaded/skipped
+    outcome and nonblank ``saved_path``; stale = sizes differ.
     """
+    selected = source_table.strip().casefold() if source_table is not None \
+        else None
     local: Dict[Tuple[str, str], dict] = {
         (_norm(r.get("objectid")), _norm(r.get("attachment_id"))): r
-        for r in manifest_rows}
+        for r in manifest_rows
+        if selected is None or
+        _norm(r.get("source_table")).strip().casefold() == selected}
     out: List[PreflightFinding] = []
     missing = stale = 0
     for att in hosted_attachments:
         ident = (_norm(att.get("objectid")), _norm(att.get("attachment_id")))
         row = local.get(ident)
         label = f"oid {ident[0]} att {ident[1]} ({att.get('name', '')})"
-        if row is None:
+        outcome = (_norm(row.get("disposition") or row.get("status"))
+                   .strip().casefold()) if row is not None else ""
+        saved_path = _norm(row.get("saved_path")).strip() \
+            if row is not None else ""
+        usable = outcome in ("downloaded", "skipped") and bool(saved_path)
+        if row is None or not usable:
             missing += 1
             if missing <= _MAX_LISTED:
+                if row is None:
+                    reason = "not in the local manifest - not yet harvested"
+                elif outcome == "failed":
+                    reason = ("harvest failed per the local manifest - no "
+                              "local copy")
+                elif not saved_path:
+                    reason = "listed in the manifest with no saved path"
+                else:
+                    reason = (f"listed with unusable outcome "
+                              f"{outcome!r}")
                 out.append(PreflightFinding(
                     "attachments", SEV_WARNING, label,
-                    f"hosted attachment {label} is not in the local "
-                    f"manifest - not yet harvested"))
+                    f"hosted attachment {label} is {reason}"))
             continue
         hosted_size = _norm(att.get("size"))
         local_size = _norm(row.get("size"))

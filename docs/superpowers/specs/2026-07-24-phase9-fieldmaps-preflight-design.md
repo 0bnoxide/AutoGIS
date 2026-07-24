@@ -25,7 +25,7 @@ autogis agol fieldmaps-preflight --item-id <id> [--layer-index N]
 | schema drift | reuse `audit_schema.diff_schema` on already-fetched layer props | `--spec` | if `--spec` |
 | duplicate identities | `check_duplicate_identities` — dup/blank `--key-field` values | fetched records | yes |
 | potential conflicts | `check_conflict_candidates` — matched keys whose shared non-system fields differ (string-normalized) | `--local-csv` snapshot | if `--local-csv` |
-| missing/stale attachments | `check_attachments` — `AttachmentManager.search()` vs harvester manifest rows (keyed objectid+attachment_id; stale = size differs) | `--manifest` | if `--manifest` and hasAttachments |
+| missing/stale attachments | `check_attachments` — `AttachmentManager.search()` vs usable downloaded/skipped harvester rows for the selected `source_table` (keyed objectid+attachment_id; stale = size differs) | `--manifest` | if `--manifest` and hasAttachments |
 
 Checks not run render as `SKIPPED (input not provided)` — the report never
 silently narrows (roadmap: "complete preflight report").
