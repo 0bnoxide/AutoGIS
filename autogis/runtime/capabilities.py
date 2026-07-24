@@ -46,6 +46,7 @@ TOOLS: dict[str, Runtime] = {
     "generate-python-labels": Runtime.CLOUD,  # tool 5.4b
     "generate-event-changelog": Runtime.CLOUD,  # tool 9.3
     "export-lab-request": Runtime.CLOUD,  # tool 2.11 headless
+    "coc": Runtime.CLOUD,  # Phase 6 chain-of-custody lifecycle (headless group)
     "generate-event-report": Runtime.CLOUD,  # tool 10.5
     "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
@@ -389,6 +390,10 @@ _REGISTRY_SEED = [
      "stable", "field",
      "Generate a pre-field sampling event plan workbook (expected samples, "
      "crew, COC draft)"),
+    ("coc", "ChainOfCustodyLifecycle", "", "CLOUD", "stable", "field",
+     "Advance a sampling event's COCs through generated -> released -> "
+     "laboratory-received -> results-received -> reconciled/exception with a "
+     "per-transition audit trail and planned-vs-received reconciliation (Phase 6)"),
     ("generate-inspection-report", "GenerateWellInspectionPhotoReport", "7.4",
      "CLOUD", "stable", "reporting",
      "Per-well inspection photo workbook (XLSX) from harvested attachments "
