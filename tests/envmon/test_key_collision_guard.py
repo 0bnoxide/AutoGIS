@@ -53,6 +53,17 @@ def test_method_only_difference_collides_and_blocks():
     assert qa.has_blocking()
 
 
+def test_same_cell_on_distinct_sheets_does_not_collide():
+    results = _analytical([_flat_row(), _flat_row(res="2.4")])
+    results[0].SourceSheet = "GW Quality"
+    results[1].SourceSheet = "GW Quality (2)"
+    results[0].SourceCell = results[1].SourceCell = "C9"
+    qa = QACollector()
+    assert detect_within_file_key_collisions(
+        results, "Env_AnalyticalResults", qa, "B1") == 0
+    assert not qa.records
+
+
 def test_distinct_keys_pass_clean():
     results = _analytical([_flat_row(), _flat_row(an="Benzene")])
     qa = QACollector()

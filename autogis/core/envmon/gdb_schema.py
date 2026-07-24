@@ -397,7 +397,7 @@ UNIQUE_KEYS = {
     "Env_Samples": ["SiteID", "Matrix", "SampleID", "SampleDate"],
     "Env_AnalyticalResults": ["SiteID", "Matrix", "LocationID", "SampleID",
                               "SampleDate", "AnalyteCanonicalName",
-                              "DepthIntervalText", "SourceCell",
+                              "DepthIntervalText", "SourceSheet", "SourceCell",
                               "ResultFraction", "QCType",
                               "MethodDilutionKey"],
     "Env_QCResults": ["SiteID", "Matrix", "AnalysisBatchID", "SampleID",
