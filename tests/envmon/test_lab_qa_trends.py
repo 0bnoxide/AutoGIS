@@ -9,6 +9,7 @@ both the rule and its expected output would be circular).
 from datetime import date
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from autogis.adapters.cli import autogis
@@ -47,7 +48,27 @@ def test_recovery_out_of_default_window_flagged():
 def test_recovery_row_limits_override_default():
     # 60% is outside the default 70-130 but inside the lab window [50,150]
     rows = [_qc("LCS", "Benzene", rec=60.0, lo=50.0, hi=150.0, sid="R3")]
-    assert compute_recovery_trends(rows, LabQAThresholds())[0].n_flagged == 0
+    trend = compute_recovery_trends(rows, LabQAThresholds())[0]
+    assert trend.n_flagged == 0
+    assert "[50, 150]%" in trend.threshold_applied
+    assert "Lab EDD" in trend.citation
+
+
+def test_recovery_override_requires_matching_citation():
+    with pytest.raises(ValueError, match="recovery_citation"):
+        LabQAThresholds.from_dict({"recovery_default_lower": 50.0})
+
+
+def test_recovery_override_uses_matching_citation():
+    thresholds = LabQAThresholds.from_dict({
+        "recovery_default_lower": 50.0,
+        "recovery_default_upper": 150.0,
+        "recovery_citation": "Project QAPP Table 4.",
+    })
+    trend = compute_recovery_trends(
+        [_qc("LCS", "Benzene", rec=60.0)], thresholds)[0]
+    assert "[50, 150]%" in trend.threshold_applied
+    assert trend.citation == "Project QAPP Table 4."
 
 
 def test_recovery_high_side_flagged():
@@ -137,6 +158,7 @@ def test_command_in_help():
     res = CliRunner().invoke(autogis, ["envmon", "lab-qa-trends", "--help"])
     assert res.exit_code == 0
     assert "--qc-results" in res.output and "--out" in res.output
+    assert "--report" in res.output and "--fail-on" in res.output
 
 
 def test_cli_multi_event_trends(tmp_path):
@@ -181,3 +203,18 @@ def test_cli_thresholds_override(tmp_path):
     assert res.exit_code == 0, res.output
     blank = read_records_csv(out, LabQATrendRow)[0]
     assert blank.n_flagged == 1  # 0.6 >= 0.5*1.0 with override
+
+
+def test_cli_surfaces_missing_rl_warning(tmp_path):
+    qc = tmp_path / "qc.csv"
+    _write_qc_csv(
+        qc, [_qc("MB", "Benzene", result=1.0, rl=None, sid="B1")])
+    out = tmp_path / "trends.csv"
+
+    res = CliRunner().invoke(autogis, [
+        "envmon", "lab-qa-trends", "--qc-results", str(qc),
+        "--out", str(out)])
+
+    assert res.exit_code == 0, res.output
+    assert "[WARNING] blank_no_rl:" in res.output
+    assert "Status: PASS" in res.output

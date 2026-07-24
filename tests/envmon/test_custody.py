@@ -78,6 +78,14 @@ def test_actor_required():
         custody.transition(rec, GENERATED, actor="   ", at=T0)
 
 
+def test_actor_required_when_creating_record():
+    with pytest.raises(CustodyError):
+        custody.new_record(
+            "COC-001", event_name="EVT", site_id="SITE",
+            event_date="2026-07-23", lab_name="LabCo", sample_ids=[],
+            at=T0, actor="   ")
+
+
 def test_unknown_state_rejected():
     rec = _rec()
     with pytest.raises(CustodyError):

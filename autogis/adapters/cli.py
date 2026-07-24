@@ -71,7 +71,8 @@ _QA_COUNTS_META_KEY = "autogis.qa_counts"
 # outputs={}: `agol promote` (rows_copied etc. via promote.py's _log_promotion)
 # and `event-status` (state counts + status='success' regardless of its semantic
 # nonzero exit code, so a stale-finding read isn't mislogged as an error).
-_SELF_LOGGING_COMMANDS = {"promote", "event-status"}
+# `coc` uses its per-transition custody audit instead of run history (ADR-0107).
+_SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
 
 
 def _record_tool_name(ctx) -> str:
@@ -2383,7 +2384,10 @@ def coc_generate_cmd(site_path, event_path, analytes_path, store_path, actor):
 
     now = datetime.now()
     store = custody.load_store(Path(store_path))
-    records = custody.records_from_plan(plan, at=now, actor=actor)
+    try:
+        records = custody.records_from_plan(plan, at=now, actor=actor)
+    except custody.CustodyError as exc:
+        raise click.ClickException(str(exc))
     # Refuse to clobber in-progress COCs: re-running generate on a store that
     # already holds these COC numbers would reset their state and discard their
     # audit trail — data loss on an audit tool. Use a fresh store to regenerate.
@@ -2536,7 +2540,8 @@ def coc_status_cmd(store_path, coc):
                    "(recovery window, blank_rl_multiple, blank_qc_types).")
 @click.option("--out", "out_path", required=True, type=click.Path(),
               help="Output trends CSV.")
-def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path):
+@qa_report_options
+def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path, report, fail_on):
     """Phase 7: longitudinal laboratory-QA trends (headless, arcpy-free).
 
     Reads one or more Env_QCResults CSV exports and writes a per
@@ -2558,7 +2563,11 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path):
     thresholds = LabQAThresholds()
     if thresholds_path:
         from autogis.core.common.config import load_config
-        thresholds = LabQAThresholds.from_dict(load_config(Path(thresholds_path)))
+        try:
+            thresholds = LabQAThresholds.from_dict(
+                load_config(Path(thresholds_path)))
+        except ValueError as exc:
+            raise click.ClickException(str(exc))
 
     qa = QACollector()
     trends = compute_lab_qa_trends(rows, thresholds, qa)
@@ -2571,6 +2580,7 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path):
                f"QC result(s) -> {out_path}")
     click.echo(f"  {n_rec} recovery + {n_blank} blank group(s); "
                f"{flagged} flagged QC result(s)")
+    _render_qa(qa, report, fail_on)
 
 
 @envmon.command("export-wqx")

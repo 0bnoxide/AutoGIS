@@ -189,6 +189,54 @@ def claim(path, session_id, kind, value, ttl_sec=DEFAULT_TTL_SEC,
         _release_lock(path)
 
 
+def live_values(path, kind, now=None):
+    """Values of all LIVE (non-stale) claims of a given ``kind``."""
+    return [c.get("value") for c in list_claims(path, now=now)
+            if c.get("kind") == kind]
+
+
+def reserve_number(path, session_id, kind, base, ttl_sec=DEFAULT_TTL_SEC,
+                   pid=None, host=None, now=None):
+    """Atomically reserve the next free integer for ``kind`` and record it.
+
+    Returns ``max(base, highest live reservation of this kind) + 1`` and writes
+    it as a claim — all under the registry lock, so two sessions reserving at
+    once can never pick the same number (unlike plain :func:`claim`, which does
+    not enforce cross-session value uniqueness). ``base`` is the caller's
+    out-of-band floor; for ADRs it is the max already used by local files + open
+    PRs. Stale claims are reaped first, so an abandoned reservation frees its
+    number.
+    """
+    now = now or _now()
+    _acquire_lock(path)
+    try:
+        data = load_registry(path)
+        live = [c for c in data["claims"] if not is_stale(c, now)]
+        data["claims"] = live                       # reap stale in-place
+        highest = int(base)
+        for c in live:
+            if c.get("kind") == kind:
+                try:
+                    highest = max(highest, int(c.get("value")))
+                except (TypeError, ValueError):
+                    pass                             # non-numeric value: ignore
+        n = highest + 1
+        data["claims"].append({
+            "session_id": session_id,
+            "kind": kind,
+            "value": str(n),
+            "pid": pid if pid is not None else os.getpid(),
+            "host": host or _host(),
+            "started_at": _iso(now),
+            "heartbeat_at": _iso(now),
+            "ttl_sec": ttl_sec,
+        })
+        save_registry(path, data)
+        return n
+    finally:
+        _release_lock(path)
+
+
 def reap_stale(path, now=None):
     now = now or _now()
     _acquire_lock(path)

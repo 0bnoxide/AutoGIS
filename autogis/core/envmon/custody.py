@@ -112,6 +112,8 @@ def new_record(
     actor: str,
 ) -> CustodyRecord:
     """Create a COC in the DRAFT state with a creation audit entry."""
+    if not actor or not actor.strip():
+        raise CustodyError("actor (responsible party) is required")
     rec = CustodyRecord(
         coc_number=coc_number,
         event_name=event_name,
