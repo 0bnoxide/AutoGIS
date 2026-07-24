@@ -241,3 +241,44 @@ def test_claims_path_falls_back_to_cwd_outside_git(tmp_path):
     finally:
         if prev is not None:
             _os.environ["CLAUDE_PROJECT_DIR"] = prev
+
+
+# --- reserve_number / live_values (ADR-number reservations) ------------------
+
+def test_reserve_number_base_plus_one_then_increments(tmp_path):
+    p = tmp_path / "c.json"
+    assert registry.reserve_number(p, "s1", "adr", 5) == 6
+    assert registry.reserve_number(p, "s2", "adr", 5) == 7  # sees s1's reservation
+    assert sorted(registry.live_values(p, "adr")) == ["6", "7"]
+
+
+def test_reserve_number_lifts_above_reservation_not_just_base(tmp_path):
+    p = tmp_path / "c.json"
+    registry.reserve_number(p, "s1", "adr", 100)            # -> 101
+    # base falls back (e.g. a PR closed) but the live reservation still holds.
+    assert registry.reserve_number(p, "s2", "adr", 3) == 102
+
+
+def test_reserve_number_ignores_stale_reservation(tmp_path):
+    now = registry._now()
+    p = tmp_path / "c.json"
+    registry.reserve_number(p, "s1", "adr", 50, ttl_sec=100, now=now)   # -> 51
+    later = now + timedelta(seconds=500)
+    # s1's 51 has expired and is reaped, so the number is free again.
+    assert registry.reserve_number(p, "s2", "adr", 50, now=later) == 51
+
+
+def test_reserve_number_is_kind_scoped(tmp_path):
+    p = tmp_path / "c.json"
+    registry.reserve_number(p, "s1", "adr", 10)             # -> 11
+    # a different kind at the same value must not shift ADR numbering
+    registry.claim(p, "s1", "branch", "999")
+    assert registry.reserve_number(p, "s2", "adr", 10) == 12
+
+
+def test_live_values_excludes_stale(tmp_path):
+    now = registry._now()
+    p = tmp_path / "c.json"
+    registry.claim(p, "s1", "adr", "9", ttl_sec=100, now=now)
+    later = now + timedelta(seconds=500)
+    assert registry.live_values(p, "adr", now=later) == []
