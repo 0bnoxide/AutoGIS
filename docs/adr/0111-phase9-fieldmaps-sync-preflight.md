@@ -1,6 +1,6 @@
 # ADR-0111: Phase 9 slice 1 — headless Field Maps sync preflight (Tool 7.5)
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Date:** 2026-07-24
 
