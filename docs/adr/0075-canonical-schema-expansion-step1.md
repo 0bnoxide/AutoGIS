@@ -61,6 +61,11 @@ verbatim.
    silently dropped. Both production analytical normalizers already populate
    `SourceSheet`; the column already exists in stored GDB rows, so this changes
    key computation without a schema or `SCHEMA_VERSION` migration.
+   Canonical-read then compares rows that share the same semantic grain,
+   fraction, and `MethodDilutionKey` across source sheets. Exact duplicates
+   collapse with INFO; conflicting payloads emit blocking ERROR and none reach
+   canonical consumers. Sheet names do not encode correction precedence, so
+   the policy never guesses which conflicting row is authoritative.
 
 3. **`MethodDilutionKey` composite convention:** a deterministic load-time
    composite built by each reader from its format's run discriminators —
@@ -128,7 +133,8 @@ verbatim.
   exists to close.
 - Corrected or duplicate workbook sheets no longer collide merely because
   their results occupy the same A1 cell; same-sheet re-imports remain
-  idempotent.
+  idempotent. Conflicting sibling-sheet values remain stored for provenance
+  but are blocked from canonical consumers pending adjudication.
 - Every name and key composition frozen here was verified against 5 real
   formats before being written down, so Step 2 and Step 3 build on a
   paper-mapped foundation instead of a first-pass guess.

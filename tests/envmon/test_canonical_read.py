@@ -181,6 +181,32 @@ def test_single_run_groups_untouched_by_reportable_zero():
     assert len(out) == 1                   # never drop a group's only run
 
 
+def test_conflicting_source_sheets_fail_loud_and_are_excluded():
+    rows = [
+        _row(SourceSheet="GW Quality", SourceCell="C9", ResultNumeric=1.0),
+        _row(SourceSheet="GW Quality (2)", SourceCell="C9", ResultNumeric=2.0),
+    ]
+    for ordered in (rows, list(reversed(rows))):
+        qa = QACollector()
+        assert canonical_result_rows(ordered, qa) == []
+        assert any(r.category == "source_sheet_conflict"
+                   and r.severity == "ERROR" for r in qa.records)
+
+
+def test_identical_source_sheet_duplicates_keep_first_with_info():
+    qa = QACollector()
+    first = _row(
+        ImportBatchID="B1", SourceSheet="GW Quality", SourceCell="C9",
+        ResultNumeric=1.0)
+    duplicate = {
+        **first, "ImportBatchID": "B2", "SourceSheet": "Archive",
+        "SourceCell": "D12",
+    }
+    assert canonical_result_rows([first, duplicate], qa) == [first]
+    assert any(r.category == "source_sheet_duplicate"
+               and r.severity == "INFO" for r in qa.records)
+
+
 def test_pivot_no_longer_drops_or_double_counts_fractions():
     from autogis.core.envmon.build_current_event import build_wide_rows
     qa = QACollector()
