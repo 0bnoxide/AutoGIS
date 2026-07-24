@@ -20,12 +20,12 @@ Attachment Harvester is a separate, fully-shipped domain not counted in the 79 t
 | Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
 | **Catalog total (§2–11)** | **~79** | |
 
-The codebase now ships **116 `core/envmon/` + 11 `core/agol/` modules (127 total)**,
+The codebase now ships **119 `core/envmon/` + 12 `core/agol/` modules (131 total)**,
 **126 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
 `manage-callout-overrides`'s 4 subcommands counted individually), and an arcpy-free
 test suite — derive the live count with `python -m pytest --collect-only -q`; it is
 extras-dependent, so a `[dev]`-only env collects fewer tests than a full-extras env
-(module/CLI counts as of 2026-07-22 — derive live: `ls autogis/core/envmon/*.py | grep -v __init__ | wc -l`).
+(module counts as of 2026-07-24 — derive live: `ls autogis/core/envmon/*.py | grep -v __init__ | wc -l`).
 For the authoritative per-tool breakdown see
 [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
 here have advanced well past that snapshot — batches merged through 2026-06-28 – 07-02
