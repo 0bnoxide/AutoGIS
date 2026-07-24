@@ -39,6 +39,26 @@ def test_merge_two_files(tmp_path):
     assert result.duplicate_rows_dropped == 0
 
 
+def test_merge_preserves_union_of_heterogeneous_columns(tmp_path):
+    f1 = tmp_path / "event_a.csv"
+    f2 = tmp_path / "event_b.csv"
+    _write_csv(f1, [{"SampleID": "S1", "Benzene": "5.0"}])
+    _write_csv(f2, [{"SampleID": "S2", "Toluene": "7.0"}])
+    out = tmp_path / "merged.csv"
+
+    merge_event_results(
+        [f1, f2], out, dedup_key=("SampleID",), add_source_column=False)
+
+    with out.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        rows = list(reader)
+    assert reader.fieldnames == ["SampleID", "Benzene", "Toluene"]
+    assert rows == [
+        {"SampleID": "S1", "Benzene": "5.0", "Toluene": ""},
+        {"SampleID": "S2", "Benzene": "", "Toluene": "7.0"},
+    ]
+
+
 def test_deduplication(tmp_path):
     f1 = tmp_path / "Env_Results_20260115.csv"
     f2 = tmp_path / "Env_Results_20260615.csv"

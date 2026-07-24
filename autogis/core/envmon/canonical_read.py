@@ -17,11 +17,15 @@ import dataclasses
 from collections import defaultdict
 from typing import Dict, List, Sequence, Tuple
 
-from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
+from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 
 #: Default fraction preference, most-canonical first. "" (legacy /
 #: unfractionated) never competes: single-fraction groups pass through.
 DEFAULT_FRACTION_PREFERENCE: tuple[str, ...] = ("Total", "Dissolved")
+_PROVENANCE_FIELDS = {
+    "ImportBatchID", "SourceWorkbook", "SourceSheet", "SourceRow",
+    "SourceColumn", "SourceCell", "_i",
+}
 
 
 def _group_key(r: dict) -> Tuple:
@@ -100,6 +104,46 @@ def canonical_result_rows(
                    location_id=gkey[2], analyte_name=gkey[5])
     if dropped:
         out = [r for r in out if id(r) not in dropped]
+
+    # SourceSheet now qualifies SourceCell in the idempotency key (issue
+    # #304), so sibling/corrected-sheet rows both survive storage. No sheet
+    # name reliably identifies the corrected value: exact semantic duplicates
+    # are safe to collapse, but conflicting payloads must fail loud and stay
+    # out of every canonical consumer until adjudicated.
+    sheet_groups: Dict[Tuple, List[dict]] = defaultdict(list)
+    for r in out:
+        sheet_groups[(
+            _group_key(r),
+            r.get("ResultFraction") or "",
+            r.get("MethodDilutionKey") or "",
+        )].append(r)
+    sheet_dropped = set()
+    for (gkey, _frac, _mdk), members in sheet_groups.items():
+        sheets = {str(m.get("SourceSheet") or "").strip().upper()
+                  for m in members}
+        if len(sheets) < 2:
+            continue
+        payloads = [
+            {k: v for k, v in member.items() if k not in _PROVENANCE_FIELDS}
+            for member in members
+        ]
+        if all(payload == payloads[0] for payload in payloads[1:]):
+            sheet_dropped.update(id(member) for member in members[1:])
+            qa.add(
+                SEV_INFO, "source_sheet_duplicate",
+                f"{gkey[2]} {gkey[5]}: {len(members)} identical row(s) "
+                "from different source sheets resolved to the first row.",
+                location_id=gkey[2], analyte_name=gkey[5])
+        else:
+            sheet_dropped.update(id(member) for member in members)
+            qa.add(
+                SEV_ERROR, "source_sheet_conflict",
+                f"{gkey[2]} {gkey[5]}: {len(members)} conflicting row(s) "
+                "from different source sheets require adjudication; none "
+                "were passed to canonical consumers.",
+                location_id=gkey[2], analyte_name=gkey[5])
+    if sheet_dropped:
+        out = [r for r in out if id(r) not in sheet_dropped]
     return out
 
 

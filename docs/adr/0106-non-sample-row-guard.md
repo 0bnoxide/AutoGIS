@@ -89,12 +89,10 @@ is unchanged; no field widths change.
   from `H272_Havre_GW_Analytical.yaml` (this PR) also moots its BOS annotation rows
   and the cross-sheet dedup exposure below. Final analytical data lives on
   `GW Quality` only.
-- **Separate latent finding (not fixed here, #272):** the `Env_AnalyticalResults`
-  idempotency key uses a bare `SourceCell` A1 ref (`"C9"`) with **no sheet
-  qualifier** (`SourceSheet` is not in the key). A row-aligned duplicate sheet can
-  therefore collide on position and silently drop a *corrected* value. Dropping the
-  DRAFT sheet removes the H272 exposure; the general fix (add `SourceSheet` to the
-  key) is a separate decision.
+- **Resolved by issue #304:** the `Env_AnalyticalResults` idempotency key
+  formerly used a bare `SourceCell` A1 ref (`"C9"`) with no sheet qualifier.
+  `SourceSheet` now precedes `SourceCell` in the key, so row-aligned sibling
+  sheets are distinct while same-sheet re-imports remain idempotent.
 - The `IBIs` sheet (inorganic indicator params) is absent from the H272 analytical
   profile and is dropped with no sheet-coverage QA flag — user accepted this as a
   real-world durability datapoint (2026-07-22); left as-is.
