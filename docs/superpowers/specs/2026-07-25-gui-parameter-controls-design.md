@@ -160,7 +160,7 @@ the `nargs` seam.
 | `choice` + `repeatable` | checklist inside one row; emits N flags (`build_argv` already does this) |
 | `int` / `float` | `QSpinBox` / `QDoubleSpinBox`, `setRange` from `minimum`/`maximum` |
 | `repeatable` (free text/path) | +/− rows inside one container widget |
-| `xor_group` | greying, reusing `_sync_xor` |
+| `xor_group` | **grey the unused sibling, keep its text** — see 4.1a |
 | the form as a whole | wrapped in a `QScrollArea` |
 
 ### 4.1 Expressing "unset"
@@ -172,6 +172,21 @@ options that default to `None`.
 Native fix: `QSpinBox.setSpecialValueText("(use default)")` with the minimum set one step below the
 real floor. Qt displays that text at the minimum; the read-back maps it to `None`. Same mechanism
 for the optional `QDateEdit`s. **No custom tri-state widget.**
+
+### 4.1a Either/or (xor) behaviour
+
+**Owner decision, 2026-07-25:** filling one side **disables** the sibling but **preserves whatever
+is typed in it**. Clearing the filled side re-enables both, with the sibling's text intact. No
+clearing, no confirmation prompt — a path the user typed is never destroyed by a side effect.
+
+This is exactly `config_builder_dialog.py:241-251 _sync_xor`, which already does
+`setEnabled(not other)` and nothing else. **Reuse it rather than writing a second one** — the only
+additions are wiring it to the generic `xor_group` metadata and the `reconcile-locations`
+exception below.
+
+Two constraints from §6 apply directly: greying must be driven from the widget (not
+`labelForField()`, which returns `None` for path rows), and `reconcile-locations --gdb`
+unconditionally HALTs, so its pair must not steer the user into the dead-end side.
 
 ### 4.2 Rejected controls (with reasons, so they are not re-proposed)
 
@@ -215,13 +230,17 @@ side-effect of declaring the type — no error-handling code written.
 
 ---
 
-## 5. Slice 3 (PR3) — Data-dependent vocabularies
+## 5. Deferred — Data-dependent vocabularies
+
+**Owner decision, 2026-07-25: build later.** Ship PR1 and PR2, use them, and only then decide
+whether typing these 14 is actually a nuisance. Nothing in PR1/PR2 forecloses it — they stay
+plain text fields until someone asks.
 
 The 14 remaining comma-list options (`--analytes`, `--borings`, `--received-ids`, `--sites`,
 `--events`, `--analyte-filter`, …) have **no static vocabulary**: their legal values come from the
 workbook, GDB, or results file selected in a *sibling field of the same form*.
 
-Requirements:
+Recorded here so the decision isn't re-derived from scratch — what it *would* take:
 
 1. A per-option **enumerator** — a function `(source_path) -> tuple[str, ...]` living in `core/`,
    not the GUI, so the CLI can reuse it for validation.
