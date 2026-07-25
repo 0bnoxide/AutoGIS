@@ -12,33 +12,6 @@ reuse before writing, stdlib/native before dependencies, shortest correct diff
 subagent prompt you write. It governs *what* you build, not how you talk, and never
 shortcuts understanding the problem or skips validation/security/error handling.
 
-## Dispatched agents may call the `advisor`
-
-`.claude/agents/advisor.md` is an independent, opus-backed sanity check that
-**distrusts a claim by default and verifies it against the repo** before the caller
-acts on it. It exists because an agent cannot check its own reasoning with its own
-reasoning — self-review reliably ratifies confident-but-wrong findings.
-
-When you dispatch a subagent for work that is consequential, irreversible, or that
-it authored itself, **say so in its prompt**: *"before you report your findings,
-you may call the `advisor` agent once to sanity-check them."* Reserve it for a real
-judgment call — a finding about to be reported, a conclusion about to be acted on,
-an irreversible step. It is a checkpoint, not a review; `pr-reviewer` reviews diffs.
-
-Skip it for mechanical or trivial work — a second opinion on a one-line rename is
-pure overhead.
-
-**The caller must be able to dispatch, or the invitation is a no-op.** Only agents
-that can use the Agent tool can call the advisor: `general-purpose` and any
-definition with **no** `tools:` key (it inherits the full set, e.g.
-`graph-codebase-navigator`). The repo's other definitions — `pr-reviewer`,
-`envmon-spec-checker`, `arcpy-doc-verifier` — carry explicit `tools:` allowlists
-that do **not** include dispatch, so telling one of them to "call the advisor"
-silently produces no checkpoint. Either dispatch that work through
-`general-purpose` with the advisor invitation in its prompt, or add the dispatch
-tool to the intended caller's allowlist first. Verify the caller's `tools:` line
-before relying on the invitation (PR #324 review).
-
 ## Codebase memory
 
 The codebase-memory MCP server is **wired at USER scope** (stdio), not via a repo
