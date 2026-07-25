@@ -8,6 +8,10 @@ where things live; it does not replace reading the files themselves.
 - **[`production-roadmap.md`](production-roadmap.md)** — accepted post-catalog
   production sequence and phase exit gates. ADR-0087 records the ordering
   decision; this file carries the living phase detail.
+- **[`survey123-add-on-roadmap.md`](survey123-add-on-roadmap.md)** — accepted
+  optional Survey123 lifecycle track: install boundary, sequential phases,
+  milestones, and production gates. ADR-0112 records the decision; the track
+  does not reorder or block the core production roadmap.
 - **[`adr/`](adr/README.md)** — Architecture Decision Records. The durable record of
   every architectural/structural/invariant/tool-batch decision. Start here for
   "why is it built this way".
@@ -49,11 +53,11 @@ where things live; it does not replace reading the files themselves.
 
 ## Flat top-level files
 
-Except for the authoritative `production-roadmap.md` linked above, the remaining
-top-level `docs/*.md` files (roadmap snapshots, ROI analyses, status
-updates, integration notes) are point-in-time working documents from specific
-batches -- not kept current after the fact. Treat a date in the filename or a
-"Status: as of <date>" line as the file's shelf life; for current status, prefer
-`git log`, the ADR index, or asking in-session rather than trusting an undated
-roadmap file. No archive convention exists yet for these; consult a file's own
-date before relying on it.
+Except for the authoritative `production-roadmap.md` and accepted
+`survey123-add-on-roadmap.md` linked above, the remaining top-level `docs/*.md`
+files (roadmap snapshots, ROI analyses, status updates, integration notes) are
+point-in-time working documents from specific batches -- not kept current after
+the fact. Treat a date in the filename or a "Status: as of <date>" line as the
+file's shelf life; for current status, prefer `git log`, the ADR index, or
+asking in-session rather than trusting an undated roadmap file. No archive
+convention exists yet for these; consult a file's own date before relying on it.
