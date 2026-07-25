@@ -143,6 +143,9 @@ def migrate_wide_csv(
                    site_id=config.site_id, location_id=loc)
 
         if not sample_id:
+            # Non-lifecycle identity, only invented when the historical
+            # source has none — deliberately NOT the lifecycle format;
+            # sample_id.parse_sample_id returns None for it.
             sample_id = f"{loc}_{date_raw}_{row_idx}"
 
         for analyte in analyte_cols:

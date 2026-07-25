@@ -136,6 +136,9 @@ def create_sampling_plan(
                 group_name.lower(), bmap["default"])
             bottle_count = grp.get("bottles", 1)
             preservation = grp.get("preservation", "")
+            # Non-lifecycle identity: per-analyte-group granularity,
+            # deliberately NOT the lifecycle SampleID format —
+            # sample_id.parse_sample_id returns None for it.
             sample_id = f"{site_id}-{loc}-{event_str}-{group_name}"
             plan.samples.append(PlannedSample(
                 SiteID=site_id,
