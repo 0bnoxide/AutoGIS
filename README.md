@@ -313,7 +313,7 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon validate-config` | CLOUD | `core/envmon/validate_config.py` |
 | `autogis envmon manage-analyte-dict` | CLOUD | `core/envmon/manage_analyte_dict.py` |
 | `autogis envmon manage-screening-levels` | CLOUD | `core/envmon/manage_screening_levels.py` |
-| `autogis envmon reconcile-locations` | HYBRID | `core/envmon/reconcile_locations.py` |
+| `autogis envmon reconcile-locations` | HYBRID | `core/envmon/reconcile_locations.py` (`--wells-csv` headless; `--gdb` guards + redirects to the `.pyt` ReconcileSampleLocations) |
 | `autogis envmon validate-units` | CLOUD | `core/envmon/validate_units.py` |
 | `autogis envmon evaluate-rpd-qa` | CLOUD | `core/envmon/evaluate_rpd_qa.py` |
 | `autogis envmon evaluate-rpd` | CLOUD | `core/envmon/evaluate_rpd.py` |
@@ -393,44 +393,71 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon lab-qa-trends` | CLOUD | `core/envmon/lab_qa_trends.py` |
 | `autogis envmon export-wqx` | CLOUD | `core/envmon/wqx_outbound.py` (DRAFT) |
 | `autogis agol fieldmaps-preflight` | CLOUD | `core/agol/fieldmaps_preflight.py` (read-only) |
+| `autogis envmon event-status` | CLOUD | `core/envmon/event_status.py` |
+| `autogis envmon create-sampling-event` | CLOUD | `core/envmon/create_sampling_event.py` |
+| `autogis envmon gen-boring-logs` | CLOUD | `core/envmon/boring_log_report.py` |
+| `autogis envmon update-well-elevations --wells-csv` | HYBRID | `core/envmon/level_loop.py` (`--gdb` write path is LOCAL) |
+| `autogis envmon draft-plume-boundary` (no `--gdb`) | HYBRID | `core/envmon/draft_plume_boundary.py` (`--gdb` write path is LOCAL; DRAFT output) |
+| `autogis envmon build-fieldmaps --dry-run` | HYBRID | `core/envmon/fieldmaps_plan.py` (plan preview; `--gdb` provisioning is LOCAL) |
+| `autogis envmon gen-map-series --dry-run` | HYBRID | `core/envmon/map_series_plan.py` (job planning; the export loop is LOCAL) |
+| `autogis envmon build-conc-surface --dry-run` | HYBRID | `core/envmon/concentration_surface.py` (headless point preview; interpolate/clip/write is LOCAL) |
+| `autogis agol sync-to-gdb --out-csv` | HYBRID | `core/agol/sync_layer.py` (headless edits dump; `--gdb` upsert is LOCAL) |
+| `autogis agol audit-schema` | — (AGOL auth) | `core/agol/audit_schema.py` |
+| `autogis agol audit-dependencies` | — (AGOL auth) | `core/agol/audit_dependencies.py` |
+| `autogis agol refresh-dashboard` | — (AGOL auth) | `core/agol/dashboard_refresh.py` |
+| `autogis agol publish-dashboard` | — (AGOL auth) | `core/agol/dashboard_publish.py` |
+| `autogis agol promote` | — (AGOL auth) | `core/agol/promote.py` |
+| `autogis agol update-webmap` | — (AGOL auth) | `core/agol/webmap.py` |
+| `autogis agol create-views` | — (AGOL auth) | `core/agol/hosted_views.py` |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
-| Command | Backing module |
-|---------|----------------|
-| `autogis envmon import-gdb` | `core/envmon/import_to_gdb.py` |
-| `autogis envmon build-event` | `core/envmon/build_current_event.py` |
-| `autogis envmon build-callouts` | `core/envmon/build_figure_dataset.py` |
-| `autogis envmon optimize-callouts` | `core/envmon/callout_collision.py`, `callout_geometry.py` |
-| `autogis envmon manage-callout-overrides` | `core/envmon/manage_callout_overrides.py` |
-| `autogis envmon gw-contours` | `core/envmon/groundwater_contours.py` |
-| `autogis envmon export-figures` | `core/envmon/export_figures.py` |
-| `autogis envmon full-pipeline` | `core/envmon/import_to_gdb.py` (orchestrator) |
-| `autogis envmon validate-db` | `core/envmon/validate_database.py` |
-| `autogis envmon upgrade-schema` | `core/envmon/upgrade_schema.py` |
-| `autogis envmon export-snapshot` | `core/envmon/export_snapshot.py` |
-| `autogis envmon import-edd` | `core/envmon/edd_importer.py` |
-| `autogis envmon import-rtk-survey` | `core/envmon/import_rtk_survey.py` |
-| `autogis envmon route-survey123` | `core/envmon/normalize_survey123.py` |
-| `autogis envmon import-drone-products` | `core/envmon/import_drone_products.py` |
-| `autogis envmon import-boring-logs` | `core/envmon/import_boring_logs.py` |
-| `autogis envmon build-dashboard-data-mart` | `core/envmon/dashboard_data_mart.py` |
-| `autogis envmon survey-to-well-elevation --gdb` | `core/envmon/survey_to_well_elevation.py` (HYBRID command; headless via `--wells-csv`) |
-| `autogis envmon register-drone-flight` (non-dry-run) | `core/envmon/register_drone_flight.py` (HYBRID command; headless via `--dry-run`) |
-| `autogis envmon build-cad-package` | `core/envmon/cad_layer_map.py` (`.pyt` `BuildCADExportPackage`, ADR-0088; CLI always guards + redirects) |
-| `autogis envmon condition-dem` | `core/envmon/dem_conditioning.py` (config validated headless; guards + redirects) |
-| `autogis envmon compare-drone-surfaces` | `core/envmon/compare_drone_surfaces.py` (args validated headless; guards + redirects) |
-| `autogis envmon run-gw-model-pipeline` | `core/envmon/gw_model_pipeline.py` (Phase-5 slice 1 — TIN/IDW + LOO cross-validation) |
-| `autogis envmon approve-gw-model` | `core/envmon/gw_model_pipeline.py` (Phase-5 slice 1 — `GW_ModelRun` field edit) |
-| `autogis envmon build-conc-surface` | `core/envmon/concentration_surface.py` (Phase-5 slice 2 — EBK raster interpolation; DRAFT output) |
-| `autogis envmon qualify` | `adapters/qualification.py` (Pro runtime + toolbox qualification, ADR-0091) |
+Every row states its exact arcpy-guard behavior — no command is left to a shared pattern.
 
-LOCAL commands guard on `arcpy` and redirect to the `.pyt` toolbox inside ArcGIS Pro when it is
-absent. `import-edd`, `import-rtk-survey`, `route-survey123`, `import-drone-products`,
-`import-boring-logs`, `build-dashboard-data-mart`, and `build-cad-package` are LOCAL-only and will
-print the standard guard message if run headless — use the `.pyt` toolbox or the guarded CLI
-inside Pro. `condition-dem` and `compare-drone-surfaces` validate their arguments headlessly
-before guarding, but always redirect to the `.pyt` toolbox to actually run.
+| Command | Backing module | Arcpy guard behavior |
+|---------|----------------|----------------------|
+| `autogis envmon import-gdb` | `core/envmon/import_to_gdb.py` | Guards on `arcpy`, then always redirects — no CLI execution; run **ImportToGdb** in the `.pyt` toolbox. |
+| `autogis envmon build-event` | `core/envmon/build_current_event.py` | Guards on `arcpy`, then always redirects — no CLI execution; run **BuildCurrentEvent** in the `.pyt` toolbox. |
+| `autogis envmon build-callouts` | `core/envmon/build_figure_dataset.py` | Guards on `arcpy`, then always redirects — no CLI execution; run **BuildCallouts** in the `.pyt` toolbox. |
+| `autogis envmon optimize-callouts` | `core/envmon/callout_collision.py`, `callout_geometry.py` | Guards on `arcpy`, then always redirects — folded into **BuildCallouts**'s "Use hull collision (numpy)" option (ADR-0020); no CLI execution. |
+| `autogis envmon manage-callout-overrides` | `core/envmon/manage_callout_overrides.py` | Every subcommand guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon gw-contours` | `core/envmon/groundwater_contours.py` | Guards on `arcpy`, then always redirects — no CLI execution; run **GroundwaterContours** in the `.pyt` toolbox. |
+| `autogis envmon export-figures` | `core/envmon/export_figures.py` | Guards on `arcpy`, then always redirects — no CLI execution; run **ExportFigures** in the `.pyt` toolbox. |
+| `autogis envmon update-layout-text` | `core/envmon/layout_manager.py` | Guards on `arcpy`, then executes directly in the CLI (`--dry-run` still requires arcpy — it opens the APRX). |
+| `autogis envmon gen-map-series` | `core/envmon/map_series_plan.py`, `export_figures.py` | Job planning and `--dry-run` run headless; the export loop guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon build-fieldmaps` | `core/envmon/fieldmaps_plan.py` | Plan preview (`--dry-run`) runs headless; `--gdb` provisioning guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon full-pipeline` | `core/envmon/import_to_gdb.py` (orchestrator) | Guards on `arcpy`, then always redirects — no CLI execution; run **FullPipeline** in the `.pyt` toolbox. |
+| `autogis envmon validate-db` | `core/envmon/validate_database.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon upgrade-schema` | `core/envmon/upgrade_schema.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon export-snapshot` | `core/envmon/export_snapshot.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon import-edd` | `core/envmon/edd_importer.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon import-rtk-survey` | `core/envmon/import_rtk_survey.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon route-survey123` | `core/envmon/normalize_survey123.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon import-drone-products` | `core/envmon/import_drone_products.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon import-boring-logs` | `core/envmon/import_boring_logs.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon build-dashboard-data-mart` | `core/envmon/dashboard_data_mart.py` | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon survey-to-well-elevation --gdb` | `core/envmon/survey_to_well_elevation.py` | Guards on `arcpy` for the `--gdb` leg only, then executes directly; `--wells-csv` runs headless (see table above). |
+| `autogis envmon update-well-elevations --gdb` | `core/envmon/level_loop.py` | Guards on `arcpy` for the `--gdb` leg only, then executes directly; `--wells-csv` runs headless (see table above). |
+| `autogis envmon draft-plume-boundary --gdb` | `core/envmon/draft_plume_boundary.py` | Guards on `arcpy` for the `--gdb` write only, then executes directly; without `--gdb` the draft boundary runs headless (see table above). |
+| `autogis envmon register-drone-flight` (non-dry-run) | `core/envmon/register_drone_flight.py` | Guards on `arcpy` for the GDB write only, then executes directly; `--dry-run` runs headless (see table above). |
+| `autogis agol sync-to-gdb --gdb` | `core/agol/sync_layer.py` | Guards on `arcpy` for the `--gdb` upsert only, then executes directly; `--out-csv` runs headless (see table above). |
+| `autogis envmon build-cad-package` | `core/envmon/cad_layer_map.py` (ADR-0088) | Guards on `arcpy`, then always redirects — no CLI execution; run **BuildCADExportPackage** in the `.pyt` toolbox. |
+| `autogis envmon condition-dem` | `core/envmon/dem_conditioning.py` | Validates the flag config headlessly, then guards and always redirects — no CLI execution; run **ConditionDEM** in the `.pyt` toolbox. |
+| `autogis envmon compare-drone-surfaces` | `core/envmon/compare_drone_surfaces.py` | Validates baseline/diff-output args headlessly, then guards and always redirects — no CLI execution; run **CompareDroneSurfaces** in the `.pyt` toolbox. |
+| `autogis envmon run-gw-model-pipeline` | `core/envmon/gw_model_pipeline.py` (Phase-5 slice 1 — TIN/IDW + LOO cross-validation) | Guards on `arcpy`, then always redirects — no CLI execution; run **RunGWModelPipeline** in the `.pyt` toolbox. |
+| `autogis envmon approve-gw-model` | `core/envmon/gw_model_pipeline.py` (Phase-5 slice 1 — `GW_ModelRun` field edit) | Guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon build-conc-surface` | `core/envmon/concentration_surface.py` (Phase-5 slice 2 — EBK raster interpolation; DRAFT output) | Point collection and `--dry-run` run headless; the `--gdb` interpolate/clip/write stage guards on `arcpy`, then executes directly in the CLI. |
+| `autogis envmon qualify` | `adapters/qualification.py` (Pro runtime + toolbox qualification, ADR-0091) | Guards on `arcpy`, then executes directly in the CLI. |
+
+Three guard patterns cover every LOCAL command, and each row above names its own:
+
+1. **Guard → redirect (no CLI execution).** The command is registered on the CLI for
+   discoverability only: with arcpy absent the capability guard errors cleanly, and even inside
+   ArcGIS Pro it exits with a pointer to its `.pyt` tool.
+2. **Guard → execute.** With arcpy present (ArcGIS Pro's conda env) the CLI runs the tool for
+   real; without it the guard errors cleanly.
+3. **Hybrid leg.** Only the flagged leg (`--gdb` / non-`--dry-run`) guards on `arcpy`; the
+   headless leg runs anywhere and is also listed in the CLOUD/HYBRID table above.
 
 ---
 
