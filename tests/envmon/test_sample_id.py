@@ -65,6 +65,40 @@ def test_non_lifecycle_identities_return_none():
     assert parse_sample_id("") is None
 
 
+def test_planner_and_normalizer_agree_including_field_duplicate():
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.create_sampling_event import (
+        build_sampling_event_plan)
+    from autogis.core.envmon.normalize_survey123 import (
+        normalize_survey123_submission)
+
+    plan = build_sampling_event_plan(
+        {"site_id": "H281", "site_name": "H281"},
+        {
+            "event_name": "Q3", "event_date": "2026-07-15",
+            "coc_prefix": "H281", "lab_name": "Lab",
+            "matrices": ["GW"], "location_ids": ["MW-1"],
+            "crew_list": ["Alice"], "analyte_groups": {"VOCs": ["Benzene"]},
+            "group_sampling": {}, "dup_frequency": 1,
+        },
+        {"Benzene": {}},
+        run_id="RID",
+    )
+    planned = {r.sample_id for r in plan.expected_samples}
+
+    def norm(payload):
+        qa = QACollector()
+        _, samp = normalize_survey123_submission(payload, "H281", "B1", qa)
+        return samp[0]["SampleID"]
+
+    primary = norm({"WellID": "MW-1", "SamplingDate": "2026-07-15",
+                    "Matrix": "GW"})
+    dup = norm({"WellID": "MW-1", "SamplingDate": "2026-07-15",
+                "Matrix": "GW", "IsFieldDup": "yes"})
+    assert planned == {primary, dup}
+    assert dup == primary + "-FD"
+
+
 def test_xform_calc_matches_lifecycle_field_order():
     calc = xform_sample_id_calc()
     assert calc == (

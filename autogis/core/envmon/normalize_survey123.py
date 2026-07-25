@@ -6,13 +6,13 @@ normalize_*.py so the existing import_to_gdb write layer can consume them.
 from __future__ import annotations
 
 import csv
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_WARNING
+from .sample_id import build_sample_id
 
 
 @dataclass
@@ -23,6 +23,7 @@ class Survey123Field:
     sampled_by_field: str = "SampledBy"
     coc_number_field: str = "COCNumber"
     dtw_field: str = "DepthToWater_ft"
+    is_field_dup_field: str = "IsFieldDup"
 
 
 def _parse_date(value: str, qa: QACollector, context: str) -> Optional[datetime]:
@@ -39,12 +40,6 @@ def _parse_date(value: str, qa: QACollector, context: str) -> Optional[datetime]
     qa.add(QARecord(SEV_ERROR, "invalid_date",
                     f"{context}: cannot parse date {value!r}"))
     return None
-
-
-def _build_sample_id(well_id: str, dt: Optional[datetime], matrix: str) -> str:
-    if dt is not None:
-        return f"{well_id}-{dt.strftime('%Y%m%d')}-{matrix}"
-    return f"{well_id}-NODATE-{uuid.uuid4().hex[:6].upper()}-{matrix}"
 
 
 def normalize_survey123_submission(
@@ -86,7 +81,11 @@ def normalize_survey123_submission(
             qa.add(QARecord(SEV_WARNING, "invalid_dtw",
                             f"{well_id}: cannot parse DTW value {dtw_raw!r}"))
 
-    sample_id = _build_sample_id(well_id, dt, matrix)
+    # A pre-IsFieldDup form has no such question; a missing field means
+    # "not a duplicate", so older submissions normalize exactly as before.
+    dup_raw = str(payload.get(fm.is_field_dup_field, "") or "").strip().lower()
+    qc = "FD" if dup_raw == "yes" else None
+    sample_id = build_sample_id(well_id, dt, matrix, qc=qc)
     samples: list[dict] = [{
         "ImportBatchID": batch_id,
         "SiteID": site_id,

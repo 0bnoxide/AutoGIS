@@ -98,6 +98,27 @@ def test_missing_or_invalid_date_emits_error_and_unique_nodate_sample_id():
     assert samp1[0]["SampleID"] != samp2[0]["SampleID"]
 
 
+def test_happy_path_sample_id_pinned():
+    qa = QACollector()
+    _, samp = normalize_survey123_submission(_PAYLOAD, "H281", "B1", qa)
+    assert samp[0]["SampleID"] == "MW-01-20260615-GW"
+
+
+def test_field_dup_yes_appends_fd_suffix():
+    qa = QACollector()
+    _, samp = normalize_survey123_submission(
+        {**_PAYLOAD, "IsFieldDup": "yes"}, "H281", "B1", qa)
+    assert samp[0]["SampleID"] == "MW-01-20260615-GW-FD"
+
+
+def test_field_dup_absent_or_no_is_primary():
+    qa = QACollector()
+    _, s1 = normalize_survey123_submission({**_PAYLOAD, "IsFieldDup": "no"},
+                                           "H281", "B1", qa)
+    _, s2 = normalize_survey123_submission(_PAYLOAD, "H281", "B1", qa)
+    assert s1[0]["SampleID"] == s2[0]["SampleID"] == "MW-01-20260615-GW"
+
+
 def test_route_survey123_in_help():
     from click.testing import CliRunner
     from autogis.adapters.cli import autogis
