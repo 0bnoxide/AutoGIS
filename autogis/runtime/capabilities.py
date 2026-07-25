@@ -109,8 +109,9 @@ def requires_arcpy(name: str) -> bool:
 # This is a SEPARATE, additive source of human-facing metadata for the
 # `envmon list-tools` command. It deliberately does NOT replace TOOLS /
 # requires_arcpy above (those drive the runtime guard and must stay stable).
-# `runtime` here is a display string (CLOUD = headless, LOCAL = needs arcpy,
-# DRAFT = pre-production stub) and may differ in spelling from the Runtime enum.
+# `runtime` here is a display string (CLOUD = headless, HYBRID = headless with
+# an arcpy-guarded branch, LOCAL = needs arcpy, DRAFT = pre-production stub)
+# and may differ in spelling from the Runtime enum.
 from dataclasses import dataclass as _dataclass
 
 
@@ -120,7 +121,7 @@ class ToolCapability:
     command: str
     name: str = ""
     roadmap_id: str = ""
-    runtime: str = "CLOUD"     # CLOUD | LOCAL | DRAFT
+    runtime: str = "CLOUD"     # CLOUD | HYBRID | LOCAL | DRAFT
     status: str = "stable"     # stable | draft | planned | deprecated
     domain: str = ""           # intake|qa|analysis|cartography|field|agol|reporting|admin
     description: str = ""
@@ -149,7 +150,7 @@ _REGISTRY_SEED = [
      "admin", "Manage screening levels (DRAFT pre-production stub)"),
     ("validate-units", "ValidateUnits", "", "CLOUD", "stable", "qa",
      "Validate and convert result units"),
-    ("reconcile-locations", "ReconcileSampleLocations", "", "CLOUD", "stable",
+    ("reconcile-locations", "ReconcileSampleLocations", "", "HYBRID", "stable",
      "qa", "Reconcile sample location IDs against the well list"),
     ("evaluate-rpd-qa", "EvaluateRPDQA", "", "CLOUD", "stable", "qa",
      "Evaluate duplicate RPD QA from records"),

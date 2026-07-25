@@ -20,7 +20,7 @@ def test_get_all_tools_nonempty():
 def test_all_entries_have_command_and_runtime():
     for t in get_all_tools():
         assert t.command, f"empty command in {t}"
-        assert t.runtime in {"CLOUD", "LOCAL", "DRAFT"}, t.runtime
+        assert t.runtime in {"CLOUD", "HYBRID", "LOCAL", "DRAFT"}, t.runtime
 
 
 def test_filter_by_runtime_cloud():

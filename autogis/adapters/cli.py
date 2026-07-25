@@ -4899,7 +4899,8 @@ def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
 
 @envmon.command("list-tools")
 @click.option("--runtime", "runtime_filter", default=None,
-              type=click.Choice(["CLOUD", "LOCAL", "DRAFT"], case_sensitive=False))
+              type=click.Choice(["CLOUD", "HYBRID", "LOCAL", "DRAFT"],
+                                case_sensitive=False))
 @click.option("--domain", default=None)
 @click.option("--status", default=None,
               type=click.Choice(["stable", "draft", "planned", "deprecated"],
