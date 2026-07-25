@@ -9,33 +9,40 @@ GUI, a unified PySide6 desktop GUI (`autogis-gui`, ADR-0050), and the importable
 
 ## Feature Implementation Tracker
 
-Status against the 79-tool environmental monitoring roadmap, as of **2026-07-22**. The
-Attachment Harvester is a separate, fully-shipped domain not counted in the 79 tools.
+The 79-tool environmental monitoring roadmap is complete **except for the four
+deferred §11 AI-assisted tools** — every other catalogued tool ships with a CLI
+command, a core module, and tests. The Attachment Harvester is a separate,
+fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | ~100 | ~79 numbered roadmap tools + 23 headless post-roadmap tools |
+| Fully implemented (CLI command + core module + tests) | 75 | catalogued tools, plus the post-roadmap extras below |
 | Foundation laid (partial code, not fully wired) | 0 | |
 | **Planned** (spec / plan written, not yet coded) | 0 | BatchEDDImport folded into Tool 2.2 `batch-import-workbooks` — see ADR-0048 |
-| Not started (no spec or plan) | 0 | excludes §11 AI tools + geostatistical Phase 5 |
-| **Catalog total (§2–11)** | **~79** | |
+| **Deferred** (gated, not started) | 4 | the §11 AI-assisted tools — see *Not started* below |
+| **Catalog total (§2–11)** | **79** | |
 
-The codebase now ships **119 `core/envmon/` + 12 `core/agol/` modules (131 total)**,
-**126 registered CLI commands** (leaf commands under `envmon`/`agol`/top-level,
-`manage-callout-overrides`'s 4 subcommands counted individually), and an arcpy-free
-test suite — derive the live count with `python -m pytest --collect-only -q`; it is
-extras-dependent, so a `[dev]`-only env collects fewer tests than a full-extras env
-(module counts as of 2026-07-24 — derive live: `ls autogis/core/envmon/*.py | grep -v __init__ | wc -l`).
-For the authoritative per-tool breakdown see
-[`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) (the headline counts
-here have advanced well past that snapshot — batches merged through 2026-06-28 – 07-02
-(PRs #81/#84/#88/#92/#93/#95/#96/#102/#118/#119), 07-07 (PRs #196-#200), 07-08 – 07-15
-(EQuIS/WQX EDD import ADR-0080/0082, HTML report output ADR-0083, drone/geotech batch,
-OpenTopography DEM ADR-0078, Civil3D/CAD arcpy legs ADR-0088), 07-17 – 07-18
-(EQuIS dialect support — Mining/EPA Region 4/NYSDEC, ADR-0090; DEM output hardening +
-elevation conversion, PR #257), and 07-22 (drone flight YAML scaffold, ADR-0100;
-site onboarding bootstrap `init-site`, ADR-0102, production-roadmap Phase 3, PRs
-#279/#282/#283)).
+Work has continued past the catalog: the geostatistical group shipped
+(ADR-0085/0086) and the post-catalog [production roadmap](docs/production-roadmap.md)
+has delivered **Phases 1–9**. Still outstanding: **Phase 10 (portfolio monitoring
+digest)**, which is unimplemented and gated behind Phase 9's live-AGOL exit
+criteria (ADR-0111), and the four deferred §11 AI tools.
+
+**Counts are not pinned in this README** — they drift faster than the prose does.
+Derive them live:
+
+```bash
+ls autogis/core/envmon/*.py | grep -v __init__ | wc -l   # envmon modules
+ls autogis/core/agol/*.py   | grep -v __init__ | wc -l   # agol modules
+autogis envmon list-tools                                # registered tools + capability metadata
+python -m pytest --collect-only -q                       # test count (extras-dependent)
+```
+
+The test count is extras-dependent — a `[dev]`-only env collects fewer tests than a
+full-extras env. For the per-tool breakdown see
+[`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md); it is a
+dated snapshot and the tables below supersede it. Per-batch history lives in
+[`docs/adr/`](docs/adr/) and the git log, not here.
 
 <details>
 <summary>Fully implemented — headless (CLOUD / HYBRID)</summary>
@@ -66,7 +73,7 @@ site onboarding bootstrap `init-site`, ADR-0102, production-roadmap Phase 3, PRs
 | [ExportGeoJSONResults](autogis/core/envmon/export_geojson.py) | — | `envmon export-geojson` | Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless) |
 | [ValidateScheduleYAML](autogis/core/envmon/validate_schedule.py) | — | `envmon validate-schedule` | Tool 10.2: validate monitoring schedule YAML structure and analyte names |
 | [RunHistoryReport / Query](autogis/core/envmon/history_report.py) | 10.1 | `envmon run-history-report` / `envmon run-history` | Tool 10.1: per-location per-analyte history summary across events |
-| WriteRunHistory | 10.5 | generically wired at the CLI adapter seam -- every `RecordingCommand`/`RecordingGroup` invocation (~105 leaf commands, `cli.py`) writes a `RunRecord` via `RunHistory.write()`, not just `agol promote`'s hand-wired call (see ADR-0054, ADR-0017 status update) | — |
+| WriteRunHistory | 10.5 | generically wired at the CLI adapter seam — every `RecordingCommand`/`RecordingGroup` invocation (`cli.py`) writes a `RunRecord` via `RunHistory.write()`, not just `agol promote`'s hand-wired call (see ADR-0054, ADR-0017 status update) | — |
 | [PublishEnvironmentalLayersToAGOL](autogis/core/agol/publish.py) | 6.1 | `agol publish-layer` | Publish or overwrite a hosted AGOL feature service |
 | [BuildGroundwaterElevationEvent](autogis/core/envmon/build_gwe_event.py) | 4.1 | `envmon build-gwe-event` | Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags |
 | [EstimateGWFlowDirection](autogis/core/envmon/estimate_gw_flow_direction.py) | 4.3 | `envmon estimate-gw-flow-direction` (DRAFT) | Tool 4.3: estimate GW flow direction and gradient (DRAFT) from well GWEs |
@@ -138,6 +145,12 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ExportSurveyToCADGIS](autogis/core/envmon/export_survey_cad.py) | `envmon export-survey-cad` | Export RTK survey points to feature-code-mapped CSV/GeoJSON/LandXML layers (headless; `--landxml` per ADR-0071) |
 | [GenerateWellInspectionReports](autogis/core/envmon/well_inspection_report.py) | `envmon well-inspection-report` | Generate well inspection reports (Markdown or `--format html` with a photo grid, ADR-0083) + a site summary (headless) |
 | [DownloadOpenTopographyDEM](autogis/core/envmon/opentopo.py) | `envmon download-dem` | Download an OpenTopography DEM GeoTIFF for an AOI (HYBRID — headless CLI + `.pyt` add-to-map; `opentopo` extra for non-WGS84 reprojection) |
+| [ValidateWorkflowRecipe](autogis/adapters/recipe_workflow.py) | `envmon validate-recipe` | Validate a saved linear workflow-recipe YAML (headless, ADR-0103) |
+| [RunWorkflowRecipe](autogis/adapters/recipe_workflow.py) | `envmon run-recipe` | Run a saved workflow recipe headlessly, one step at a time (ADR-0104) |
+| [ChainOfCustodyLifecycle](autogis/core/envmon/custody.py) | `envmon coc` (`generate` / `advance` / `reconcile` / `status`) | Production Phase 6: electronic chain-of-custody state machine (draft → released → lab-received → reconciled) with a per-transition audit trail and planned-vs-received reconcile (headless, ADR-0107) |
+| [LongitudinalLabQATrends](autogis/core/envmon/lab_qa_trends.py) | `envmon lab-qa-trends` | Production Phase 7: longitudinal laboratory-QA trending (recovery + blank) across events, with cited, configurable thresholds (headless, ADR-0108) |
+| [OutboundWQXExport](autogis/core/envmon/wqx_outbound.py) | `envmon export-wqx` (DRAFT) | Production Phase 8: map canonical analytical results to a WQX/regulatory submission, with a rejections file and provenance (headless, DRAFT — inherits `wqx.yaml`'s draft status, ADR-0109) |
+| [FieldMapsSyncPreflight](autogis/core/agol/fieldmaps_preflight.py) | `agol fieldmaps-preflight` | Tool 7.5 / Production Phase 9: read-only Field Maps sync preflight report — surfaces conflicts and schema drift before a sync (headless, ADR-0111) |
 
 </details>
 
@@ -169,6 +182,10 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [UpdateLayoutDynamicText](autogis/core/envmon/layout_manager.py) | 5.8 | `envmon update-layout-text` (CLI-first per ADR-0039; wraps the shipped `layout_manager.update_layout_text`) | Tool 5.8: update APRX layout text elements from a YAML values file (ArcGIS Pro) |
 | [BuildFieldMapsMonitoringProject](autogis/core/envmon/fieldmaps_plan.py) | 7.1 | `envmon build-fieldmaps` (CLI-first per ADR-0039; plan is arcpy-free + headless via `--dry-run`, GDB provisioning needs arcpy; publish via `agol publish-layer`) | Tool 7.1: create/refresh the Field Maps monitoring layers for field crews (ArcGIS Pro) |
 | [GenerateSiteMapSeries](autogis/core/envmon/map_series_plan.py) | 5.6 | `envmon gen-map-series` (CLI-first per ADR-0039; planner + `--dry-run` are arcpy-free; export loop replays the ExportFigures chain) | Tool 5.6: batch figure-packet exporter across sites/events (ArcGIS Pro) |
+| [RunFieldToGroundwaterModelPipeline](autogis/core/envmon/gw_model_pipeline.py) | Phase 5 | `envmon run-gw-model-pipeline` | Phase-5 slice 1: multi-model (TIN/IDW) draft GW contours with leave-one-out cross-validation and a `GW_ModelRun` registry entry (ArcGIS Pro, ADR-0085) |
+| [BuildGroundwaterSurfaceModel](autogis/core/envmon/gw_model_pipeline.py) | Phase 5 | `envmon approve-gw-model` (approval verb; the model runs via `run-gw-model-pipeline`) | Phase-5 slice 1: record the approved GW surface model against a `GW_ModelRun` (ArcGIS Pro; ADR-0085 decision 3) |
+| [BuildAnalyticalConcentrationSurface](autogis/core/envmon/concentration_surface.py) | Phase 5 | `envmon build-conc-surface` (DRAFT output) | Phase-5 slice 2: DRAFT interpolated concentration surface with EBK, an uncertainty raster, and an explicit nondetect policy (ArcGIS Pro, ADR-0086) |
+| [QualifyArcGISPro](autogis/adapters/qualification.py) | — | `envmon qualify` | Production Phase 1: qualify the installed ArcGIS Pro runtime and `.pyt` toolbox against the supported baseline (ArcGIS Pro, ADR-0091) |
 
 </details>
 
@@ -210,31 +227,40 @@ still design-only.
 <details>
 <summary>Not started — no spec or implementation plan</summary>
 
-**No roadmap tools remain here** outside the two phase-gated groups below —
-SyncAGOLFeatureLayerToGDB (6.2), the last one, shipped 2026-07-03 (`agol sync-to-gdb`,
-ADR-0044).
+**Within the 79-tool catalog, only the four deferred §11 AI tools remain unstarted.**
+Every other catalogued tool has shipped — SyncAGOLFeatureLayerToGDB (6.2) was the
+last of the ordinary roadmap (2026-07-03, `agol sync-to-gdb`, ADR-0044), and the
+geostatistical group has since shipped as well (see below).
+
+Outside the catalog, one post-catalog phase is still outstanding: **Phase 10 —
+portfolio monitoring digest** ([`docs/production-roadmap.md`](docs/production-roadmap.md)),
+which has no implementation and is gated behind Phase 9's live-AGOL exit criteria
+(ADR-0111).
 
 ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 `ValidateRTKSurvey` (8.4) — see
 [`docs/superpowers/specs/2026-06-28-roadmap-duplicate-tools-fold-decision.md`](docs/superpowers/specs/2026-06-28-roadmap-duplicate-tools-fold-decision.md).
 
-**AI-assisted (§11):** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist
-— all deferred pending LLM seam design
+**AI-assisted (§11) — DEFERRED:** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec,
+AIMapReviewChecklist — deferred pending LLM seam design. This is a separate future
+development phase, **not a backlog to pick from**: do not start implementation on any of
+these without an explicit phase-gate decision. See `CLAUDE.md` for the standing policy.
 
-**Conditional / geostatistical (Phase 5) — REOPENED 2026-07-15 (user decision):** 3 tools —
-RunFieldToGroundwaterModelPipeline, BuildGroundwaterSurfaceModel, BuildAnalyticalConcentrationSurface
-(kriging / EBK / surface modeling). Reopened ≠ implement-first: the group's own exit criteria still
-require the architecture review to land as an ADR (user-signed) before any per-tool spec or
-implementation — see `docs/CONDITIONAL_TOOLS_REVIEW.md` and
-`docs/HANDOFF-2026-07-15-geostat.md` for the shipped-infrastructure inventory. The other
-6 tools originally reviewed there have shipped (see issue #167 and ADR-0061), including
-DEMConditioningPipeline, CompareDroneSurfaces and GenerateSubsurfaceProfileFromBorings, which
-turned out to be drone-raster/geotech-graphics work rather than geostatistical modeling.
-
-**These two groups are a separate future development phase, not a backlog to pick from.**
-Do not start implementation on any tool listed above without an explicit phase-gate
-decision — the codebase is refined thoroughly first. See `CLAUDE.md` for the standing
-policy.
+**Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED.** The required
+architecture review landed as **ADR-0085** (Accepted 2026-07-16) and both slices merged:
+slice 1 (TIN/IDW pipeline, `GW_ModelRun` registry, plume clip) and slice 2 (EBK,
+uncertainty raster, concentration surface, nondetect policy — **ADR-0086**, Accepted
+2026-07-24). All 3 tools now ship as LOCAL commands — `run-gw-model-pipeline`,
+`approve-gw-model`, `build-conc-surface` — listed under *Fully implemented — ArcGIS Pro*
+above. One residual QA leg is outstanding: the live-Pro EBK/Geostatistical Analyst
+acceptance run, deliberately decoupled from acceptance and pending owner availability
+(workflow + synthetic data: [`docs/qa/geostat-live-pro-qa.md`](docs/qa/geostat-live-pro-qa.md)).
+The other 6 tools originally reviewed as conditional shipped earlier (issue #167,
+ADR-0061) — DEMConditioningPipeline, CompareDroneSurfaces and
+GenerateSubsurfaceProfileFromBorings among them, which turned out to be
+drone-raster/geotech-graphics work rather than geostatistical modeling.
+`docs/CONDITIONAL_TOOLS_REVIEW.md` and `docs/HANDOFF-2026-07-15-geostat.md` describe the
+pre-acceptance state and are historical.
 
 </details>
 
@@ -250,7 +276,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Shared substrate:** `autogis.core.common` — config validation, QA reporting, logging, run
   history, and the schema dataclass package
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
-  (116 modules), and `autogis.core.agol` (publishing, 11 modules) sit on top of common
+  (environmental monitoring), and `autogis.core.agol` (AGOL publishing) sit on top of common
 - **Four adapters:** the importable `autogis.core` library surface, `autogis.adapters.cli`
   (Click CLI), `autogis.adapters.toolbox.pyt` (ArcGIS Pro GUI), and
   `autogis.adapters.gui` (`autogis-gui`, a unified PySide6 desktop GUI that introspects the
@@ -361,6 +387,12 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon draft-lithology-from-scan` | CLOUD | `core/envmon/draft_lithology_from_scan.py` (DRAFT; `ocr` extra) |
 | `autogis envmon init-site` | CLOUD | `core/envmon/init_site.py` |
 | `autogis envmon new-flight-yaml` | CLOUD | `core/envmon/register_drone_flight.py` |
+| `autogis envmon validate-recipe` | CLOUD | `adapters/recipe_workflow.py` |
+| `autogis envmon run-recipe` | CLOUD | `adapters/recipe_workflow.py` |
+| `autogis envmon coc` (`generate`/`advance`/`reconcile`/`status`) | CLOUD | `core/envmon/custody.py` |
+| `autogis envmon lab-qa-trends` | CLOUD | `core/envmon/lab_qa_trends.py` |
+| `autogis envmon export-wqx` | CLOUD | `core/envmon/wqx_outbound.py` (DRAFT) |
+| `autogis agol fieldmaps-preflight` | CLOUD | `core/agol/fieldmaps_preflight.py` (read-only) |
 
 ### ArcGIS Pro primary (LOCAL) — arcpy-guarded on the CLI
 
@@ -388,6 +420,10 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon build-cad-package` | `core/envmon/cad_layer_map.py` (`.pyt` `BuildCADExportPackage`, ADR-0088; CLI always guards + redirects) |
 | `autogis envmon condition-dem` | `core/envmon/dem_conditioning.py` (config validated headless; guards + redirects) |
 | `autogis envmon compare-drone-surfaces` | `core/envmon/compare_drone_surfaces.py` (args validated headless; guards + redirects) |
+| `autogis envmon run-gw-model-pipeline` | `core/envmon/gw_model_pipeline.py` (Phase-5 slice 1 — TIN/IDW + LOO cross-validation) |
+| `autogis envmon approve-gw-model` | `core/envmon/gw_model_pipeline.py` (Phase-5 slice 1 — `GW_ModelRun` field edit) |
+| `autogis envmon build-conc-surface` | `core/envmon/concentration_surface.py` (Phase-5 slice 2 — EBK raster interpolation; DRAFT output) |
+| `autogis envmon qualify` | `adapters/qualification.py` (Pro runtime + toolbox qualification, ADR-0091) |
 
 LOCAL commands guard on `arcpy` and redirect to the `.pyt` toolbox inside ArcGIS Pro when it is
 absent. `import-edd`, `import-rtk-survey`, `route-survey123`, `import-drone-products`,
@@ -541,6 +577,22 @@ autogis envmon generate-job-queue --manifest <manifest.yaml> --output <queue.jso
 autogis envmon gen-synthetic-workbook --site-id <id> --out <synthetic.xlsx>
 autogis envmon list-tools
 
+# Chain of custody (production Phase 6, ADR-0107)
+autogis envmon coc generate --site <site.yaml> --event <event.yaml> --analytes <analytes.yaml> --store <custody.json> --by "<name>"
+autogis envmon coc advance --store <custody.json> --to released --by "<name>" --coc <COC-ID>
+autogis envmon coc advance --store <custody.json> --to laboratory_received --by "<name>" --coc <COC-ID>
+autogis envmon coc reconcile --store <custody.json> --coc <COC-ID> --by "<name>" --received-ids <id1,id2>   # requires laboratory_received or results_received
+autogis envmon coc status --store <custody.json>
+
+# Lab QA trends, outbound WQX & Field Maps preflight (Phases 7-9)
+autogis envmon lab-qa-trends --qc-results <Env_QCResults.csv> --out <trends.csv> --report qa.md --fail-on warning
+autogis envmon export-wqx --results <results.csv> --locations <locations.csv> --out-dir <out>   # DRAFT
+autogis agol fieldmaps-preflight --item-id <id> --layer-index 0 --since <YYYY-MM-DD>            # read-only
+
+# Workflow recipes (ADR-0103/0104)
+autogis envmon validate-recipe <recipe.yaml>
+autogis envmon run-recipe <recipe.yaml> --job-root <out> --continue-through-review
+
 # Publishing
 autogis agol publish-layer --source <data> --title "<service title>"
 ```
@@ -556,6 +608,9 @@ autogis envmon validate-db <geodatabase>
 autogis envmon upgrade-schema <geodatabase>
 autogis envmon export-snapshot <geodatabase>
 autogis envmon build-cad-package --layers <layers.txt> --mapping <cad_map.yaml> --crs EPSG:2256   # ADR-0088
+autogis envmon qualify --out <qualification-dir>            # Pro runtime + toolbox check (ADR-0091)
+autogis envmon run-gw-model-pipeline ...                    # Phase-5 slice 1 (ADR-0085)
+autogis envmon build-conc-surface ...                       # Phase-5 slice 2, DRAFT output (ADR-0086)
 # build-callouts, optimize-callouts, gw-contours, export-figures, full-pipeline,
 # condition-dem, compare-drone-surfaces follow the same pattern
 ```
@@ -647,8 +702,8 @@ autogis/
 ├── core/
 │   ├── common/          # Config, QA, logging, run history, schema dataclasses
 │   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring — 116 modules
-│   └── agol/            # AGOL publishing — 11 modules
+│   ├── envmon/          # Environmental monitoring tools
+│   └── agol/            # AGOL publishing, dashboards, hosted views
 ├── adapters/
 │   ├── cli.py           # Click CLI — all commands registered here
 │   ├── guard.py         # Runtime capability guard (arcpy presence checks)
@@ -676,7 +731,7 @@ autogis/
 | `core/common/config.py` | `HarvestConfig`, `SiteConfig`, `ParserProfile`, `FigureSpec` — canonical dataclasses |
 | `core/common/run_history.py` | `RunHistory` / `RunRecord` — append-only CSV run log |
 | `core/common/schema/` | 5 modules (attachments, boring, drone, envmon, survey) exporting ~21 typed dataclasses |
-| `core/envmon/` | 116 modules: inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
+| `core/envmon/` | inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
 | `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
 
@@ -735,8 +790,8 @@ before trusting outputs.
 | [`docs/production-roadmap.md`](docs/production-roadmap.md) | Authoritative post-catalog production phases and exit gates |
 | [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool (snapshot; headline counts above are current) |
 | [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
-| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — 91 features (architecture, algorithm, data-model decisions) |
-| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — 100 features (step-by-step execution guides) |
+| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — architecture, algorithm, and data-model decisions |
+| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans — step-by-step execution guides |
 | [`docs/adr/`](docs/adr/) | Architecture decision records — invariants, schema, config strategy, per-batch decisions (current list: the index in [`docs/adr/README.md`](docs/adr/README.md)) |
 | [`docs/adr/logs/`](docs/adr/logs/) | Daily agent-decision logs — autonomous judgment calls recorded for audit (a supplement to ADRs, not a substitute) |
 
@@ -747,7 +802,9 @@ before trusting outputs.
 Test baseline: derive live with `python -m pytest --collect-only -q` — the count is
 extras-dependent (a `[dev]`-only env collects fewer tests than a full-extras env with
 PySide6/torch installed), so this README does not pin a number. All core logic is
-arcpy-free and CI-able.
+arcpy-free, and the suite runs in CI on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml), windows-latest, ADR-0110).
+The LOCAL arcpy paths are still excluded — see *Caveats*.
 
 ```bash
 python -m pytest -q
