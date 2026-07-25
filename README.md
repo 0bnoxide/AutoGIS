@@ -1,4 +1,6 @@
-# AutoGIS
+<p align="center">
+  <img src="docs/assets/readme/autogis-header.png" alt="AutoGIS — Geospatial automation for ArcGIS" width="100%">
+</p>
 
 Automation tools for ArcGIS Pro and ArcGIS Online / Survey123, delivered as a single suite:
 the **Attachment Harvester** plus the **Environmental Monitoring tools**, folded into **one
@@ -691,65 +693,25 @@ figures — with full source-cell traceability and idempotent imports.
 
 ### Pipeline overview
 
-```
-Excel/CSV workbooks
-    ↓
-Headless prep (any machine)
-    ├─ Workbook inspection         autogis envmon inspect
-    ├─ Parser profile drafting     autogis envmon parser-profile
-    ├─ Config validation           autogis envmon validate-config
-    ├─ Unit validation             autogis envmon validate-units
-    └─ Location reconciliation     autogis envmon reconcile-locations
-    ↓
-ArcGIS Pro / .pyt toolbox
-    ├─ Import to GDB               autogis envmon import-gdb
-    ├─ Build current event         autogis envmon build-event
-    └─ Validate database           autogis envmon validate-db
-    ↓
-Analysis & cartography (Pro)
-    ├─ GW contours                 autogis envmon gw-contours
-    ├─ Analytical callouts         autogis envmon build-callouts
-    ├─ Optimize placement          autogis envmon optimize-callouts
-    └─ Export figures              autogis envmon export-figures
-    ↓
-QA, publish & report (headless)
-    ├─ Compare vs prior event      autogis envmon compare-events
-    ├─ Schedule vs actual          autogis envmon compare-schedule-vs-actual
-    ├─ Event report (Markdown)     autogis envmon generate-event-report
-    ├─ Publish to AGOL             autogis agol publish-layer
-    └─ Evaluate readiness          autogis envmon evaluate-readiness
-```
+<p align="center">
+  <img src="docs/assets/readme/environmental-monitoring-pipeline.png" alt="Environmental monitoring pipeline: Excel and CSV inputs flow through headless preparation, ArcGIS Pro, analysis and cartography, then QA, publishing, and reporting" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/environmental-monitoring-pipeline-detailed.png" alt="Detailed AutoGIS environmental monitoring pipeline with each workflow action and CLI command" width="88%">
+</p>
 
 ---
 
 ## Project Structure
 
-```
-autogis/
-├── core/
-│   ├── common/          # Config, QA, logging, run history, schema dataclasses
-│   ├── harvest/         # Attachment Harvester (arcpy-free)
-│   ├── envmon/          # Environmental monitoring tools
-│   └── agol/            # AGOL publishing, dashboards, hosted views
-├── adapters/
-│   ├── cli.py           # Click CLI — all commands registered here
-│   ├── guard.py         # Runtime capability guard (arcpy presence checks)
-│   ├── toolbox.pyt      # ArcGIS Pro GUI
-│   ├── toolbox_core.py  # Seam between .pyt and core
-│   └── gui/             # Unified PySide6 desktop GUI (`autogis-gui`, ADR-0050)
-├── config/
-│   ├── inspection-job.example.yaml
-│   ├── analytes/                # Analyte dictionary YAML
-│   ├── event_configs/           # Per-event monitoring config
-│   ├── lab_profiles/            # LabEDD profile YAML (EQuIS/WQX/dialect variants)
-│   ├── parser_profiles/         # Excel format definitions (YAML)
-│   ├── placement_overrides/     # Locked/preferred callout placement overrides
-│   ├── screening_levels/        # Regulatory thresholds — ship null, populate before production
-│   ├── figure_specs/            # Cartography layout templates
-│   └── sites/                   # Per-site config bundles
-├── runtime/             # arcpy / arcgis session providers + capability guards
-└── tests/               # arcpy-free test suite (count: pytest --collect-only -q)
-```
+<p align="center">
+  <img src="docs/assets/readme/project-structure.png" alt="AutoGIS project structure: core, adapters, config, runtime, and tests" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/project-structure-detailed.png" alt="Detailed AutoGIS project map with package paths and their responsibilities" width="88%">
+</p>
 
 ### Key modules
 
