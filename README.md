@@ -9,21 +9,24 @@ GUI, a unified PySide6 desktop GUI (`autogis-gui`, ADR-0050), and the importable
 
 ## Feature Implementation Tracker
 
-The 79-tool environmental monitoring roadmap is **complete** — every catalogued tool
-ships with a CLI command, a core module, and tests. The Attachment Harvester is a
-separate, fully-shipped domain not counted in the 79 tools.
+The 79-tool environmental monitoring roadmap is complete **except for the four
+deferred §11 AI-assisted tools** — every other catalogued tool ships with a CLI
+command, a core module, and tests. The Attachment Harvester is a separate,
+fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | all | 79 numbered roadmap tools + the post-roadmap extras below |
+| Fully implemented (CLI command + core module + tests) | 75 | catalogued tools, plus the post-roadmap extras below |
 | Foundation laid (partial code, not fully wired) | 0 | |
 | **Planned** (spec / plan written, not yet coded) | 0 | BatchEDDImport folded into Tool 2.2 `batch-import-workbooks` — see ADR-0048 |
-| Not started (no spec or plan) | 0 | excludes the deferred §11 AI tools |
+| **Deferred** (gated, not started) | 4 | the §11 AI-assisted tools — see *Not started* below |
 | **Catalog total (§2–11)** | **79** | |
 
-Work has continued past the catalog: the geostatistical group shipped (ADR-0085/0086)
-and the post-catalog [production roadmap](docs/production-roadmap.md) has delivered
-Phases 1–9. Nothing in the roadmap remains unstarted except the deferred §11 AI tools.
+Work has continued past the catalog: the geostatistical group shipped
+(ADR-0085/0086) and the post-catalog [production roadmap](docs/production-roadmap.md)
+has delivered **Phases 1–9**. Still outstanding: **Phase 10 (portfolio monitoring
+digest)**, which is unimplemented and gated behind Phase 9's live-AGOL exit
+criteria (ADR-0111), and the four deferred §11 AI tools.
 
 **Counts are not pinned in this README** — they drift faster than the prose does.
 Derive them live:
@@ -224,10 +227,15 @@ still design-only.
 <details>
 <summary>Not started — no spec or implementation plan</summary>
 
-**Only the deferred §11 AI tools remain unstarted.** Every other catalogued tool has
-shipped — SyncAGOLFeatureLayerToGDB (6.2) was the last of the ordinary roadmap
-(2026-07-03, `agol sync-to-gdb`, ADR-0044), and the geostatistical group has since
-shipped as well (see below).
+**Within the 79-tool catalog, only the four deferred §11 AI tools remain unstarted.**
+Every other catalogued tool has shipped — SyncAGOLFeatureLayerToGDB (6.2) was the
+last of the ordinary roadmap (2026-07-03, `agol sync-to-gdb`, ADR-0044), and the
+geostatistical group has since shipped as well (see below).
+
+Outside the catalog, one post-catalog phase is still outstanding: **Phase 10 —
+portfolio monitoring digest** ([`docs/production-roadmap.md`](docs/production-roadmap.md)),
+which has no implementation and is gated behind Phase 9's live-AGOL exit criteria
+(ADR-0111).
 
 ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 `ValidateRTKSurvey` (8.4) — see
@@ -572,7 +580,8 @@ autogis envmon list-tools
 # Chain of custody (production Phase 6, ADR-0107)
 autogis envmon coc generate --site <site.yaml> --event <event.yaml> --analytes <analytes.yaml> --store <custody.json> --by "<name>"
 autogis envmon coc advance --store <custody.json> --to released --by "<name>" --coc <COC-ID>
-autogis envmon coc reconcile --store <custody.json> --coc <COC-ID> --by "<name>" --received-ids <id1,id2>
+autogis envmon coc advance --store <custody.json> --to laboratory_received --by "<name>" --coc <COC-ID>
+autogis envmon coc reconcile --store <custody.json> --coc <COC-ID> --by "<name>" --received-ids <id1,id2>   # requires laboratory_received or results_received
 autogis envmon coc status --store <custody.json>
 
 # Lab QA trends, outbound WQX & Field Maps preflight (Phases 7-9)
