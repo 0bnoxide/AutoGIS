@@ -57,6 +57,18 @@ def test_primary_parse_has_empty_qc():
     assert parse_sample_id("MW-1-20260715-GW").qc == ""
 
 
+def test_nodate_parses_when_location_ends_in_eight_digit_run():
+    # dated regex matches first with an invalid rest; parser must fall
+    # through to the NODATE form instead of returning None
+    assert parse_sample_id("MW-20260101-NODATE-ABC123-GW") == SampleIdParts(
+        "MW-20260101", "", "GW", "")
+
+
+def test_dated_id_with_embedded_eight_digit_location_run_parses():
+    assert parse_sample_id("MW-20260101-20260715-GW") == SampleIdParts(
+        "MW-20260101", "20260715", "GW", "")
+
+
 def test_non_lifecycle_identities_return_none():
     # sampling_plan form: {site}-{loc}-{event}-{group}
     assert parse_sample_id("H281-MW-1-2026Q3-VOCs") is None

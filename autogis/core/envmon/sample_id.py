@@ -76,12 +76,20 @@ def parse_sample_id(sample_id: str) -> Optional[SampleIdParts]:
     if not sample_id:
         return None
     m = _DATED_RE.match(sample_id)
-    date_compact = m.group("date") if m else ""
-    if not m:
-        m = _NODATE_RE.match(sample_id)
-    if not m:
-        return None
-    rest = m.group("rest")
+    if m:
+        parts = _split_rest(m.group("loc"), m.group("date"), m.group("rest"))
+        if parts is not None:
+            return parts
+        # fall through: a NODATE ID whose location ends in a dash-delimited
+        # 8-digit run matches the dated regex first with an invalid rest
+    m = _NODATE_RE.match(sample_id)
+    if m:
+        return _split_rest(m.group("loc"), "", m.group("rest"))
+    return None
+
+
+def _split_rest(loc: str, date_compact: str,
+                rest: str) -> Optional[SampleIdParts]:
     qc = ""
     rest_lower = rest.lower()
     for suffix in sorted(QC_SUFFIXES, key=len, reverse=True):
@@ -91,8 +99,8 @@ def parse_sample_id(sample_id: str) -> Optional[SampleIdParts]:
             break
     if not rest or "-" in rest:
         return None
-    return SampleIdParts(location_id=m.group("loc"),
-                         date_compact=date_compact, matrix=rest, qc=qc)
+    return SampleIdParts(location_id=loc, date_compact=date_compact,
+                         matrix=rest, qc=qc)
 
 
 def xform_sample_id_calc(well_field: str = "WellID",
