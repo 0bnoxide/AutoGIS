@@ -28,6 +28,17 @@ an irreversible step. It is a checkpoint, not a review; `pr-reviewer` reviews di
 Skip it for mechanical or trivial work — a second opinion on a one-line rename is
 pure overhead.
 
+**The caller must be able to dispatch, or the invitation is a no-op.** Only agents
+that can use the Agent tool can call the advisor: `general-purpose` and any
+definition with **no** `tools:` key (it inherits the full set, e.g.
+`graph-codebase-navigator`). The repo's other definitions — `pr-reviewer`,
+`envmon-spec-checker`, `arcpy-doc-verifier` — carry explicit `tools:` allowlists
+that do **not** include dispatch, so telling one of them to "call the advisor"
+silently produces no checkpoint. Either dispatch that work through
+`general-purpose` with the advisor invitation in its prompt, or add the dispatch
+tool to the intended caller's allowlist first. Verify the caller's `tools:` line
+before relying on the invitation (PR #324 review).
+
 ## Codebase memory
 
 The codebase-memory MCP server is **wired at USER scope** (stdio), not via a repo

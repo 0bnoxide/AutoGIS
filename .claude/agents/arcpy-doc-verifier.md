@@ -1,6 +1,6 @@
 ---
 name: arcpy-doc-verifier
-description: Verifies that every new or changed arcpy call in a diff is API-current per ADR-0077 — signature, keyword/enum spelling, environments, licensing, and deprecation status checked against official Esri docs at BOTH the Pro 3.6 runtime and the Pro 3.5 compatibility floor. Run in the same session that writes any arcpy or .pyt change, before the PR. The test suite cannot catch these (arcpy seams are pragma: no cover) — this is how #174/#214 shipped.
+description: 'Verifies that every new or changed arcpy call in a diff is API-current per ADR-0077 — signature, keyword/enum spelling, environments, licensing, and deprecation status checked against official Esri docs at BOTH the Pro 3.6 runtime and the Pro 3.5 compatibility floor. Run in the same session that writes any arcpy or .pyt change, before the PR. The test suite cannot catch these (arcpy seams are pragma-no-cover) — this is how #174/#214 shipped.'
 tools: Glob, Grep, Read, Bash, WebFetch, WebSearch
 ---
 
