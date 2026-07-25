@@ -161,3 +161,10 @@ digest.
 The first user-facing milestone is the completion of Phase 4: a qualified Pro
 installation, explainable event status, repeatable site onboarding, and an
 interactive monitoring-event review surface.
+
+## Optional add-on track
+
+The accepted [Survey123 optional add-on roadmap](survey123-add-on-roadmap.md)
+defines its own sequential phases and milestones for opt-in live Survey123
+integration (ADR-0112). It does not delay, reorder, or satisfy Phases 1–10
+above, and accepting its planning direction does not start implementation.
