@@ -187,7 +187,31 @@ Multi-value options are currently **unreachable** from the GUI: a repeatable fie
 `QLineEdit`, so `export-wqx --results` and `lab-qa-trends --qc-results` — both `required=True,
 multiple=True` — cannot do what they exist for. `nargs>1` options (`download-dem --bbox`,
 `generate-subsurface-profile --start/--end`) always fail, because `build_argv` emits a tuple as a
-single repr token. Both are filed as issues; PR2 closes them.
+single repr token. See §10.
+
+---
+
+## 10. Filed bugs this design closes
+
+Nine defects were found while scoping this work. Each was **reproduced by execution**, not
+inferred, and filed 2026-07-25. Eight are closed by a slice above; one is unrelated and stands
+alone.
+
+| Issue | Defect | Closed by |
+|---|---|---|
+| [#350](https://github.com/0bnoxide/AutoGIS/issues/350) | Every `multiple=True` option renders as one `QLineEdit`; 5 STRING ones corrupt data **silently** (`coc advance --set` writes a malformed detail into the chain-of-custody audit trail, exit 0), 5 Path ones fail loudly | PR2 |
+| [#351](https://github.com/0bnoxide/AutoGIS/issues/351) | `nargs>1` options always fail — `build_argv` emits the tuple as one repr token | PR2 |
+| [#352](https://github.com/0bnoxide/AutoGIS/issues/352) | `harvest` form always emits `--no-incremental`, silently overriding a config's `incremental: true` — written by the GUI's *own* Site Config Builder | PR2 |
+| [#353](https://github.com/0bnoxide/AutoGIS/issues/353) | **12** directory params declared bare `click.Path()` — no Click validation, and Browse opens a save-*file* dialog | PR1 |
+| [#354](https://github.com/0bnoxide/AutoGIS/issues/354) | `select-soil-intervals --tiers <typo>` → 0 rows, header-only CSV, `Status: PASS`, exit 0 | PR1 (`CommaList`) |
+| [#355](https://github.com/0bnoxide/AutoGIS/issues/355) | `gen-synthetic-workbook --features <typo>` → raw `ValueError` traceback instead of a usage error | PR1 (`CommaList`) |
+| [#356](https://github.com/0bnoxide/AutoGIS/issues/356) | Per-field help invisible on ~50 defaulted fields — `setPlaceholderText` only paints when empty, and `setText(default)` runs first | PR1 (the `setToolTip` line) |
+| [#357](https://github.com/0bnoxide/AutoGIS/issues/357) | Window minimum pinned to the layout minimum (874×871 on `build-conc-surface`); no `QScrollArea` | PR2 |
+| [#358](https://github.com/0bnoxide/AutoGIS/issues/358) | `manage-callout-overrides clear` ignores `MapType`, deleting other map types' overrides | — (unrelated) |
+
+Note that **#354 and #355 are the strongest argument for the Click-typing approach**: both are
+"the vocabulary is closed but the CLI doesn't know it" defects, and both disappear as a
+side-effect of declaring the type — no error-handling code written.
 
 ---
 
