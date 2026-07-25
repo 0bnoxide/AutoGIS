@@ -35,6 +35,23 @@ Also read the full new/changed files (a diff alone hides context) with Read.
    off-by-one in parsing, mutable-default args, swallowed exceptions, paths
    assumed to exist, QA records built but never surfaced. Cite `file:line`.
 
+5. **Input robustness & contract fidelity** (recurring failure themes, issue
+   #332 — check these explicitly, not just opportunistically):
+   - Defensive parsing: `.strip()`/`.get()`/type coercion on values that can be
+     `None` or empty; malformed CSV/Excel/YAML rows; a YAML/manifest body that
+     isn't a dict; duplicate rows/IDs that should dedupe but don't.
+   - Docstring/help-text drift from actual behavior (e.g. claiming `.xls`
+     support when the code only reads `.xlsx` via openpyxl).
+   - False-success reporting: a write path that no-ops (missing table/target)
+     but still prints/returns success; a parser that silently drops or skips
+     rows instead of raising a QA WARNING.
+   - Data integrity: unescaped string interpolation into a SQL/where clause;
+     string `"false"`/`"true"` treated as truthy instead of parsed as bool;
+     stdlib APIs used past the repo's actual Python floor.
+   - Regression tests for the edge cases above (empty/`None`, malformed rows,
+     duplicates, non-dict manifests, no-op/empty-output paths) — not just the
+     happy path.
+
 ## Output
 
 - Findings grouped: **Blockers**, **Should-fix**, **Nits** — each with
