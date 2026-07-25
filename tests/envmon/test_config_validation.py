@@ -240,5 +240,6 @@ def test_known_sheet_data_types_matches_dispatched_set():
     dispatched = set()
     for py in pkg.rglob("*.py"):
         dispatched.update(
-            re.findall(r'sheets_of_type\(\s*"([A-Z_]+)"', py.read_text()))
+            re.findall(r'sheets_of_type\(\s*"([A-Z_]+)"',
+                       py.read_text(encoding="utf-8")))
     assert dispatched == cv.KNOWN_SHEET_DATA_TYPES
