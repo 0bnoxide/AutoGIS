@@ -153,7 +153,8 @@ ADR-0091); 3.5-floor compliance stays an authoring-time ADR-0077 duty.
 2026-07-20 — Phase 2 shipped (ADR-0093, owner sign-off). 2026-07-22 — Phase 3
 first slice shipped (ADR-0102); Phase 4 shipped (ADR-0105, owner sign-off);
 Phase 5 shipped in two slices (ADR-0103/0104). 2026-07-23 — Phase 6 shipped
-(ADR-0107); Phase 7 slice 1 shipped (ADR-0108); Phase 8 slice 1 shipped
+(ADR-0107); Phase 7 slice 1 shipped (ADR-0108, historical-events acceptance
+leg owner-gated — "acceptance pending"); Phase 8 slice 1 shipped
 (ADR-0109, validator leg owner-gated). 2026-07-24 — Phase 9 slice 1 shipped
 (ADR-0111); its live-sandbox gate run stays owner-gated (issue #307). Phase 10
 (portfolio digest) has not started — no ADR yet.
