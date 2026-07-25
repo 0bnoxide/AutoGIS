@@ -28,6 +28,8 @@ an irreversible step. It is a checkpoint, not a review; `pr-reviewer` reviews di
 Skip it for mechanical or trivial work — a second opinion on a one-line rename is
 pure overhead.
 
+## Codebase memory
+
 The codebase-memory MCP server is **wired at USER scope** (stdio), not via a repo
 file. The binary lives at
 `C:\Users\ichbi\AppData\Roaming\npm\node_modules\codebase-memory-mcp\bin\codebase-memory-mcp.exe`
