@@ -120,16 +120,17 @@ def test_every_local_tool_is_guarded():
 
 def test_runtime_class_agrees_between_tools_and_seed():
     """TOOLS (drives the guard) and the seed (drives `list-tools` display)
-    must agree on LOCAL-ness. Seed 'DRAFT' is a documented display state
+    must agree on runtime class. Seed 'DRAFT' is a documented display state
     (capabilities.py: 'may differ in spelling from the Runtime enum').
     Group-qualified seed commands ("agol sync-to-gdb") map to their bare
-    TOOLS key (last token) so agol entries stay covered."""
+    TOOLS key (last token) so agol entries stay covered. Was LOCAL-ness-only
+    until issue #346 (seed said CLOUD for the HYBRID reconcile-locations)."""
     seed_rt = {c.split()[-1]: rt for (c, _n, _rid, rt, *_rest) in _REGISTRY_SEED}
     conflicts = [
         f"{c}: TOOLS={TOOLS[c].value} seed={seed_rt[c]}"
         for c in sorted(set(seed_rt) & set(TOOLS))
         if seed_rt[c] != "DRAFT"
-        and (TOOLS[c] is Runtime.LOCAL) != (seed_rt[c] == "LOCAL")
+        and seed_rt[c] != TOOLS[c].value.upper()
     ]
     assert not conflicts, (
         "runtime class drift between capabilities.TOOLS and _REGISTRY_SEED:\n"
