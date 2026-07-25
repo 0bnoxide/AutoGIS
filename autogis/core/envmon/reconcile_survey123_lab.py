@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_WARNING, SEV_INFO
+from .sample_id import parse_sample_id
 
 DEFAULT_HEADER_MAP = {
     "sample_id": "SampleID",
@@ -82,11 +83,21 @@ def reconcile_field_lab(
             unmatched_lab.remove(exact)
             _check_pair(result, fs, exact)
             continue
-        # fuzzy match - consider all unmatched lab samples
-        best_score = 0.0
-        best = None
+        # fuzzy match - consider all unmatched lab samples, except that a
+        # structural guard runs before any similarity score: two lifecycle
+        # IDs whose QC components differ can never match (an -FD duplicate
+        # must not consume its own primary; that pair scores ~0.914, above
+        # the 0.85 threshold)
+        fs_parts = parse_sample_id(fs.sample_id)
+        candidates = unmatched_lab
+        if fs_parts is not None:
+            candidates = [
+                ls for ls in unmatched_lab
+                if (lp := parse_sample_id(ls.sample_id)) is None
+                or lp.qc == fs_parts.qc
+            ]
         best_score, best = max(
-            ((_sim(fs.sample_id, ls.sample_id), ls) for ls in unmatched_lab),
+            ((_sim(fs.sample_id, ls.sample_id), ls) for ls in candidates),
             key=lambda x: x[0],
             default=(0.0, None),
         )

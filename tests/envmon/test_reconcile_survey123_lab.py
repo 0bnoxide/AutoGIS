@@ -89,6 +89,22 @@ def test_fuzzy_match_flags_location_mismatch():
     )
 
 
+def test_field_duplicate_never_fuzzy_matches_its_primary():
+    fs = [Survey123Sample("MW-1-20260715-GW-FD", "MW-1", "2026-07-15", "GW")]
+    lab = [LabSample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")]
+    r = reconcile_field_lab(fs, lab)
+    assert r.matched == []
+    assert [s.sample_id for s in r.field_only] == ["MW-1-20260715-GW-FD"]
+    assert [s.sample_id for s in r.lab_only] == ["MW-1-20260715-GW"]
+
+
+def test_primary_never_consumes_lab_duplicate():
+    fs = [Survey123Sample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")]
+    lab = [LabSample("MW-1-20260715-GW-FD", "MW-1", "2026-07-15", "GW")]
+    r = reconcile_field_lab(fs, lab)
+    assert r.matched == []
+
+
 def test_load_survey123_csv(tmp_path):
     p = tmp_path / "s123.csv"
     with p.open("w", newline="") as fh:
