@@ -59,6 +59,29 @@ def test_validate_parser_profile_reviewed_profile_not_flagged():
     assert "draft_profile" not in {r.category for r in records}
 
 
+def test_validate_parser_profile_gw_water_level_only_is_known():
+    """Regression: GW_WATER_LEVEL_ONLY is a shipped, actively-dispatched
+    data_type (normalize_groundwater.py, H272_Havre_GW_Elevation.yaml) but
+    was missing from KNOWN_SHEET_DATA_TYPES, so a legitimate production
+    profile spuriously triggered unknown_data_type."""
+    data = {"profile_id": "P", "sheets": [
+        {"sheet_name": "S", "data_type": "GW_WATER_LEVEL_ONLY",
+         "data_start_row": 2}]}
+    records = cv.validate_parser_profile(data)
+    assert "unknown_data_type" not in {r.category for r in records}
+
+
+def test_h272_elevation_profile_has_no_unknown_data_type_warning():
+    from pathlib import Path
+    import autogis
+    from autogis.core.common.config import load_config
+
+    profile_path = (Path(autogis.__file__).resolve().parent / "config" /
+                    "parser_profiles" / "H272_Havre_GW_Elevation.yaml")
+    records = cv.validate_parser_profile(load_config(profile_path))
+    assert "unknown_data_type" not in {r.category for r in records}
+
+
 def test_validate_figure_spec_flags_draft_note():
     """#78: a figure spec's DraftNote convention (e.g. draft contour maps)
     must surface as an active QA finding."""
