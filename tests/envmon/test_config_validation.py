@@ -223,3 +223,23 @@ def test_missing_filename_pattern_is_warned():
     warn = [r for r in recs if r.category == "missing_filename_pattern"]
     assert len(warn) == 1
     assert warn[0].severity == SEV_WARNING
+
+
+def test_known_sheet_data_types_matches_dispatched_set():
+    """#330/#336: KNOWN_SHEET_DATA_TYPES must agree exactly with the
+    data_type literals the normalizers actually dispatch via
+    profile.sheets_of_type(...). A dispatched-but-unlisted type earns a
+    spurious unknown_data_type WARNING (#330); a listed-but-never-dispatched
+    type validates clean and is then silently never normalized (#336)."""
+    import re
+    from pathlib import Path
+
+    import autogis
+
+    pkg = Path(autogis.__file__).resolve().parent
+    dispatched = set()
+    for py in pkg.rglob("*.py"):
+        dispatched.update(
+            re.findall(r'sheets_of_type\(\s*"([A-Z_]+)"',
+                       py.read_text(encoding="utf-8")))
+    assert dispatched == cv.KNOWN_SHEET_DATA_TYPES
