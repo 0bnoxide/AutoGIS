@@ -12,6 +12,8 @@ from typing import Dict, List
 
 import openpyxl
 
+from .sample_id import xform_sample_id_calc
+
 _QA_FLAGS = [
     ("resampled", "Resampled"),
     ("field_dup", "Field Duplicate"),
@@ -28,7 +30,7 @@ _MATRIX_LABELS = {
 }
 
 _SURVEY_HEADERS = ["type", "name", "label", "hint", "required", "calculation",
-                   "appearance"]
+                   "appearance", "default"]
 _CHOICES_HEADERS = ["list_name", "name", "label"]
 _SETTINGS_HEADERS = ["form_title", "form_id", "version", "instance_name"]
 
@@ -95,14 +97,13 @@ def build_xlsform(
         _write_row(survey, r, list(vals))
         r += 1
 
-    sample_id_calc = (
-        'concat(${WellID}, "-", format-date(${SamplingDate}, "%Y%m%d"), '
-        '"-", ${Matrix})'
-    )
+    sample_id_calc = xform_sample_id_calc()
 
     row("select_one well_list", "WellID", "Well ID", "", "yes")
     row("date", "SamplingDate", "Sampling Date", "", "yes")
     row("select_one matrix_list", "Matrix", "Sample Matrix", "", "yes")
+    row("select_one yes_no", "IsFieldDup", "Field duplicate?",
+        "", "", "", "", "no")
     row("calculate", "SampleID", "", "", "", sample_id_calc)
     row("select_one crew_list", "SampledBy", "Sampled By", "", "yes")
     row("text", "COCNumber", "COC Number")
@@ -146,6 +147,9 @@ def build_xlsform(
 
     for flag_name, flag_label in _QA_FLAGS:
         crow("qa_flags", flag_name, flag_label)
+
+    crow("yes_no", "yes", "Yes")
+    crow("yes_no", "no", "No")
 
     # ---------------------------------------------------------------- settings
     settings = wb.create_sheet("settings")

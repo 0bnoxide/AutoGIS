@@ -69,8 +69,31 @@ def test_sample_id_has_calculate_type(wb):
             assert "${WellID}" in calc
             assert "${SamplingDate}" in calc
             assert "${Matrix}" in calc
+            assert "${IsFieldDup}" in calc
             return
     pytest.fail("SampleID row not found")
+
+
+def test_sample_id_calc_comes_from_shared_contract(wb):
+    from autogis.core.envmon.sample_id import xform_sample_id_calc
+    ws = wb["survey"]
+    for r in range(2, ws.max_row + 1):
+        if ws.cell(r, 2).value == "SampleID":
+            assert ws.cell(r, 6).value == xform_sample_id_calc()
+            return
+    pytest.fail("SampleID row not found")
+
+
+def test_is_field_dup_question_and_choices(wb):
+    ws = wb["survey"]
+    rows = {ws.cell(r, 2).value: ws.cell(r, 1).value
+            for r in range(2, ws.max_row + 1)}
+    assert rows.get("IsFieldDup") == "select_one yes_no"
+    choices = wb["choices"]
+    pairs = {(choices.cell(r, 1).value, choices.cell(r, 2).value)
+             for r in range(2, choices.max_row + 1)}
+    assert ("yes_no", "yes") in pairs
+    assert ("yes_no", "no") in pairs
 
 
 def test_analyte_groups_produce_begin_end_group(wb):
