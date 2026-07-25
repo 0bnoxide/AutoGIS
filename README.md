@@ -30,6 +30,11 @@ has delivered **Phases 1–9**. Still outstanding: **Phase 10 (portfolio monitor
 digest)**, which is unimplemented and gated behind Phase 9's live-AGOL exit
 criteria (ADR-0111), and the four deferred §11 AI tools.
 
+A separate [Survey123 optional add-on roadmap](docs/survey123-add-on-roadmap.md)
+defines an opt-in install boundary plus eight phases and four milestones. It is
+accepted planning direction, not part of or a blocker for the core production
+sequence (ADR-0112).
+
 **Counts are not pinned in this README** — they drift faster than the prose does.
 Derive them live:
 
@@ -777,6 +782,7 @@ before trusting outputs.
 |----------|---------|
 | [`docs/pro-install.md`](docs/pro-install.md) | Full Pro setup: env clone, toolbox registration, cache/reload |
 | [`docs/production-roadmap.md`](docs/production-roadmap.md) | Authoritative post-catalog production phases and exit gates |
+| [`docs/survey123-add-on-roadmap.md`](docs/survey123-add-on-roadmap.md) | Optional Survey123 add-on phases, milestones, install boundary, and exit gates |
 | [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2026-06-27.md) | Feature completion status by tool (snapshot; headline counts above are current) |
 | [`docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md`](docs/IMPLEMENTATION_ROADMAP_PRIORITIZED.md) | Phase 1–4 sequencing |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design specs — architecture, algorithm, and data-model decisions |

@@ -168,6 +168,16 @@ Gate changes (record each here):
   stays owner-gated (issue #307).
 - Phase 10 (portfolio digest) has not started — no ADR yet.
 
+## Survey123 optional add-on roadmap
+
+The user accepted the planning direction on 2026-07-25.
+[`docs/survey123-add-on-roadmap.md`](docs/survey123-add-on-roadmap.md) defines
+the opt-in install boundary, eight sequential phases, four milestones, and
+per-phase production gates; ADR-0112 records the packaging and ordering
+decision. This optional track does not delay, reorder, parallelize, or satisfy
+the core production-roadmap phases above. Publishing the plan does not start
+implementation; phase starts and fast-tracking remain explicit user decisions.
+
 ## Decision records
 
 Two separate records — easy to conflate, keep both:
