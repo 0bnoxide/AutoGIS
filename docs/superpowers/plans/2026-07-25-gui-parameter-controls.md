@@ -30,6 +30,9 @@ Qt's `offscreen` platform plugin.
 > the combined feature branch. Current `main` independently supplied #352's
 > stronger Qt three-state checkbox (PR #365) and the CLI safety fixes for
 > #353-#355/#358 (PR #372); the merge resolution preserves those contracts.
+> Survey123 Phase 2 added `sync-survey123 --since` and a staging directory
+> after the baseline, so the implemented inventories are 17 dates and 13
+> directory parameters.
 > The unchecked boxes below are the original execution checklist, retained as
 > planning history rather than rewritten after the fact.
 

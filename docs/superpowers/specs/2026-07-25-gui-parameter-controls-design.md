@@ -10,8 +10,11 @@
 > with a real three-state checkbox in PR #365 and closed #353-#355/#358 in
 > PR #372. This implementation preserves the stronger three-state contract:
 > partially checked omits the override, while explicitly unchecked still emits
-> `--no-incremental`. This branch owns the remaining GUI fixes #350, #351,
-> #356, and #357 plus the control metadata/rendering described below.
+> `--no-incremental`. Survey123 Phase 2 also added `sync-survey123 --since`
+> and its staging `--out` after the baseline; they extend the inventories to
+> 17 ISO-date options and 13 directory params. This branch owns the remaining
+> GUI fixes #350, #351, #356, and #357 plus the control metadata/rendering
+> described below.
 
 ---
 

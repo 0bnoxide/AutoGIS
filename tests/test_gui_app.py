@@ -1286,6 +1286,20 @@ def test_picked_date_serializes_as_iso(qapp):
     assert win._raw_values()["event_date"] == "2026-07-25"
 
 
+def test_sync_survey123_uses_calendar_and_folder_picker(qapp):
+    """The Phase 2 command landed after this branch's original inventory."""
+    from PySide6.QtWidgets import QDateEdit
+
+    win = MainWindow()
+    form = win._forms["envmon sync-survey123"]
+    win._command_box.setCurrentText(form.label)
+    fields = {field.name: field for field in form.fields}
+
+    assert isinstance(win._field_widgets["since_date"], QDateEdit)
+    assert fields["out_dir"].is_dir is True
+    assert _dialog_kind(fields["out_dir"]) == "dir"
+
+
 # ---- Task 14: nargs>1, tri-state flag, xor greying ------------------------
 
 def test_bbox_nargs4_stays_a_line_edit_and_emits_four_separate_tokens(qapp):

@@ -103,13 +103,21 @@ def test_since_still_accepts_a_full_timestamp(tmp_path):
     assert res.exit_code == 0, res.output
 
 
-def test_all_sixteen_date_options_are_isodate():
+def test_all_seventeen_date_options_are_isodate():
     """Guard against a future option being added as bare text."""
-    from autogis.adapters.param_types import IsoDate
     from autogis.adapters.gui.introspect import introspect_cli
     dated = [(f.label, x.name) for f in introspect_cli() for x in f.fields
              if x.kind == "date"]
-    assert len(dated) == 16, dated
+    assert len(dated) == 17, dated
+
+
+def test_sync_survey123_since_accepts_the_advertised_timestamp_shape():
+    from autogis.adapters.param_types import IsoDate
+    envmon = autogis.commands["envmon"]
+    command = envmon.commands["sync-survey123"]
+    since = next(p for p in command.params if p.name == "since_date")
+    assert isinstance(since.type, IsoDate)
+    assert since.type.allow_time is True
 
 
 def test_negative_limit_is_a_usage_error(tmp_path):
@@ -141,7 +149,8 @@ def test_directory_params_reject_an_existing_file(tmp_path):
 # Derived from the live Click tree (Task 7 Step 3) -- every bare click.Path()
 # whose python dest name ends in "_dir" (the gdb family is excluded: it's
 # forced to a folder picker by name in gui/introspect.py regardless of
-# file_okay, so it isn't part of issue #353's 12).
+# file_okay, so it isn't part of issue #353's original 12). sync-survey123
+# added the thirteenth after this branch's baseline.
 FOLDER_PARAMS = [
     ("envmon well-inspection-report", "output_dir"),
     ("envmon well-inspection-report", "harvest_dir"),
@@ -155,12 +164,13 @@ FOLDER_PARAMS = [
     ("envmon build-report-package", "out_dir"),
     ("envmon batch-import-workbooks", "output_dir"),
     ("envmon export-civil3d", "out_dir"),
+    ("envmon sync-survey123", "out_dir"),
 ]
 
 
-def test_the_twelve_folder_params_are_declared_dir_only():
+def test_the_thirteen_folder_params_are_declared_dir_only():
     from autogis.adapters.gui.introspect import introspect_cli
-    assert len(FOLDER_PARAMS) == 12, "derive the real list; do not guess"
+    assert len(FOLDER_PARAMS) == 13, "derive the real list; do not guess"
     forms = {f.label: f for f in introspect_cli()}
     for label, dest in FOLDER_PARAMS:
         field = next(x for x in forms[label].fields if x.name == dest)

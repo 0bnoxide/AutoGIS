@@ -4590,11 +4590,13 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
 @envmon.command("sync-survey123")
 @click.option("--item-id", required=True,
               help="AGOL item ID of the survey's feature service.")
-@click.option("--out", "out_dir", required=True, type=click.Path(),
+@click.option("--out", "out_dir", required=True,
+              type=click.Path(file_okay=False),
               help="Staging directory (also holds the sync checkpoint).")
 @click.option("--profile", default=None,
               help="ArcGIS API for Python profile name.")
 @click.option("--since", "since_date", default=None,
+              type=IsoDate(allow_time=True),
               help="Bounded replay: re-pull edits since this UTC date/time "
                    "(YYYY-MM-DD[THH:MM]); the checkpoint is not advanced.")
 @click.option("--no-attachments", is_flag=True, default=False,
