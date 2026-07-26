@@ -31,6 +31,7 @@ class IntervalTier:
     DETECT = "DETECT"
     ND = "ND"
     NO_DATA = "NO_DATA"
+    ALL = frozenset({HOTSPOT, DETECT, ND, NO_DATA})
 
 
 @dataclass

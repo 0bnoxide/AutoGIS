@@ -293,6 +293,19 @@ def test_build_conc_surface_dry_run_headless(tmp_path):
     assert "= 5.0" in result.output  # 0.005 mg/L normalized to 5 ug/L
 
 
+def test_build_conc_surface_rejects_unregistered_unit(tmp_path):
+    results, coords = _write_inputs(tmp_path, [_row()])
+    result = CliRunner().invoke(autogis, [
+        "envmon", "build-conc-surface", "--results", str(results),
+        "--coords", str(coords), "--analyte", "Benzene",
+        "--site", SITE, "--event-date", EVENT, "--unit", "ppb", "--dry-run",
+    ])
+    assert result.exit_code == 2
+    assert "Invalid value for --unit" in result.output
+    assert "'ppb'" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_build_conc_surface_guard_without_arcpy(tmp_path):
     results, coords = _write_inputs(tmp_path, [_row()])
     result = CliRunner().invoke(autogis, [

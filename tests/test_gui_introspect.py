@@ -70,6 +70,27 @@ def test_is_dir_flags_directory_only_path_params():
     assert recon["threshold"].is_dir is False
 
 
+def test_directory_options_open_a_folder_picker():
+    forms = _by_label()
+    directory_options = (
+        ("envmon well-inspection-report", "output_dir"),
+        ("envmon well-inspection-report", "harvest_dir"),
+        ("envmon export-snapshot", "out_dir"),
+        ("envmon create-sampling-event", "out_dir"),
+        ("envmon export-wqx", "out_dir"),
+        ("envmon export-survey-cad", "output_dir"),
+        ("envmon condition-dem", "out_dir"),
+        ("envmon gen-map-series", "out_dir"),
+        ("envmon merge-event-results", "results_dir"),
+        ("envmon build-report-package", "out_dir"),
+        ("envmon batch-import-workbooks", "output_dir"),
+        ("envmon export-civil3d", "out_dir"),
+    )
+    for label, name in directory_options:
+        field = {f.name: f for f in forms[label].fields}[name]
+        assert field.is_dir is True, (label, name)
+
+
 def test_gdb_params_open_a_folder_picker():
     """Every gdb param is a bare click.Path() (file_okay left True), so the
     generic file_okay=False test can't see that a .gdb is a *directory*. The
