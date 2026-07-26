@@ -727,7 +727,8 @@ figures — with full source-cell traceability and idempotent imports.
 | `core/common/schema/` | 5 modules (attachments, boring, drone, envmon, survey) exporting ~21 typed dataclasses |
 | `core/envmon/` | inspectors, importers, validators, reconcilers, event builders, analysis, callout/contour/survey/drone tools |
 | `adapters/cli.py` | Click CLI — constructs config dataclasses, guards LOCAL tools, dispatches to core |
-| `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()`, `require_runtime()` guards |
+| `runtime/capabilities.py` | `TOOLS` runtime map, `requires_arcpy()` |
+| `adapters/guard.py` | `require_runtime()` — the single gate consulting `capabilities.py` |
 
 ---
 
@@ -744,9 +745,9 @@ workbook from a different site (Holiday Stationstore #272 / Circle K Store 27462
 via Tool 1 plus targeted verification — see that profile's banner for what changed and what's
 still an unverified guess. Two fully anchor-verified sibling profiles now exist for that real
 site: `H272_Havre_GW_Elevation.yaml` (verified *and* dispatchable — `GW_WATER_LEVEL_ONLY` is
-already wired) and `H272_Havre_GW_Analytical.yaml` (anchors verified against the real workbook,
-but not yet dispatchable — no `data_type` currently handles a GW-analytical-only sheet; see
-that profile's banner for the concrete gap and what's needed to close it). Tool 1 + human
+already wired) and `H272_Havre_GW_Analytical.yaml` (anchors verified against the real workbook
+and dispatchable — `GW_ANALYTICAL` is wired via `normalize_gw_table_2`; see that profile's
+banner for the layout it handles). Tool 1 + human
 review is still mandatory before the first import of the actual Glasgow workbook — compare
 every row/column anchor against the Tool 1 report, fix the remaining `_TODO`s, and clear the
 DRAFT banner only once that specific file has been checked.
