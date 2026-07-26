@@ -153,6 +153,28 @@ def test_build_argv_flags_and_boolean_pairs():
     assert "--incremental" in argv2
 
 
+def test_build_argv_nargs_option_emits_separate_tokens():
+    """#351: a nargs>1 option (download-dem's --bbox) must reach argv as
+    the option flag followed by N separate value tokens, not one repr'd
+    tuple -- Click's own nargs parser expects exactly that shape."""
+    argv = build_argv(("envmon", "download-dem"),
+                      {"bbox": ("-105", "39", "-104", "40")})
+    i = argv.index("--bbox")
+    assert argv[i + 1:i + 5] == ["-105", "39", "-104", "40"]
+
+
+def test_build_argv_nargs_option_on_argument_style_list_also_works():
+    """--start/--end (generate-subsurface-profile) is the other nargs>1
+    shape (nargs=2 float); same separate-tokens contract."""
+    argv = build_argv(("envmon", "generate-subsurface-profile"),
+                      {"db_path": "db.sqlite", "out_path": "p.png",
+                       "start": ("39.0", "-105.0"), "end": ("39.1", "-105.1")})
+    i = argv.index("--start")
+    assert argv[i + 1:i + 3] == ["39.0", "-105.0"]
+    j = argv.index("--end")
+    assert argv[j + 1:j + 3] == ["39.1", "-105.1"]
+
+
 def test_build_argv_unknown_param_and_unknown_command_raise():
     with pytest.raises(ValueError, match="unknown parameter"):
         build_argv(("envmon", "inspect"), {"nope": 1})

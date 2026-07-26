@@ -108,6 +108,8 @@ class FormField:
     choices: tuple[str, ...] | None = None  # populated for kind == "choice"
     help_text: str | None = None
     repeatable: bool = False  # click multiple=True: one value-widget, repeated
+    nargs: int = 1  # click Option nargs>1 (e.g. --bbox W S E N): N whitespace-
+    # separated values in one field (#351); 1 is the overwhelming common case.
     is_path_output: bool = False  # kind == "path": save picker vs open picker
     is_dir: bool = False  # kind == "path": directory-only -> folder picker
     xor_group: str | None = None  # shared id; fill one, grey its sibling
@@ -215,6 +217,7 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
         choices=choices,
         help_text=getattr(param, "help", None),
         repeatable=bool(getattr(param, "multiple", False)),
+        nargs=getattr(param, "nargs", 1) or 1,
         is_path_output=is_path_output,
         is_dir=is_dir,
         xor_group=xor_group,

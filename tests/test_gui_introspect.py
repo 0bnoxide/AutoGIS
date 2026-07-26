@@ -180,3 +180,25 @@ def test_int_range_exposes_bounds():
 def test_unbounded_int_has_no_bounds():
     f = _only_field(["--limit"], type=int)
     assert (f.minimum, f.maximum) == (None, None)
+
+
+def test_nargs_defaults_to_one():
+    f = _only_field(["--x"], type=str)
+    assert f.nargs == 1
+
+
+def test_nargs_greater_than_one_is_captured():
+    f = _only_field(["--bbox"], nargs=4, type=float, default=None)
+    assert f.nargs == 4
+
+
+def test_real_bbox_and_profile_endpoints_are_nargs():
+    """#351: download-dem --bbox and generate-subsurface-profile's
+    --start/--end are the 3 real nargs>1 params in the CLI today."""
+    forms = _by_label()
+    bbox = {f.name: f for f in forms["envmon download-dem"].fields}["bbox"]
+    assert bbox.nargs == 4
+    ends = {f.name: f
+           for f in forms["envmon generate-subsurface-profile"].fields}
+    assert ends["start"].nargs == 2
+    assert ends["end"].nargs == 2

@@ -458,8 +458,17 @@ class MainWindow(QMainWindow):
                 self._form_layout.addRow(label_text, widget)
                 self._field_widgets[field.name] = widget
                 continue
-            if field.kind == "flag":
-                widget: QWidget = QCheckBox()
+            if field.nargs > 1:
+                # Must precede the int/float branch (#351): --bbox etc. are
+                # kind=="float" but a QDoubleSpinBox can only hold ONE
+                # number, so an nargs>1 field stays a plain QLineEdit --
+                # the user types the N values space-separated (forms.py
+                # splits and count-checks them).
+                widget: QWidget = QLineEdit()
+                widget.setPlaceholderText(
+                    f"{field.nargs} space-separated values")
+            elif field.kind == "flag":
+                widget = QCheckBox()
                 widget.setChecked(bool(field.default))
             elif field.kind == "choice":
                 widget = QComboBox()
@@ -567,7 +576,45 @@ class MainWindow(QMainWindow):
             else:
                 self._form_layout.addRow(label_text, widget)
             self._field_widgets[field.name] = widget
+        self._wire_xor_groups(form)
         self._sync_run_availability(show_reason=True)
+
+    def _wire_xor_groups(self, form: CommandForm) -> None:
+        """Grey out an xor sibling once its pair is filled (reuses the shape
+        of ``config_builder_dialog._sync_xor``): fill one side and the other
+        disables but keeps its typed text; clear it and both re-enable
+        (owner decision, spec Sec 4.1a). Driven off each widget's own
+        ``textChanged`` -- never ``labelForField()``, which returns None for
+        a path row (wrapped in its own Browse-button ``QHBoxLayout``, not
+        added to the form layout directly)."""
+        # ponytail: envmon reconcile-locations' --gdb unconditionally HALTs
+        # ("use the .pyt toolbox" -- cli.py's reconcile_locations_cmd), so
+        # greying its --wells-csv sibling would steer the user into that
+        # dead end. Leave this one pair as it is today.
+        if form.label == "envmon reconcile-locations":
+            return
+        groups: dict[str, list[FormField]] = {}
+        for field in form.fields:
+            if field.xor_group:
+                groups.setdefault(field.xor_group, []).append(field)
+        for members in groups.values():
+            widgets = [self._field_widgets[f.name] for f in members]
+            # Every live xor pair today (besides the reconcile-locations
+            # exception above) is two plain path QLineEdits -- verified via
+            # introspect_cli() before writing this. A repeatable/choice/flag
+            # xor member would need its own signal wired here; skip rather
+            # than guess at one with no real case to test against yet.
+            if not all(isinstance(w, QLineEdit) for w in widgets):
+                continue
+
+            def _sync(_text: str = "", widgets=widgets) -> None:
+                filled = [bool(w.text().strip()) for w in widgets]
+                for i, w in enumerate(widgets):
+                    other_filled = any(f for j, f in enumerate(filled) if j != i)
+                    w.setEnabled(not other_filled)
+
+            for w in widgets:
+                w.textChanged.connect(_sync)
 
     def _browse(self, field: FormField, line: QLineEdit) -> None:
         """Open the right file/folder dialog for ``field`` and, if the user

@@ -28,7 +28,10 @@ import autogis.adapters.gui.app as app_mod
 import autogis.adapters.gui.runner as runner_mod
 from autogis.adapters.gui import settings as settings_mod
 from autogis.adapters.gui.app import MainWindow, _dialog_kind, _window_forms
-from autogis.adapters.gui.executor import Decision, StepResult, needs_arcpy_env
+from autogis.adapters.gui.executor import (
+    Decision, StepResult, build_argv, needs_arcpy_env,
+)
+from autogis.adapters.gui.forms import build_step
 from autogis.adapters.gui.introspect import FormField
 
 
@@ -1230,3 +1233,53 @@ def test_picked_date_serializes_as_iso(qapp):
     win._command_box.setCurrentText("envmon gw-level-summary")
     win._field_widgets["event_date"].setDate(QDate(2026, 7, 25))
     assert win._raw_values()["event_date"] == "2026-07-25"
+
+
+# ---- Task 14: nargs>1, tri-state flag, xor greying ------------------------
+
+def test_bbox_nargs4_stays_a_line_edit_and_emits_four_separate_tokens(qapp):
+    """#351: --bbox is nargs=4 float -- if the numeric branch claimed it
+    first it would render a QDoubleSpinBox, which can only hold one number.
+    The nargs>1 check must win so it stays a plain QLineEdit."""
+    from PySide6.QtWidgets import QDoubleSpinBox
+
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon download-dem")
+    bbox_widget = win._field_widgets["bbox"]
+    assert isinstance(bbox_widget, QLineEdit)
+    assert not isinstance(bbox_widget, QDoubleSpinBox)
+    bbox_widget.setText("-105 39 -104 40")
+    step = build_step(win._forms["envmon download-dem"],
+                      {**win._raw_values(), "out_path": "x.tif"})
+    argv = build_argv(step.command, step.values)
+    i = argv.index("--bbox")
+    assert argv[i + 1:i + 5] == ["-105", "39", "-104", "40"]
+
+
+def test_filling_one_xor_side_disables_the_other_but_keeps_its_text(qapp):
+    """Owner decision (spec Sec 4.1a): filling one xor sibling disables the
+    other but preserves its typed text; clearing re-enables both."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon update-well-elevations")
+    gdb, csv = win._field_widgets["gdb"], win._field_widgets["wells_csv"]
+    gdb.setText("C:/old/site.gdb")
+    csv.setText("C:/data/wells.csv")
+    qapp.processEvents()
+    assert gdb.isEnabled() is False
+    assert gdb.text() == "C:/old/site.gdb"      # preserved, per owner decision
+    csv.clear()
+    qapp.processEvents()
+    assert gdb.isEnabled() is True
+
+
+def test_reconcile_locations_gdb_flag_pair_is_left_ungreyed(qapp):
+    """reconcile-locations' --gdb unconditionally HALTs ("use the .pyt
+    toolbox" -- cli.py's reconcile_locations_cmd): greying its wells_csv
+    sibling would steer the user into that dead end, so this specific pair
+    is deliberately left alone (see app.py's ponytail comment)."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon reconcile-locations")
+    gdb, wells_csv = win._field_widgets["gdb"], win._field_widgets["wells_csv"]
+    gdb.setChecked(True)
+    qapp.processEvents()
+    assert wells_csv.isEnabled() is True
