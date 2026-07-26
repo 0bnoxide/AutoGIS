@@ -1007,3 +1007,22 @@ def test_editing_local_python_while_paused_keeps_run_gated(qapp, monkeypatch):
     assert "PAUSED" in win._status.text()                 # pause prompt intact
     win._on_resume()                                       # finish cleanly
     _pump_until(lambda: win._runner is None)
+
+
+def test_every_field_widget_gets_its_help_as_a_tooltip(qapp):
+    win = MainWindow()
+    # envmon run-history has a flag-free mix incl. a choice with help text.
+    win._command_box.setCurrentText("envmon run-history")
+    form = win._forms["envmon run-history"]
+    for field in form.fields:
+        if not field.help_text:
+            continue
+        assert win._field_widgets[field.name].toolTip() == field.help_text, field.name
+
+
+def test_tooltip_reaches_choice_and_flag_widgets(qapp):
+    """Regression for #356: the choice/flag branches never touched help_text."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-history")
+    status = win._field_widgets["status"]          # QComboBox, has help
+    assert status.toolTip() == "Filter by run status."

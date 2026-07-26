@@ -387,6 +387,11 @@ class MainWindow(QMainWindow):
                     widget.setText(str(field.default))
                 if field.help_text:
                     widget.setPlaceholderText(field.help_text)
+            # Help reaches the screen for EVERY kind, not just line edits: the
+            # flag/choice branches never set it, and setPlaceholderText above is
+            # a no-op whenever a default was already written into the field (#356).
+            if field.help_text:
+                widget.setToolTip(field.help_text)
             # xor_group fields aren't individually `required` (Click sees them
             # as optional; the CLI body enforces "choose exactly one"), but
             # from the user's perspective they're just as required -- reuse
