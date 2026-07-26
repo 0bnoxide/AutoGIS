@@ -3827,7 +3827,7 @@ def generate_subsurface_profile_cmd(db_path, out_path, boring_a, boring_b,
               help="Output .xlsx path.")
 @click.option("--photo-width", type=click.IntRange(min=1), default=300, show_default=True,
               help="Embedded photo box width (px).")
-@click.option("--photo-height", type=click.IntRange(min=1), default=225, show_default=True,
+@click.option("--photo-height", type=int, default=225, show_default=True,
               help="Embedded photo box height (px).")
 @qa_report_options
 def generate_inspection_report_cmd(inspections_csv, manifest_path,
@@ -4287,7 +4287,7 @@ def _ids_arg(value: str) -> list:
 @click.option("--gdb", default=None, type=click.Path(),
               help="File geodatabase to repath layers to and register exports "
                    "in (required unless --dry-run).")
-@click.option("--dpi", type=click.IntRange(min=1), default=300, show_default=True)
+@click.option("--dpi", type=int, default=300, show_default=True)
 @click.option("--dry-run", is_flag=True, default=False,
               help="Print the planned job list without touching arcpy.")
 @qa_report_options
