@@ -26,6 +26,13 @@ Qt's `offscreen` platform plugin.
 
 **Spec:** `docs/superpowers/specs/2026-07-25-gui-parameter-controls-design.md`
 
+> **Integration status, 2026-07-26:** all implementation tasks are complete on
+> the combined feature branch. Current `main` independently supplied #352's
+> stronger Qt three-state checkbox (PR #365) and the CLI safety fixes for
+> #353-#355/#358 (PR #372); the merge resolution preserves those contracts.
+> The unchecked boxes below are the original execution checklist, retained as
+> planning history rather than rewritten after the fact.
+
 ## Global Constraints
 
 - `core/` and `adapters/` must import with **neither `arcpy` nor `arcgis` present**. Everything
@@ -1406,6 +1413,12 @@ def test_repeatable_container_is_one_form_row(qapp):
 
 **Files:** Modify `autogis/adapters/gui/{introspect,forms,executor,app}.py`; Tests as listed
 
+> **Superseded tri-state step, 2026-07-26:** #352 landed independently in
+> PR #365. Do not implement the `forms._normalize(False) -> None` fallback
+> below: it loses the user's explicit `--no-incremental` choice. Keep main's
+> three-state `QCheckBox` mapping (`PartiallyChecked -> None`, unchecked ->
+> `False`) and apply only the `nargs>1` and xor pieces from this task.
+
 Three small independent fixes, grouped because each is a handful of lines:
 
 1. **`nargs>1` (#351)** — `introspect.FormField` gains `nargs: int = 1`; `forms._normalize`
@@ -1476,7 +1489,8 @@ def test_filling_one_xor_side_disables_the_other_but_keeps_its_text(qapp):
 
 - [ ] Full suite green locally **and in CI** (CI is authoritative — it is the only env that
       verifies the arcpy/arcgis-free invariant).
-- [ ] Issues #350, #351, #352, #353, #354, #355, #356, #357 closed by their commits.
+- [ ] Issues #350, #351, #356, #357 closed by this PR; #352 by PR #365 and
+      #353-#355/#358 by PR #372 remain preserved.
 - [ ] `python -m autogis envmon --help` renders without a wall of lowercased dataset codes.
 - [ ] Manual smoke: launch `autogis-gui`, pick `envmon build-conc-surface`, confirm the window
       shrinks, the matrix combo accepts a typed `SED`, and `--event-date` shows a calendar.

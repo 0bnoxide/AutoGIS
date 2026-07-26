@@ -1,10 +1,17 @@
 # GUI parameter controls — pick values, don't type them
 
 **Date:** 2026-07-25
-**Status:** Design — approved by owner, pending spec review
+**Status:** Implemented — proposed for review
 **Scope:** `autogis/adapters/gui/` (PySide6 window) + `autogis/adapters/cli.py` (Click type declarations)
 **Baseline:** `main` @ `a518237`
 **Not in scope:** `autogis/adapters/toolbox.pyt` (see *Out of scope*)
+
+> **Integration note, 2026-07-26:** current `main` independently closed #352
+> with a real three-state checkbox in PR #365 and closed #353-#355/#358 in
+> PR #372. This implementation preserves the stronger three-state contract:
+> partially checked omits the override, while explicitly unchecked still emits
+> `--no-incremental`. This branch owns the remaining GUI fixes #350, #351,
+> #356, and #357 plus the control metadata/rendering described below.
 
 ---
 
@@ -237,10 +244,10 @@ alone.
 |---|---|---|
 | [#350](https://github.com/0bnoxide/AutoGIS/issues/350) | Every `multiple=True` option renders as one `QLineEdit`; 5 STRING ones corrupt data **silently** (`coc advance --set` writes a malformed detail into the chain-of-custody audit trail, exit 0), 5 Path ones fail loudly | PR2 |
 | [#351](https://github.com/0bnoxide/AutoGIS/issues/351) | `nargs>1` options always fail — `build_argv` emits the tuple as one repr token | PR2 |
-| [#352](https://github.com/0bnoxide/AutoGIS/issues/352) | `harvest` form always emits `--no-incremental`, silently overriding a config's `incremental: true` — written by the GUI's *own* Site Config Builder | PR2 |
-| [#353](https://github.com/0bnoxide/AutoGIS/issues/353) | **12** directory params declared bare `click.Path()` — no Click validation, and Browse opens a save-*file* dialog | PR1 |
-| [#354](https://github.com/0bnoxide/AutoGIS/issues/354) | `select-soil-intervals --tiers <typo>` → 0 rows, header-only CSV, `Status: PASS`, exit 0 | PR1 (`CommaList`) |
-| [#355](https://github.com/0bnoxide/AutoGIS/issues/355) | `gen-synthetic-workbook --features <typo>` → raw `ValueError` traceback instead of a usage error | PR1 (`CommaList`) |
+| [#352](https://github.com/0bnoxide/AutoGIS/issues/352) | `harvest` form always emits `--no-incremental`, silently overriding a config's `incremental: true` — written by the GUI's *own* Site Config Builder | PR #365 (merged; preserved here) |
+| [#353](https://github.com/0bnoxide/AutoGIS/issues/353) | **12** directory params declared bare `click.Path()` — no Click validation, and Browse opens a save-*file* dialog | PR #372 (merged); this branch retains control metadata |
+| [#354](https://github.com/0bnoxide/AutoGIS/issues/354) | `select-soil-intervals --tiers <typo>` → 0 rows, header-only CSV, `Status: PASS`, exit 0 | PR #372 (merged); `CommaList` adds checklist metadata |
+| [#355](https://github.com/0bnoxide/AutoGIS/issues/355) | `gen-synthetic-workbook --features <typo>` → raw `ValueError` traceback instead of a usage error | PR #372 (merged); `CommaList` adds checklist metadata |
 | [#356](https://github.com/0bnoxide/AutoGIS/issues/356) | Per-field help invisible on ~50 defaulted fields — `setPlaceholderText` only paints when empty, and `setText(default)` runs first | PR1 (the `setToolTip` line) |
 | [#357](https://github.com/0bnoxide/AutoGIS/issues/357) | Window minimum pinned to the layout minimum (874×871 on `build-conc-surface`); no `QScrollArea` | PR2 |
 | [#358](https://github.com/0bnoxide/AutoGIS/issues/358) | `manage-callout-overrides clear` ignores `MapType`, deleting other map types' overrides | — (unrelated) |
@@ -286,8 +293,9 @@ could not be read.
   not route through labels.
 - **`reconcile-locations --gdb` unconditionally raises "use the `.pyt`"**, so greying its sibling
   would steer the user into a guaranteed HALT. That pair needs an explicit exception.
-- **`tests/test_gui_executor.py:150` asserts `--no-incremental`** is emitted. The tri-state fix
-  changes that behaviour, so the test changes with it — deliberately, not incidentally.
+- **PR #365 owns the tri-state contract.** Partially checked maps to `None`
+  (omit both flags); explicitly unchecked remains `False` and emits
+  `--no-incremental`. The parameter-controls branch must preserve both paths.
 - **`QDoubleSpinBox` follows the system locale**; a comma-decimal locale rejects `0.8`. Pin to C
   locale.
 - **`--report` (82 fields) and `--fail-on` (66)** are injected and *overridden* by
