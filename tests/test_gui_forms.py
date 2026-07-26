@@ -14,10 +14,11 @@ from autogis.adapters.gui.forms import FormValidationError, build_step
 from autogis.adapters.gui.introspect import CommandForm, FormField, introspect_cli
 
 
-def _field(name, kind="text", required=False, xor_group=None, repeatable=False):
+def _field(name, kind="text", required=False, xor_group=None, repeatable=False,
+          nargs=1):
     return FormField(name=name, label=name.replace("_", " ").title(), kind=kind,
                      required=required, default=None, xor_group=xor_group,
-                     repeatable=repeatable)
+                     repeatable=repeatable, nargs=nargs)
 
 
 def _form(fields, path=("tool",), unreachable_reason=None):
@@ -116,6 +117,25 @@ def test_xor_group_exactly_one_filled_passes():
                  _field("gdb", xor_group="wells_csv/gdb")])
     step = build_step(form, {"wells_csv": "w.csv"})
     assert step.values == {"wells_csv": "w.csv"}
+
+
+def test_nargs_splits_whitespace_and_wraps_in_tuple():
+    form = _form([_field("bbox", kind="float", nargs=4)])
+    step = build_step(form, {"bbox": "-105 39 -104 40"})
+    assert step.values == {"bbox": ("-105", "39", "-104", "40")}
+
+
+def test_nargs_blank_is_omitted():
+    form = _form([_field("bbox", kind="float", nargs=4)])
+    step = build_step(form, {"bbox": ""})
+    assert step.values == {}
+
+
+def test_nargs_wrong_count_raises():
+    form = _form([_field("bbox", kind="float", nargs=4)])
+    with pytest.raises(FormValidationError, match="expected 4") as exc:
+        build_step(form, {"bbox": "-105 39 -104"})
+    assert exc.value.field == "bbox"
 
 
 def test_command_path_and_workflow_options_passthrough():

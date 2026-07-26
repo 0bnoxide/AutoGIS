@@ -22,7 +22,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
+from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
 
 import autogis.adapters.gui.app as app_mod
 import autogis.adapters.gui.runner as runner_mod
@@ -481,6 +481,131 @@ def test_optional_choice_field_with_no_default_starts_blank(qapp):
     widget = win._field_widgets["runtime_filter"]
     assert widget.currentText() == ""
     assert win._raw_values()["runtime_filter"] == ""
+
+
+def test_suggested_choice_combo_is_editable_and_accepts_typed_text(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon build-conc-surface")
+    w = win._field_widgets["matrix"]
+    assert w.isEditable() is True
+    w.setCurrentText("SED")                     # not in the suggestion list
+    assert win._raw_values()["matrix"] == "SED"
+
+
+def test_strict_choice_stays_non_editable(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-history")
+    assert win._field_widgets["fmt"].isEditable() is False
+
+
+def test_multichoice_renders_a_checklist_in_one_row(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon gen-synthetic-workbook")
+    form = win._forms["envmon gen-synthetic-workbook"]
+    assert win._form_layout.rowCount() == len(form.fields)   # still 1 row/field
+    w = win._field_widgets["features"]
+    w.item(0).setCheckState(Qt.Checked)
+    w.item(1).setCheckState(Qt.Checked)
+    assert "," in win._raw_values()["features"]
+
+
+# ---- repeatable (multiple=True) fields -- #350 ----------------------------
+
+def test_repeatable_field_emits_the_option_once_per_value(qapp):
+    from autogis.adapters.gui.executor import build_argv
+    from autogis.adapters.gui.forms import build_step
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    w = win._field_widgets["set_pairs"]
+    w.set_values(["temperature_c=4.0", "carrier=FedEx"])   # helper on the container
+    assert win._raw_values()["set_pairs"] == ["temperature_c=4.0", "carrier=FedEx"]
+    form = win._forms["envmon coc advance"]
+    step = build_step(form, {**win._raw_values(), "store_path": "s.json",
+                             "to_state": "released", "actor": "t", "coc": "C-1"})
+    assert build_argv(step.command, step.values).count("--set") == 2
+
+
+def test_repeatable_container_is_one_form_row(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    form = win._forms["envmon coc advance"]
+    assert win._form_layout.rowCount() == len(form.fields)
+
+
+def test_repeatable_values_skip_blank_rows(qapp):
+    """An empty middle row is not an empty-string argument -- it's just not
+    there, matching CommaList/build_argv's own "skip nothing" contract."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    w = win._field_widgets["set_pairs"]
+    w.set_values(["a=1", "", "b=2"])
+    assert w.values() == ["a=1", "b=2"]
+    assert win._raw_values()["set_pairs"] == ["a=1", "b=2"]
+
+
+def test_repeatable_empty_container_is_omitted(qapp):
+    """No rows filled in -> field.repeatable's own _is_empty(()) -> None, so
+    the option never reaches argv (same contract as every other blank field)."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    assert win._raw_values()["set_pairs"] == []
+
+
+def test_repeatable_plus_button_adds_a_row_with_its_own_minus(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    w = win._field_widgets["set_pairs"]
+    assert len(w.findChildren(QPushButton, "repeatable-remove")) == 0  # lone row
+    add = w.findChild(QPushButton, "repeatable-add")
+    add.click()
+    assert len(w.findChildren(QPushButton, "repeatable-remove")) == 1
+    minus = w.findChildren(QPushButton, "repeatable-remove")[0]
+    minus.click()
+    assert len(w.findChildren(QPushButton, "repeatable-remove")) == 0
+    assert w.values() == []  # both rows blank again
+
+
+def test_repeatable_path_field_gets_its_own_browse_not_field_browse(qapp):
+    """7-of-10-are-path constraint (#350): a repeatable path field's row(s)
+    get a Browse button, but it must not be counted by the single-field
+    ``field-browse`` probes (test_path_fields_render_a_browse_button_each &
+    friends) -- envmon lab-qa-trends mixes a repeatable path (qc_paths) with
+    3 plain path fields, so it exercises both counts at once."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon lab-qa-trends")
+    form = win._forms["envmon lab-qa-trends"]
+    n_plain_path = sum(1 for f in form.fields if f.kind == "path" and not f.repeatable)
+    w = win._field_widgets["qc_paths"]
+    assert len(win.findChildren(QPushButton, "field-browse")) == n_plain_path
+    assert len(w.findChildren(QPushButton, "repeatable-browse")) == 1
+    w.findChild(QPushButton, "repeatable-add").click()
+    assert len(w.findChildren(QPushButton, "repeatable-browse")) == 2
+    assert len(win.findChildren(QPushButton, "field-browse")) == n_plain_path  # unaffected
+
+
+def test_repeatable_choice_field_does_not_collapse_to_a_single_combo(qapp):
+    """evaluate-readiness/portfolio-metrics --required-tool is a repeatable
+    SuggestedChoice: the container keeps multiple values while each row offers
+    the registry suggestions in an editable combo."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon evaluate-readiness")
+    w = win._field_widgets["required_tools"]
+    assert not isinstance(w, QComboBox)
+    w.set_values(["coc", "qualify"])
+    combos = w.findChildren(QComboBox)
+    assert len(combos) == 2
+    assert all(combo.isEditable() for combo in combos)
+    assert all(combo.findText("qualify") >= 0 for combo in combos)
+    assert win._raw_values()["required_tools"] == ["coc", "qualify"]
+
+
+def test_repeatable_container_gets_help_text_tooltip(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    form = win._forms["envmon coc advance"]
+    field = next(f for f in form.fields if f.name == "set_pairs")
+    assert field.help_text  # sanity: this field actually has help
+    assert win._field_widgets["set_pairs"].toolTip() == field.help_text
 
 
 @pytest.mark.parametrize(
@@ -1061,3 +1186,175 @@ def test_editing_local_python_while_paused_keeps_run_gated(qapp, monkeypatch):
     assert "PAUSED" in win._status.text()                 # pause prompt intact
     win._on_resume()                                       # finish cleanly
     _pump_until(lambda: win._runner is None)
+
+
+def test_every_field_widget_gets_its_help_as_a_tooltip(qapp):
+    win = MainWindow()
+    # envmon run-history has a flag-free mix incl. a choice with help text.
+    win._command_box.setCurrentText("envmon run-history")
+    form = win._forms["envmon run-history"]
+    for field in form.fields:
+        if not field.help_text:
+            continue
+        assert win._field_widgets[field.name].toolTip() == field.help_text, field.name
+
+
+def test_tooltip_reaches_choice_and_flag_widgets(qapp):
+    """Regression for #356: the choice/flag branches never touched help_text."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-history")
+    status = win._field_widgets["status"]          # QComboBox, has help
+    assert status.toolTip() == "Filter by run status."
+    # Verify flag widgets also get help text as tooltip (the #356 regression
+    # for flags: init-site --force is a flag with help text).
+    win._command_box.setCurrentText("envmon init-site")
+    force = win._field_widgets["force"]                   # QCheckBox, has help
+    assert force.toolTip() == "Overwrite existing target files (default: refuse)."
+
+
+def test_raw_values_rejects_an_unknown_widget_type(qapp):
+    """A widget class nobody taught _raw_values about must fail loudly, not
+    fall through to .text() and ship whatever string Qt happens to render.
+    QLabel is the stand-in -- it will never be a form *value* widget, so
+    unlike QSpinBox (Task 10) and QDateEdit (Task 11) before it, this probe
+    can't go stale as more kinds get handled."""
+    from PySide6.QtWidgets import QLabel
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-history")
+    win._field_widgets["limit"] = QLabel()  # never a value widget
+    with pytest.raises(TypeError, match="QLabel"):
+        win._raw_values()
+
+
+def test_open_ended_numeric_stays_text_and_starts_blank(qapp):
+    """A finite Qt range would narrow Click's open-ended timeout contract."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-recipe")
+    w = win._field_widgets["timeout"]
+    assert isinstance(w, QLineEdit)
+    assert win._raw_values()["timeout"] == ""   # -> omitted by forms._normalize
+
+
+def test_closed_range_number_round_trips_to_argv(qapp):
+    from PySide6.QtWidgets import QDoubleSpinBox
+
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon reconcile-locations")
+    threshold = win._field_widgets["threshold"]
+    assert isinstance(threshold, QDoubleSpinBox)
+    threshold.setValue(0.75)
+    argv = build_argv(
+        ("envmon", "reconcile-locations"),
+        {"threshold": win._raw_values()["threshold"]},
+    )
+    assert argv[argv.index("--threshold") + 1] == "0.75"
+
+
+def test_large_unbounded_coordinate_is_not_clamped(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon manage-callout-overrides lock")
+    anchor_x = win._field_widgets["anchor_x"]
+    assert isinstance(anchor_x, QLineEdit)
+    anchor_x.setText("2500000.125")
+    assert win._raw_values()["anchor_x"] == "2500000.125"
+
+
+def test_float_uses_c_locale_so_a_comma_decimal_machine_cannot_break_it(qapp):
+    from PySide6.QtCore import QLocale
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon reconcile-locations")
+    w = win._field_widgets["threshold"]
+    assert w.locale() == QLocale.c()
+
+
+def test_window_can_shrink_below_the_form_height(qapp):
+    """#357: the layout minimum pinned the window to ~874x871, putting the Run
+    button and output pane permanently off-screen on a 768p display."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon build-conc-surface")  # 15 fields
+    win.resize(400, 300)
+    qapp.processEvents()
+    assert win.minimumSizeHint().height() < 700
+
+
+def test_date_field_is_a_calendar_and_defaults_to_none(qapp):
+    from PySide6.QtWidgets import QDateEdit
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon gw-level-summary")
+    w = win._field_widgets["event_date"]
+    assert isinstance(w, QDateEdit)
+    assert w.calendarPopup() is True
+    assert win._raw_values()["event_date"] == ""
+
+
+def test_picked_date_serializes_as_iso(qapp):
+    from PySide6.QtCore import QDate
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon gw-level-summary")
+    win._field_widgets["event_date"].setDate(QDate(2026, 7, 25))
+    assert win._raw_values()["event_date"] == "2026-07-25"
+
+
+def test_sync_survey123_preserves_timestamp_and_uses_folder_picker(qapp):
+    """The Phase 2 command landed after this branch's original inventory."""
+    win = MainWindow()
+    form = win._forms["envmon sync-survey123"]
+    win._command_box.setCurrentText(form.label)
+    fields = {field.name: field for field in form.fields}
+
+    since = win._field_widgets["since_date"]
+    assert isinstance(since, QLineEdit)
+    since.setText("2026-07-26T14:30:00-06:00")
+    assert win._raw_values()["since_date"] == "2026-07-26T14:30:00-06:00"
+    assert fields["out_dir"].is_dir is True
+    assert _dialog_kind(fields["out_dir"]) == "dir"
+
+
+# ---- Task 14: nargs>1, tri-state flag, xor greying ------------------------
+
+def test_bbox_nargs4_stays_a_line_edit_and_emits_four_separate_tokens(qapp):
+    """#351: --bbox is nargs=4 float -- if the numeric branch claimed it
+    first it would render a QDoubleSpinBox, which can only hold one number.
+    The nargs>1 check must win so it stays a plain QLineEdit."""
+    from PySide6.QtWidgets import QDoubleSpinBox
+
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon download-dem")
+    bbox_widget = win._field_widgets["bbox"]
+    assert isinstance(bbox_widget, QLineEdit)
+    assert not isinstance(bbox_widget, QDoubleSpinBox)
+    bbox_widget.setText("-105 39 -104 40")
+    step = build_step(win._forms["envmon download-dem"],
+                      {**win._raw_values(), "out_path": "x.tif"})
+    argv = build_argv(step.command, step.values)
+    i = argv.index("--bbox")
+    assert argv[i + 1:i + 5] == ["-105", "39", "-104", "40"]
+
+
+def test_filling_one_xor_side_disables_the_other_but_keeps_its_text(qapp):
+    """Owner decision (spec Sec 4.1a): filling one xor sibling disables the
+    other but preserves its typed text; clearing re-enables both."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon update-well-elevations")
+    gdb, csv = win._field_widgets["gdb"], win._field_widgets["wells_csv"]
+    gdb.setText("C:/old/site.gdb")
+    csv.setText("C:/data/wells.csv")
+    qapp.processEvents()
+    assert gdb.isEnabled() is False
+    assert gdb.text() == "C:/old/site.gdb"      # preserved, per owner decision
+    csv.clear()
+    qapp.processEvents()
+    assert gdb.isEnabled() is True
+
+
+def test_reconcile_locations_gdb_flag_pair_is_left_ungreyed(qapp):
+    """reconcile-locations' --gdb unconditionally HALTs ("use the .pyt
+    toolbox" -- cli.py's reconcile_locations_cmd): greying its wells_csv
+    sibling would steer the user into that dead end, so this specific pair
+    is deliberately left alone (see app.py's ponytail comment)."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon reconcile-locations")
+    gdb, wells_csv = win._field_widgets["gdb"], win._field_widgets["wells_csv"]
+    gdb.setChecked(True)
+    qapp.processEvents()
+    assert wells_csv.isEnabled() is True

@@ -44,12 +44,16 @@ def test_missing_aoi_and_bbox_is_a_usage_error(runner):
     assert "--bbox" in result.output and "--aoi" in result.output
 
 
-def test_unknown_dataset_suggests_nearest(runner):
+def test_unknown_dataset_lists_the_valid_codes(runner):
+    """Task 5: --dataset is now a strict click.Choice, so an unknown code is a
+    Click usage error (exit 2) listing the valid codes, not the difflib "did
+    you mean" hint that opentopo.get_dataset() used to raise (that body path
+    is now unreachable for this input -- Click rejects it during parsing)."""
     result = runner.invoke(cli_root, [
         "envmon", "download-dem", "--dataset", "usgs10",
         "--bbox", "-106.3", "39.6", "-106.2", "39.7"])
-    assert result.exit_code != 0
-    assert "did you mean" in result.output
+    assert result.exit_code == 2
+    assert "usgs10m" in result.output.lower()
 
 
 def test_dry_run_needs_no_api_key_and_redacts(runner, monkeypatch):

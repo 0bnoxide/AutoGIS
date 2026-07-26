@@ -10,7 +10,15 @@ import click
 import yaml
 
 from autogis.adapters.guard import require_runtime, RuntimeUnavailable
+from autogis.adapters.param_types import CommaList, IsoDate, SuggestedChoice
 from autogis.core.common.config import HarvestConfig, load_config
+from autogis.core.common.config_validation import KNOWN_MATRICES
+from autogis.core.common.units import UNIT_REGISTRY
+from autogis.core.envmon.import_rtk_survey import _EXTRA_COLUMN_VOCAB
+from autogis.core.envmon.opentopo import DEFAULT_DATASET, DEM_DATASETS
+from autogis.core.envmon.soil_interval_selector import IntervalTier
+from autogis.core.envmon.synthetic_workbook import MESSINESS
+from autogis.runtime.capabilities import TOOL_REGISTRY
 from autogis.runtime.sessions import agol_from_profile
 
 
@@ -269,7 +277,7 @@ def _guard(name: str) -> None:
 # --------------------------------------------------------------------------
 @envmon.command("inspect")
 @click.argument("workbook", type=click.Path(exists=True))
-@click.option("--scan-rows", type=int, default=40)
+@click.option("--scan-rows", type=click.IntRange(min=0), default=40)
 def inspect_cmd(workbook, scan_rows):
     """Tool 1: inspect an Excel workbook's structure (headless)."""
     from autogis.core.envmon.excel_workbook_inspector import (
@@ -411,7 +419,7 @@ def validate_recipe_cmd(recipe):
               help="Directory for per-step outputs (default: a fresh temp dir).")
 @click.option("--local-python", type=click.Path(), default=None,
               help="Python interpreter for LOCAL (arcpy) steps.")
-@click.option("--timeout", type=float, default=None,
+@click.option("--timeout", type=click.FloatRange(min=0), default=None,
               help="Per-step timeout in seconds.")
 @click.option("--continue-through-review", is_flag=True, default=False,
               help="Auto-resume past review checkpoints instead of stopping.")
@@ -577,7 +585,8 @@ def validate_units_cmd(analytes, screening, report, fail_on):
               help="CSV of well IDs (headless). Mutually exclusive with --gdb.")
 @click.option("--gdb", is_flag=True, default=False,
               help="Read wells from the site GDB (ArcGIS Pro only; use the .pyt).")
-@click.option("--threshold", type=float, default=0.8, show_default=True)
+@click.option("--threshold", type=click.FloatRange(min=0.0, max=1.0),
+              default=0.8, show_default=True)
 @qa_report_options
 def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
                             threshold, report, fail_on):
@@ -714,6 +723,7 @@ def export_report_format_summary_tables_cmd(
               help="run_history.csv path (need not exist; treated as empty if absent).")
 @click.option("--event-id", default=None, help="Event ID filter (optional).")
 @click.option("--required-tool", "required_tools", multiple=True,
+              type=SuggestedChoice(sorted(t.command for t in TOOL_REGISTRY)),
               help="Tool name that must have succeeded (repeatable).")
 @click.option("--qa-report", default=None, type=click.Path(exists=False),
               help="QA CSV from a previous import (checked for ERROR rows).")
@@ -741,6 +751,7 @@ def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
 @click.option("--run-history", required=True, type=click.Path(),
               help="run_history.csv path (need not exist; treated as empty if absent).")
 @click.option("--required-tool", "required_tools", multiple=True,
+              type=SuggestedChoice(sorted(t.command for t in TOOL_REGISTRY)),
               help="Tool name that must have succeeded per site (repeatable).")
 @click.option("--site", "site_ids", multiple=True,
               help="Restrict to this site ID (repeatable). Default: every site "
@@ -784,9 +795,9 @@ def portfolio_metrics_cmd(run_history, required_tools, site_ids, output,
               help="CSV export of Env_AnalyticalResults.")
 @click.option("--output", required=True, type=click.Path(),
               help="Output comparison CSV path.")
-@click.option("--current-event-date", default=None,
+@click.option("--current-event-date", default=None, type=IsoDate(),
               help="ISO date (YYYY-MM-DD) to force as the current event.")
-@click.option("--stable-threshold", default=10.0, type=float,
+@click.option("--stable-threshold", default=10.0, type=click.FloatRange(min=0),
               help="abs(%% change) <= this is STABLE (default 10).")
 @click.option("--report", default=None, type=click.Path(),
               help="Write QA report to PATH (.md/.json/.csv by extension).")
@@ -816,10 +827,11 @@ def compare_events_cmd(results_csv, output, current_event_date,
               help="CSV of LevelLoopObservation rows (ordered).")
 @click.option("--run-id", required=True)
 @click.option("--site-id", required=True)
-@click.option("--survey-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--survey-date", required=True, type=IsoDate(),
+              help="ISO date YYYY-MM-DD.")
 @click.option("--benchmark-id", required=True, help="point_id of the benchmark.")
 @click.option("--known-elevation", required=True, type=float)
-@click.option("--tolerance", default=None, type=float,
+@click.option("--tolerance", default=None, type=click.FloatRange(min=0),
               help="Closure tolerance ft; default 0.05*sqrt(n_setups).")
 @click.option("--run-output", required=True, type=click.Path(),
               help="Output LevelLoopRun CSV path.")
@@ -861,7 +873,8 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
               help="CSV of ElevationHistory rows.")
 @click.option("--output", required=True, type=click.Path(),
               help="Output GW level summary CSV path.")
-@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--event-date", required=True, type=IsoDate(),
+              help="ISO date YYYY-MM-DD.")
 @click.option("--toc-csv", default=None, type=click.Path(exists=True),
               help="Optional CSV with location_id,toc_elevation columns.")
 @click.option("--report", default=None, type=click.Path())
@@ -917,14 +930,15 @@ def _read_id_list(path) -> set:
 @envmon.command("build-gwe-event")
 @click.option("--water-levels", required=True, type=click.Path(exists=True),
               help="CSV of water-level rows (location_id,gwe_ft,dtw_ft,status,...).")
-@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--event-date", required=True, type=IsoDate(),
+              help="ISO date YYYY-MM-DD.")
 @click.option("--out", "out_path", required=True, type=click.Path(),
               help="Output EnvWaterLevelEvent CSV path.")
 @click.option("--exclude", default=None, type=click.Path(exists=True),
               help="Text file of location_ids to exclude from contouring.")
 @click.option("--perched", default=None, type=click.Path(exists=True),
               help="Text file of perched/separate-zone location_ids.")
-@click.option("--anomaly-stdev", default=3.0, type=float,
+@click.option("--anomaly-stdev", default=3.0, type=click.FloatRange(min=0),
               help="Robust outlier threshold (modified z-score; default 3.0).")
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]),
@@ -951,9 +965,9 @@ def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
 
 @envmon.command("gen-synthetic-workbook")
 @click.option("--site-id", default="TEST01", help="Synthetic site_id.")
-@click.option("--wells", default=10, type=int, help="Number of wells.")
-@click.option("--events", default=4, type=int, help="Number of events.")
-@click.option("--features", default="",
+@click.option("--wells", default=10, type=click.IntRange(min=0), help="Number of wells.")
+@click.option("--events", default=4, type=click.IntRange(min=0), help="Number of events.")
+@click.option("--features", default="", type=CommaList(MESSINESS),
               help="Comma-separated messiness features (e.g. 'nondetects,rpd_sheet').")
 @click.option("--seed", default=0, type=int, help="Deterministic seed.")
 @click.option("--out", "out_path", required=True, type=click.Path(),
@@ -1025,8 +1039,9 @@ def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
               help="Expected-schedule YAML (wells + required_analytes).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output data-gap CSV path.")
-@click.option("--event-date", default=None, help="ISO date YYYY-MM-DD.")
-@click.option("--event-window-days", default=30, type=int)
+@click.option("--event-date", default=None, type=IsoDate(),
+              help="ISO date YYYY-MM-DD.")
+@click.option("--event-window-days", default=30, type=click.IntRange(min=0))
 @click.option("--dry-wells", default=None, type=click.Path(exists=True),
               help="Optional CSV: location_id,reason.")
 @click.option("--report", default=None, type=click.Path())
@@ -1150,9 +1165,9 @@ def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
               help="CSV of AnalyticalResultRecord rows.")
 @click.option("--output", required=True, type=click.Path(),
               help="Output CSV path for gap/excess report.")
-@click.option("--event-date", default=None,
+@click.option("--event-date", default=None, type=IsoDate(),
               help="Event date ISO (YYYY-MM-DD); inferred from results if omitted.")
-@click.option("--window-days", type=int, default=30, show_default=True,
+@click.option("--window-days", type=click.IntRange(min=0), default=30, show_default=True,
               help="Include results within this many days before event-date.")
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
@@ -1196,9 +1211,9 @@ def compare_schedule_vs_actual_cmd(
 @click.option("--checkpoints", "checkpoints_csv", required=True,
               type=click.Path(exists=True),
               help="Checkpoint CSV (gcp_id, expected_x/y/z, measured_x/y/z).")
-@click.option("--hrms-threshold", type=float, default=0.05, show_default=True,
+@click.option("--hrms-threshold", type=click.FloatRange(min=0), default=0.05, show_default=True,
               help="Horizontal RMSE threshold in metres.")
-@click.option("--vrms-threshold", type=float, default=0.10, show_default=True,
+@click.option("--vrms-threshold", type=click.FloatRange(min=0), default=0.10, show_default=True,
               help="Vertical RMSE threshold in metres.")
 @click.option("--output", default=None, type=click.Path(),
               help="Optional CSV path for per-point results.")
@@ -1245,9 +1260,11 @@ def drone_checkpoint_qa_cmd(
 @click.option("--control-points", "control_csv", required=True,
               type=click.Path(exists=True),
               help="Control-check CSV (control_id, published_x/y/z, surveyed_x/y/z).")
-@click.option("--horizontal-tolerance-ft", type=float, default=0.05, show_default=True,
+@click.option("--horizontal-tolerance-ft", type=click.FloatRange(min=0), default=0.05,
+              show_default=True,
               help="Max allowed horizontal distance per point, in feet.")
-@click.option("--vertical-tolerance-ft", type=float, default=0.10, show_default=True,
+@click.option("--vertical-tolerance-ft", type=click.FloatRange(min=0), default=0.10,
+              show_default=True,
               help="Max allowed vertical distance per point, in feet.")
 @click.option("--output", default=None, type=click.Path(),
               help="Optional CSV path for per-point results.")
@@ -1293,7 +1310,7 @@ def rtk_control_check_cmd(
               help="CSV with columns: location_id, x, y")
 @click.option("--output", required=True, type=click.Path(),
               help="Output GeoJSON file path (e.g. results.geojson).")
-@click.option("--indent", type=int, default=2, show_default=True,
+@click.option("--indent", type=click.IntRange(min=0), default=2, show_default=True,
               help="JSON indent level (0 = compact).")
 @click.option("--report", default=None, type=click.Path(),
               help="Optional QA report output path.")
@@ -1419,7 +1436,8 @@ def generate_python_labels_cmd(analytes_str, field_prefix, out, report):
               help="Output changelog CSV path.")
 @click.option("--out-xlsx", default=None, type=click.Path(),
               help="Optional output Excel workbook (one sheet per change type).")
-@click.option("--delta-pct-threshold", default=10.0, type=float, show_default=True,
+@click.option("--delta-pct-threshold", default=10.0, type=click.FloatRange(min=0),
+              show_default=True,
               help="Minimum absolute %% change required to classify as VALUE_CHANGE.")
 @click.option("--report", default=None, type=click.Path(),
               help="Write QA report to PATH (.md/.json/.csv by extension).")
@@ -1577,14 +1595,18 @@ def well_inspection_report_cmd(wells_csv, site_id, output_dir,
     help="Path to run_history.csv (need not exist; treated as empty if absent).",
 )
 @click.option("--site", "site_id", default=None, help="Filter by site ID.")
-@click.option("--tool", "tool_name", default=None, help="Filter by tool name.")
+@click.option("--tool", "tool_name", default=None,
+              type=SuggestedChoice(sorted(t.command for t in TOOL_REGISTRY)),
+              help="Filter by tool name.")
 @click.option(
     "--status", default=None,
     type=click.Choice(["success", "warning", "error", "cancelled"]),
     help="Filter by run status.",
 )
-@click.option("--since", default=None, help="Only runs since this ISO date (YYYY-MM-DD).")
-@click.option("--limit", type=int, default=0, help="Max records to show (0 = all).")
+@click.option("--since", default=None, type=IsoDate(allow_time=True),
+              help="Only runs since this ISO date (YYYY-MM-DD).")
+@click.option("--limit", type=click.IntRange(min=0), default=0,
+              help="Max records to show (0 = all).")
 @click.option(
     "--format", "fmt",
     type=click.Choice(["table", "csv", "json"]),
@@ -2133,7 +2155,7 @@ def validate_db_cmd(gdb, analytes, report, fail_on):
 @click.argument("profile", type=click.Path(exists=True))
 @click.option("--site", "site_id", required=True)
 @click.option("--batch-id", default="", show_default=True)
-@click.option("--threshold", type=float, default=30.0, show_default=True,
+@click.option("--threshold", type=click.FloatRange(min=0), default=30.0, show_default=True,
               help="RPD exceedance threshold (pct, default 30).")
 @qa_report_options
 def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fail_on):
@@ -2164,7 +2186,7 @@ def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fa
               help="Analyte dictionary YAML (optional).")
 @click.option("--screening", default=None, type=click.Path(exists=True),
               help="Screening levels YAML (optional).")
-@click.option("--event-date", default=None,
+@click.option("--event-date", default=None, type=IsoDate(),
               help="Override event date ISO8601 (YYYY-MM-DD).")
 @click.option("--event", "event_id", default="",
               help="Event ID label (e.g. 2026-Q2) stamped on the run-history "
@@ -2895,7 +2917,7 @@ def publish_layer(profile, title, source, tags, folder, share_with, no_overwrite
               help="Full AGOL FeatureLayer REST URL.")
 @click.option("--item-id", default=None,
               help="AGOL item ID (use with --layer-index when item has multiple layers).")
-@click.option("--layer-index", type=int, default=0, show_default=True,
+@click.option("--layer-index", type=click.IntRange(min=0), default=0, show_default=True,
               help="Layer index within the item (0-based).")
 @click.option("--profile", default=None,
               help="ArcGIS API for Python profile name.")
@@ -2963,7 +2985,7 @@ def audit_schema_cmd(spec_path, layer_url, item_id, layer_index, profile,
 @agol.command("fieldmaps-preflight")
 @click.option("--item-id", required=True,
               help="AGOL item ID of the hosted feature service.")
-@click.option("--layer-index", type=int, default=0, show_default=True,
+@click.option("--layer-index", type=click.IntRange(min=0), default=0, show_default=True,
               help="Sublayer id within the item (REST id).")
 @click.option("--profile", default=None,
               help="ArcGIS API for Python profile name.")
@@ -2976,11 +2998,11 @@ def audit_schema_cmd(spec_path, layer_url, item_id, layer_index, profile,
 @click.option("--manifest", "manifest_path", default=None,
               type=click.Path(exists=True),
               help="Harvester manifest.csv for the attachment checks.")
-@click.option("--since", default=None,
+@click.option("--since", default=None, type=IsoDate(),
               help="ISO date - hosted edits after this count as pending.")
 @click.option("--key-field", default="GlobalID", show_default=True,
               help="Identity key for duplicate/conflict matching.")
-@click.option("--max-replica-age-days", type=float, default=7.0,
+@click.option("--max-replica-age-days", type=click.FloatRange(min=0), default=7.0,
               show_default=True,
               help="Replicas last synced longer ago than this are stale.")
 @click.option("--output", default=None, type=click.Path(),
@@ -3084,7 +3106,7 @@ def fieldmaps_preflight_cmd(item_id, layer_index, profile, spec_path,
 @agol.command("audit-dependencies")
 @click.option("--item-id", required=True, help="AGOL item ID to audit.")
 @click.option("--profile", default=None, help="ArcGIS API for Python profile name")
-@click.option("--max-depth", type=int, default=2, show_default=True,
+@click.option("--max-depth", type=click.IntRange(min=0), default=2, show_default=True,
               help="Maximum dependency-walk depth.")
 @click.option("--output", default=None, type=click.Path(),
               help="Write report to this file path (stdout if omitted).")
@@ -3288,11 +3310,11 @@ def create_views_cmd(profile, view_spec_path, report):
               help="Full AGOL FeatureLayer REST URL.")
 @click.option("--item-id", default=None,
               help="AGOL item ID (use with --layer-index when item has multiple layers).")
-@click.option("--layer-index", type=int, default=0, show_default=True,
+@click.option("--layer-index", type=click.IntRange(min=0), default=0, show_default=True,
               help="Layer index within the item (0-based).")
 @click.option("--where", default=None,
               help="SQL where clause filtering the hosted layer.")
-@click.option("--since", default=None,
+@click.option("--since", default=None, type=IsoDate(),
               help="ISO date YYYY-MM-DD — only records with EditDate after this "
                    "(hosted layer needs editor tracking).")
 @click.option("--key-field", default="GlobalID", show_default=True,
@@ -3389,12 +3411,12 @@ def sync_to_gdb_cmd(profile, layer_url, item_id, layer_index, where, since,
 
 @envmon.command("validate-rtk-survey")
 @click.argument("csv_path", metavar="CSV", type=click.Path(exists=True))
-@click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
-@click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
+@click.option("--hrms-threshold", type=click.FloatRange(min=0), default=0.03, show_default=True)
+@click.option("--vrms-threshold", type=click.FloatRange(min=0), default=0.05, show_default=True)
 @click.option("--format", "coord_format", type=click.Choice(["auto", "pnezd", "penzd"]),
               default="auto", show_default=True,
               help="Coordinate column order for headerless input.")
-@click.option("--extra-columns", default=None,
+@click.option("--extra-columns", default=None, type=CommaList(_EXTRA_COLUMN_VOCAB),
               help="Comma-separated field names for columns 6+ of a headerless file, "
                    "overriding the built-in 11-column layout. Vocabulary: hrms_ft, "
                    "vrms_ft, pdop, satellites, fix_type, collected_at, operator, "
@@ -3467,12 +3489,12 @@ def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, landxml, repo
 @click.option("--site", "site_id", required=True)
 @click.option("--gdb", required=True, type=click.Path())
 @click.option("--batch-id", default=None)
-@click.option("--hrms-threshold", type=float, default=0.03, show_default=True)
-@click.option("--vrms-threshold", type=float, default=0.05, show_default=True)
+@click.option("--hrms-threshold", type=click.FloatRange(min=0), default=0.03, show_default=True)
+@click.option("--vrms-threshold", type=click.FloatRange(min=0), default=0.05, show_default=True)
 @click.option("--format", "coord_format", type=click.Choice(["auto", "pnezd", "penzd"]),
               default="auto", show_default=True,
               help="Coordinate column order for headerless input.")
-@click.option("--extra-columns", default=None,
+@click.option("--extra-columns", default=None, type=CommaList(_EXTRA_COLUMN_VOCAB),
               help="Comma-separated field names for columns 6+ of a headerless file, "
                    "overriding the built-in 11-column layout. Vocabulary: hrms_ft, "
                    "vrms_ft, pdop, satellites, fix_type, collected_at, operator, "
@@ -3507,7 +3529,9 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
               help="Path to the source file to register.")
 @click.option("--site", "site_id", required=True, help="Site ID (e.g. H281).")
 @click.option("--event", "event_id", required=True, help="Event ID (e.g. 2026-Q2).")
-@click.option("--tool", "tool_name", required=True, help="Tool that ingested the file.")
+@click.option("--tool", "tool_name", required=True,
+              type=SuggestedChoice(sorted(t.command for t in TOOL_REGISTRY)),
+              help="Tool that ingested the file.")
 @click.option("--registry", "registry_path", default="source_docs.csv",
               show_default=True, type=click.Path(),
               help="Path to the source-document registry CSV.")
@@ -3738,7 +3762,8 @@ def condition_dem_cmd(gdb_path, flight_id, out_dir, fill_voids, smooth,
                    "(prior-flight DEM, raw or conditioned).")
 @click.option("--baseline-landxml", default=None, type=click.Path(exists=True),
               help="Baseline: a LandXML design-surface file.")
-@click.option("--lod-threshold-ft", type=float, default=0.2, show_default=True,
+@click.option("--lod-threshold-ft", type=click.FloatRange(min=0), default=0.2,
+              show_default=True,
               help="Elevation diff magnitude above which a cell counts as change.")
 @click.option("--diff-raster-out", "diff_raster_out", default=None,
               type=click.Path(),
@@ -3866,7 +3891,7 @@ def gen_boring_logs_cmd(db_path, out_dir, borings, report, fail_on):
               metavar="NORTHING EASTING", help="Profile start, by coordinate.")
 @click.option("--end", nargs=2, type=float, default=None,
               metavar="NORTHING EASTING", help="Profile end, by coordinate.")
-@click.option("--projection-tolerance-ft", type=float, default=50.0,
+@click.option("--projection-tolerance-ft", type=click.FloatRange(min=0), default=50.0,
               show_default=True,
               help="Max perpendicular offset for a boring to be included.")
 @click.option("--title", default="", help="Optional plot title.")
@@ -3919,7 +3944,7 @@ def generate_subsurface_profile_cmd(db_path, out_path, boring_a, boring_b,
 @click.option("--site", "site_id", required=True, help="Site ID.")
 @click.option("--out", "out_path", required=True, type=click.Path(),
               help="Output .xlsx path.")
-@click.option("--photo-width", type=int, default=300, show_default=True,
+@click.option("--photo-width", type=click.IntRange(min=1), default=300, show_default=True,
               help="Embedded photo box width (px).")
 @click.option("--photo-height", type=int, default=225, show_default=True,
               help="Embedded photo box height (px).")
@@ -4047,7 +4072,9 @@ def draft_lithology_from_scan_cmd(scan_path, out_dir, handwritten, report, fail_
 
 
 @envmon.command("download-dem")
-@click.option("--dataset", default="USGS10m", show_default=True,
+@click.option("--dataset", default=DEFAULT_DATASET, show_default=True,
+              metavar="CODE",
+              type=click.Choice(tuple(DEM_DATASETS), case_sensitive=False),
               help="DEM dataset code (case-insensitive); see --list-datasets.")
 @click.option("--bbox", nargs=4, type=float, default=None,
               metavar="W S E N",
@@ -4140,13 +4167,14 @@ def download_dem_cmd(dataset, bbox, aoi, out_path, overwrite, output_format,
               help="Site ID matching SiteID in MonitoringWells.")
 @click.option("--batch-id", default=None,
               help="Override auto-generated batch ID (default: RTK-<hex>).")
-@click.option("--hrms-threshold", type=float, default=0.03, show_default=True,
+@click.option("--hrms-threshold", type=click.FloatRange(min=0), default=0.03, show_default=True,
               help="Max horizontal RMS error (ft) for QA pass.")
-@click.option("--vrms-threshold", type=float, default=0.05, show_default=True,
+@click.option("--vrms-threshold", type=click.FloatRange(min=0), default=0.05, show_default=True,
               help="Max vertical RMS error (ft) for QA pass.")
 @click.option("--elevation-type", default="TOC", show_default=True,
               help="ElevationType tag for ElevationHistory (e.g. TOC, GS).")
-@click.option("--survey-date", default=None, help="ISO date YYYY-MM-DD; defaults to today.")
+@click.option("--survey-date", default=None, type=IsoDate(),
+              help="ISO date YYYY-MM-DD; defaults to today.")
 @click.option("--vertical-datum", default="NAVD88", show_default=True,
               help="Vertical datum label stored in ElevationHistory.")
 @click.option("--wells-csv", default=None, type=click.Path(exists=True),
@@ -4478,7 +4506,8 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
 @click.option("--site", "site_id", required=True,
               help="Site identifier stamped into run-history audit records "
                    "(ADR-0076); not read by the reconciliation itself.")
-@click.option("--threshold", type=float, default=0.85, show_default=True)
+@click.option("--threshold", type=click.FloatRange(min=0.0, max=1.0),
+              default=0.85, show_default=True)
 @qa_report_options
 def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
                                 threshold, report, fail_on):
@@ -4561,11 +4590,13 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
 @envmon.command("sync-survey123")
 @click.option("--item-id", required=True,
               help="AGOL item ID of the survey's feature service.")
-@click.option("--out", "out_dir", required=True, type=click.Path(),
+@click.option("--out", "out_dir", required=True,
+              type=click.Path(file_okay=False),
               help="Staging directory (also holds the sync checkpoint).")
 @click.option("--profile", default=None,
               help="ArcGIS API for Python profile name.")
 @click.option("--since", "since_date", default=None,
+              type=IsoDate(allow_time=True),
               help="Bounded replay: re-pull edits since this UTC date/time "
                    "(YYYY-MM-DD[THH:MM]); the checkpoint is not advanced.")
 @click.option("--no-attachments", is_flag=True, default=False,
@@ -4846,7 +4877,7 @@ def validate_field_completeness_cmd(plan_path, results_path, out, report, fail_o
 @click.option("--wells-csv", required=True, type=click.Path(exists=True),
               help="CSV with columns: well_id, easting, northing, gwe_ft.")
 @click.option("--site-id", required=True, help="Site identifier.")
-@click.option("--event-date", required=True,
+@click.option("--event-date", required=True, type=IsoDate(),
               help="Event date YYYY-MM-DD (metadata only; not used in math).")
 @click.option("--run-id", default=None,
               help="Run identifier; auto-generated UUID4 if omitted.")
@@ -4906,7 +4937,7 @@ def estimate_gw_flow_direction_cmd(wells_csv, site_id, event_date, run_id,
 @click.option("--observations", "observations_csv", required=True,
               type=click.Path(exists=True),
               help="Wide CSV: well_id, observed_ft, one column per model.")
-@click.option("--tolerance-ft", type=float, default=0.5, show_default=True,
+@click.option("--tolerance-ft", type=click.FloatRange(min=0), default=0.5, show_default=True,
               help="Absolute error threshold for the percent-within-tolerance stat.")
 @click.option("--output", default=None, type=click.Path(),
               help="Optional CSV path for per-model ranked results.")
@@ -4975,7 +5006,7 @@ def export_geopackage_cmd(wells_path, results_path, wl_path, out,
 @click.option("--plan", "plan_path", default=None, type=click.Path(exists=True))
 @click.option("--results", "results_path", default=None, type=click.Path(exists=True))
 @click.option("--screening-levels", "sl_path", default=None, type=click.Path(exists=True))
-@click.option("--top-n", type=int, default=5, show_default=True)
+@click.option("--top-n", type=click.IntRange(min=0), default=5, show_default=True)
 @click.option("--out", required=True, type=click.Path())
 @click.option("--report", default=None, type=click.Path())
 def generate_site_narrative_cmd(site_id, event_label, max_results_path,
@@ -5148,7 +5179,9 @@ def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
 @click.option("--runtime", "runtime_filter", default=None,
               type=click.Choice(["CLOUD", "HYBRID", "LOCAL", "DRAFT"],
                                 case_sensitive=False))
-@click.option("--domain", default=None)
+@click.option("--domain", default=None,
+              type=click.Choice(sorted({t.domain for t in TOOL_REGISTRY}),
+                                case_sensitive=False))
 @click.option("--status", default=None,
               type=click.Choice(["stable", "draft", "planned", "deprecated"],
                                 case_sensitive=False))
@@ -5180,7 +5213,7 @@ def list_tools_cmd(runtime_filter, domain, status, search, verbose):
 @click.option("--screening-levels", "sl_path", default=None,
               type=click.Path(exists=True),
               help="Optional YAML {AnalyteName: screening level} overriding the CSV.")
-@click.option("--max-per-sheet", type=int, default=20, show_default=True)
+@click.option("--max-per-sheet", type=click.IntRange(min=1), default=20, show_default=True)
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]),
               default="error", show_default=True)
@@ -5259,6 +5292,10 @@ def ingest_reviewer_comments_cmd(input_file, out_path, tracker_path, report, fai
 @click.option("--analytes", default=None,
               help="Comma-separated analyte names to include (default: all).")
 @click.option("--tiers", default=None,
+              type=CommaList(
+                  (IntervalTier.HOTSPOT, IntervalTier.DETECT, IntervalTier.ND,
+                   IntervalTier.NO_DATA),
+                  case_sensitive=False),
               help="Comma-separated tiers to include: HOTSPOT,DETECT,ND,NO_DATA "
                    "(default: all).")
 @click.option("--max-depth-ft", "max_depth_ft", type=float, default=None,
@@ -5351,7 +5388,7 @@ def generate_job_queue_cmd(manifest, output, report, fail_on):
               help="Path to write the draft YAML profile.")
 @click.option("--profile-id", default="DRAFT", show_default=True,
               help="Profile ID embedded in the output YAML.")
-@click.option("--scan-rows", type=int, default=40, show_default=True,
+@click.option("--scan-rows", type=click.IntRange(min=0), default=40, show_default=True,
               help="Rows to scan per sheet for structure detection.")
 def draft_parser_profile_cmd(workbook, output, profile_id, scan_rows):
     """Tool 2.1: inspect a workbook and write a draft parser profile YAML (headless)."""
@@ -5458,7 +5495,7 @@ def validate_lab_profile_cmd(profile_yaml, report, fail_on):
               help="Analyte dictionary YAML (optional).")
 @click.option("--screening", default=None, type=click.Path(exists=True),
               help="Screening levels YAML (optional).")
-@click.option("--event-date", default=None,
+@click.option("--event-date", default=None, type=IsoDate(),
               help="Force event date for all workbooks (YYYY-MM-DD).")
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]),
@@ -5541,8 +5578,10 @@ def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
 @click.option("--sample-id-col", default=None,
               help="Column for sample ID (auto-generated if omitted).")
 @click.option("--site-id", default="", help="Site ID to embed in output rows.")
-@click.option("--default-matrix", default="GW", show_default=True)
-@click.option("--default-units", default="ug/L", show_default=True)
+@click.option("--default-matrix", default="GW", show_default=True,
+              type=SuggestedChoice(sorted(KNOWN_MATRICES) + ["SED", "SW"]))
+@click.option("--default-units", default="ug/L", show_default=True,
+              type=SuggestedChoice(sorted(UNIT_REGISTRY)))
 @click.option("--nondetect-prefix", default="<", show_default=True,
               help="String prefix indicating a non-detect result.")
 @click.option("--units-yaml", default=None, type=click.Path(exists=True),
@@ -5584,10 +5623,10 @@ def migrate_legacy_data_cmd(input_csv, output, location_col, date_col,
 @click.option("--analyte-groups", required=True, type=click.Path(exists=True),
               help="YAML mapping group_name -> {bottles, bottle_size_ml, "
                    "preservation, matrix}.")
-@click.option("--event-date", required=True,
+@click.option("--event-date", required=True, type=IsoDate(),
               help="Planned sampling date YYYY-MM-DD.")
 @click.option("--site-id", default="", help="Site ID.")
-@click.option("--prior-event-date", default=None,
+@click.option("--prior-event-date", default=None, type=IsoDate(),
               help="Prior event date YYYY-MM-DD (optional).")
 @click.option("--samples-output", required=True, type=click.Path(),
               help="Path to write planned sample list CSV.")
@@ -5638,7 +5677,7 @@ def create_sampling_plan_cmd(wells_csv, analyte_groups, event_date, site_id,
                    "analysis_date, analyte_name).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output reconciliation flags CSV.")
-@click.option("--date-tolerance", type=int, default=1, show_default=True,
+@click.option("--date-tolerance", type=click.IntRange(min=0), default=1, show_default=True,
               help="Allowed date gap in days before DATE_MISMATCH flag.")
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]),
@@ -5768,7 +5807,7 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
               help="AnalyteCanonicalName — one surface per analyte "
                    "(ADR-0085 decision 5).")
 @click.option("--site", "site_id", required=True, help="Site ID.")
-@click.option("--event-date", required=True,
+@click.option("--event-date", required=True, type=IsoDate(),
               help="Event date YYYY-MM-DD (raster naming + registry row).")
 @click.option("--nondetect-rule",
               type=click.Choice(["exclude", "half_rl", "use_rl", "use_zero"]),
@@ -5776,10 +5815,12 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
               help="Numeric substitution for nondetects (ADR-0085 "
                    "decision 4).")
 @click.option("--unit", "surface_unit", default="ug/L", show_default=True,
+              type=SuggestedChoice(sorted(UNIT_REGISTRY)),
               help="Declared surface unit (ADR-0022 registry); every "
                    "result/RL/DL is normalized into it, rows with unknown "
                    "or cross-dimension units are excluded with a warning.")
 @click.option("--matrix", default=None,
+              type=SuggestedChoice(sorted(KNOWN_MATRICES) + ["SED", "SW"]),
               help="Optional Matrix filter (e.g. GW); rows outside it are "
                    "excluded.")
 @click.option("--method", type=click.Choice(["IDW", "EBK"]), default="IDW",

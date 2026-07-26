@@ -61,9 +61,19 @@ def _normalize(field: FormField, value: object) -> object:
     """Missing/blank -> None (omitted, so the command's own default
     applies) rather than passed through as a literal empty string. A
     ``False`` flag is a real, explicit value (the user unchecked a box that
-    may default True) and is never treated as empty."""
+    may default True) and is never treated as empty. A ``nargs>1`` field's
+    typed text (#351, e.g. ``--bbox``'s "W S E N") is whitespace-split and
+    count-checked before any of that -- an empty string still takes the
+    blank -> None path above."""
     if _is_empty(value):
         return None
+    if field.nargs > 1:
+        parts = value.split() if isinstance(value, str) else list(value)
+        if len(parts) != field.nargs:
+            raise FormValidationError(
+                f"{field.label}: expected {field.nargs} values, got "
+                f"{len(parts)}.", field=field.name)
+        return tuple(parts)
     if field.kind == "flag":
         return bool(value)
     if field.repeatable and not isinstance(value, (list, tuple)):

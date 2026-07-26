@@ -175,6 +175,12 @@ def build_argv(path: Sequence[str], values: Mapping[str, object], *,
         elif getattr(p, "multiple", False):
             for item in (v if isinstance(v, (list, tuple)) else (v,)):
                 options += [_opt_string(p.opts), str(item)]
+        elif getattr(p, "nargs", 1) > 1:
+            # nargs>1 (e.g. --bbox W S E N, #351): one flag then N separate
+            # value tokens -- Click's own nargs parser expects that shape,
+            # not a single repr'd tuple.
+            parts = v if isinstance(v, (list, tuple)) else (v,)
+            options += [_opt_string(p.opts), *(str(x) for x in parts)]
         else:
             options += [_opt_string(p.opts), str(v)]
 

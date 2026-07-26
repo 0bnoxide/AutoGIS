@@ -29,13 +29,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QLocale, Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QCompleter,
-    QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QMainWindow, QPushButton, QSplitter, QTableWidget,
-    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QDateEdit, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QPushButton,
+    QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QTextEdit, QVBoxLayout, QWidget,
 )
 
 from . import settings
@@ -80,6 +81,89 @@ def _pick_path(kind: str, parent, title: str, start: str) -> str:
     if kind == "save":
         return QFileDialog.getSaveFileName(parent, title, start)[0]
     return QFileDialog.getOpenFileName(parent, title, start)[0]
+
+
+class _RepeatableRows(QWidget):
+    """One :class:`QFormLayout` row for a ``multiple=True`` field (#350): a
+    value row plus a ``+`` button; every row after the first gets its own
+    ``−`` to remove itself. ``values()``/``set_values()`` are the container's
+    list round-trip -- ``forms._normalize``/``executor.build_argv`` already
+    handle a list correctly, so this is the only piece #350 needed.
+
+    Rows use editable combos when Click provides suggestions and plain
+    ``QLineEdit`` otherwise. ``on_browse``, when given, adds a Browse… button
+    to every line-edit row (objectName
+    ``repeatable-browse``, distinct from the single-field ``field-browse`` the
+    browse-count tests target) -- used for the 5 repeatable path fields.
+    """
+
+    def __init__(self, on_browse=None, choices=(), *, editable=True, parent=None):
+        super().__init__(parent)
+        self._on_browse = on_browse  # Callable[[QLineEdit], None] | None
+        self._choices = tuple(choices)
+        self._editable = editable
+        self._rows: list[tuple[QWidget, QWidget]] = []
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        add_btn = QPushButton("+")
+        add_btn.setObjectName("repeatable-add")
+        add_btn.clicked.connect(lambda: self._add_row())
+        self._layout.addWidget(add_btn)
+        self._add_row()  # baseline: one row, no remove button yet
+
+    def _add_row(self, text: str = "") -> None:
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        if self._choices:
+            value: QWidget = QComboBox()
+            value.addItem("")
+            value.addItems(self._choices)
+            value.setEditable(self._editable)
+            if self._editable:
+                value.setInsertPolicy(QComboBox.NoInsert)
+            value.setCurrentText(text)
+        else:
+            value = QLineEdit(text)
+        row_layout.addWidget(value)
+        if self._on_browse is not None:
+            browse = QPushButton("Browse…")
+            browse.setObjectName("repeatable-browse")
+            browse.clicked.connect(lambda _=False, le=value: self._on_browse(le))
+            row_layout.addWidget(browse)
+        if self._rows:  # every row after the first can remove itself
+            minus = QPushButton("−")
+            minus.setObjectName("repeatable-remove")
+            minus.clicked.connect(lambda _=False, r=row: self._remove_row(r))
+            row_layout.addWidget(minus)
+        self._layout.insertWidget(self._layout.count() - 1, row)  # before "+"
+        self._rows.append((row, value))
+
+    def _remove_row(self, row: QWidget) -> None:
+        self._rows = [(r, le) for r, le in self._rows if r is not row]
+        self._layout.removeWidget(row)
+        # removeWidget only unmanages it from the layout -- it stays a child
+        # of this container (and findable via findChildren) until reparented.
+        row.setParent(None)
+        row.deleteLater()
+
+    def values(self) -> list[str]:
+        """Non-empty row values, in row order -- a blank middle row is
+        skipped entirely, never emitted as an empty-string argument."""
+        def text(widget):
+            return (widget.currentText() if isinstance(widget, QComboBox)
+                    else widget.text()).strip()
+
+        return [text(widget) for _, widget in self._rows if text(widget)]
+
+    def set_values(self, values: list[str]) -> None:
+        """Replace every row with one per item in ``values`` (at least one
+        blank row if ``values`` is empty), matching the container's own
+        just-built layout."""
+        for row, _ in list(self._rows):
+            self._remove_row(row)
+        for v in (values or [""]):
+            self._add_row(v)
 
 
 class _StepWorker(QThread):
@@ -211,7 +295,13 @@ class MainWindow(QMainWindow):
         self._form_layout = QFormLayout()
         form_container = QWidget()
         form_container.setLayout(self._form_layout)
-        outer.addWidget(form_container)
+        # Without a scroll area the layout minimum pins the window at ~874x871
+        # for a 15-field command, pushing Run and the output pane off a 768p
+        # screen with no way to shrink (#357).
+        form_scroll = QScrollArea()
+        form_scroll.setWidgetResizable(True)
+        form_scroll.setWidget(form_container)
+        outer.addWidget(form_scroll)
 
         row = QHBoxLayout()
         self._run_button = QPushButton("Run")
@@ -366,8 +456,36 @@ class MainWindow(QMainWindow):
             return
         self._help_label.setText(form.help_text or "")
         for field in form.fields:
-            if field.kind == "flag":
-                widget: QWidget = QCheckBox()
+            # Must precede every kind-specific branch below (#350): a
+            # repeatable path/choice field would otherwise be captured by
+            # the path/choice branch and rendered as a single-value widget.
+            if field.repeatable:
+                on_browse = ((lambda le, f=field: self._browse(f, le))
+                            if field.kind == "path" else None)
+                choices = field.choices if field.kind == "choice" else ()
+                widget = _RepeatableRows(
+                    on_browse=on_browse,
+                    choices=choices,
+                    editable=not field.strict,
+                )
+                if field.help_text:
+                    widget.setToolTip(field.help_text)
+                label_text = field.label + (
+                    " *" if (field.required or field.xor_group) else "")
+                self._form_layout.addRow(label_text, widget)
+                self._field_widgets[field.name] = widget
+                continue
+            if field.nargs > 1:
+                # Must precede the int/float branch (#351): --bbox etc. are
+                # kind=="float" but a QDoubleSpinBox can only hold ONE
+                # number, so an nargs>1 field stays a plain QLineEdit --
+                # the user types the N values space-separated (forms.py
+                # splits and count-checks them).
+                widget: QWidget = QLineEdit()
+                widget.setPlaceholderText(
+                    f"{field.nargs} space-separated values")
+            elif field.kind == "flag":
+                widget = QCheckBox()
                 if field.default is None:
                     # A nullable flag (Click `--x/--no-x` with default=None)
                     # carries three meanings, not two: on, off, and "leave
@@ -397,12 +515,93 @@ class MainWindow(QMainWindow):
                 widget.addItems(field.choices or ())
                 if field.default is not None:
                     widget.setCurrentText(str(field.default))
+                if not field.strict:
+                    # SuggestedChoice: pick from the list or type a value the
+                    # CLI hasn't seen yet -- NoInsert keeps typed text from
+                    # permanently growing the dropdown's own item list.
+                    widget.setEditable(True)
+                    widget.setInsertPolicy(QComboBox.NoInsert)
+            elif field.kind == "multichoice":
+                # CommaList: a checkable list, one widget in one form row.
+                # Height is fixed (not scaled to item count) so the 11-item
+                # MESSINESS vocabulary can't dominate the form -- shorter
+                # lists (e.g. 4-tier) just leave blank space below their
+                # items; QListWidget scrolls internally past the cap.
+                widget = QListWidget()
+                widget.setMaximumHeight(120)
+                for choice in field.choices or ():
+                    item = QListWidgetItem(choice)
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Unchecked)
+                    widget.addItem(item)
+            elif (field.kind in ("int", "float")
+                  and (field.minimum is None or field.maximum is None)):
+                # A Qt spin box requires a finite range. Inventing one (the
+                # original implementation used +/-1,000,000) silently clamps
+                # valid open-ended values such as state-plane coordinates.
+                # Keep these fields textual; Click remains the validator.
+                widget = QLineEdit()
+                if field.default is not None:
+                    widget.setText(str(field.default))
+                if field.help_text:
+                    widget.setPlaceholderText(field.help_text)
+            elif field.kind in ("int", "float"):
+                widget = QSpinBox() if field.kind == "int" else QDoubleSpinBox()
+                # A comma-decimal locale renders e.g. "0,800", which Click's
+                # FLOAT parser in the child process rejects with a usage
+                # error the user has no way to connect back to this field.
+                widget.setLocale(QLocale.c())
+                if isinstance(widget, QDoubleSpinBox):
+                    # Qt's default (2) truncates a real tolerance like 0.001;
+                    # 6 covers that and finer geospatial/ratio values without
+                    # per-field tuning.
+                    widget.setDecimals(6)
+                low, high = field.minimum, field.maximum
+                if field.default is None:
+                    # A spin box always holds a number, but blank->omitted is
+                    # the contract (forms._normalize). Qt's own answer: put a
+                    # sentinel one step below the floor and label it -- this
+                    # applies even to a required field with no default (e.g.
+                    # a coordinate argument): the sentinel round-trips to ""
+                    # -> None, and build_step's own required check catches it
+                    # with a clear "is required" message before any process
+                    # launches, so the softer label costs nothing real.
+                    widget.setRange(low - 1, high)
+                    widget.setSpecialValueText("(use default)")
+                    widget.setValue(low - 1)
+                else:
+                    widget.setRange(low, high)
+                    widget.setValue(field.default)
+            elif field.kind == "date" and field.allow_time:
+                # datetime.fromisoformat accepts more than a date-only picker
+                # can represent (time, seconds, offsets). Keep that full CLI
+                # contract reachable rather than silently truncating to a day.
+                widget = QLineEdit()
+                if field.help_text:
+                    widget.setPlaceholderText(field.help_text)
+            elif field.kind == "date":
+                widget = QDateEdit()
+                widget.setCalendarPopup(True)
+                widget.setDisplayFormat("yyyy-MM-dd")
+                widget.setLocale(QLocale.c())
+                # All current IsoDate options (verified via introspect_cli())
+                # have default=None -- unlike int/float, there's no "has a
+                # real default" case to branch on, so building one here would
+                # be untestable dead code. Park the value at minimumDate() and
+                # label it: round-trips to "" -> omitted by forms._normalize.
+                widget.setSpecialValueText("(none)")
+                widget.setDate(widget.minimumDate())
             else:
                 widget = QLineEdit()
                 if field.default is not None:
                     widget.setText(str(field.default))
                 if field.help_text:
                     widget.setPlaceholderText(field.help_text)
+            # Help reaches the screen for EVERY kind, not just line edits: the
+            # flag/choice branches never set it, and setPlaceholderText above is
+            # a no-op whenever a default was already written into the field (#356).
+            if field.help_text:
+                widget.setToolTip(field.help_text)
             # xor_group fields aren't individually `required` (Click sees them
             # as optional; the CLI body enforces "choose exactly one"), but
             # from the user's perspective they're just as required -- reuse
@@ -426,7 +625,45 @@ class MainWindow(QMainWindow):
             else:
                 self._form_layout.addRow(label_text, widget)
             self._field_widgets[field.name] = widget
+        self._wire_xor_groups(form)
         self._sync_run_availability(show_reason=True)
+
+    def _wire_xor_groups(self, form: CommandForm) -> None:
+        """Grey out an xor sibling once its pair is filled (reuses the shape
+        of ``config_builder_dialog._sync_xor``): fill one side and the other
+        disables but keeps its typed text; clear it and both re-enable
+        (owner decision, spec Sec 4.1a). Driven off each widget's own
+        ``textChanged`` -- never ``labelForField()``, which returns None for
+        a path row (wrapped in its own Browse-button ``QHBoxLayout``, not
+        added to the form layout directly)."""
+        # ponytail: envmon reconcile-locations' --gdb unconditionally HALTs
+        # ("use the .pyt toolbox" -- cli.py's reconcile_locations_cmd), so
+        # greying its --wells-csv sibling would steer the user into that
+        # dead end. Leave this one pair as it is today.
+        if form.label == "envmon reconcile-locations":
+            return
+        groups: dict[str, list[FormField]] = {}
+        for field in form.fields:
+            if field.xor_group:
+                groups.setdefault(field.xor_group, []).append(field)
+        for members in groups.values():
+            widgets = [self._field_widgets[f.name] for f in members]
+            # Every live xor pair today (besides the reconcile-locations
+            # exception above) is two plain path QLineEdits -- verified via
+            # introspect_cli() before writing this. A repeatable/choice/flag
+            # xor member would need its own signal wired here; skip rather
+            # than guess at one with no real case to test against yet.
+            if not all(isinstance(w, QLineEdit) for w in widgets):
+                continue
+
+            def _sync(_text: str = "", widgets=widgets) -> None:
+                filled = [bool(w.text().strip()) for w in widgets]
+                for i, w in enumerate(widgets):
+                    other_filled = any(f for j, f in enumerate(filled) if j != i)
+                    w.setEnabled(not other_filled)
+
+            for w in widgets:
+                w.textChanged.connect(_sync)
 
     def _browse(self, field: FormField, line: QLineEdit) -> None:
         """Open the right file/folder dialog for ``field`` and, if the user
@@ -449,8 +686,31 @@ class MainWindow(QMainWindow):
                 )
             elif isinstance(widget, QComboBox):
                 values[name] = widget.currentText()
-            else:
+            elif isinstance(widget, QListWidget):
+                # CommaList round-trip: checked items, list order, joined --
+                # matches exactly what the CLI's CommaList type parses back.
+                checked = [widget.item(i).text() for i in range(widget.count())
+                          if widget.item(i).checkState() == Qt.Checked]
+                values[name] = ",".join(checked)
+            elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                # The sentinel means "unset" -> "" -> omitted by _normalize.
+                values[name] = ("" if widget.text() == widget.specialValueText()
+                                else widget.value())
+            elif isinstance(widget, QDateEdit):
+                values[name] = ("" if widget.text() == widget.specialValueText()
+                                else widget.date().toString("yyyy-MM-dd"))
+            elif isinstance(widget, QLineEdit):
                 values[name] = widget.text()
+            elif isinstance(widget, _RepeatableRows):
+                values[name] = widget.values()
+            else:
+                # QSpinBox/QDoubleSpinBox/QDateEdit all inherit .text(), so an
+                # unhandled widget class falling through here would silently
+                # ship a sentinel label or a comma-decimal render to the child
+                # process. Fail loudly instead.
+                raise TypeError(
+                    f"_raw_values has no rule for {type(widget).__name__} "
+                    f"(field {name!r})")
         return values
 
     def _on_run(self) -> None:

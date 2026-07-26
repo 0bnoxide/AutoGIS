@@ -190,6 +190,7 @@ def test_cli_select_soil_intervals_rejects_unknown_tier(tmp_path):
         "--results-csv", str(src), "--out", str(out), "--tiers", "HOTSPT",
     ])
     assert result.exit_code == 2
-    assert "Invalid value for --tiers" in result.output
+    assert "Invalid value for" in result.output
+    assert "--tiers" in result.output
     assert "HOTSPT" in result.output
     assert not out.exists()

@@ -2,9 +2,12 @@
 form-field list without errors, and the hardcoded XOR_PAIRS table must
 resolve to real parameter names (drift guard against option renames)."""
 
+import click
+
+from autogis.adapters.param_types import CommaList, IsoDate, SuggestedChoice
 from autogis.adapters.gui.introspect import LABEL_OVERRIDES, XOR_PAIRS, introspect_cli
 
-KINDS = {"text", "int", "float", "flag", "choice", "path"}
+KINDS = {"text", "int", "float", "flag", "choice", "path", "date", "multichoice"}
 
 
 def _by_label():
@@ -48,7 +51,11 @@ def test_field_mapping_spot_checks():
 
     ready = {f.name: f for f in forms["envmon evaluate-readiness"].fields}
     assert ready["required_tools"].repeatable is True
-    assert ready["required_tools"].kind == "text"
+    # Task 5: --required-tool now carries a SuggestedChoice vocabulary (an
+    # editable/non-restricting combo), not a bare text field.
+    assert ready["required_tools"].kind == "choice"
+    assert ready["required_tools"].strict is False
+    assert ready["required_tools"].choices
 
 
 def test_is_dir_flags_directory_only_path_params():
@@ -144,3 +151,82 @@ def test_unreachable_marking():
         assert forms[label].unreachable_reason == reason
         assert forms[label].fields is not None  # still described, not omitted
     assert forms["envmon inspect"].unreachable_reason is None
+
+
+def _only_field(param_decls, **kw):
+    """Build a one-option command and return its non-help FormField."""
+    @click.group()
+    def root():
+        pass
+
+    @root.command("probe")
+    @click.option(*param_decls, **kw)
+    def probe(**_):
+        pass
+
+    form = next(f for f in introspect_cli(root) if f.path == ("probe",))
+    return form.fields[0]
+
+
+def test_comma_list_becomes_multichoice_with_choices():
+    f = _only_field(["--features"], type=CommaList(("a", "b")), default="")
+    assert f.kind == "multichoice"
+    assert f.choices == ("a", "b")
+
+
+def test_suggested_choice_is_a_non_strict_choice():
+    f = _only_field(["--matrix"], type=SuggestedChoice(("GW", "SOIL")))
+    assert f.kind == "choice"
+    assert f.choices == ("GW", "SOIL")
+    assert f.strict is False
+
+
+def test_plain_click_choice_stays_strict():
+    f = _only_field(["--fmt"], type=click.Choice(["a", "b"]))
+    assert f.kind == "choice"
+    assert f.strict is True
+
+
+def test_iso_date_becomes_date_kind():
+    f = _only_field(["--event-date"], type=IsoDate())
+    assert f.kind == "date"
+    assert f.allow_time is False
+
+
+def test_iso_datetime_exposes_allow_time():
+    f = _only_field(["--since"], type=IsoDate(allow_time=True))
+    assert f.kind == "date"
+    assert f.allow_time is True
+
+
+def test_int_range_exposes_bounds():
+    f = _only_field(["--limit"], type=click.IntRange(min=0, max=99))
+    assert f.kind == "int"
+    assert (f.minimum, f.maximum) == (0, 99)
+
+
+def test_unbounded_int_has_no_bounds():
+    f = _only_field(["--limit"], type=int)
+    assert (f.minimum, f.maximum) == (None, None)
+
+
+def test_nargs_defaults_to_one():
+    f = _only_field(["--x"], type=str)
+    assert f.nargs == 1
+
+
+def test_nargs_greater_than_one_is_captured():
+    f = _only_field(["--bbox"], nargs=4, type=float, default=None)
+    assert f.nargs == 4
+
+
+def test_real_bbox_and_profile_endpoints_are_nargs():
+    """#351: download-dem --bbox and generate-subsurface-profile's
+    --start/--end are the 3 real nargs>1 params in the CLI today."""
+    forms = _by_label()
+    bbox = {f.name: f for f in forms["envmon download-dem"].fields}["bbox"]
+    assert bbox.nargs == 4
+    ends = {f.name: f
+           for f in forms["envmon generate-subsurface-profile"].fields}
+    assert ends["start"].nargs == 2
+    assert ends["end"].nargs == 2
