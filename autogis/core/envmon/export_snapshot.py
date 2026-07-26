@@ -7,10 +7,34 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+# Windows-illegal filename characters plus control chars; site_id/event_id
+# get interpolated straight into a GDB folder name (issue #219).
+_ILLEGAL_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def validate_snapshot_id(value: str, label: str) -> None:
+    """Raise ValueError if ``value`` cannot be used as part of a filename.
+
+    Applies to ``site_id``/``event_id`` before they are interpolated into
+    the output GDB folder name -- catches illegal characters early with a
+    clear message instead of letting CreateFileGDB fail as an opaque
+    ERROR 999999.
+    """
+    if not value or not value.strip():
+        raise ValueError(f"{label} must not be empty")
+    if value != value.strip():
+        raise ValueError(f"{label} {value!r} has leading/trailing whitespace")
+    m = _ILLEGAL_NAME_CHARS.search(value)
+    if m:
+        raise ValueError(
+            f"{label} {value!r} contains a character not allowed in a "
+            f"filename: {m.group()!r}")
 
 
 @dataclass
@@ -75,12 +99,19 @@ def export_event_snapshot(   # pragma: no cover
     from .gdb_schema import TABLE_SCHEMAS, FEATURE_SCHEMAS
     from .upgrade_schema import SCHEMA_VERSION
 
+    validate_snapshot_id(site_id, "site_id")
+    validate_snapshot_id(event_id, "event_id")
+
     gdb = str(gdb_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d")
     out_name = f"{site_id}_{event_id}_snapshot_{ts}.gdb"
     out_gdb = str(out / out_name)
+    if Path(out_gdb).exists():
+        raise FileExistsError(
+            f"Snapshot target already exists: {out_gdb} "
+            "-- delete it or export to a different --out folder")
 
     arcpy.management.CreateFileGDB(str(out), out_name)
 
@@ -138,7 +169,11 @@ def export_event_snapshot(   # pragma: no cover
         feature_classes_copied=fc_copied,
         row_counts=row_counts,
     )
-    manifest_path = out / "manifest.json"
+    # Named after the GDB, not a bare "manifest.json": the manifest lands in
+    # the shared --out folder, so a fixed name is clobbered by the next export
+    # into that folder -- including one on a different day, which the
+    # FileExistsError guard above never sees because it only checks the GDB.
+    manifest_path = out / f"{out_name}.manifest.json"
     manifest_path.write_text(json.dumps(dataclasses.asdict(manifest), indent=2),
                              encoding="utf-8")
     return manifest
