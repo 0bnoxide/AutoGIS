@@ -1036,14 +1036,14 @@ def test_tooltip_reaches_choice_and_flag_widgets(qapp):
 def test_raw_values_rejects_an_unknown_widget_type(qapp):
     """A widget class nobody taught _raw_values about must fail loudly, not
     fall through to .text() and ship whatever string Qt happens to render.
-    QDateEdit (not QSpinBox -- Task 10 taught _raw_values that one) is the
-    still-unhandled stand-in; date fields render as QLineEdit today (kind
-    "date" falls into the generic branch), so this stays a genuine gap."""
-    from PySide6.QtWidgets import QDateEdit
+    QLabel is the stand-in -- it will never be a form *value* widget, so
+    unlike QSpinBox (Task 10) and QDateEdit (Task 11) before it, this probe
+    can't go stale as more kinds get handled."""
+    from PySide6.QtWidgets import QLabel
     win = MainWindow()
     win._command_box.setCurrentText("envmon run-history")
-    win._field_widgets["limit"] = QDateEdit()  # not yet handled
-    with pytest.raises(TypeError, match="QDateEdit"):
+    win._field_widgets["limit"] = QLabel()  # never a value widget
+    with pytest.raises(TypeError, match="QLabel"):
         win._raw_values()
 
 
@@ -1090,3 +1090,21 @@ def test_window_can_shrink_below_the_form_height(qapp):
     win.resize(400, 300)
     qapp.processEvents()
     assert win.minimumSizeHint().height() < 700
+
+
+def test_date_field_is_a_calendar_and_defaults_to_none(qapp):
+    from PySide6.QtWidgets import QDateEdit
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon gw-level-summary")
+    w = win._field_widgets["event_date"]
+    assert isinstance(w, QDateEdit)
+    assert w.calendarPopup() is True
+    assert win._raw_values()["event_date"] == ""
+
+
+def test_picked_date_serializes_as_iso(qapp):
+    from PySide6.QtCore import QDate
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon gw-level-summary")
+    win._field_widgets["event_date"].setDate(QDate(2026, 7, 25))
+    assert win._raw_values()["event_date"] == "2026-07-25"

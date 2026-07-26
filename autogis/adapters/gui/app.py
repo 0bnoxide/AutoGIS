@@ -33,9 +33,9 @@ from PySide6.QtCore import QLocale, Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QCompleter,
-    QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QMainWindow, QPushButton, QScrollArea, QSpinBox, QSplitter,
-    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QDateEdit, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QMainWindow, QPushButton, QScrollArea, QSpinBox,
+    QSplitter, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from . import settings
@@ -415,6 +415,19 @@ class MainWindow(QMainWindow):
                 else:
                     widget.setRange(low, high)
                     widget.setValue(field.default)
+            elif field.kind == "date":
+                widget = QDateEdit()
+                widget.setCalendarPopup(True)
+                widget.setDisplayFormat("yyyy-MM-dd")
+                widget.setLocale(QLocale.c())
+                # All 16 IsoDate options (verified via introspect_cli()) have
+                # default=None -- unlike int/float, there's no "has a real
+                # default" case to branch on, so building one here would be
+                # untestable dead code. Same sentinel trick as Task 10: park
+                # the value at minimumDate() and label it: round-trips to ""
+                # -> omitted by forms._normalize.
+                widget.setSpecialValueText("(none)")
+                widget.setDate(widget.minimumDate())
             else:
                 widget = QLineEdit()
                 if field.default is not None:
@@ -471,12 +484,16 @@ class MainWindow(QMainWindow):
                 # The sentinel means "unset" -> "" -> omitted by _normalize.
                 values[name] = ("" if widget.text() == widget.specialValueText()
                                 else widget.value())
+            elif isinstance(widget, QDateEdit):
+                values[name] = ("" if widget.text() == widget.specialValueText()
+                                else widget.date().toString("yyyy-MM-dd"))
             elif isinstance(widget, QLineEdit):
                 values[name] = widget.text()
             else:
-                # QSpinBox/QDoubleSpinBox/QDateEdit all inherit .text(), so a
-                # silent fallthrough would ship "(use default)" or a
-                # comma-decimal "0,800" to the child process. Fail loudly.
+                # QSpinBox/QDoubleSpinBox/QDateEdit all inherit .text(), so an
+                # unhandled widget class falling through here would silently
+                # ship a sentinel label or a comma-decimal render to the child
+                # process. Fail loudly instead.
                 raise TypeError(
                     f"_raw_values has no rule for {type(widget).__name__} "
                     f"(field {name!r})")
