@@ -306,6 +306,24 @@ def test_build_conc_surface_rejects_unregistered_unit(tmp_path):
     assert "Traceback" not in result.output
 
 
+def test_bad_coords_not_blamed_on_unit(tmp_path):
+    """collect_concentration_points raises ValueError for malformed coords
+    too; a blanket except that said 'Invalid value for --unit' sent the
+    operator to fix the wrong option (codex review on #372). The unit here is
+    valid -- the coords are not."""
+    results, _ = _write_inputs(tmp_path, [_row()])
+    coords = tmp_path / "bad_coords.csv"
+    coords.write_text("location_id,x,y\nMW-1,not_a_number,0\n",
+                      encoding="utf-8")
+    result = CliRunner().invoke(autogis, [
+        "envmon", "build-conc-surface", "--results", str(results),
+        "--coords", str(coords), "--analyte", "Benzene",
+        "--site", SITE, "--event-date", EVENT, "--dry-run"])
+    assert result.exit_code != 0
+    assert "--unit" not in result.output
+    assert "Traceback" not in result.output
+
+
 def test_build_conc_surface_guard_without_arcpy(tmp_path):
     results, coords = _write_inputs(tmp_path, [_row()])
     result = CliRunner().invoke(autogis, [

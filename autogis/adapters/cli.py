@@ -5603,6 +5603,16 @@ def build_conc_surface_cmd(results_csv, coords_csv, analyte, site_id,
     if gdb and not dry_run:
         _guard("build-conc-surface")
 
+    # Validate the unit up front and narrowly: collect_concentration_points
+    # also raises ValueError for malformed --coords rows, and a blanket
+    # "Invalid value for --unit" would send the operator to fix the wrong
+    # option (codex review). Same registry check the core function runs.
+    from autogis.core.common.units import normalize_unit
+    if normalize_unit(surface_unit) is None:
+        raise click.BadParameter(
+            f"not in the ADR-0022 unit registry: {surface_unit!r}",
+            param_hint="--unit")
+
     qa = QACollector()
     try:
         points = collect_concentration_points(
@@ -5611,7 +5621,9 @@ def build_conc_surface_cmd(results_csv, coords_csv, analyte, site_id,
             nondetect_rule=nondetect_rule, surface_unit=surface_unit,
             matrix=matrix, qa=qa)
     except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="--unit")
+        # remaining ValueErrors (coords parse, date shape) still get a clean
+        # message instead of a traceback, just not blamed on --unit
+        raise click.ClickException(str(exc))
     click.echo(f"[DRAFT] {len(points)} interpolation point(s) for {analyte} "
                f"({surface_unit}, nondetect_rule={nondetect_rule})")
     if dry_run:
