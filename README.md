@@ -81,6 +81,8 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [DroneGCPCheckpointQA](autogis/core/envmon/drone_checkpoint_qa.py) | 8.7 | `envmon drone-checkpoint-qa` | Tool 11.1: evaluate GCP checkpoint accuracy (headless) |
 | [ReconcileSurvey123AndLabResults](autogis/core/envmon/reconcile_survey123_lab.py) | 2.6 | `envmon reconcile-survey123-lab` | Pre-production: reconcile Survey123 field submissions vs lab EDD (headless) |
 | [BuildSurvey123XLSFormFromConfig](autogis/core/envmon/survey123_form_builder.py) | 7.1a | `envmon build-survey-form` | Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config |
+| [ValidateSurveyForm](autogis/core/envmon/survey_schema.py) | S123-1.1 | `envmon validate-survey-form` | S123 Phase 1: static XLSForm validation — structure, choices, references, the ADR-0113 SampleID contract, and site/event config cross-checks (headless, no portal, ADR-0115) |
+| [DiffSurveySchema](autogis/core/envmon/survey_schema.py) | S123-1.2 | `envmon diff-survey-schema` | S123 Phase 1: classify XLSForm changes vs a baseline form and/or a saved feature-layer spec as safe / review-required / destructive; exits 0/2/3 (headless, no portal, ADR-0115) |
 | [SyncSurvey123Submissions](autogis/core/envmon/survey_sync.py) | — | `envmon sync-survey123` | S123 Phase 2: incremental read-only pull of new/changed/deleted submissions into staging envelopes + submissions CSV (live AGOL, `survey123` extra, ADR-0116) |
 | [EvaluateReportReadiness](autogis/core/envmon/evaluate_readiness.py) | 9.0b | `envmon evaluate-readiness` | Tool: report-readiness gate — checks required tools ran successfully |
 | [ExportAnalyticalSummaryTables](autogis/core/envmon/export_summary_tables.py) | 9.1 | `envmon export-report-format-summary-tables` / `envmon export-summary` | Tool: export Env_AnalyticalResults to formatted report-appendix tables |
@@ -348,6 +350,8 @@ not by flag.
 | `autogis envmon drone-checkpoint-qa` | CLOUD | `core/envmon/drone_checkpoint_qa.py` |
 | `autogis envmon reconcile-survey123-lab` | CLOUD | `core/envmon/reconcile_survey123_lab.py` |
 | `autogis envmon build-survey-form` | CLOUD | `core/envmon/survey123_form_builder.py` |
+| `autogis envmon validate-survey-form` | CLOUD | `core/envmon/survey_schema.py` |
+| `autogis envmon diff-survey-schema` | CLOUD | `core/envmon/survey_schema.py` |
 | `autogis envmon sync-survey123` | CLOUD (AGOL auth; `survey123` extra) | `core/envmon/survey_sync.py` |
 | `autogis envmon evaluate-readiness` | CLOUD | `core/envmon/evaluate_readiness.py` |
 | `autogis envmon export-summary` | CLOUD | `core/envmon/export_summary.py` |
