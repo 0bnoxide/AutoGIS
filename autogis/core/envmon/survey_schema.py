@@ -117,3 +117,161 @@ def read_xlsform(path) -> FormSchema:
             schema.settings[key] = _cell(st, 2, col)
     wb.close()
     return schema
+
+
+_SELECTED_RE = re.compile(r'selected\(\s*\$\{(\w+)\}\s*,\s*"([^"]*)"\s*\)')
+_SLUG_RE = re.compile(r"^[a-z0-9_]+$")
+
+
+def _err(qa, cat, msg):
+    qa.add(QARecord(SEV_ERROR, cat, msg))
+
+
+def _warn(qa, cat, msg):
+    qa.add(QARecord(SEV_WARNING, cat, msg))
+
+
+def validate_form(schema: FormSchema, qa: QACollector, *,
+                  event_config: Optional[dict] = None,
+                  site_config: Optional[dict] = None,
+                  analyte_dict: Optional[dict] = None) -> None:
+    """Static XLSForm validation (ADR-0114 checks 1-13). Appends QARecords."""
+    site_id = (site_config or {}).get("site_id", "")
+    ctx = f"[{site_id}] " if site_id else ""
+
+    # 1. sheets
+    if not schema.questions:
+        _err(qa, "missing_sheet", ctx + "survey sheet missing or empty")
+    if not schema.choices:
+        _err(qa, "missing_sheet", ctx + "choices sheet missing or empty")
+    if not schema.settings:
+        _warn(qa, "settings_incomplete", ctx + "settings sheet missing")
+
+    names: dict = {}
+    fields = [q for q in schema.questions if q.base in _FIELD_BASES]
+
+    for q in schema.questions:
+        base = q.base
+        # 3. type recognized
+        if base and base not in _FIELD_BASES and base not in _STRUCT_BASES:
+            _err(qa, "unknown_type",
+                 f"row {q.row}: unknown question type {q.type!r}")
+        if base.startswith("select_") and not q.list_name:
+            _err(qa, "unknown_type",
+                 f"row {q.row}: {base} without a choice list name")
+        # 2. names
+        if base in _FIELD_BASES:
+            if not q.name:
+                _err(qa, "missing_name", f"row {q.row}: {base} without a name")
+            else:
+                if not _NAME_RE.match(q.name):
+                    _err(qa, "invalid_name",
+                         f"row {q.row}: invalid name {q.name!r}")
+                key = q.name.lower()
+                if key in names:
+                    _err(qa, "duplicate_name",
+                         f"row {q.row}: duplicate name {q.name!r} "
+                         f"(first at row {names[key]})")
+                else:
+                    names[key] = q.row
+        # 7. required sanity
+        if q.required and q.required.lower() not in _REQUIRED_VALUES:
+            _warn(qa, "odd_required_value",
+                  f"row {q.row}: required={q.required!r} on {q.name!r}")
+
+    # 4. select_* list resolution + choices hygiene
+    for q in fields:
+        if q.base.startswith("select_") and q.list_name:
+            if q.list_name not in schema.choices:
+                _err(qa, "unknown_choice_list",
+                     f"row {q.row}: {q.name!r} references missing choice "
+                     f"list {q.list_name!r}")
+            elif not [c for c, _ in schema.choices[q.list_name] if c]:
+                _err(qa, "empty_choice_list",
+                     f"row {q.row}: choice list {q.list_name!r} is empty")
+    for ln, pairs in schema.choices.items():
+        seen = set()
+        for cname, _lbl in pairs:
+            if not cname or not _NAME_RE.match(cname.replace("-", "_")):
+                _err(qa, "invalid_choice_name",
+                     f"list {ln!r}: invalid choice name {cname!r}")
+                continue
+            if (ln, cname) in seen:
+                _err(qa, "duplicate_choice",
+                     f"list {ln!r}: duplicate choice {cname!r}")
+            seen.add((ln, cname))
+
+    # 5. ${ref} resolution (order-independent by design — ADR-0113 emits
+    # SampleID after QAFlags; XLSForm resolves calculates by dependency)
+    all_names = {q.name for q in fields if q.name}
+    for q in schema.questions:
+        for expr in (q.calculation, q.relevant, q.constraint):
+            for ref in _REF_RE.findall(expr or ""):
+                if ref not in all_names:
+                    _err(qa, "unresolved_reference",
+                         f"row {q.row}: ${{{ref}}} does not resolve to a "
+                         f"question name")
+
+    # 6. group/repeat balance
+    stack = []
+    for q in schema.questions:
+        if q.base in ("begin_group", "begin_repeat"):
+            stack.append((q.base, q.row))
+        elif q.base in ("end_group", "end_repeat"):
+            want = "begin_" + q.base.split("_")[1]
+            if not stack or stack[-1][0] != want:
+                _err(qa, "unbalanced_group",
+                     f"row {q.row}: {q.base} without matching {want}")
+            else:
+                stack.pop()
+    for base, row in stack:
+        _err(qa, "unbalanced_group", f"row {row}: {base} never closed")
+
+    # 8-9. SampleID contract (ADR-0113) + duplicate-leg dependency
+    sid = next((q for q in fields if q.name == "SampleID"), None)
+    if sid is None:
+        _err(qa, "sample_id_missing",
+             ctx + "no calculate question named 'SampleID'")
+    else:
+        if sid.base != "calculate":
+            _err(qa, "sample_id_contract_mismatch",
+                 f"row {sid.row}: SampleID must be a calculate, got "
+                 f"{sid.type!r}")
+        expected = " ".join(xform_sample_id_calc().split())
+        actual = " ".join((sid.calculation or "").split())
+        if actual != expected:
+            _err(qa, "sample_id_contract_mismatch",
+                 f"row {sid.row}: SampleID calculation diverges from the "
+                 f"ADR-0113 contract; expected {expected!r}")
+        m = _SELECTED_RE.search(sid.calculation or "")
+        if m:
+            flag_q, flag_val = m.group(1), m.group(2)
+            src = next((q for q in fields if q.name == flag_q), None)
+            if src is not None and src.list_name:
+                have = {c for c, _ in schema.choices.get(src.list_name, [])}
+                if flag_val not in have:
+                    _err(qa, "sample_id_dup_leg",
+                         f"choice list {src.list_name!r} lacks the "
+                         f"{flag_val!r} choice the SampleID duplicate leg "
+                         f"reads")
+
+    # 10. settings
+    if schema.settings:
+        fid = schema.settings.get("form_id", "")
+        if not fid or not _SLUG_RE.match(fid):
+            _warn(qa, "settings_incomplete",
+                  f"settings: form_id {fid!r} missing or not slug-shaped")
+        if not schema.settings.get("version"):
+            _warn(qa, "settings_incomplete", "settings: version missing")
+
+    _cross_reference_checks(schema, qa, event_config, analyte_dict, ctx)
+
+    qa.add(QARecord(SEV_INFO, "validation_complete",
+                    f"{ctx}validated {len(fields)} questions, "
+                    f"{len(schema.choices)} choice lists"))
+
+
+def _cross_reference_checks(schema, qa, event_config, analyte_dict, ctx):
+    """Spec checks 11-13 — each only when its config is supplied."""
+    if not event_config:
+        return
