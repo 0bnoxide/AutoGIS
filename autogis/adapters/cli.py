@@ -12,9 +12,13 @@ import yaml
 from autogis.adapters.guard import require_runtime, RuntimeUnavailable
 from autogis.adapters.param_types import CommaList, IsoDate, SuggestedChoice
 from autogis.core.common.config import HarvestConfig, load_config
+from autogis.core.common.config_validation import KNOWN_MATRICES
+from autogis.core.common.units import UNIT_REGISTRY
 from autogis.core.envmon.import_rtk_survey import _EXTRA_COLUMN_VOCAB
+from autogis.core.envmon.opentopo import DEFAULT_DATASET, DEM_DATASETS
 from autogis.core.envmon.soil_interval_selector import IntervalTier
 from autogis.core.envmon.synthetic_workbook import MESSINESS
+from autogis.runtime.capabilities import TOOL_REGISTRY
 from autogis.runtime.sessions import agol_from_profile
 
 
@@ -711,6 +715,7 @@ def export_report_format_summary_tables_cmd(
               help="run_history.csv path (need not exist; treated as empty if absent).")
 @click.option("--event-id", default=None, help="Event ID filter (optional).")
 @click.option("--required-tool", "required_tools", multiple=True,
+              type=SuggestedChoice(sorted(t.command for t in TOOL_REGISTRY)),
               help="Tool name that must have succeeded (repeatable).")
 @click.option("--qa-report", default=None, type=click.Path(exists=False),
               help="QA CSV from a previous import (checked for ERROR rows).")
@@ -738,6 +743,7 @@ def evaluate_readiness_cmd(site_id, run_history, event_id, required_tools,
 @click.option("--run-history", required=True, type=click.Path(),
               help="run_history.csv path (need not exist; treated as empty if absent).")
 @click.option("--required-tool", "required_tools", multiple=True,
+              type=SuggestedChoice(sorted(t.command for t in TOOL_REGISTRY)),
               help="Tool name that must have succeeded per site (repeatable).")
 @click.option("--site", "site_ids", multiple=True,
               help="Restrict to this site ID (repeatable). Default: every site "
@@ -1569,7 +1575,9 @@ def well_inspection_report_cmd(wells_csv, site_id, output_dir,
     help="Path to run_history.csv (need not exist; treated as empty if absent).",
 )
 @click.option("--site", "site_id", default=None, help="Filter by site ID.")
-@click.option("--tool", "tool_name", default=None, help="Filter by tool name.")
+@click.option("--tool", "tool_name", default=None,
+              type=SuggestedChoice(sorted(t.command for t in TOOL_REGISTRY)),
+              help="Filter by tool name.")
 @click.option(
     "--status", default=None,
     type=click.Choice(["success", "warning", "error", "cancelled"]),
@@ -3392,7 +3400,9 @@ def import_rtk_survey_cmd(csv_path, site_id, gdb, batch_id, hrms_threshold, vrms
               help="Path to the source file to register.")
 @click.option("--site", "site_id", required=True, help="Site ID (e.g. H281).")
 @click.option("--event", "event_id", required=True, help="Event ID (e.g. 2026-Q2).")
-@click.option("--tool", "tool_name", required=True, help="Tool that ingested the file.")
+@click.option("--tool", "tool_name", required=True,
+              type=SuggestedChoice(sorted(t.command for t in TOOL_REGISTRY)),
+              help="Tool that ingested the file.")
 @click.option("--registry", "registry_path", default="source_docs.csv",
               show_default=True, type=click.Path(),
               help="Path to the source-document registry CSV.")
@@ -3932,7 +3942,9 @@ def draft_lithology_from_scan_cmd(scan_path, out_dir, handwritten, report, fail_
 
 
 @envmon.command("download-dem")
-@click.option("--dataset", default="USGS10m", show_default=True,
+@click.option("--dataset", default=DEFAULT_DATASET, show_default=True,
+              metavar="CODE",
+              type=click.Choice(tuple(DEM_DATASETS), case_sensitive=False),
               help="DEM dataset code (case-insensitive); see --list-datasets.")
 @click.option("--bbox", nargs=4, type=float, default=None,
               metavar="W S E N",
@@ -4905,7 +4917,9 @@ def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
 @click.option("--runtime", "runtime_filter", default=None,
               type=click.Choice(["CLOUD", "HYBRID", "LOCAL", "DRAFT"],
                                 case_sensitive=False))
-@click.option("--domain", default=None)
+@click.option("--domain", default=None,
+              type=click.Choice(sorted({t.domain for t in TOOL_REGISTRY}),
+                                case_sensitive=False))
 @click.option("--status", default=None,
               type=click.Choice(["stable", "draft", "planned", "deprecated"],
                                 case_sensitive=False))
@@ -5298,8 +5312,10 @@ def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
 @click.option("--sample-id-col", default=None,
               help="Column for sample ID (auto-generated if omitted).")
 @click.option("--site-id", default="", help="Site ID to embed in output rows.")
-@click.option("--default-matrix", default="GW", show_default=True)
-@click.option("--default-units", default="ug/L", show_default=True)
+@click.option("--default-matrix", default="GW", show_default=True,
+              type=SuggestedChoice(sorted(KNOWN_MATRICES) + ["SED", "SW"]))
+@click.option("--default-units", default="ug/L", show_default=True,
+              type=SuggestedChoice(sorted(UNIT_REGISTRY)))
 @click.option("--nondetect-prefix", default="<", show_default=True,
               help="String prefix indicating a non-detect result.")
 @click.option("--units-yaml", default=None, type=click.Path(exists=True),
@@ -5533,10 +5549,12 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
               help="Numeric substitution for nondetects (ADR-0085 "
                    "decision 4).")
 @click.option("--unit", "surface_unit", default="ug/L", show_default=True,
+              type=SuggestedChoice(sorted(UNIT_REGISTRY)),
               help="Declared surface unit (ADR-0022 registry); every "
                    "result/RL/DL is normalized into it, rows with unknown "
                    "or cross-dimension units are excluded with a warning.")
 @click.option("--matrix", default=None,
+              type=SuggestedChoice(sorted(KNOWN_MATRICES) + ["SED", "SW"]),
               help="Optional Matrix filter (e.g. GW); rows outside it are "
                    "excluded.")
 @click.option("--method", type=click.Choice(["IDW", "EBK"]), default="IDW",

@@ -51,7 +51,11 @@ def test_field_mapping_spot_checks():
 
     ready = {f.name: f for f in forms["envmon evaluate-readiness"].fields}
     assert ready["required_tools"].repeatable is True
-    assert ready["required_tools"].kind == "text"
+    # Task 5: --required-tool now carries a SuggestedChoice vocabulary (an
+    # editable/non-restricting combo), not a bare text field.
+    assert ready["required_tools"].kind == "choice"
+    assert ready["required_tools"].strict is False
+    assert ready["required_tools"].choices
 
 
 def test_is_dir_flags_directory_only_path_params():

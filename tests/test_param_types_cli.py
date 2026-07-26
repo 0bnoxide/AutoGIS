@@ -41,3 +41,45 @@ def test_valid_tiers_still_works(tmp_path):
         "--tiers", "HOTSPOT",
     ])
     assert res.exit_code == 0, res.output
+
+
+def test_unknown_dataset_is_a_usage_error():
+    """Task 5: --dataset becomes a strict click.Choice -- opentopo.get_dataset()
+    already refuses any code outside DEM_DATASETS, so nothing is newly lost."""
+    res = CliRunner().invoke(autogis, ["envmon", "download-dem", "--dataset", "NOPE",
+                                       "--bbox", "-105", "39", "-104", "40",
+                                       "--out", "x.tif", "--dry-run"])
+    assert res.exit_code == 2
+    assert "NOPE" in res.output
+
+
+def test_suggested_matrix_still_accepts_an_unlisted_code(tmp_path):
+    """The whole point of SuggestedChoice: SED is real (nysdec.yaml) but is not
+    in KNOWN_MATRICES, and must keep working. Regression guard -- passes both
+    before and after Task 5's SuggestedChoice wiring."""
+    src = tmp_path / "legacy.csv"
+    src.write_text("LocationID,Analyte,Result\nB-1,Benzene,1.0\n", encoding="utf-8")
+    res = CliRunner().invoke(autogis, [
+        "envmon", "migrate-legacy-data", "--input-csv", str(src),
+        "--output", str(tmp_path / "o.csv"), "--default-matrix", "SED",
+    ])
+    assert res.exit_code == 0, res.output
+
+
+def test_run_history_tool_filter_accepts_a_retired_tool_name(tmp_path):
+    """A log query must still be able to name a command that no longer exists.
+    Regression guard -- passes both before and after Task 5's SuggestedChoice
+    wiring. CSV columns must match run_history.RunRecord's actual schema."""
+    hist = tmp_path / "run_history.csv"
+    hist.write_text(
+        "run_id,tool_name,site_id,event_id,started_at,finished_at,status,"
+        "inputs,outputs,qa_count_error,qa_count_warning,qa_count_info,message\n"
+        "r1,a-retired-tool,S1,__None__,2026-01-01T00:00:00,2026-01-01T00:00:01,"
+        "success,{},{},0,0,0,ok\n",
+        encoding="utf-8",
+    )
+    res = CliRunner().invoke(autogis, ["envmon", "run-history",
+                                       "--run-history", str(hist),
+                                       "--tool", "a-retired-tool"])
+    assert res.exit_code == 0, res.output
+    assert "a-retired-tool" in res.output
