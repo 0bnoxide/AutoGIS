@@ -368,7 +368,23 @@ class MainWindow(QMainWindow):
         for field in form.fields:
             if field.kind == "flag":
                 widget: QWidget = QCheckBox()
-                widget.setChecked(bool(field.default))
+                if field.default is None:
+                    # A nullable flag (Click `--x/--no-x` with default=None)
+                    # carries three meanings, not two: on, off, and "leave
+                    # whatever the config file says alone". bool(None)
+                    # collapsed the third into "off", so an untouched form
+                    # emitted --no-incremental and silently overrode the
+                    # config (#352). setTristate must come first -- Qt
+                    # ignores a partial state on a two-state box.
+                    widget.setTristate(True)
+                    widget.setCheckState(Qt.CheckState.PartiallyChecked)
+                else:
+                    widget.setChecked(bool(field.default))
+                if field.help_text:
+                    # flags have no placeholder to carry their help the way
+                    # QLineEdit does below; without this the partial state is
+                    # a half-filled box with no explanation
+                    widget.setToolTip(field.help_text)
             elif field.kind == "choice":
                 widget = QComboBox()
                 # A leading blank item: an untouched combo box otherwise
@@ -425,7 +441,12 @@ class MainWindow(QMainWindow):
         values: dict[str, object] = {}
         for name, widget in self._field_widgets.items():
             if isinstance(widget, QCheckBox):
-                values[name] = widget.isChecked()
+                state = widget.checkState()
+                values[name] = (
+                    None
+                    if state == Qt.CheckState.PartiallyChecked
+                    else state == Qt.CheckState.Checked
+                )
             elif isinstance(widget, QComboBox):
                 values[name] = widget.currentText()
             else:
