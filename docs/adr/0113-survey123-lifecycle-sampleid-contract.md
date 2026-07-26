@@ -102,12 +102,21 @@ metadata, and any cross-producer agreement were all unasserted.
   valid and parseable (`qc_sample_summary` recognized the suffix before).
 - The Phase 0 exit gate's SampleID leg is met for the three lifecycle
   producers; the submission-envelope leg is deliberately not addressed and
-  waits for Phase 2 (its first consumer).
+  **moves to Phase 2**, where its first consumer lives. Designing an envelope
+  with no reader would make every field shape a guess that the first real
+  puller then relitigates. `docs/survey123-add-on-roadmap.md` is amended in
+  place: the envelope text and its gate clause move from Phase 0 to Phase 2,
+  and Phase 5 (which normalizes through the envelope) now depends on Phase 2.
+  Strict phase ordering is unaffected — 2 still precedes 5. Per ADR-0112 this
+  is an explicit-owner-decision surface; owner confirmed 2026-07-25.
 - No new dependencies; `core/` remains arcpy-free and arcgis-free.
 
 ## Related
 
 - Spec: `docs/superpowers/specs/2026-07-25-survey123-sample-id-contract-design.md`
 - Plan: `docs/superpowers/plans/2026-07-25-survey123-sample-id-contract.md`
-- ADR-0112 (Survey123 add-on roadmap), ADR-0021 (XLSForm builder — question
-  list amended here)
+- ADR-0112 (Survey123 add-on roadmap), ADR-0021 (XLSForm builder — calculate
+  expression amended here), `docs/survey123-add-on-roadmap.md` (envelope leg
+  relocated Phase 0 → Phase 2)
+- Issue #360 (lab `-DUP`/`-D` markers defeat the reconcile guard) — closed by
+  the QC-class guard here
