@@ -935,11 +935,21 @@ def test_directory_params_reject_an_existing_file(tmp_path):
     assert "directory" in res.output.lower() or "file" in res.output.lower()
 
 
-def test_every_folder_param_is_declared_dir_only():
+# Populate from the Step-3 derivation command below. MUST contain exactly 12
+# entries -- a name-suffix heuristic is NOT good enough here, because several of
+# the 12 are not named *_dir and would be silently skipped.
+FOLDER_PARAMS = [
+    # ("envmon export-wqx", "out_dir"),  <- replace with the derived 12
+]
+
+
+def test_the_twelve_folder_params_are_declared_dir_only():
     from autogis.adapters.gui.introspect import introspect_cli
-    leaked = [(f.label, x.name) for f in introspect_cli() for x in f.fields
-              if x.kind == "path" and x.name.endswith("_dir") and not x.is_dir]
-    assert leaked == [], leaked
+    assert len(FOLDER_PARAMS) == 12, "derive the real list; do not guess"
+    forms = {f.label: f for f in introspect_cli()}
+    for label, dest in FOLDER_PARAMS:
+        field = next(x for x in forms[label].fields if x.name == dest)
+        assert field.is_dir is True, f"{label} --{dest} still accepts a file"
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
