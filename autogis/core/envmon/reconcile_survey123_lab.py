@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_WARNING, SEV_INFO
+from .sample_id import qc_class
 
 DEFAULT_HEADER_MAP = {
     "sample_id": "SampleID",
@@ -71,7 +72,14 @@ def reconcile_field_lab(
     field_samples: list[Survey123Sample],
     lab_samples: list[LabSample],
     threshold: float = 0.85,
+    duplicate_markers: Optional[list[str]] = None,
 ) -> ReconcileS123LabResult:
+    """Match field submissions to lab records.
+
+    duplicate_markers: the parser profile's markers, used to recognize a
+    laboratory duplicate that is not a lifecycle identity (this repo's
+    profiles ship ``-DUP``/``-D``). Defaults to the same list the profiles do.
+    """
     result = ReconcileS123LabResult()
     unmatched_lab = list(lab_samples)
 
@@ -82,11 +90,23 @@ def reconcile_field_lab(
             unmatched_lab.remove(exact)
             _check_pair(result, fs, exact)
             continue
-        # fuzzy match - consider all unmatched lab samples
-        best_score = 0.0
-        best = None
+        # fuzzy match - consider all unmatched lab samples, except that a
+        # structural guard runs before any similarity score: IDs of different
+        # QC class can never match, whichever side carries the marker. A
+        # duplicate must not consume its own primary (~0.914 for -FD, 0.889
+        # for -DUP, 0.941 for -D — all above the 0.85 threshold). Comparing
+        # the QC *class* rather than the raw suffix keeps -FD/-FD-A and
+        # -FD/-DUP matchable while still separating -MB from -FB.
+        fs_class = qc_class(fs.sample_id, duplicate_markers)
+        candidates = unmatched_lab
+        if fs_class is not None:
+            candidates = [
+                ls for ls in unmatched_lab
+                if (lc := qc_class(ls.sample_id, duplicate_markers)) is None
+                or lc == fs_class
+            ]
         best_score, best = max(
-            ((_sim(fs.sample_id, ls.sample_id), ls) for ls in unmatched_lab),
+            ((_sim(fs.sample_id, ls.sample_id), ls) for ls in candidates),
             key=lambda x: x[0],
             default=(0.0, None),
         )

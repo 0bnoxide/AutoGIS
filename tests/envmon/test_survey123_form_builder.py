@@ -69,8 +69,48 @@ def test_sample_id_has_calculate_type(wb):
             assert "${WellID}" in calc
             assert "${SamplingDate}" in calc
             assert "${Matrix}" in calc
+            assert "${QAFlags}" in calc
             return
     pytest.fail("SampleID row not found")
+
+
+def test_sample_id_calc_comes_from_shared_contract(wb):
+    from autogis.core.envmon.sample_id import xform_sample_id_calc
+    ws = wb["survey"]
+    for r in range(2, ws.max_row + 1):
+        if ws.cell(r, 2).value == "SampleID":
+            assert ws.cell(r, 6).value == xform_sample_id_calc()
+            return
+    pytest.fail("SampleID row not found")
+
+
+def test_sample_id_calculate_follows_the_question_it_reads(wb):
+    """SampleID reads ${QAFlags}, so it is emitted after it. XLSForm resolves
+    calculates by dependency rather than row order, but a backward reference
+    needs no such guarantee — and a calculate renders nothing, so ordering it
+    this way is free."""
+    ws = wb["survey"]
+    names = [ws.cell(r, 2).value for r in range(2, ws.max_row + 1)]
+    assert names.index("SampleID") > names.index("QAFlags")
+
+
+def test_field_duplicate_reuses_the_single_qa_flags_question(wb):
+    """One affordance only. A second question (the withdrawn IsFieldDup) let a
+    crew tick the ADR-0021 flag, leave the other at its default, and produce a
+    SampleID identical to the primary — which append_records_idempotent then
+    drops at SEV_INFO duplicate_key_skipped."""
+    ws = wb["survey"]
+    rows = {ws.cell(r, 2).value: ws.cell(r, 1).value
+            for r in range(2, ws.max_row + 1)}
+    assert rows.get("QAFlags") == "select_multiple qa_flags"
+    assert "IsFieldDup" not in rows
+
+    choices = wb["choices"]
+    pairs = {(choices.cell(r, 1).value, choices.cell(r, 2).value)
+             for r in range(2, choices.max_row + 1)}
+    assert ("qa_flags", "field_dup") in pairs
+    # the yes_no list existed only for the withdrawn question
+    assert not any(lst == "yes_no" for lst, _ in pairs)
 
 
 def test_analyte_groups_produce_begin_end_group(wb):

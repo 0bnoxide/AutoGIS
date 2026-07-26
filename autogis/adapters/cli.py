@@ -4373,7 +4373,15 @@ def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
     profile = ParserProfile.load(Path(profile_path))
     lab_samples = extract_sample_roster(Path(edd_path), profile)
 
-    result = reconcile_field_lab(field_samples, lab_samples, threshold=threshold)
+    # The profile declares its lab's duplicate markers per sheet (e.g.
+    # "-DUP"/"-D"); the guard needs them to tell a lab duplicate from the
+    # primary it would otherwise fuzzy-consume.
+    markers = sorted({m for s in profile.sheets.values()
+                      for m in (s.raw.get("duplicate_markers") or [])}) or None
+
+    result = reconcile_field_lab(field_samples, lab_samples,
+                                 threshold=threshold,
+                                 duplicate_markers=markers)
     qa = reconcile_to_qa(result)
     _render_qa(qa, report, fail_on)
 
