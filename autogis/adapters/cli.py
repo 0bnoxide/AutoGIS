@@ -4439,6 +4439,94 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("sync-survey123")
+@click.option("--item-id", required=True,
+              help="AGOL item ID of the survey's feature service.")
+@click.option("--out", "out_dir", required=True, type=click.Path(),
+              help="Staging directory (also holds the sync checkpoint).")
+@click.option("--profile", default=None,
+              help="ArcGIS API for Python profile name.")
+@click.option("--since", "since_date", default=None,
+              help="Bounded replay: re-pull edits since this UTC date/time "
+                   "(YYYY-MM-DD[THH:MM]); the checkpoint is not advanced.")
+@click.option("--no-attachments", is_flag=True, default=False,
+              help="Skip attachment-metadata fetch.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Fetch and summarize only; write nothing.")
+@qa_report_options
+def sync_survey123_cmd(item_id, out_dir, profile, since_date, no_attachments,
+                       dry_run, report, fail_on):
+    """S123 Phase 2: pull new/changed submissions into staging (live, read-only)."""
+    import importlib.util
+    import time as _time
+    from datetime import datetime as dt, timezone as tz
+
+    # Live command: fail before any network work with the exact install hint
+    # (ADR-0112 install contract). find_spec never imports arcgis.
+    if importlib.util.find_spec("arcgis") is None:
+        raise click.ClickException(
+            "sync-survey123 is a live command and needs the ArcGIS API for "
+            'Python. Install it with: pip install "autogis[survey123]"')
+
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon import survey_sync as ss
+
+    replay_ms = None
+    if since_date:
+        try:
+            parsed = dt.fromisoformat(since_date)
+        except ValueError:
+            raise click.UsageError(
+                f"--since: cannot parse {since_date!r} (use YYYY-MM-DD[THH:MM]).")
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=tz.utc)
+        replay_ms = int(parsed.timestamp() * 1000)
+
+    qa = QACollector()
+    out = Path(out_dir)
+    checkpoint = ss.read_checkpoint(out)
+    gis = agol_from_profile(profile)
+    pulls = ss.fetch_item_pulls(
+        gis, item_id, checkpoint=checkpoint, replay_since_ms=replay_ms,
+        include_attachments=not no_attachments)
+    pulled_at_ms = int(_time.time() * 1000)
+    mode = "replay" if replay_ms is not None else "sync"
+    envelopes, new_cp = ss.sync_item(
+        pulls, checkpoint, item_id=item_id, pulled_at_ms=pulled_at_ms,
+        mode=mode, profile=profile or "", replay_since_ms=replay_ms, qa=qa)
+
+    ops = {op: sum(1 for e in envelopes if e.operation == op)
+           for op in ("add", "update", "delete")}
+    summary = (f"{len(envelopes)} envelope(s): {ops['add']} add, "
+               f"{ops['update']} update, {ops['delete']} delete "
+               f"across {len(pulls)} layer(s)")
+    if dry_run:
+        click.echo(f"[dry-run] {summary} — nothing written.")
+        _render_qa(qa, report, fail_on)
+        return
+    if not envelopes and checkpoint is not None:
+        click.echo(f"Up to date — {summary}.")
+        _render_qa(qa, report, fail_on)
+        return
+
+    stamp = dt.fromtimestamp(pulled_at_ms / 1000,
+                             tz=tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    jsonl = out / f"envelopes_{stamp}.jsonl"
+    csv_path = out / f"submissions_{stamp}.csv"
+    ss.write_envelopes_jsonl(envelopes, jsonl)
+    n_rows = ss.write_submissions_csv(
+        envelopes, csv_path,
+        date_fields={f for p in pulls for f in p.date_fields})
+    if mode == "sync":
+        # checkpoint only advances after the staging artifacts are durable
+        ss.write_checkpoint(out, new_cp)
+    click.echo(f"{summary}\n  envelopes: {jsonl}\n  submissions CSV: "
+               f"{csv_path} ({n_rows} row(s))"
+               + ("" if mode == "sync"
+                  else "\n  replay: checkpoint not advanced"))
+    _render_qa(qa, report, fail_on)
+
+
 # ---------------------------------------------------------------------------
 # Headless envmon batch (2026-06-28): max-result, merge, QC, compliance,
 # regulatory tables, field completeness, GW flow direction, GeoPackage export,

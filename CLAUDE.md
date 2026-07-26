@@ -191,7 +191,10 @@ Gate changes: 2026-07-26 — Phase 0 slice A (lifecycle SampleID contract)
 shipped via ADR-0113 (PR #359, owner-merged); envelope leg deliberately
 deferred to Phase 2 (first consumer). An explicit owner decision, not a
 default fast-track — the remaining Phase 0 scope and Phases 1-7 each get
-their own dated entry here as they ship.
+their own dated entry here as they ship. 2026-07-25 — Phase 2 (incremental
+submission sync) started by explicit user direction; slice 1 implemented
+(ADR-0116: canonical envelope + `envmon sync-survey123` + `survey123`
+extra), live non-production gate legs owner-gated.
 
 ## Decision records
 
