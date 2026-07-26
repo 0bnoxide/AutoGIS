@@ -111,15 +111,25 @@ def set_layer_visibility(aprx_path: Path, visible: Sequence[str],
                          hidden: Sequence[str], qa: QACollector) -> None:
     arcpy = _arcpy()
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
-    vis = {v.lower() for v in visible}
-    hid = {h.lower() for h in hidden}
+    vis = {v.lower(): v for v in visible}
+    hid = {h.lower(): h for h in hidden}
+    matched = set()
     for m in aprx.listMaps():
         for lyr in m.listLayers():
             n = lyr.name.lower()
             if n in vis:
                 lyr.visible = True
+                matched.add(n)
             elif n in hid:
                 lyr.visible = False
+                matched.add(n)
+    missing = (set(vis) | set(hid)) - matched
+    for n in sorted(missing):
+        original = vis.get(n, hid.get(n, n))
+        qa.add(QARecord(severity=SEV_WARNING, category="visibility_layer_missing",
+                        message=f"Layer {original!r} requested for visibility "
+                                "toggle not found in APRX; figure may render "
+                                "with an unexpected layer visible or hidden."))
     aprx.save()
     del aprx
 

@@ -8,6 +8,7 @@ from typing import Optional
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 
+from ..common.config import ND_QUALIFIERS
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
 from .sample_id import QC_SUFFIXES as _SUFFIX_MAP
 
@@ -19,7 +20,6 @@ QC_TYPES = (
 )
 
 _QC_TYPE_SET = frozenset(QC_TYPES)
-ND_QUALIFIERS = frozenset({"ND", "U", "BDL"})
 
 _FILL_FAIL = PatternFill(fill_type="solid", fgColor="FF9999")
 _FILL_WARN = PatternFill(fill_type="solid", fgColor="FFFF99")

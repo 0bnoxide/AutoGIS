@@ -219,6 +219,16 @@ class ParserProfile:
 # ---------------------------------------------------------------------------
 # Analyte dictionary / screening levels
 # ---------------------------------------------------------------------------
+
+# Canonical nondetect-qualifier vocabulary, shared by every report-family
+# module so a result that imports as nondetect (result_parser.py's
+# QUALIFIER_FLAGS: "U"/"UJ") also reports as nondetect. "BDL" is kept for
+# back-compat with lab data using that alias, even though result_parser.py
+# doesn't parse it. See issue #340 -- this used to be copy-pasted into seven
+# modules, none of which included "UJ".
+ND_QUALIFIERS = frozenset({"ND", "U", "UJ", "BDL"})
+
+
 def load_analyte_dictionary(path: Path) -> dict:
     data = load_config(path)
     analytes = data.get("analytes", data)
@@ -243,6 +253,63 @@ def load_screening_levels(path: Path) -> dict:
 def screening_for(screening_levels: dict, matrix: str,
                   canonical: str) -> Optional[dict]:
     return (screening_levels.get(matrix, {}) or {}).get(canonical)
+
+
+def load_flat_screening_levels(path: Path) -> Dict[str, float]:
+    """Load a ``--screening-levels``/``--sl-path`` YAML for the matrix-agnostic
+    report commands, which expect a flat ``{AnalyteName: value}`` mapping.
+
+    Accepts two shapes:
+
+    - Already flat: ``{AnalyteName: value}`` (legacy per-report files).
+    - Matrix-nested (the shipped ``screening_levels.yaml`` shape,
+      ``{matrix: {AnalyteName: {value, units, source}}}``): flattened across
+      matrices, since these commands have no per-row Matrix to disambiguate.
+      Raises ``ConfigError`` if the same analyte carries two different
+      non-null values in different matrices -- there is no safe way to pick
+      one, so this fails loudly instead of silently choosing the wrong one
+      (issue #341).
+    """
+    raw = load_screening_levels(path)
+    if not raw:
+        return {}
+
+    def _is_nested(d: dict) -> bool:
+        return any(isinstance(v, dict) for v in d.values())
+
+    if not _is_nested(raw):
+        out = {}
+        for k, v in raw.items():
+            if v is None:
+                continue
+            try:
+                out[str(k)] = float(v)
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(
+                    f"{path}: screening level for {k!r} is not a number "
+                    f"({v!r}).") from exc
+        return out
+
+    flat: Dict[str, float] = {}
+    sources: Dict[str, str] = {}
+    for matrix, analytes in raw.items():
+        if not isinstance(analytes, dict):
+            continue
+        for analyte, entry in analytes.items():
+            value = entry.get("value") if isinstance(entry, dict) else entry
+            if value is None:
+                continue
+            value = float(value)
+            if analyte in flat and flat[analyte] != value:
+                raise ConfigError(
+                    f"{path}: analyte {analyte!r} has conflicting screening "
+                    f"levels across matrices ({sources[analyte]}={flat[analyte]!r} "
+                    f"vs {matrix}={value!r}); this command has no per-row "
+                    f"Matrix to disambiguate -- provide a flat, single-matrix "
+                    f"{{AnalyteName: value}} screening-levels file instead.")
+            flat[analyte] = value
+            sources[analyte] = matrix
+    return flat
 
 
 # ---------------------------------------------------------------------------

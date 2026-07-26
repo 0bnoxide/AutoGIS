@@ -18,9 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from ..common.config import ND_QUALIFIERS
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
-
-ND_QUALIFIERS = frozenset({"ND", "U", "BDL"})
 
 # Lower-bound-inclusive tiers: lo <= ratio < hi. Exceedance starts at ratio 1.0,
 # consistent with has_exceedance (ratio >= 1.0).

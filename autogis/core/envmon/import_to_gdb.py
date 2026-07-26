@@ -187,6 +187,16 @@ def _delete_for_replace(gdb: Path, mode: str, site_id: str,
                               ("Env_Samples", "SampleDate"),
                               ("Env_AnalyticalResults", "SampleDate"),
                               ("Env_RPDResults", "EventDate")):
+            if matrix and t in ("Env_WaterLevels", "Env_RPDResults"):
+                # Neither table carries a Matrix column (issue #369), so a
+                # matrix-scoped replace has no safe way to limit the delete
+                # to this run's matrix alone. Skip rather than over-delete
+                # rows for a matrix this run was never meant to touch (e.g.
+                # a --matrix SOIL replace wiping GW water levels).
+                qa.add(SEV_INFO, "replace_skipped_unscopable_table",
+                       f"{t} has no Matrix column; left untouched by this "
+                       f"--matrix {matrix} replace_site_event.", site_id=site_id)
+                continue
             where = (f"SiteID = '{site_id}' AND "
                      + where_date(date_field, event_date))
             if matrix and t in ("Env_Samples", "Env_AnalyticalResults"):
