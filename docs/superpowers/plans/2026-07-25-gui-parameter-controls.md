@@ -457,16 +457,23 @@ precedence explicit), and capture the numeric bounds:
         choices = tuple(str(c) for c in ptype.choices)
     elif isinstance(ptype, click.Path):
         ...unchanged...
-    elif ptype.name == "integer":
+    elif ptype.name in ("integer", "integer range"):
         kind = "int"
         minimum, maximum = getattr(ptype, "min", None), getattr(ptype, "max", None)
-    elif ptype.name == "float":
+    elif ptype.name in ("float", "float range"):
         kind = "float"
         minimum, maximum = getattr(ptype, "min", None), getattr(ptype, "max", None)
 ```
 
 and pass `strict=strict, minimum=minimum, maximum=maximum` into the returned `FormField`.
 
+> **The range names are load-bearing.** Verified against Click 8.4.1: `click.IntRange().name` is
+> `"integer range"`, not `"integer"` (`FloatRange` → `"float range"`). The pre-existing
+> `elif ptype.name == "integer"` test therefore does **not** match a range type — every one of
+> Task 7's 46 bounded options would silently fall through to `kind="text"` and render as a plain
+> line edit instead of a spin box. This is harmless on today's `main` only because 0 of 54 numeric
+> options currently use a range type.
+>
 > `click.IntRange`/`FloatRange` carry `.min`/`.max`; a bare `int`/`float` type does not, hence
 > `getattr(..., None)`.
 
