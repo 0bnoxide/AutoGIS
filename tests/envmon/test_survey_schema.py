@@ -474,3 +474,96 @@ def test_diff_form_vs_layer_type_mismatch_destructive(tmp_path):
     assert any(c.kind == "type_mismatch" and
                c.classification == CLASS_DESTRUCTIVE and
                c.name == "SamplingDate" for c in changes)
+
+
+# ---------------------------------------------------------------- CLI
+
+def _write_yaml(tmp_path, name, data):
+    import yaml
+    p = tmp_path / name
+    p.write_text(yaml.safe_dump(data), encoding="utf-8")
+    return p
+
+
+def test_both_commands_in_help():
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    out = CliRunner().invoke(autogis, ["envmon", "--help"]).output
+    assert "validate-survey-form" in out
+    assert "diff-survey-schema" in out
+
+
+def test_validate_cli_pass_and_fail(tmp_path):
+    from click.testing import CliRunner
+    from autogis.core.envmon.survey123_form_builder import build_xlsform
+    from autogis.adapters.cli import autogis
+    good = tmp_path / "good.xlsx"
+    build_xlsform(SITE, EVENT, ADICT).save(good)
+    r = CliRunner().invoke(autogis, ["envmon", "validate-survey-form",
+                                     str(good)])
+    assert r.exit_code == 0 and "Status: PASS" in r.output
+
+    bad = make_form(tmp_path, [("text", "A", "")], name="bad.xlsx")
+    r = CliRunner().invoke(autogis, ["envmon", "validate-survey-form",
+                                     str(bad)])
+    assert r.exit_code == 1 and "Status: FAIL" in r.output
+
+
+def test_diff_cli_requires_a_baseline(tmp_path):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    f = make_form(tmp_path, [("text", "A", "")])
+    r = CliRunner().invoke(autogis, ["envmon", "diff-survey-schema", str(f)])
+    assert r.exit_code != 0
+    assert "baseline" in r.output.lower() or "layer" in r.output.lower()
+
+
+def test_diff_cli_semantic_exit_codes(tmp_path):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    runner = CliRunner()
+    old = make_form(tmp_path, [("text", "A", "L")], name="o.xlsx")
+    same = make_form(tmp_path, [("text", "A", "L")], name="s.xlsx")
+    cosmetic = make_form(tmp_path, [("text", "A", "L2")], name="c.xlsx")
+    newreq = make_form(tmp_path, [("text", "A", "L"),
+                                  ("text", "B", "", "", "yes")],
+                       name="r.xlsx")
+    removed = make_form(tmp_path, [("text", "Z", "L")], name="d.xlsx")
+
+    assert runner.invoke(autogis, ["envmon", "diff-survey-schema", str(same),
+                                   "--baseline-form",
+                                   str(old)]).exit_code == 0
+    assert runner.invoke(autogis, ["envmon", "diff-survey-schema",
+                                   str(cosmetic), "--baseline-form",
+                                   str(old)]).exit_code == 0     # safe only
+    assert runner.invoke(autogis, ["envmon", "diff-survey-schema",
+                                   str(newreq), "--baseline-form",
+                                   str(old)]).exit_code == 2
+    assert runner.invoke(autogis, ["envmon", "diff-survey-schema",
+                                   str(removed), "--baseline-form",
+                                   str(old)]).exit_code == 3
+
+
+def test_diff_cli_layer_spec_and_json_report(tmp_path):
+    import json
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    f = make_form(tmp_path, [("text", "OnlyInForm", "")])
+    spec = _write_yaml(tmp_path, "spec.yaml", {
+        "layer_name": "L",
+        "fields": [{"name": "OnlyInForm", "type": "esriFieldTypeString"}],
+    })
+    rpt = tmp_path / "out.json"
+    r = CliRunner().invoke(autogis, ["envmon", "diff-survey-schema", str(f),
+                                     "--layer-spec", str(spec),
+                                     "--report", str(rpt)])
+    assert r.exit_code == 0
+    assert json.loads(rpt.read_text(encoding="utf-8")) == []
+
+
+def test_new_commands_registered_in_capabilities():
+    from autogis.runtime.capabilities import TOOLS, Runtime, TOOL_REGISTRY
+    assert TOOLS["validate-survey-form"] is Runtime.CLOUD
+    assert TOOLS["diff-survey-schema"] is Runtime.CLOUD
+    names = {c.command for c in TOOL_REGISTRY}
+    assert {"validate-survey-form", "diff-survey-schema"} <= names

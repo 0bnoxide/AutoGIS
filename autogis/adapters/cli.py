@@ -2241,6 +2241,100 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     click.echo(f"XLSForm written to {out_path}")
 
 
+@envmon.command("validate-survey-form")
+@click.argument("form_xlsx", type=click.Path(exists=True))
+@click.option("--site-config", "site_path", default=None,
+              type=click.Path(exists=True), help="Site config YAML.")
+@click.option("--event-config", "event_path", default=None,
+              type=click.Path(exists=True), help="Event config YAML.")
+@click.option("--analyte-dict", "analytes_path", default=None,
+              type=click.Path(exists=True), help="Analyte dictionary YAML.")
+@qa_report_options
+def validate_survey_form_cmd(form_xlsx, site_path, event_path, analytes_path,
+                             report, fail_on):
+    """S123-1.1: static XLSForm validation — structure, choices, references,
+    the ADR-0113 SampleID contract, and config cross-checks."""
+    import yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.survey_schema import read_xlsform, validate_form
+    try:
+        schema = read_xlsform(form_xlsx)
+    except Exception as exc:
+        raise click.ClickException(f"cannot read XLSForm: {exc}")
+
+    def _load(p):
+        return yaml.safe_load(open(p, encoding="utf-8")) if p else None
+
+    qa = QACollector()
+    validate_form(schema, qa,
+                  event_config=_load(event_path),
+                  site_config=_load(site_path),
+                  analyte_dict=_load(analytes_path))
+    _render_qa(qa, report, fail_on)
+
+
+_DIFF_REVIEW_EXIT = 2
+_DIFF_DESTRUCTIVE_EXIT = 3
+
+
+@envmon.command("diff-survey-schema")
+@click.argument("form_xlsx", type=click.Path(exists=True))
+@click.option("--baseline-form", "baseline_path", default=None,
+              type=click.Path(exists=True),
+              help="Previous XLSForm .xlsx to diff against.")
+@click.option("--layer-spec", "spec_path", default=None,
+              type=click.Path(exists=True),
+              help="Saved feature-layer spec YAML/JSON (audit-schema format).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write the change list to PATH (.json or .md).")
+def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
+    """S123-1.2: classify XLSForm changes as safe / review-required /
+    destructive. Exit 0 none-or-safe, 2 review-required, 3 destructive."""
+    import dataclasses
+    import json
+    import yaml
+    from autogis.core.envmon.survey_schema import (
+        CLASS_DESTRUCTIVE, CLASS_REVIEW, diff_forms, diff_form_vs_layer,
+        read_xlsform, worst_classification,
+    )
+    if not baseline_path and not spec_path:
+        raise click.UsageError(
+            "provide --baseline-form and/or --layer-spec to diff against")
+    try:
+        new = read_xlsform(form_xlsx)
+        changes = []
+        if baseline_path:
+            changes += diff_forms(read_xlsform(baseline_path), new)
+        if spec_path:
+            spec = yaml.safe_load(open(spec_path, encoding="utf-8"))
+            changes += diff_form_vs_layer(new, spec)
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(f"cannot diff: {exc}")
+
+    for c in changes:
+        click.echo(f"[{c.classification.upper():>15}] {c.kind}: {c.name} — "
+                   f"{c.detail}")
+    worst = worst_classification(changes)
+    click.echo(f"Changes: {len(changes)}  Worst: {worst or 'none'}")
+    if report:
+        p = Path(report)
+        rows = [dataclasses.asdict(c) for c in changes]
+        if p.suffix == ".json":
+            p.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        else:
+            lines = ["| class | kind | name | detail |", "|---|---|---|---|"]
+            lines += [f"| {c.classification} | {c.kind} | {c.name} | "
+                      f"{c.detail} |" for c in changes]
+            p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        click.echo(f"Wrote report: {p}")
+    if worst == CLASS_DESTRUCTIVE:
+        raise SystemExit(_DIFF_DESTRUCTIVE_EXIT)
+    if worst == CLASS_REVIEW:
+        raise SystemExit(_DIFF_REVIEW_EXIT)
+
+
 @envmon.command("create-sampling-event")
 @click.option("--site", "site_path", required=True, type=click.Path(exists=True),
               help="Path to site config YAML or JSON.")
