@@ -495,3 +495,72 @@ def diff_forms(old: FormSchema, new: FormSchema) -> list:
                 f"{key} {old.settings.get(key, '')!r} -> "
                 f"{new.settings.get(key, '')!r}")
     return changes
+
+
+# ------------------------------------------------------------ form vs layer
+
+_FIELD_TYPE_TO_ESRI = {
+    "text": "esriFieldTypeString", "calculate": "esriFieldTypeString",
+    "barcode": "esriFieldTypeString", "time": "esriFieldTypeString",
+    "select_one": "esriFieldTypeString",
+    "select_multiple": "esriFieldTypeString",
+    "integer": "esriFieldTypeInteger", "decimal": "esriFieldTypeDouble",
+    "date": "esriFieldTypeDate", "datetime": "esriFieldTypeDate",
+}
+
+_DRIFT_CLASS = {
+    "TYPE_MISMATCH": CLASS_DESTRUCTIVE,
+    "EXTRA_FIELD": CLASS_REVIEW,        # form question with no layer field
+    "DOMAIN_DRIFT": CLASS_REVIEW,
+    "NULLABLE_MISMATCH": CLASS_REVIEW,
+    "MISSING_FIELD": CLASS_SAFE,        # layer field the form doesn't collect
+}
+
+
+def form_layer_fields(schema: FormSchema) -> list:
+    """Map form questions to AGOL-REST-shaped field dicts (the 'fetched'
+    side of audit_schema.diff_schema). select_multiple gets no domain —
+    Survey123 stores it comma-joined."""
+    fields = []
+    for q in schema.questions:
+        esri = _FIELD_TYPE_TO_ESRI.get(q.base)
+        if not esri or not q.name:
+            continue
+        f = {"name": q.name, "type": esri}
+        if q.base == "select_one" and q.list_name:
+            pairs = schema.choices.get(q.list_name, [])
+            if pairs:
+                f["domain"] = {
+                    "name": q.list_name,
+                    "codedValues": [{"code": c, "name": l}
+                                    for c, l in pairs],
+                }
+        fields.append(f)
+    return fields
+
+
+def diff_form_vs_layer(schema: FormSchema, layer_spec: dict) -> list:
+    """Compatibility of a form against a saved feature-layer definition
+    (audit_schema local-spec format). Reuses audit_schema.diff_schema; the
+    form plays the fetched side."""
+    from ..agol.audit_schema import diff_schema
+
+    form_fields = form_layer_fields(schema)
+    spec_by_name = {f.get("name"): f for f in layer_spec.get("fields", [])}
+    for f in form_fields:
+        sf = spec_by_name.get(f["name"])
+        if sf and "domain" in f and isinstance(sf.get("domain"), dict):
+            # the form has no portal domain name — adopt the spec's so only
+            # coded-value drift surfaces, not a guaranteed name mismatch
+            f["domain"]["name"] = sf["domain"].get("name",
+                                                   f["domain"]["name"])
+    report = diff_schema({"fields": form_fields}, layer_spec)
+    return [
+        SchemaChange(
+            kind=item.drift_type.lower(),
+            classification=_DRIFT_CLASS.get(item.drift_type, CLASS_REVIEW),
+            name=item.field_name,
+            detail=item.message,
+        )
+        for item in report.drift_items
+    ]

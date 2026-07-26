@@ -412,3 +412,65 @@ def test_diff_settings_and_worst(tmp_path):
     assert ("settings_changed", CLASS_SAFE) in kinds
     assert worst_classification(ch) == CLASS_DESTRUCTIVE
     assert worst_classification([]) is None
+
+
+# --------------------------------------------------------- form vs layer
+
+from autogis.core.envmon.survey_schema import (
+    diff_form_vs_layer, form_layer_fields,
+)
+
+LAYER_SPEC = {
+    "layer_name": "MonitoringWells",
+    "fields": [
+        {"name": "WellID", "type": "esriFieldTypeString"},
+        {"name": "SamplingDate", "type": "esriFieldTypeDate"},
+        {"name": "Matrix", "type": "esriFieldTypeString",
+         "domain": {"name": "MatrixDom",
+                    "coded_values": [{"code": "GW", "name": "Groundwater"}]}},
+        {"name": "Sampled", "type": "esriFieldTypeSmallInteger"},
+    ],
+}
+
+FORM_ROWS = [
+    ("select_one well_list", "WellID", "Well"),
+    ("date", "SamplingDate", "Date"),
+    ("select_one matrix_list", "Matrix", "Matrix"),
+    ("decimal", "DepthToWater_ft", "DTW"),
+    ("note", "n1", "note rows map to no field"),
+]
+FORM_CHOICES = [("well_list", "MW-1", "MW-1"),
+                ("matrix_list", "GW", "Groundwater")]
+
+
+def test_form_layer_fields_mapping(tmp_path):
+    s = read_xlsform(make_form(tmp_path, FORM_ROWS, FORM_CHOICES))
+    fields = {f["name"]: f for f in form_layer_fields(s)}
+    assert fields["WellID"]["type"] == "esriFieldTypeString"
+    assert fields["SamplingDate"]["type"] == "esriFieldTypeDate"
+    assert fields["DepthToWater_ft"]["type"] == "esriFieldTypeDouble"
+    assert "n1" not in fields                       # note -> no field
+    assert fields["Matrix"]["domain"]["codedValues"] == [
+        {"code": "GW", "name": "Groundwater"}]
+
+
+def test_diff_form_vs_layer_classifications(tmp_path):
+    s = read_xlsform(make_form(tmp_path, FORM_ROWS, FORM_CHOICES))
+    changes = diff_form_vs_layer(s, LAYER_SPEC)
+    by_kind = {(c.kind, c.classification) for c in changes}
+    # form-only field -> review-required
+    assert ("extra_field", CLASS_REVIEW) in by_kind          # DepthToWater_ft
+    # layer-only field -> safe
+    assert ("missing_field", CLASS_SAFE) in by_kind          # Sampled
+    # matching domains normalized -> no DOMAIN_DRIFT for Matrix
+    assert not any(c.kind == "domain_drift" and c.name == "Matrix"
+                   for c in changes)
+
+
+def test_diff_form_vs_layer_type_mismatch_destructive(tmp_path):
+    rows = [("text", "SamplingDate", "now text")]
+    s = read_xlsform(make_form(tmp_path, rows))
+    changes = diff_form_vs_layer(s, LAYER_SPEC)
+    assert any(c.kind == "type_mismatch" and
+               c.classification == CLASS_DESTRUCTIVE and
+               c.name == "SamplingDate" for c in changes)
