@@ -110,3 +110,58 @@ def test_all_sixteen_date_options_are_isodate():
     dated = [(f.label, x.name) for f in introspect_cli() for x in f.fields
              if x.kind == "date"]
     assert len(dated) == 16, dated
+
+
+def test_negative_limit_is_a_usage_error(tmp_path):
+    """Closes #353: --limit had no floor, so a negative value silently reached
+    the slicer instead of failing fast with a usage error."""
+    hist = tmp_path / "h.csv"
+    hist.write_text("timestamp,site_id,tool_name,status,message\n", encoding="utf-8")
+    res = CliRunner().invoke(autogis, ["envmon", "run-history",
+                                       "--run-history", str(hist), "--limit=-5"])
+    assert res.exit_code == 2, res.output
+
+
+def test_directory_params_reject_an_existing_file(tmp_path):
+    """#353: a bare click.Path() accepted a FILE for a directory param."""
+    results_csv = tmp_path / "results.csv"
+    results_csv.write_text("x", encoding="utf-8")
+    locations_csv = tmp_path / "locations.csv"
+    locations_csv.write_text("x", encoding="utf-8")
+    afile = tmp_path / "not-a-dir.txt"
+    afile.write_text("x", encoding="utf-8")
+    res = CliRunner().invoke(autogis, ["envmon", "export-wqx",
+                                       "--results", str(results_csv),
+                                       "--locations", str(locations_csv),
+                                       "--out-dir", str(afile)])
+    assert res.exit_code == 2, res.output
+    assert "directory" in res.output.lower() or "file" in res.output.lower()
+
+
+# Derived from the live Click tree (Task 7 Step 3) -- every bare click.Path()
+# whose python dest name ends in "_dir" (the gdb family is excluded: it's
+# forced to a folder picker by name in gui/introspect.py regardless of
+# file_okay, so it isn't part of issue #353's 12).
+FOLDER_PARAMS = [
+    ("envmon well-inspection-report", "output_dir"),
+    ("envmon well-inspection-report", "harvest_dir"),
+    ("envmon export-snapshot", "out_dir"),
+    ("envmon create-sampling-event", "out_dir"),
+    ("envmon export-wqx", "out_dir"),
+    ("envmon export-survey-cad", "output_dir"),
+    ("envmon condition-dem", "out_dir"),
+    ("envmon gen-map-series", "out_dir"),
+    ("envmon merge-event-results", "results_dir"),
+    ("envmon build-report-package", "out_dir"),
+    ("envmon batch-import-workbooks", "output_dir"),
+    ("envmon export-civil3d", "out_dir"),
+]
+
+
+def test_the_twelve_folder_params_are_declared_dir_only():
+    from autogis.adapters.gui.introspect import introspect_cli
+    assert len(FOLDER_PARAMS) == 12, "derive the real list; do not guess"
+    forms = {f.label: f for f in introspect_cli()}
+    for label, dest in FOLDER_PARAMS:
+        field = next(x for x in forms[label].fields if x.name == dest)
+        assert field.is_dir is True, f"{label} --{dest} still accepts a file"
