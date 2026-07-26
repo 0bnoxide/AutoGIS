@@ -193,3 +193,76 @@ def test_validation_complete_summary_present(tmp_path):
     qa = _validate(tmp_path, [("text", "A", "")])
     assert any(r.category == "validation_complete" and r.severity == "INFO"
                for r in qa.records)
+
+
+# ------------------------------------------------------------- cross-refs
+
+SITE = {"site_id": "H281", "site_name": "H281 Glasgow"}
+EVENT = {
+    "analyte_groups": {"VOCs": ["Benzene", "Toluene"], "Metals": ["Arsenic"]},
+    "crew_list": ["Alice Smith", "Bob Jones"],
+    "coc_prefix": "H281-COC", "matrices": ["GW"],
+    "location_ids": ["MW-1", "MW-2", "MW-3"],
+}
+ADICT = {"analytes": {
+    "Benzene": {"abbreviation": "B",
+                "default_units_by_matrix": {"GW": "ug/L"}},
+    "Toluene": {"abbreviation": "T",
+                "default_units_by_matrix": {"GW": "ug/L"}},
+    "Arsenic": {"abbreviation": "As",
+                "default_units_by_matrix": {"GW": "ug/L"}},
+}}
+
+
+def test_generated_form_validates_clean_against_its_configs(tmp_path):
+    """Round-trip lockstep: builder output + same configs -> zero findings."""
+    from autogis.core.envmon.survey123_form_builder import build_xlsform
+    wb = build_xlsform(SITE, EVENT, ADICT)
+    p = tmp_path / "gen.xlsx"
+    wb.save(p)
+    qa = QACollector()
+    validate_form(read_xlsform(p), qa, event_config=EVENT,
+                  site_config=SITE, analyte_dict=ADICT)
+    bad = [r for r in qa.records if r.severity in ("ERROR", "WARNING")]
+    assert bad == [], [f"{r.category}: {r.message}" for r in bad]
+
+
+def test_missing_location_and_extra_crew_flagged(tmp_path):
+    from autogis.core.envmon.survey123_form_builder import build_xlsform
+    smaller = {**EVENT, "location_ids": ["MW-1"],
+               "crew_list": ["Alice Smith", "Bob Jones", "Cara Doe"]}
+    wb = build_xlsform(SITE, smaller, ADICT)
+    p = tmp_path / "gen2.xlsx"
+    wb.save(p)
+    qa = QACollector()
+    validate_form(read_xlsform(p), qa, event_config=EVENT,
+                  analyte_dict=ADICT)   # validate against the BIGGER event
+    cats = _cats(qa)
+    assert "missing_location_choice" in cats     # MW-2/MW-3 not in form
+    assert "extra_crew_choice" in cats           # cara_doe extra
+
+
+def test_missing_analyte_question_flagged(tmp_path):
+    from autogis.core.envmon.survey123_form_builder import build_xlsform
+    fewer = {**EVENT, "analyte_groups": {"VOCs": ["Benzene"]}}
+    wb = build_xlsform(SITE, fewer, ADICT)
+    p = tmp_path / "gen3.xlsx"
+    wb.save(p)
+    qa = QACollector()
+    validate_form(read_xlsform(p), qa, event_config=EVENT,
+                  analyte_dict=ADICT)
+    assert "missing_analyte_question" in _cats(qa)   # Toluene, Arsenic
+
+
+def test_unknown_analyte_warns_with_dict(tmp_path):
+    from autogis.core.envmon.survey123_form_builder import build_xlsform
+    wb = build_xlsform(SITE, EVENT, ADICT)
+    p = tmp_path / "gen4.xlsx"
+    wb.save(p)
+    event = {**EVENT,
+             "analyte_groups": {**EVENT["analyte_groups"],
+                                "VOCs": ["Benzene", "Toluene", "Xylene"]}}
+    qa = QACollector()
+    validate_form(read_xlsform(p), qa, event_config=event,
+                  analyte_dict=ADICT)
+    assert "unknown_analyte" in _cats(qa)

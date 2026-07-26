@@ -271,7 +271,79 @@ def validate_form(schema: FormSchema, qa: QACollector, *,
                     f"{len(schema.choices)} choice lists"))
 
 
+def _list_for(schema: FormSchema, qname: str) -> Optional[str]:
+    q = next((q for q in schema.questions
+              if q.name == qname and q.base.startswith("select_")), None)
+    return q.list_name if q else None
+
+
+def _set_check(schema, qa, qname, expected, miss_cat, extra_cat, what, ctx):
+    ln = _list_for(schema, qname)
+    if ln is None:
+        return
+    have = {c for c, _ in schema.choices.get(ln, [])}
+    missing = sorted(set(expected) - have)
+    extra = sorted(have - set(expected))
+    if missing:
+        _err(qa, miss_cat, f"{ctx}{what} missing from form list {ln!r}: "
+                           f"{', '.join(missing)}")
+    if extra:
+        _warn(qa, extra_cat, f"{ctx}extra {what} in form list {ln!r}: "
+                             f"{', '.join(extra)}")
+
+
 def _cross_reference_checks(schema, qa, event_config, analyte_dict, ctx):
     """Spec checks 11-13 — each only when its config is supplied."""
     if not event_config:
         return
+    from .survey123_form_builder import _field_name, _slug
+
+    _set_check(schema, qa, "WellID", event_config.get("location_ids", []),
+               "missing_location_choice", "extra_location_choice",
+               "planned locations", ctx)
+    _set_check(schema, qa, "Matrix", event_config.get("matrices", []),
+               "missing_matrix_choice", "extra_matrix_choice",
+               "matrices", ctx)
+    _set_check(schema, qa, "SampledBy",
+               [_slug(m) for m in event_config.get("crew_list", [])],
+               "missing_crew_choice", "extra_crew_choice", "crew", ctx)
+
+    groups = event_config.get("analyte_groups", {})
+    if analyte_dict is not None:
+        known = set((analyte_dict.get("analytes") or {}))
+        unknown = sorted({a for names in groups.values()
+                          if isinstance(names, list) for a in names} - known)
+        if unknown:
+            _warn(qa, "unknown_analyte",
+                  f"{ctx}analyte_groups name(s) not in the analyte "
+                  f"dictionary: {', '.join(unknown)}")
+
+    used: set = set()
+    expected = {}
+    for names in groups.values():
+        if not isinstance(names, list):
+            continue
+        for analyte in names:
+            expected[_field_name(analyte, used)] = analyte
+    have = {q.name for q in schema.questions
+            if q.base == "decimal" and q.name}
+    missing = sorted(expected[n] for n in expected if n not in have)
+    if missing:
+        _err(qa, "missing_analyte_question",
+             f"{ctx}no decimal question for analyte(s): "
+             f"{', '.join(missing)}")
+
+    # decimals inside grp_* groups that no analyte accounts for
+    gstack, unexpected = [], []
+    for q in schema.questions:
+        if q.base == "begin_group":
+            gstack.append(q.name)
+        elif q.base == "end_group":
+            gstack and gstack.pop()
+        elif (q.base == "decimal" and q.name and q.name not in expected
+              and any(g.startswith("grp_") for g in gstack)):
+            unexpected.append(q.name)
+    if unexpected:
+        _warn(qa, "unexpected_analyte_question",
+              f"{ctx}decimal question(s) in analyte groups with no "
+              f"analyte behind them: {', '.join(sorted(unexpected))}")
