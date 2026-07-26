@@ -10,7 +10,11 @@ import click
 import yaml
 
 from autogis.adapters.guard import require_runtime, RuntimeUnavailable
+from autogis.adapters.param_types import CommaList, IsoDate, SuggestedChoice
 from autogis.core.common.config import HarvestConfig, load_config
+from autogis.core.envmon.import_rtk_survey import _EXTRA_COLUMN_VOCAB
+from autogis.core.envmon.soil_interval_selector import IntervalTier
+from autogis.core.envmon.synthetic_workbook import MESSINESS
 from autogis.runtime.sessions import agol_from_profile
 
 
@@ -946,7 +950,7 @@ def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
 @click.option("--site-id", default="TEST01", help="Synthetic site_id.")
 @click.option("--wells", default=10, type=int, help="Number of wells.")
 @click.option("--events", default=4, type=int, help="Number of events.")
-@click.option("--features", default="",
+@click.option("--features", default="", type=CommaList(MESSINESS),
               help="Comma-separated messiness features (e.g. 'nondetects,rpd_sheet').")
 @click.option("--seed", default=0, type=int, help="Deterministic seed.")
 @click.option("--out", "out_path", required=True, type=click.Path(),
@@ -3275,7 +3279,7 @@ def sync_to_gdb_cmd(profile, layer_url, item_id, layer_index, where, since,
 @click.option("--format", "coord_format", type=click.Choice(["auto", "pnezd", "penzd"]),
               default="auto", show_default=True,
               help="Coordinate column order for headerless input.")
-@click.option("--extra-columns", default=None,
+@click.option("--extra-columns", default=None, type=CommaList(_EXTRA_COLUMN_VOCAB),
               help="Comma-separated field names for columns 6+ of a headerless file, "
                    "overriding the built-in 11-column layout. Vocabulary: hrms_ft, "
                    "vrms_ft, pdop, satellites, fix_type, collected_at, operator, "
@@ -3353,7 +3357,7 @@ def export_survey_cad_cmd(csv_path, map_path, output_dir, geojson, landxml, repo
 @click.option("--format", "coord_format", type=click.Choice(["auto", "pnezd", "penzd"]),
               default="auto", show_default=True,
               help="Coordinate column order for headerless input.")
-@click.option("--extra-columns", default=None,
+@click.option("--extra-columns", default=None, type=CommaList(_EXTRA_COLUMN_VOCAB),
               help="Comma-separated field names for columns 6+ of a headerless file, "
                    "overriding the built-in 11-column layout. Vocabulary: hrms_ft, "
                    "vrms_ft, pdop, satellites, fix_type, collected_at, operator, "
@@ -5015,6 +5019,10 @@ def ingest_reviewer_comments_cmd(input_file, out_path, tracker_path, report, fai
 @click.option("--analytes", default=None,
               help="Comma-separated analyte names to include (default: all).")
 @click.option("--tiers", default=None,
+              type=CommaList(
+                  (IntervalTier.HOTSPOT, IntervalTier.DETECT, IntervalTier.ND,
+                   IntervalTier.NO_DATA),
+                  case_sensitive=False),
               help="Comma-separated tiers to include: HOTSPOT,DETECT,ND,NO_DATA "
                    "(default: all).")
 @click.option("--max-depth-ft", "max_depth_ft", type=float, default=None,
