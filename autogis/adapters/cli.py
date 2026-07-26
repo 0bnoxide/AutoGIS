@@ -2217,7 +2217,12 @@ def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
     """Freeze a GDB snapshot for a reporting event (ArcGIS Pro)."""
     _guard("export-snapshot")
     from autogis.core.envmon.export_snapshot import export_event_snapshot, format_manifest
-    manifest = export_event_snapshot(gdb, site_id, event_id, out_dir, compress)
+    try:
+        manifest = export_event_snapshot(gdb, site_id, event_id, out_dir, compress)
+    except (ValueError, FileExistsError) as exc:
+        # The point of validating the snapshot name up front is an actionable
+        # message; a raw traceback in the Pro tool dialog is not one.
+        raise click.ClickException(str(exc))
     click.echo(format_manifest(manifest))
 
 @envmon.command("build-survey-form")

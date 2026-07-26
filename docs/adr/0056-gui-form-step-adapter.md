@@ -13,7 +13,15 @@ ordered `Workflow` of `Step`s through the executor). Nothing bridges the
 first to the second: a GUI renders a `CommandForm`'s fields and collects raw
 values from widgets (strings from text fields, bools from checkboxes, lists
 from repeatable-field widgets), but no code turns that raw dict into a valid
-`Step`. No ADR assigned this mapping to any other task — it is real,
+`Step`.
+
+> **Amended 2026-07-26 (#352, PR #365):** a checkbox now yields `bool` **or
+> `None`**. A Click flag declared `--x/--no-x` with `default=None` has three
+> states — on, off, and "leave the config file's value alone" — so the GUI
+> renders it as a tri-state checkbox and maps partially-checked to `None`.
+> The adapter needed no change: `forms._is_empty` already omits `None`, as
+> does `build_argv`. Only the widget had collapsed the third state, via
+> `bool(None)`. Ordinary `default=False` flags stay two-state. No ADR assigned this mapping to any other task — it is real,
 missing, on-the-critical-path glue for the workflow builder (ADR-0050
 decision 4), and it is fully testable without a GUI toolkit, same as the
 three layers it sits between.
