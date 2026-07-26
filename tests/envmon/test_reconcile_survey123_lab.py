@@ -105,6 +105,59 @@ def test_primary_never_consumes_lab_duplicate():
     assert r.matched == []
 
 
+# The repo's own parser profiles ship these (H281_Glasgow_DataTables.yaml,
+# site_skeleton/parser_profile.yaml). They are duplicates but not lifecycle
+# identities, so parse_sample_id alone could not see them: issue #360.
+_PROFILE_MARKERS = ["DUP", "-D", "FD"]
+
+
+@pytest.mark.parametrize("lab_id", [
+    "MW-1-20260715-GW-DUP",   # similarity 0.8889 vs the primary
+    "MW-1-20260715-GW-D",     # similarity 0.9412 vs the primary
+])
+def test_primary_never_consumes_configured_lab_duplicate_marker(lab_id):
+    fs = [Survey123Sample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")]
+    lab = [LabSample(lab_id, "MW-1", "2026-07-15", "GW")]
+    r = reconcile_field_lab(fs, lab, duplicate_markers=_PROFILE_MARKERS)
+    assert r.matched == []
+    assert [s.sample_id for s in r.lab_only] == [lab_id]
+
+
+def test_guard_is_symmetric_for_marked_field_ids():
+    """A marker on the field side filters too — the guard reads both."""
+    fs = [Survey123Sample("MW-1-20260715-GW-DUP", "MW-1", "2026-07-15", "GW")]
+    lab = [LabSample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")]
+    r = reconcile_field_lab(fs, lab, duplicate_markers=_PROFILE_MARKERS)
+    assert r.matched == []
+
+
+def test_duplicate_matches_duplicate_across_vocabularies():
+    """A field -FD and its lab -DUP are the same QC class, so they still pair
+    despite the guard — the guard separates classes, not spellings."""
+    fs = [Survey123Sample("MW-1-20260715-GW-FD", "MW-1", "2026-07-15", "GW")]
+    lab = [LabSample("MW-1-20260715-GW-DUP", "MW-1", "2026-07-15", "GW")]
+    r = reconcile_field_lab(fs, lab, duplicate_markers=_PROFILE_MARKERS)
+    assert len(r.matched) == 1
+    assert any("sample_id_mismatch" in f for f in r.flags)
+
+
+def test_split_lab_duplicate_halves_still_match_their_field_duplicate():
+    """-FD vs -FD-A are both field_duplicate. Comparing raw QC strings made
+    this a false negative; comparing QC class keeps it matchable."""
+    fs = [Survey123Sample("MW-1-20260715-GW-FD", "MW-1", "2026-07-15", "GW")]
+    lab = [LabSample("MW-1-20260715-GW-FD-A", "MW-1", "2026-07-15", "GW")]
+    r = reconcile_field_lab(fs, lab)
+    assert len(r.matched) == 1
+
+
+def test_distinct_blank_types_still_never_match():
+    """The class comparison must not collapse -MB into -FB (similarity 0.95)."""
+    fs = [Survey123Sample("MW-1-20260715-GW-MB", "MW-1", "2026-07-15", "GW")]
+    lab = [LabSample("MW-1-20260715-GW-FB", "MW-1", "2026-07-15", "GW")]
+    r = reconcile_field_lab(fs, lab)
+    assert r.matched == []
+
+
 def test_load_survey123_csv(tmp_path):
     p = tmp_path / "s123.csv"
     with p.open("w", newline="") as fh:

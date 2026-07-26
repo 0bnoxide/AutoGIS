@@ -6,13 +6,19 @@ normalize_*.py so the existing import_to_gdb write layer can consume them.
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_WARNING
-from .sample_id import build_sample_id
+from .sample_id import build_sample_id, strip_qc
+
+#: The qa_flags choice (ADR-0021) that marks a submission as a field
+#: duplicate. Survey123 exports select_multiple answers space-delimited;
+#: some feature-service exports comma-delimit instead.
+FIELD_DUP_FLAG = "field_dup"
 
 
 @dataclass
@@ -23,7 +29,7 @@ class Survey123Field:
     sampled_by_field: str = "SampledBy"
     coc_number_field: str = "COCNumber"
     dtw_field: str = "DepthToWater_ft"
-    is_field_dup_field: str = "IsFieldDup"
+    qa_flags_field: str = "QAFlags"
 
 
 def _parse_date(value: str, qa: QACollector, context: str) -> Optional[datetime]:
@@ -81,20 +87,29 @@ def normalize_survey123_submission(
             qa.add(QARecord(SEV_WARNING, "invalid_dtw",
                             f"{well_id}: cannot parse DTW value {dtw_raw!r}"))
 
-    # A pre-IsFieldDup form has no such question; a missing field means
-    # "not a duplicate", so older submissions normalize exactly as before.
-    dup_raw = str(payload.get(fm.is_field_dup_field, "") or "").strip().lower()
-    qc = "FD" if dup_raw == "yes" else None
-    sample_id = build_sample_id(well_id, dt, matrix, qc=qc)
+    # An unticked (or absent) QAFlags means "not a duplicate", so submissions
+    # from forms built before the -FD calculate normalize exactly as before.
+    flags = re.split(r"[,\s]+",
+                     str(payload.get(fm.qa_flags_field, "") or "").lower())
+    is_dup = FIELD_DUP_FLAG in flags
+    sample_id = build_sample_id(well_id, dt, matrix,
+                                qc="FD" if is_dup else None)
+    # Env_Samples has carried IsDuplicate/DuplicateType/ParentSampleID since
+    # the EDD importer; evaluate_duplicate_rpd pairs on IsDuplicate == 0 / 1,
+    # so leaving them NULL makes a record neither a parent nor a duplicate and
+    # silently skips RPD QA. Both sides must be populated, not just the -FD.
     samples: list[dict] = [{
         "ImportBatchID": batch_id,
         "SiteID": site_id,
         "LocationID": str(well_id),
         "SampleID": sample_id,
+        "ParentSampleID": strip_qc(sample_id) if is_dup else "",
         "SampleDate": dt,
         "Matrix": matrix,
         "SampledBy": sampled_by,
         "COCNumber": coc,
+        "IsDuplicate": int(is_dup),
+        "DuplicateType": "FIELD_DUP" if is_dup else "",
         "SampleSource": "Survey123",
     }]
     return water_levels, samples

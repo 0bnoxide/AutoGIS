@@ -69,7 +69,7 @@ def test_sample_id_has_calculate_type(wb):
             assert "${WellID}" in calc
             assert "${SamplingDate}" in calc
             assert "${Matrix}" in calc
-            assert "${IsFieldDup}" in calc
+            assert "${QAFlags}" in calc
             return
     pytest.fail("SampleID row not found")
 
@@ -84,16 +84,23 @@ def test_sample_id_calc_comes_from_shared_contract(wb):
     pytest.fail("SampleID row not found")
 
 
-def test_is_field_dup_question_and_choices(wb):
+def test_field_duplicate_reuses_the_single_qa_flags_question(wb):
+    """One affordance only. A second question (the withdrawn IsFieldDup) let a
+    crew tick the ADR-0021 flag, leave the other at its default, and produce a
+    SampleID identical to the primary — which append_records_idempotent then
+    drops at SEV_INFO duplicate_key_skipped."""
     ws = wb["survey"]
     rows = {ws.cell(r, 2).value: ws.cell(r, 1).value
             for r in range(2, ws.max_row + 1)}
-    assert rows.get("IsFieldDup") == "select_one yes_no"
+    assert rows.get("QAFlags") == "select_multiple qa_flags"
+    assert "IsFieldDup" not in rows
+
     choices = wb["choices"]
     pairs = {(choices.cell(r, 1).value, choices.cell(r, 2).value)
              for r in range(2, choices.max_row + 1)}
-    assert ("yes_no", "yes") in pairs
-    assert ("yes_no", "no") in pairs
+    assert ("qa_flags", "field_dup") in pairs
+    # the yes_no list existed only for the withdrawn question
+    assert not any(lst == "yes_no" for lst, _ in pairs)
 
 
 def test_analyte_groups_produce_begin_end_group(wb):

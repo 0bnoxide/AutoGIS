@@ -1,6 +1,10 @@
 import csv
+import dataclasses
 import re
 from pathlib import Path
+
+import pytest
+
 from autogis.core.envmon.normalize_survey123 import (
     Survey123Field, normalize_survey123_submission,
     load_survey123_csv_submissions,
@@ -104,19 +108,90 @@ def test_happy_path_sample_id_pinned():
     assert samp[0]["SampleID"] == "MW-01-20260615-GW"
 
 
-def test_field_dup_yes_appends_fd_suffix():
+def test_field_dup_flag_appends_fd_suffix():
     qa = QACollector()
     _, samp = normalize_survey123_submission(
-        {**_PAYLOAD, "IsFieldDup": "yes"}, "H281", "B1", qa)
+        {**_PAYLOAD, "QAFlags": "field_dup"}, "H281", "B1", qa)
     assert samp[0]["SampleID"] == "MW-01-20260615-GW-FD"
 
 
-def test_field_dup_absent_or_no_is_primary():
+@pytest.mark.parametrize("raw", [
+    "field_dup",                      # sole flag
+    "turbid field_dup",               # space-delimited (XLSForm export)
+    "turbid,field_dup",               # comma-delimited (feature service)
+    "FIELD_DUP",                      # case-insensitive
+])
+def test_field_dup_recognized_in_multi_select_shapes(raw):
     qa = QACollector()
-    _, s1 = normalize_survey123_submission({**_PAYLOAD, "IsFieldDup": "no"},
+    _, samp = normalize_survey123_submission({**_PAYLOAD, "QAFlags": raw},
+                                             "H281", "B1", qa)
+    assert samp[0]["SampleID"].endswith("-FD")
+
+
+def test_field_dup_absent_or_other_flag_is_primary():
+    qa = QACollector()
+    _, s1 = normalize_survey123_submission({**_PAYLOAD, "QAFlags": "turbid"},
                                            "H281", "B1", qa)
     _, s2 = normalize_survey123_submission(_PAYLOAD, "H281", "B1", qa)
     assert s1[0]["SampleID"] == s2[0]["SampleID"] == "MW-01-20260615-GW"
+
+
+def test_field_duplicate_carries_the_metadata_rpd_pairing_reads():
+    """evaluate_duplicate_rpd pairs on IsDuplicate 0/1 + ParentSampleID;
+    NULLs there make the record neither parent nor duplicate and skip RPD."""
+    qa = QACollector()
+    _, dup = normalize_survey123_submission({**_PAYLOAD, "QAFlags": "field_dup"},
+                                            "H281", "B1", qa)
+    _, primary = normalize_survey123_submission(_PAYLOAD, "H281", "B1", qa)
+
+    assert dup[0]["IsDuplicate"] == 1
+    assert dup[0]["DuplicateType"] == "FIELD_DUP"
+    assert dup[0]["ParentSampleID"] == primary[0]["SampleID"]
+    # the primary must be flagged too, or parent_map never contains it
+    assert primary[0]["IsDuplicate"] == 0
+    assert primary[0]["DuplicateType"] == ""
+    assert primary[0]["ParentSampleID"] == ""
+
+
+def test_normalized_duplicate_pairs_under_evaluate_duplicate_rpd():
+    """End-to-end: the dicts this module emits actually pair downstream."""
+    from autogis.core.envmon.evaluate_rpd_qa import evaluate_duplicate_rpd
+    from autogis.core.envmon.gdb_schema import (AnalyticalResultRecord,
+                                                SampleRecord)
+
+    qa = QACollector()
+    _, dup = normalize_survey123_submission({**_PAYLOAD, "QAFlags": "field_dup"},
+                                            "H281", "B1", qa)
+    _, primary = normalize_survey123_submission(_PAYLOAD, "H281", "B1", qa)
+
+    def blank(cls, **over):
+        """*cls* with every required field blank, then overrides applied."""
+        vals = {f.name: "" for f in dataclasses.fields(cls)
+                if f.default is dataclasses.MISSING
+                and f.default_factory is dataclasses.MISSING}
+        vals.update(over)
+        return cls(**vals)
+
+    def as_record(d):
+        names = {f.name for f in dataclasses.fields(SampleRecord)}
+        return blank(SampleRecord,
+                     **{k: v for k, v in d.items() if k in names})
+
+    samples = [as_record(primary[0]), as_record(dup[0])]
+
+    def result(sample_id, value):
+        return blank(AnalyticalResultRecord, SampleID=sample_id,
+                     AnalyteName="Benzene", ResultRawText=str(value),
+                     ResultNumeric=value, IsDetected=1)
+
+    records = evaluate_duplicate_rpd(
+        samples,
+        [result(samples[0].SampleID, 10.0), result(samples[1].SampleID, 12.0)],
+        "H281", "B1", QACollector())
+
+    assert len(records) == 1
+    assert records[0].RPDStatus == "CALCULATED"
+    assert records[0].RPDValue == pytest.approx(18.1818, rel=1e-3)
 
 
 def test_route_survey123_in_help():

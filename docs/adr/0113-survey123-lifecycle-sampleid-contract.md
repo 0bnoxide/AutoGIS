@@ -24,11 +24,22 @@ together. The drift had already produced two live defects:
 2. **A duplicate silently consumed its own primary's laboratory record.**
    `reconcile_field_lab` falls back to `difflib` at threshold 0.85;
    `MW-1-20260715-GW` vs `MW-1-20260715-GW-FD` scores ≈0.914, so the pair
-   "matched" with only a `sample_id_mismatch` warning.
+   "matched" with only a `sample_id_mismatch` warning. The same collision
+   fires against the duplicate markers this repo's own parser profiles ship
+   (`duplicate_markers: ["DUP", "-D", "FD"]`): `-DUP` scores 0.889 and `-D`
+   0.941 (issue #360).
+3. **A field duplicate was invisible to the QA it exists to feed.**
+   `Env_Samples` has carried `IsDuplicate` / `DuplicateType` /
+   `ParentSampleID` since the EDD importer, but `normalize_survey123` never
+   populated them, so they inserted `NULL`. `evaluate_duplicate_rpd` pairs on
+   `IsDuplicate == 0` (parent) and `IsDuplicate == 1` (duplicate), and `None`
+   equals neither — a Survey123 record was therefore *neither*, and RPD QA
+   was skipped in silence. Flagging only the duplicate would not fix pairing;
+   the primary needs `IsDuplicate = 0` for the parent map to contain it.
 
-Neither was caught by the suite: the normalizer's happy-path ID string, the
-form's calculate expression, the `-fd` parser path, and any cross-producer
-agreement were all unasserted.
+None was caught by the suite: the normalizer's happy-path ID string, the
+form's calculate expression, the `-fd` parser path, the emitted duplicate
+metadata, and any cross-producer agreement were all unasserted.
 
 ## Decision
 
@@ -37,15 +48,33 @@ agreement were all unasserted.
   `QC_SUFFIXES`, `build_sample_id`, `parse_sample_id`, and
   `xform_sample_id_calc`. The dateless `NODATE` form is relocated unchanged.
 - **Producers converge:** the planner and normalizer call `build_sample_id`;
-  the form builder emits `xform_sample_id_calc()` plus a
-  `select_one yes_no` question `IsFieldDup` (default no) so the field can
-  produce `-FD` — this amends the ADR-0021 question list. The two renderings
-  (Python / XForm) cannot share code across the device boundary; a structure
-  test pins them in lockstep (`ponytail:` ceiling noted in source).
+  the form builder emits `xform_sample_id_calc()`, whose duplicate leg reads
+  the `qa_flags` choice `field_dup` that ADR-0021 has offered since the form
+  existed. No second question: an `IsFieldDup` yes/no was prototyped and
+  withdrawn because two affordances for one fact let a crew tick the labelled
+  one, leave the other at its default, and emit a SampleID identical to the
+  primary — which `append_records_idempotent` then drops at `SEV_INFO
+  duplicate_key_skipped`. ADR-0021's calculate expression is amended in place;
+  its question list is unchanged.
+- **The two renderings are coupled by test, not by code.** Python and XForm
+  cannot share code across the device boundary. The test evaluates the one
+  expression shape `xform_sample_id_calc` emits (concat / format-date /
+  if-selected) and asserts the result equals `build_sample_id`, so a change to
+  either separator, field order, or suffix fails. It is deliberately not a
+  general XForm evaluator (`ponytail:` ceiling noted in source).
+- **Duplicate metadata is populated on both sides.** The normalizer emits
+  `IsDuplicate` (1 / 0), `DuplicateType` (`FIELD_DUP` / `""`, the value
+  `table_normalizer` already writes) and `ParentSampleID` (the primary
+  identity, via `strip_qc`) for duplicate *and* primary alike.
 - **Reconciliation guard:** a structural check runs before any similarity
-  score — two parseable lifecycle IDs with different QC components can never
-  match. The 0.85 threshold is unchanged (raising it would relocate the
-  collision, not close it).
+  score — IDs of different QC *class* can never match, whichever side carries
+  the marker. Class, not raw suffix: `-FD`, `-FD-A` and a profile-marked
+  `-DUP` are all `field_duplicate` and stay mutually matchable, while `-MB`
+  and `-FB` stay separate. Non-lifecycle IDs fall back to the parser
+  profile's `duplicate_markers`, which is what closes #360; an ID with no QC
+  signal at all classes as `None` and is never assumed primary. The 0.85
+  threshold is unchanged (raising it would relocate the collision, not close
+  it).
 - **Non-lifecycle producers stay out:** `sampling_plan`
   (`{site}-{loc}-{event}-{group}`, per-analyte-group granularity) and
   `legacy_migrator` (`{loc}_{date}_{idx}`, only when the source has no ID)
@@ -59,10 +88,16 @@ agreement were all unasserted.
 
 - Identities ending `-FD` become producible from the field for the first
   time — new values in the existing `TEXT(64)` column; no schema change, no
-  migration; existing records untouched.
-- Forms generated before this change have no `IsFieldDup` question; a
-  missing field normalizes as "not a duplicate," so old submissions behave
-  exactly as before.
+  migration; existing records untouched. `IsDuplicate`, `DuplicateType` and
+  `ParentSampleID` are existing columns that stop being written as `NULL`.
+- Submissions from forms built before this change carry no ticked
+  `field_dup`, which normalizes as "not a duplicate" — old submissions behave
+  exactly as before, except that they now also carry `IsDuplicate = 0`
+  instead of `NULL`, which is what makes them eligible as RPD parents.
+- A dateless (`NODATE`) duplicate gets a well-formed `ParentSampleID` that
+  cannot resolve — the uuid disambiguator differs per submission — so
+  `evaluate_duplicate_rpd` raises `rpd_parent_not_found`. A visible warning is
+  the intended outcome; the alternative is a silent mispair.
 - Rollback = revert the commit; already-written `-FD` identities remain
   valid and parseable (`qc_sample_summary` recognized the suffix before).
 - The Phase 0 exit gate's SampleID leg is met for the three lifecycle

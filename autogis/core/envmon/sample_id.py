@@ -29,6 +29,16 @@ QC_SUFFIXES = {
     "-fd-a": "field_duplicate", "-fd-b": "field_duplicate",
 }
 
+#: qc_class() value for an ID that parses as a lifecycle identity with no QC
+#: suffix. Distinct from None, which means "carries no QC signal at all".
+PRIMARY = "primary"
+
+#: Fallback duplicate markers for laboratory IDs that are not lifecycle
+#: identities. Same default the parser profiles ship (``duplicate_markers``);
+#: table_normalizer.detect_duplicate_sample reads it from here so the default
+#: lives in one place.
+DEFAULT_DUPLICATE_MARKERS = ["DUP", "-D", " FD", "FD-"]
+
 
 @dataclass(frozen=True)
 class SampleIdParts:
@@ -103,21 +113,61 @@ def _split_rest(loc: str, date_compact: str,
                          matrix=rest, qc=qc)
 
 
+def strip_qc(sample_id: str) -> str:
+    """The primary identity a QC SampleID derives from.
+
+    Returns *sample_id* unchanged when it is not a lifecycle identity or
+    carries no QC suffix. For the NODATE form the result is well-formed but
+    will not resolve to a real primary — the uuid disambiguator differs per
+    submission — so callers get a visible rpd_parent_not_found rather than a
+    silent mispair.
+    """
+    parts = parse_sample_id(sample_id)
+    if parts is None or not parts.qc:
+        return sample_id
+    return sample_id[: -(len(parts.qc) + 1)]
+
+
+def qc_class(sample_id: str,
+             duplicate_markers: Optional[list] = None) -> Optional[str]:
+    """Classify a SampleID as a QC type, PRIMARY, or None.
+
+    A lifecycle identity answers from its own suffix (so ``-FD``, ``-FD-A``
+    and ``-FD-B`` all class as ``field_duplicate``). Anything else falls back
+    to the parser profile's ``duplicate_markers`` — this repo's own labs ship
+    ``-DUP``/``-D`` identities, which are duplicates but not lifecycle IDs.
+
+    None means "no recognizable QC signal", never "primary": a caller must
+    not read an unparseable, unmarked lab ID as a primary sample.
+    """
+    parts = parse_sample_id(sample_id)
+    if parts is not None:
+        return QC_SUFFIXES[f"-{parts.qc.lower()}"] if parts.qc else PRIMARY
+    markers = duplicate_markers or DEFAULT_DUPLICATE_MARKERS
+    upper = (sample_id or "").upper()
+    if any(str(m).upper() in upper for m in markers):
+        return "field_duplicate"
+    return None
+
+
 def xform_sample_id_calc(well_field: str = "WellID",
                          date_field: str = "SamplingDate",
                          matrix_field: str = "Matrix",
-                         dup_field: str = "IsFieldDup") -> str:
+                         qa_flags_field: str = "QAFlags",
+                         dup_flag: str = "field_dup") -> str:
     """XForm calculate for the SampleID question — the device-side rendering
     of LIFECYCLE_FORMAT. Defaults are the survey field names the form
-    builder emits today.
+    builder emits today; the duplicate leg reads the QAFlags choice the form
+    has offered since ADR-0021 rather than a second question.
 
-    ponytail: no test can execute the XForm side, so the two renderings are
-    pinned in lockstep only by the structure test; upgrade path is a real
-    XForm expression evaluator if a second divergence ever appears.
+    ponytail: no test can execute a real XForm, so the two renderings are
+    coupled by a test that evaluates this one expression shape against
+    build_sample_id; upgrade path is a real XForm evaluator if the expression
+    ever grows past concat/if/selected.
     """
     return (
         f'concat(${{{well_field}}}, "-", '
         f'format-date(${{{date_field}}}, "%Y%m%d"), '
         f'"-", ${{{matrix_field}}}, '
-        f'if(selected(${{{dup_field}}}, "yes"), "-FD", ""))'
+        f'if(selected(${{{qa_flags_field}}}, "{dup_flag}"), "-FD", ""))'
     )

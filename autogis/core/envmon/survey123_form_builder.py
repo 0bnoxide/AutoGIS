@@ -102,8 +102,10 @@ def build_xlsform(
     row("select_one well_list", "WellID", "Well ID", "", "yes")
     row("date", "SamplingDate", "Sampling Date", "", "yes")
     row("select_one matrix_list", "Matrix", "Sample Matrix", "", "yes")
-    row("select_one yes_no", "IsFieldDup", "Field duplicate?",
-        "", "", "", "", "no")
+    # SampleID forward-references QAFlags (emitted below); XLSForm resolves
+    # calculates by dependency, not row order. The duplicate leg reads the
+    # qa_flags choice "field_dup" that has existed since ADR-0021 — a second
+    # question would let a crew tick one affordance and miss the other.
     row("calculate", "SampleID", "", "", "", sample_id_calc)
     row("select_one crew_list", "SampledBy", "Sampled By", "", "yes")
     row("text", "COCNumber", "COC Number")
@@ -147,9 +149,6 @@ def build_xlsform(
 
     for flag_name, flag_label in _QA_FLAGS:
         crow("qa_flags", flag_name, flag_label)
-
-    crow("yes_no", "yes", "Yes")
-    crow("yes_no", "no", "No")
 
     # ---------------------------------------------------------------- settings
     settings = wb.create_sheet("settings")

@@ -16,6 +16,7 @@ from ..common.qa import QACollector, SEV_ERROR, SEV_WARNING, SEV_INFO
 from .result_parser import (classify_display, evaluate_screening,
                            normalize_analyte_name, parse_excel_date,
                            parse_result_value)
+from .sample_id import DEFAULT_DUPLICATE_MARKERS
 
 _DEPTH_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*['\u2032]?\s*[-\u2013to]+\s*"
                        r"(\d+(?:\.\d+)?)\s*['\u2032]?\s*$", re.IGNORECASE)
@@ -49,7 +50,7 @@ def _qa_formula(reader: ProfileWorkbookReader, cell, qa: QACollector,
 
 def detect_duplicate_sample(location_id: str, profile_markers: List[str]) -> bool:
     lid = (location_id or "").upper()
-    markers = [m.upper() for m in (profile_markers or ["DUP", "-D", " FD", "FD-"])]
+    markers = [m.upper() for m in (profile_markers or DEFAULT_DUPLICATE_MARKERS)]
     return any(m in lid for m in markers)
 
 

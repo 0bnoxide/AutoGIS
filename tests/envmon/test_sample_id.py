@@ -5,8 +5,8 @@ from datetime import datetime
 import pytest
 
 from autogis.core.envmon.sample_id import (
-    QC_SUFFIXES, SampleIdParts, build_sample_id, parse_sample_id,
-    xform_sample_id_calc,
+    PRIMARY, QC_SUFFIXES, SampleIdParts, build_sample_id, parse_sample_id,
+    qc_class, strip_qc, xform_sample_id_calc,
 )
 
 
@@ -106,16 +106,100 @@ def test_planner_and_normalizer_agree_including_field_duplicate():
     primary = norm({"WellID": "MW-1", "SamplingDate": "2026-07-15",
                     "Matrix": "GW"})
     dup = norm({"WellID": "MW-1", "SamplingDate": "2026-07-15",
-                "Matrix": "GW", "IsFieldDup": "yes"})
+                "Matrix": "GW", "QAFlags": "field_dup"})
     assert planned == {primary, dup}
     assert dup == primary + "-FD"
 
 
-def test_xform_calc_matches_lifecycle_field_order():
+def _eval_xform_calc(calc: str, well: str, date_compact: str, matrix: str,
+                     is_dup: bool) -> str:
+    """Evaluate the one XForm expression shape xform_sample_id_calc emits.
+
+    Not a general evaluator — it understands exactly concat/format-date/
+    if(selected(...)). That is the point: if the expression ever grows past
+    this shape, this helper stops matching and forces a re-derivation instead
+    of silently drifting from build_sample_id.
+    """
+    expr = calc
+    expr = expr.replace('format-date(${SamplingDate}, "%Y%m%d")',
+                        f'"{date_compact}"')
+    expr = expr.replace("${WellID}", f'"{well}"')
+    expr = expr.replace("${Matrix}", f'"{matrix}"')
+    dup_leg = re.search(
+        r'if\(selected\(\$\{QAFlags\}, "field_dup"\), "([^"]*)", "([^"]*)"\)',
+        expr)
+    assert dup_leg, f"unrecognized duplicate leg in {calc!r}"
+    expr = expr[:dup_leg.start()] + \
+        f'"{dup_leg.group(1) if is_dup else dup_leg.group(2)}"' + \
+        expr[dup_leg.end():]
+    body = re.fullmatch(r"concat\((.*)\)", expr)
+    assert body, f"unrecognized calc shape in {calc!r}"
+    return "".join(re.findall(r'"([^"]*)"', body.group(1)))
+
+
+@pytest.mark.parametrize("is_dup", [False, True])
+def test_xform_calc_renders_what_build_sample_id_renders(is_dup):
+    """The Python and XForm renderings of LIFECYCLE_FORMAT agree.
+
+    Couples the two for real: change build_sample_id's separator, field order
+    or suffix and this fails. The old assertion compared the calc against a
+    verbatim copy of its own return literal, which could not detect drift.
+    """
+    rendered = _eval_xform_calc(xform_sample_id_calc(), "MW-1", "20260715",
+                                "GW", is_dup)
+    assert rendered == build_sample_id("MW-1", "20260715", "GW",
+                                       qc="FD" if is_dup else None)
+
+
+def test_strip_qc_returns_the_primary_identity():
+    assert strip_qc("MW-1-20260715-GW-FD") == "MW-1-20260715-GW"
+    assert strip_qc("MW-1-20260715-GW-FD-A") == "MW-1-20260715-GW"
+    # already primary, or not a lifecycle identity at all: unchanged
+    assert strip_qc("MW-1-20260715-GW") == "MW-1-20260715-GW"
+    assert strip_qc("H281-MW01-Q3-VOCs") == "H281-MW01-Q3-VOCs"
+    assert strip_qc("") == ""
+
+
+def test_strip_qc_round_trips_build_sample_id():
+    for qc in ("FD", "MB", "LD-B"):
+        assert strip_qc(build_sample_id("MW-1", "20260715", "GW", qc=qc)) == \
+            build_sample_id("MW-1", "20260715", "GW")
+
+
+@pytest.mark.parametrize("sample_id,expected", [
+    ("MW-1-20260715-GW", PRIMARY),
+    ("MW-1-20260715-GW-FD", "field_duplicate"),
+    ("MW-1-20260715-GW-FD-A", "field_duplicate"),   # same class as -FD
+    ("MW-1-20260715-GW-MB", "method_blank"),
+    ("MW-1-20260715-GW-FB", "field_blank"),         # never folds into -MB
+])
+def test_qc_class_of_lifecycle_ids_comes_from_the_suffix(sample_id, expected):
+    assert qc_class(sample_id) == expected
+
+
+@pytest.mark.parametrize("sample_id", [
+    "MW-1-20260715-GW-DUP", "MW-1-20260715-GW-D",
+])
+def test_qc_class_falls_back_to_profile_markers(sample_id):
+    """Lab duplicates that are not lifecycle identities (issue #360)."""
+    assert qc_class(sample_id, ["DUP", "-D", "FD"]) == "field_duplicate"
+
+
+def test_qc_class_is_none_when_there_is_no_signal():
+    """None must not be read as 'primary' — the caller cannot know."""
+    assert qc_class("H281-MW01-Q3-VOCs") is None      # sampling_plan identity
+    assert qc_class("MW01_20260715_1") is None        # legacy_migrator identity
+    assert qc_class("") is None
+
+
+def test_every_qc_suffix_classes_as_its_declared_type():
+    for suffix, qc_type in QC_SUFFIXES.items():
+        sample_id = f"MW-1-20260715-GW{suffix.upper()}"
+        assert qc_class(sample_id) == qc_type, suffix
+
+
+def test_xform_calc_reads_the_adr_0021_qa_flag():
+    """The duplicate leg reuses the qa_flags choice, not a second question."""
     calc = xform_sample_id_calc()
-    assert calc == (
-        'concat(${WellID}, "-", '
-        'format-date(${SamplingDate}, "%Y%m%d"), '
-        '"-", ${Matrix}, '
-        'if(selected(${IsFieldDup}, "yes"), "-FD", ""))'
-    )
+    assert 'selected(${QAFlags}, "field_dup")' in calc
+    assert "IsFieldDup" not in calc
