@@ -114,6 +114,7 @@ class FormField:
     is_dir: bool = False  # kind == "path": directory-only -> folder picker
     xor_group: str | None = None  # shared id; fill one, grey its sibling
     strict: bool = True  # kind == "choice": False -> editable combo (SuggestedChoice)
+    allow_time: bool = False  # kind == "date": keep timestamp-capable fields textual
     minimum: float | None = None  # kind == "int"/"float": from IntRange/FloatRange
     maximum: float | None = None
 
@@ -149,6 +150,7 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
     is_path_output = False
     is_dir = False
     strict = True
+    allow_time = False
     minimum = maximum = None
     ptype = param.type
     if getattr(param, "is_flag", False):
@@ -162,6 +164,7 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
         choices = tuple(ptype.choices)
     elif isinstance(ptype, IsoDate):
         kind = "date"
+        allow_time = ptype.allow_time
     elif isinstance(ptype, click.Choice):
         kind = "choice"
         choices = tuple(str(c) for c in ptype.choices)
@@ -222,6 +225,7 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
         is_dir=is_dir,
         xor_group=xor_group,
         strict=strict,
+        allow_time=allow_time,
         minimum=minimum,
         maximum=maximum,
     )

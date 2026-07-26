@@ -36,6 +36,10 @@ Qt's `offscreen` platform plugin.
 > Final review also removed Task 10's arbitrary ±1,000,000 fallback: Qt spin
 > boxes now render only truly closed ranges; open-ended numeric options remain
 > text fields so valid large coordinates and integers are never clamped.
+> `IsoDate(allow_time=True)` fields likewise remain text so timestamps,
+> seconds, and offsets are not truncated to a calendar day. Repeatable
+> SuggestedChoice rows use editable combos populated from the existing
+> registry while retaining arbitrary-value input.
 > The unchecked boxes below are the original execution checklist, retained as
 > planning history rather than rewritten after the fact.
 
@@ -1292,6 +1296,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 **Files:** Modify `autogis/adapters/gui/app.py`; Test `tests/test_gui_app.py`
 
+> **Corrected after implementation review, 2026-07-26:** calendar controls
+> apply only to date-only `IsoDate`. Preserve `allow_time=True` in `FormField`
+> and render those fields as text; `datetime.fromisoformat` accepts timestamps
+> and offsets that `QDateEdit` cannot represent.
+
 Same shape as Task 10. `QDateEdit` with `setCalendarPopup(True)`, `setDisplayFormat("yyyy-MM-dd")`,
 `setLocale(QLocale.c())`. For the 15 optional ones set `setSpecialValueText("(none)")` at
 `minimumDate()`; `_raw_values` maps that back to `""`, otherwise
@@ -1384,6 +1393,10 @@ A `field.repeatable` field renders as a container holding one value row plus a `
 added row gets a `−`. `_raw_values` returns a **list** of the non-empty rows — `forms._normalize`
 and `build_argv:175-177` already handle a list correctly, which is why nothing below `app.py`
 changes.
+
+Rows are editable combos when `field.choices` supplies suggestions and plain
+line edits otherwise. The combo stays editable because `SuggestedChoice` is
+deliberately open vocabulary.
 
 **Constraints:** the container occupies one `QFormLayout` row. The `+`/`−` buttons must **not**
 use `objectName("field-browse")` — `tests/test_gui_app.py:105-145` counts those.

@@ -90,20 +90,19 @@ class _RepeatableRows(QWidget):
     list round-trip -- ``forms._normalize``/``executor.build_argv`` already
     handle a list correctly, so this is the only piece #350 needed.
 
-    Rows are plain ``QLineEdit`` for every repeatable kind, including the two
-    repeatable SuggestedChoice fields (--required-tool): an editable combo per
-    row would need the choice list threaded in and kept in sync across
-    add/remove, for a field the CLI already accepts free text on (strict=False)
-    -- typing the tool name is acceptable ponytail over that. ``on_browse``,
-    when given, adds a Browse… button to every row (objectName
+    Rows use editable combos when Click provides suggestions and plain
+    ``QLineEdit`` otherwise. ``on_browse``, when given, adds a Browse… button
+    to every line-edit row (objectName
     ``repeatable-browse``, distinct from the single-field ``field-browse`` the
     browse-count tests target) -- used for the 5 repeatable path fields.
     """
 
-    def __init__(self, on_browse=None, parent=None):
+    def __init__(self, on_browse=None, choices=(), *, editable=True, parent=None):
         super().__init__(parent)
         self._on_browse = on_browse  # Callable[[QLineEdit], None] | None
-        self._rows: list[tuple[QWidget, QLineEdit]] = []
+        self._choices = tuple(choices)
+        self._editable = editable
+        self._rows: list[tuple[QWidget, QWidget]] = []
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         add_btn = QPushButton("+")
@@ -116,12 +115,21 @@ class _RepeatableRows(QWidget):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        line = QLineEdit(text)
-        row_layout.addWidget(line)
+        if self._choices:
+            value: QWidget = QComboBox()
+            value.addItem("")
+            value.addItems(self._choices)
+            value.setEditable(self._editable)
+            if self._editable:
+                value.setInsertPolicy(QComboBox.NoInsert)
+            value.setCurrentText(text)
+        else:
+            value = QLineEdit(text)
+        row_layout.addWidget(value)
         if self._on_browse is not None:
             browse = QPushButton("Browse…")
             browse.setObjectName("repeatable-browse")
-            browse.clicked.connect(lambda _=False, le=line: self._on_browse(le))
+            browse.clicked.connect(lambda _=False, le=value: self._on_browse(le))
             row_layout.addWidget(browse)
         if self._rows:  # every row after the first can remove itself
             minus = QPushButton("−")
@@ -129,7 +137,7 @@ class _RepeatableRows(QWidget):
             minus.clicked.connect(lambda _=False, r=row: self._remove_row(r))
             row_layout.addWidget(minus)
         self._layout.insertWidget(self._layout.count() - 1, row)  # before "+"
-        self._rows.append((row, line))
+        self._rows.append((row, value))
 
     def _remove_row(self, row: QWidget) -> None:
         self._rows = [(r, le) for r, le in self._rows if r is not row]
@@ -142,7 +150,11 @@ class _RepeatableRows(QWidget):
     def values(self) -> list[str]:
         """Non-empty row values, in row order -- a blank middle row is
         skipped entirely, never emitted as an empty-string argument."""
-        return [le.text().strip() for _, le in self._rows if le.text().strip()]
+        def text(widget):
+            return (widget.currentText() if isinstance(widget, QComboBox)
+                    else widget.text()).strip()
+
+        return [text(widget) for _, widget in self._rows if text(widget)]
 
     def set_values(self, values: list[str]) -> None:
         """Replace every row with one per item in ``values`` (at least one
@@ -450,7 +462,12 @@ class MainWindow(QMainWindow):
             if field.repeatable:
                 on_browse = ((lambda le, f=field: self._browse(f, le))
                             if field.kind == "path" else None)
-                widget = _RepeatableRows(on_browse=on_browse)
+                choices = field.choices if field.kind == "choice" else ()
+                widget = _RepeatableRows(
+                    on_browse=on_browse,
+                    choices=choices,
+                    editable=not field.strict,
+                )
                 if field.help_text:
                     widget.setToolTip(field.help_text)
                 label_text = field.label + (
@@ -555,6 +572,13 @@ class MainWindow(QMainWindow):
                 else:
                     widget.setRange(low, high)
                     widget.setValue(field.default)
+            elif field.kind == "date" and field.allow_time:
+                # datetime.fromisoformat accepts more than a date-only picker
+                # can represent (time, seconds, offsets). Keep that full CLI
+                # contract reachable rather than silently truncating to a day.
+                widget = QLineEdit()
+                if field.help_text:
+                    widget.setPlaceholderText(field.help_text)
             elif field.kind == "date":
                 widget = QDateEdit()
                 widget.setCalendarPopup(True)

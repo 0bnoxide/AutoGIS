@@ -585,14 +585,17 @@ def test_repeatable_path_field_gets_its_own_browse_not_field_browse(qapp):
 
 def test_repeatable_choice_field_does_not_collapse_to_a_single_combo(qapp):
     """evaluate-readiness/portfolio-metrics --required-tool is a repeatable
-    SuggestedChoice: it must render through the repeatable container, never
-    fall into the single-QComboBox branch (that would silently drop back to
-    one value)."""
+    SuggestedChoice: the container keeps multiple values while each row offers
+    the registry suggestions in an editable combo."""
     win = MainWindow()
     win._command_box.setCurrentText("envmon evaluate-readiness")
     w = win._field_widgets["required_tools"]
     assert not isinstance(w, QComboBox)
     w.set_values(["coc", "qualify"])
+    combos = w.findChildren(QComboBox)
+    assert len(combos) == 2
+    assert all(combo.isEditable() for combo in combos)
+    assert all(combo.findText("qualify") >= 0 for combo in combos)
     assert win._raw_values()["required_tools"] == ["coc", "qualify"]
 
 
@@ -1292,16 +1295,17 @@ def test_picked_date_serializes_as_iso(qapp):
     assert win._raw_values()["event_date"] == "2026-07-25"
 
 
-def test_sync_survey123_uses_calendar_and_folder_picker(qapp):
+def test_sync_survey123_preserves_timestamp_and_uses_folder_picker(qapp):
     """The Phase 2 command landed after this branch's original inventory."""
-    from PySide6.QtWidgets import QDateEdit
-
     win = MainWindow()
     form = win._forms["envmon sync-survey123"]
     win._command_box.setCurrentText(form.label)
     fields = {field.name: field for field in form.fields}
 
-    assert isinstance(win._field_widgets["since_date"], QDateEdit)
+    since = win._field_widgets["since_date"]
+    assert isinstance(since, QLineEdit)
+    since.setText("2026-07-26T14:30:00-06:00")
+    assert win._raw_values()["since_date"] == "2026-07-26T14:30:00-06:00"
     assert fields["out_dir"].is_dir is True
     assert _dialog_kind(fields["out_dir"]) == "dir"
 

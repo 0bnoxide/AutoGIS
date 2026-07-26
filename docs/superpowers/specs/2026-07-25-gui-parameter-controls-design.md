@@ -157,11 +157,12 @@ This is deliberately **not** a switch to `multiple=True`: that would change the 
 `FormField` gains `minimum` / `maximum` (read off `IntRange`/`FloatRange`), and `kind` gains two
 values:
 
-- `"date"` — from `isinstance(ptype, click.DateTime)`
+- `"date"` — from `IsoDate`, with `allow_time` preserved separately
 - `"multichoice"` — from `isinstance(ptype, CommaList)`; `choices` populated
 
-`kind="choice"` **combined with** the existing `repeatable=True` already expresses "checklist that
-emits N separate flags" — no new descriptor needed for `--required-tool`.
+`kind="choice"` **combined with** the existing `repeatable=True` expresses a
+multi-row choice control that emits N separate flags — no new descriptor is
+needed for `--required-tool`. `strict=False` keeps each row editable.
 
 ### 3.3 Why PR1 is safe alone
 
@@ -186,9 +187,10 @@ the `nargs` seam.
 
 | Field shape | Control |
 |---|---|
-| `date` | `QDateEdit` + calendar popup; `(none)` state for the 15 optional ones |
+| date-only `date` | `QDateEdit` + calendar popup; `(none)` state when optional |
+| timestamp-capable `date` | `QLineEdit`; offsets/seconds exceed a date-only picker's contract |
 | `multichoice` | checklist inside **one** form row; joined with `,` on read-back |
-| `choice` + `repeatable` | checklist inside one row; emits N flags (`build_argv` already does this) |
+| suggested `choice` + `repeatable` | editable combo rows inside one container; emits N flags |
 | closed-range `int` / `float` | `QSpinBox` / `QDoubleSpinBox`, `setRange` from `minimum`/`maximum` |
 | open-ended `int` / `float` | `QLineEdit`; a finite Qt range would narrow valid CLI input |
 | `repeatable` (free text/path) | +/− rows inside one container widget |

@@ -190,6 +190,13 @@ def test_plain_click_choice_stays_strict():
 def test_iso_date_becomes_date_kind():
     f = _only_field(["--event-date"], type=IsoDate())
     assert f.kind == "date"
+    assert f.allow_time is False
+
+
+def test_iso_datetime_exposes_allow_time():
+    f = _only_field(["--since"], type=IsoDate(allow_time=True))
+    assert f.kind == "date"
+    assert f.allow_time is True
 
 
 def test_int_range_exposes_bounds():
