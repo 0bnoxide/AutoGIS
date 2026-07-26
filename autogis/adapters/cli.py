@@ -74,6 +74,10 @@ _QA_COUNTS_META_KEY = "autogis.qa_counts"
 # nonzero exit code, so a stale-finding read isn't mislogged as an error).
 # `coc` uses its per-transition custody audit instead of run history (ADR-0107).
 _SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
+# Semantic nonzero exits that are findings, not failures (ADR-0115):
+# diff-survey-schema exits 2 (review-required) / 3 (destructive drift).
+# Without this, every drift finding would be mislogged as a tool error.
+_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}}
 
 
 def _record_tool_name(ctx) -> str:
@@ -169,6 +173,9 @@ class RecordingCommand(click.Command):
             status = _classify_exit(exc)
             if status is None:
                 return
+            if (isinstance(exc, SystemExit)
+                    and exc.code in _SEMANTIC_EXIT_CODES.get(tool_name, ())):
+                status = "success"
             from autogis.core.common.run_history import RunHistory, RunRecord
 
             counts = ctx.meta.get(_QA_COUNTS_META_KEY, {})
@@ -2244,6 +2251,102 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     wb = build_xlsform(site_cfg, event_cfg, analytes)
     wb.save(out_path)
     click.echo(f"XLSForm written to {out_path}")
+
+
+@envmon.command("validate-survey-form")
+@click.argument("form_xlsx", type=click.Path(exists=True))
+@click.option("--site-config", "site_path", default=None,
+              type=click.Path(exists=True), help="Site config YAML.")
+@click.option("--event-config", "event_path", default=None,
+              type=click.Path(exists=True), help="Event config YAML.")
+@click.option("--analyte-dict", "analytes_path", default=None,
+              type=click.Path(exists=True), help="Analyte dictionary YAML.")
+@qa_report_options
+def validate_survey_form_cmd(form_xlsx, site_path, event_path, analytes_path,
+                             report, fail_on):
+    """S123-1.1: static XLSForm validation — structure, choices, references,
+    the ADR-0113 SampleID contract, and config cross-checks."""
+    import yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.survey_schema import read_xlsform, validate_form
+    try:
+        schema = read_xlsform(form_xlsx)
+    except Exception as exc:
+        raise click.ClickException(f"cannot read XLSForm: {exc}")
+
+    def _load(p):
+        return yaml.safe_load(open(p, encoding="utf-8")) if p else None
+
+    qa = QACollector()
+    validate_form(schema, qa,
+                  event_config=_load(event_path),
+                  site_config=_load(site_path),
+                  analyte_dict=_load(analytes_path))
+    _render_qa(qa, report, fail_on)
+
+
+_DIFF_REVIEW_EXIT = 2
+_DIFF_DESTRUCTIVE_EXIT = 3
+
+
+@envmon.command("diff-survey-schema")
+@click.argument("form_xlsx", type=click.Path())
+@click.option("--baseline-form", "baseline_path", default=None,
+              type=click.Path(),
+              help="Previous XLSForm .xlsx to diff against.")
+@click.option("--layer-spec", "spec_path", default=None,
+              type=click.Path(),
+              help="Saved feature-layer spec YAML/JSON (audit-schema format).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write the change list to PATH (.json or .md).")
+def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
+    """S123-1.2: classify XLSForm changes as safe / review-required /
+    destructive. Exit 0 none-or-safe, 2 review-required, 3 destructive."""
+    import dataclasses
+    import json
+    import yaml
+    from autogis.core.envmon.survey_schema import (
+        CLASS_DESTRUCTIVE, CLASS_REVIEW, diff_forms, diff_form_vs_layer,
+        read_xlsform, worst_classification,
+    )
+    # ClickException (exit 1), not UsageError (exit 2): 2 is reserved for
+    # the review-required semantic exit and must never mean "typo".
+    if not baseline_path and not spec_path:
+        raise click.ClickException(
+            "provide --baseline-form and/or --layer-spec to diff against")
+    try:
+        new = read_xlsform(form_xlsx)
+        changes = []
+        if baseline_path:
+            changes += diff_forms(read_xlsform(baseline_path), new)
+        if spec_path:
+            spec = yaml.safe_load(open(spec_path, encoding="utf-8"))
+            changes += diff_form_vs_layer(new, spec)
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(f"cannot diff: {exc}")
+
+    for c in changes:
+        click.echo(f"[{c.classification.upper():>15}] {c.kind}: {c.name} — "
+                   f"{c.detail}")
+    worst = worst_classification(changes)
+    click.echo(f"Changes: {len(changes)}  Worst: {worst or 'none'}")
+    if report:
+        p = Path(report)
+        rows = [dataclasses.asdict(c) for c in changes]
+        if p.suffix == ".json":
+            p.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        else:
+            lines = ["| class | kind | name | detail |", "|---|---|---|---|"]
+            lines += [f"| {c.classification} | {c.kind} | {c.name} | "
+                      f"{c.detail} |" for c in changes]
+            p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        click.echo(f"Wrote report: {p}")
+    if worst == CLASS_DESTRUCTIVE:
+        raise SystemExit(_DIFF_DESTRUCTIVE_EXIT)
+    if worst == CLASS_REVIEW:
+        raise SystemExit(_DIFF_REVIEW_EXIT)
 
 
 @envmon.command("create-sampling-event")
@@ -4441,6 +4544,103 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
     write_qa_to_gdb(gdb, qa, bid)
 
     click.echo(f"Batch {bid}: {wl_inserted} water levels, {samp_inserted} samples imported.")
+    _render_qa(qa, report, fail_on)
+
+
+@envmon.command("sync-survey123")
+@click.option("--item-id", required=True,
+              help="AGOL item ID of the survey's feature service.")
+@click.option("--out", "out_dir", required=True, type=click.Path(),
+              help="Staging directory (also holds the sync checkpoint).")
+@click.option("--profile", default=None,
+              help="ArcGIS API for Python profile name.")
+@click.option("--since", "since_date", default=None,
+              help="Bounded replay: re-pull edits since this UTC date/time "
+                   "(YYYY-MM-DD[THH:MM]); the checkpoint is not advanced.")
+@click.option("--no-attachments", is_flag=True, default=False,
+              help="Skip attachment-metadata fetch.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Fetch and summarize only; write nothing.")
+@qa_report_options
+def sync_survey123_cmd(item_id, out_dir, profile, since_date, no_attachments,
+                       dry_run, report, fail_on):
+    """S123 Phase 2: pull new/changed submissions into staging (live, read-only)."""
+    import importlib.util
+    import time as _time
+    from datetime import datetime as dt, timezone as tz
+
+    # Live command: fail before any network work with the exact install hint
+    # (ADR-0112 install contract). find_spec never imports arcgis.
+    if importlib.util.find_spec("arcgis") is None:
+        raise click.ClickException(
+            "sync-survey123 is a live command and needs the ArcGIS API for "
+            'Python. Install it with: pip install "autogis[survey123]"')
+
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon import survey_sync as ss
+
+    replay_ms = None
+    if since_date:
+        try:
+            parsed = dt.fromisoformat(since_date)
+        except ValueError:
+            raise click.UsageError(
+                f"--since: cannot parse {since_date!r} (use YYYY-MM-DD[THH:MM]).")
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=tz.utc)
+        replay_ms = int(parsed.timestamp() * 1000)
+
+    qa = QACollector()
+    out = Path(out_dir)
+    checkpoint = ss.read_checkpoint(out)
+    # A checkpoint from a different survey would silently apply its
+    # watermarks and fabricate deletes from its known-ID set (review round 1).
+    if checkpoint and checkpoint.get("item_id") not in (None, item_id):
+        raise click.ClickException(
+            f"Staging directory {out} holds a checkpoint for item "
+            f"{checkpoint.get('item_id')!r}, not {item_id!r} — use a "
+            f"separate --out per survey.")
+    gis = agol_from_profile(profile)
+    pulls = ss.fetch_item_pulls(
+        gis, item_id, checkpoint=checkpoint, replay_since_ms=replay_ms,
+        include_attachments=not no_attachments)
+    pulled_at_ms = int(_time.time() * 1000)
+    mode = "replay" if replay_ms is not None else "sync"
+    envelopes, new_cp = ss.sync_item(
+        pulls, checkpoint, item_id=item_id, pulled_at_ms=pulled_at_ms,
+        mode=mode, profile=profile or "", replay_since_ms=replay_ms, qa=qa)
+
+    ops = {op: sum(1 for e in envelopes if e.operation == op)
+           for op in ("add", "update", "delete")}
+    summary = (f"{len(envelopes)} envelope(s): {ops['add']} add, "
+               f"{ops['update']} update, {ops['delete']} delete "
+               f"across {len(pulls)} layer(s)")
+    if dry_run:
+        click.echo(f"[dry-run] {summary} — nothing written.")
+        _render_qa(qa, report, fail_on)
+        return
+    if not envelopes and checkpoint is not None:
+        click.echo(f"Up to date — {summary}." if mode == "sync" else
+                   f"Replay window empty — {summary}; checkpoint not advanced.")
+        _render_qa(qa, report, fail_on)
+        return
+
+    stamp = (dt.fromtimestamp(pulled_at_ms / 1000,
+                              tz=tz.utc).strftime("%Y%m%dT%H%M%S")
+             + f"{pulled_at_ms % 1000:03d}Z")
+    jsonl = out / f"envelopes_{stamp}.jsonl"
+    csv_path = out / f"submissions_{stamp}.csv"
+    ss.write_envelopes_jsonl(envelopes, jsonl)
+    n_rows = ss.write_submissions_csv(
+        envelopes, csv_path,
+        date_fields={f for p in pulls for f in p.date_fields})
+    if mode == "sync":
+        # checkpoint only advances after the staging artifacts are durable
+        ss.write_checkpoint(out, new_cp)
+    click.echo(f"{summary}\n  envelopes: {jsonl}\n  submissions CSV: "
+               f"{csv_path} ({n_rows} row(s))"
+               + ("" if mode == "sync"
+                  else "\n  replay: checkpoint not advanced"))
     _render_qa(qa, report, fail_on)
 
 

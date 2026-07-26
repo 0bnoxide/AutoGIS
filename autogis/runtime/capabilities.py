@@ -33,6 +33,8 @@ TOOLS: dict[str, Runtime] = {
     "optimize-callouts": Runtime.LOCAL,        # tool 5.2
     "manage-callout-overrides": Runtime.LOCAL, # tool 5.3
     "build-survey-form": Runtime.CLOUD, # tool 7.1a
+    "validate-survey-form": Runtime.CLOUD,  # S123-1.1
+    "diff-survey-schema": Runtime.CLOUD,    # S123-1.2
     "compare-events": Runtime.CLOUD,   # tool 4.7
     "process-level-loop": Runtime.CLOUD,  # tool 8.1
     "identify-data-gaps": Runtime.CLOUD,  # tool 4.10
@@ -53,6 +55,7 @@ TOOLS: dict[str, Runtime] = {
     "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
     "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
+    "sync-survey123": Runtime.CLOUD,     # S123 Phase 2 live read-only pull (arcgis via lazy provider)
     "build-dashboard-data-mart": Runtime.LOCAL,  # truncates/repopulates GDB
     "generate-trend-charts": Runtime.CLOUD,  # tool 4.6 headless openpyxl charts
     "ingest-reviewer-comments": Runtime.CLOUD,  # tool 9.4 headless parser
@@ -257,12 +260,22 @@ _REGISTRY_SEED = [
      "Qualify the installed ArcGIS Pro runtime and Python toolbox"),
     ("build-survey-form", "BuildSurvey123Form", "7.1a", "CLOUD", "stable",
      "field", "Build a Survey123 XLSForm"),
+    ("validate-survey-form", "ValidateSurveyForm", "S123-1.1", "CLOUD",
+     "stable", "field",
+     "Static XLSForm validation: structure, choices, references, the "
+     "ADR-0113 SampleID contract, and site/event config cross-checks"),
+    ("diff-survey-schema", "DiffSurveySchema", "S123-1.2", "CLOUD",
+     "stable", "field",
+     "Classify XLSForm changes vs a baseline form and/or a saved "
+     "feature-layer spec as safe, review-required, or destructive"),
     ("validate-rtk-survey", "ValidateRTKSurvey", "", "CLOUD", "stable", "field",
      "Validate an RTK survey point file"),
     ("import-rtk-survey", "ImportRTKSurveyPoints", "", "LOCAL", "stable",
      "field", "Import RTK survey points into the GDB"),
     ("route-survey123", "RouteSurvey123Submission", "", "LOCAL", "stable",
      "field", "Route a Survey123 submission into the GDB"),
+    ("sync-survey123", "SyncSurvey123Submissions", "", "CLOUD", "stable",
+     "field", "Pull new/changed Survey123 submissions into staging (live, read-only)"),
     ("reconcile-survey123-lab", "ReconcileSurvey123Lab", "", "CLOUD", "stable",
      "qa", "Reconcile Survey123 field data against lab results"),
     ("process-level-loop", "ProcessLevelLoop", "8.1", "CLOUD", "stable",
