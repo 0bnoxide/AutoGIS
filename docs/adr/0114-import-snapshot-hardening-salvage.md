@@ -20,8 +20,10 @@ This ADR records the salvage. The original batch had four parts; only two surviv
 1. **Issue #219 — salvaged.** `export_event_snapshot()` interpolates raw `site_id`/`event_id`
    straight into a GDB folder name with no validation. A value containing `<`, `>`, or any other
    Windows-illegal filename character makes `arcpy.management.CreateFileGDB` fail with an opaque
-   `ERROR 999999`, and re-running the same site/event on the same day silently collides with the
-   existing snapshot folder instead of failing clearly. Verified absent from `main`:
+   `ERROR 999999`, and re-running the same site/event on the same day fails with an equally
+   opaque `ERROR 000258: Output ... already exists` (nothing sets `arcpy.env.overwriteOutput`
+   on this path, so the collision is loud but unhelpful — not silent, as an earlier draft of
+   this ADR claimed). Verified absent from `main`:
    `git grep validate_snapshot_id origin/main` returns nothing.
 
 2. **Issue #220 — salvaged.** `run_import()` reports `qa_status: PASS` when every sheet parses
@@ -56,15 +58,31 @@ Salvage items 1 and 2 only, as a minimal diff onto current `main`:
 - Emit a `zero_rows_parsed` QA `WARNING` from `run_import()` when `counts` is all-zero, naming
   the likely causes (wrong sheet names, unwired `data_type`, workbook/profile mismatch).
 
-Do not salvage items 3 and 4. Reopen #220; leave #221 closed.
+Do not salvage items 3 and 4. Leave #221 closed. #220 is reopened and **stays open**: this
+closes the "indistinguishable from a healthy run" half, not the "reports PASS/Succeeded" half
+(see Consequences).
 
 ## Consequences
 
-- `export-snapshot` fails fast with an actionable message instead of `ERROR 999999`, and a
-  same-day re-run no longer silently collides.
-- A workbook/profile mismatch surfaces as a QA WARNING rather than a clean PASS. The warning is
-  non-blocking by design — a genuinely empty workbook is a legitimate input, so this reports
-  rather than rejects.
+- `export-snapshot` fails fast with an actionable message naming the offending value or path,
+  instead of arcpy's `ERROR 999999` / `ERROR 000258`. The CLI wraps both as `ClickException`
+  so the Pro tool dialog shows the message rather than a traceback. The manifest is named after
+  its GDB (`<gdb-name>.manifest.json`), so exports sharing an `--out` folder no longer overwrite
+  each other's manifest — the `FileExistsError` guard only ever covered the GDB itself.
+- A workbook/profile mismatch surfaces as a `zero_rows_parsed` QA WARNING. **`qa_status` remains
+  `PASS`** — `QACollector.status` defaults `allow_warnings=True`, so a WARNING never flips it, and
+  the `.pyt` still reports Succeeded. The run becomes *distinguishable* (a row lands in the QA
+  CSV/JSON/MD) but is not rejected: non-blocking is deliberate, because a genuinely empty workbook
+  and a matrix filter that matches no sheet are both legitimate inputs. Issue #220's headline
+  ("zero rows parsed reports PASS/Succeeded") is therefore only **partially** closed; making it
+  blocking would break `--matrix-filter SOIL`, which no shipped profile can satisfy yet the `.pyt`
+  offers in its dropdown. The warning names the active matrix filter so the operator can tell the
+  two causes apart.
+- **A `replace_batch` / `replace_site_event` run that parses zero rows no longer deletes.** Because
+  the warning is non-blocking, control previously reached `_delete_for_replace`, which removed the
+  prior event's rows before inserting nothing — a profile/workbook mismatch silently *erased* data
+  instead of replacing it. The replace is now skipped with a `replace_skipped_zero_rows` WARNING and
+  existing data is left untouched.
 - `validate_snapshot_id` is importable and unit-tested; `export_event_snapshot` itself stays
   `pragma: no cover` (arcpy seam), so the validation lives outside the untestable boundary.
 - Coverage for `run_import()` in `validate_only` mode is new

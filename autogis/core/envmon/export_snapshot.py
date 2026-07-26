@@ -111,8 +111,7 @@ def export_event_snapshot(   # pragma: no cover
     if Path(out_gdb).exists():
         raise FileExistsError(
             f"Snapshot target already exists: {out_gdb} "
-            "(re-running export-snapshot for the same site/event/day "
-            "overwrites nothing -- remove it or wait for the next day)")
+            "-- delete it or export to a different --out folder")
 
     arcpy.management.CreateFileGDB(str(out), out_name)
 
@@ -170,7 +169,11 @@ def export_event_snapshot(   # pragma: no cover
         feature_classes_copied=fc_copied,
         row_counts=row_counts,
     )
-    manifest_path = out / "manifest.json"
+    # Named after the GDB, not a bare "manifest.json": the manifest lands in
+    # the shared --out folder, so a fixed name is clobbered by the next export
+    # into that folder -- including one on a different day, which the
+    # FileExistsError guard above never sees because it only checks the GDB.
+    manifest_path = out / f"{out_name}.manifest.json"
     manifest_path.write_text(json.dumps(dataclasses.asdict(manifest), indent=2),
                              encoding="utf-8")
     return manifest
