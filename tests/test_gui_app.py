@@ -1223,31 +1223,37 @@ def test_raw_values_rejects_an_unknown_widget_type(qapp):
         win._raw_values()
 
 
-def test_optional_numeric_defaults_to_the_use_default_sentinel(qapp):
-    """envmon run-recipe --timeout: FloatRange(min=0), default=None (verified
-    against the real CLI -- envmon run-history --limit, the brief's original
-    pick, actually defaults to 0, not None, so it takes the plain-range branch
-    instead; see test_setting_a_number_round_trips_to_argv for that case)."""
-    from PySide6.QtWidgets import QDoubleSpinBox
+def test_open_ended_numeric_stays_text_and_starts_blank(qapp):
+    """A finite Qt range would narrow Click's open-ended timeout contract."""
     win = MainWindow()
     win._command_box.setCurrentText("envmon run-recipe")
     w = win._field_widgets["timeout"]
-    assert isinstance(w, QDoubleSpinBox)
-    assert w.value() == w.minimum()
-    assert w.specialValueText() == "(use default)"
+    assert isinstance(w, QLineEdit)
     assert win._raw_values()["timeout"] == ""   # -> omitted by forms._normalize
 
 
-def test_setting_a_number_round_trips_to_argv(qapp):
-    from autogis.adapters.gui.executor import build_argv
-    from autogis.adapters.gui.forms import build_step
+def test_closed_range_number_round_trips_to_argv(qapp):
+    from PySide6.QtWidgets import QDoubleSpinBox
+
     win = MainWindow()
-    win._command_box.setCurrentText("envmon run-history")
-    win._field_widgets["history_path"].setText("h.csv")  # required arg
-    win._field_widgets["limit"].setValue(25)
-    step = build_step(win._forms["envmon run-history"], win._raw_values())
-    assert "--limit" in build_argv(step.command, step.values)
-    assert "25" in build_argv(step.command, step.values)
+    win._command_box.setCurrentText("envmon reconcile-locations")
+    threshold = win._field_widgets["threshold"]
+    assert isinstance(threshold, QDoubleSpinBox)
+    threshold.setValue(0.75)
+    argv = build_argv(
+        ("envmon", "reconcile-locations"),
+        {"threshold": win._raw_values()["threshold"]},
+    )
+    assert argv[argv.index("--threshold") + 1] == "0.75"
+
+
+def test_large_unbounded_coordinate_is_not_clamped(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon manage-callout-overrides lock")
+    anchor_x = win._field_widgets["anchor_x"]
+    assert isinstance(anchor_x, QLineEdit)
+    anchor_x.setText("2500000.125")
+    assert win._raw_values()["anchor_x"] == "2500000.125"
 
 
 def test_float_uses_c_locale_so_a_comma_decimal_machine_cannot_break_it(qapp):

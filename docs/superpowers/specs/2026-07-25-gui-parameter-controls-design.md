@@ -189,20 +189,24 @@ the `nargs` seam.
 | `date` | `QDateEdit` + calendar popup; `(none)` state for the 15 optional ones |
 | `multichoice` | checklist inside **one** form row; joined with `,` on read-back |
 | `choice` + `repeatable` | checklist inside one row; emits N flags (`build_argv` already does this) |
-| `int` / `float` | `QSpinBox` / `QDoubleSpinBox`, `setRange` from `minimum`/`maximum` |
+| closed-range `int` / `float` | `QSpinBox` / `QDoubleSpinBox`, `setRange` from `minimum`/`maximum` |
+| open-ended `int` / `float` | `QLineEdit`; a finite Qt range would narrow valid CLI input |
 | `repeatable` (free text/path) | +/− rows inside one container widget |
 | `xor_group` | **grey the unused sibling, keep its text** — see 4.1a |
 | the form as a whole | wrapped in a `QScrollArea` |
 
 ### 4.1 Expressing "unset"
 
-`forms.py::_normalize` treats blank → `None` → option omitted, so the command's own default
-applies. A spin box always holds a number and would break that contract for the **8** numeric
-options that default to `None`.
+`forms.py::_normalize` treats blank → `None` → option omitted, so the command's
+own default applies. Open-ended numeric options remain line edits: Qt requires
+a finite spin-box range, and the original ±1,000,000 fallback silently clamped
+valid geospatial coordinates. A closed-range spin box with no default uses the
+native sentinel mechanism below.
 
-Native fix: `QSpinBox.setSpecialValueText("(use default)")` with the minimum set one step below the
-real floor. Qt displays that text at the minimum; the read-back maps it to `None`. Same mechanism
-for the optional `QDateEdit`s. **No custom tri-state widget.**
+For a closed range, `QSpinBox.setSpecialValueText("(use default)")` can place
+an unset sentinel one step below the real floor without excluding a legal
+value. Qt displays that text at the minimum; read-back maps it to `None`. The
+optional `QDateEdit`s use the same mechanism. **No custom numeric widget.**
 
 ### 4.1a Either/or (xor) behaviour
 

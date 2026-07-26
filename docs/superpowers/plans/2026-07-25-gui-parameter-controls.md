@@ -33,6 +33,9 @@ Qt's `offscreen` platform plugin.
 > Survey123 Phase 2 added `sync-survey123 --since` and a staging directory
 > after the baseline, so the implemented inventories are 17 dates and 13
 > directory parameters.
+> Final review also removed Task 10's arbitrary ±1,000,000 fallback: Qt spin
+> boxes now render only truly closed ranges; open-ended numeric options remain
+> text fields so valid large coordinates and integers are never clamped.
 > The unchecked boxes below are the original execution checklist, retained as
 > planning history rather than rewritten after the fact.
 
@@ -1175,6 +1178,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 **Files:**
 - Modify: `autogis/adapters/gui/app.py` (`_rebuild_form` numeric branch, `_raw_values`)
 - Test: `tests/test_gui_app.py`
+
+> **Corrected after implementation review, 2026-07-26:** the "wide sane span"
+> below is not safe for geospatial inputs (`--anchor-x 2500000` is valid).
+> Render a spin box only when both bounds are declared. If either side is
+> open, keep a `QLineEdit` and let Click validate it without narrowing.
 
 **Design (all six behaviors proved by offscreen probe during derivation):**
 - `kind == "int"` → `QSpinBox`; `kind == "float"` → `QDoubleSpinBox`.

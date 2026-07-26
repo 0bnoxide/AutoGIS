@@ -517,6 +517,17 @@ class MainWindow(QMainWindow):
                     item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                     item.setCheckState(Qt.Unchecked)
                     widget.addItem(item)
+            elif (field.kind in ("int", "float")
+                  and (field.minimum is None or field.maximum is None)):
+                # A Qt spin box requires a finite range. Inventing one (the
+                # original implementation used +/-1,000,000) silently clamps
+                # valid open-ended values such as state-plane coordinates.
+                # Keep these fields textual; Click remains the validator.
+                widget = QLineEdit()
+                if field.default is not None:
+                    widget.setText(str(field.default))
+                if field.help_text:
+                    widget.setPlaceholderText(field.help_text)
             elif field.kind in ("int", "float"):
                 widget = QSpinBox() if field.kind == "int" else QDoubleSpinBox()
                 # A comma-decimal locale renders e.g. "0,800", which Click's
@@ -528,8 +539,7 @@ class MainWindow(QMainWindow):
                     # 6 covers that and finer geospatial/ratio values without
                     # per-field tuning.
                     widget.setDecimals(6)
-                low = field.minimum if field.minimum is not None else -10**6
-                high = field.maximum if field.maximum is not None else 10**6
+                low, high = field.minimum, field.maximum
                 if field.default is None:
                     # A spin box always holds a number, but blank->omitted is
                     # the contract (forms._normalize). Qt's own answer: put a
@@ -550,12 +560,11 @@ class MainWindow(QMainWindow):
                 widget.setCalendarPopup(True)
                 widget.setDisplayFormat("yyyy-MM-dd")
                 widget.setLocale(QLocale.c())
-                # All 16 IsoDate options (verified via introspect_cli()) have
-                # default=None -- unlike int/float, there's no "has a real
-                # default" case to branch on, so building one here would be
-                # untestable dead code. Same sentinel trick as Task 10: park
-                # the value at minimumDate() and label it: round-trips to ""
-                # -> omitted by forms._normalize.
+                # All current IsoDate options (verified via introspect_cli())
+                # have default=None -- unlike int/float, there's no "has a
+                # real default" case to branch on, so building one here would
+                # be untestable dead code. Park the value at minimumDate() and
+                # label it: round-trips to "" -> omitted by forms._normalize.
                 widget.setSpecialValueText("(none)")
                 widget.setDate(widget.minimumDate())
             else:
