@@ -8,7 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from autogis.adapters.cli import autogis
-from autogis.core.common.qa import QACollector
+from autogis.core.common.qa import QACollector, SEV_WARNING
 from autogis.core.envmon.layout_manager import load_layout_text_yaml
 
 
@@ -110,6 +110,55 @@ def test_update_missing_layout_is_qa_error(tmp_path):
     assert any(r.category == "layout_missing" and r.severity == "ERROR"
                for r in qa.records)
     aprx.save.assert_not_called()
+
+
+# --- set_layer_visibility (issue #345: never called qa, so a typo'd/renamed
+#     layer name silently failed to toggle visibility) ---
+
+def _layer(name, visible=True):
+    return types.SimpleNamespace(name=name, visible=visible)
+
+
+def _mock_arcpy_maps(maps):
+    arcpy = MagicMock()
+    aprx = MagicMock()
+    aprx.listMaps.return_value = maps
+    arcpy.mp.ArcGISProject.return_value = aprx
+    return arcpy, aprx
+
+
+def _map(layers):
+    m = types.SimpleNamespace()
+    m.listLayers = lambda: layers
+    return m
+
+
+def test_set_layer_visibility_toggles_matched_layers(tmp_path):
+    wells = _layer("Wells", visible=True)
+    plume = _layer("Plume", visible=False)
+    arcpy, aprx = _mock_arcpy_maps([_map([wells, plume])])
+    qa = QACollector()
+    with patch("autogis.core.envmon.layout_manager._arcpy", return_value=arcpy):
+        from autogis.core.envmon.layout_manager import set_layer_visibility
+        set_layer_visibility(tmp_path / "x.aprx", ["Plume"], ["Wells"], qa)
+    assert plume.visible is True
+    assert wells.visible is False
+    assert qa.records == []
+    aprx.save.assert_called_once()
+
+
+def test_set_layer_visibility_warns_on_missing_layer(tmp_path):
+    wells = _layer("Wells")
+    arcpy, aprx = _mock_arcpy_maps([_map([wells])])
+    qa = QACollector()
+    with patch("autogis.core.envmon.layout_manager._arcpy", return_value=arcpy):
+        from autogis.core.envmon.layout_manager import set_layer_visibility
+        set_layer_visibility(tmp_path / "x.aprx", ["Wells"],
+                             ["Plume_Boundary_2026"], qa)
+    warnings = [r for r in qa.records if r.category == "visibility_layer_missing"]
+    assert len(warnings) == 1
+    assert "Plume_Boundary_2026" in warnings[0].message
+    assert warnings[0].severity == SEV_WARNING
 
 
 # --- CLI wiring ---

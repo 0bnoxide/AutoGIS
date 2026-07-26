@@ -10,9 +10,9 @@ from typing import Optional
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
 
+from ..common.config import ND_QUALIFIERS
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
 
-ND_QUALIFIERS = frozenset({"ND", "U", "BDL"})
 _FILL_EXCEED = PatternFill(fill_type="solid", fgColor="FF9999")
 _FILL_HEADER = PatternFill(fill_type="solid", fgColor="D9E1F2")
 

@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Union
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
+from ..common.config import ND_QUALIFIERS
 from ..common.logging import get_logger
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 
@@ -29,7 +30,6 @@ RED_FILL = PatternFill(fill_type="solid", fgColor="FF9999")
 _BOLD = Font(bold=True)
 _MAX_COL_WIDTH = 24
 _DEFAULT_GROUP = "Analytical Results"
-ND_QUALIFIERS = frozenset({"ND", "U", "BDL"})
 
 
 @dataclass

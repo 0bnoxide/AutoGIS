@@ -26,14 +26,21 @@ fully-shipped domain not counted in the 79 tools.
 
 Work has continued past the catalog: the geostatistical group shipped
 (ADR-0085/0086) and the post-catalog [production roadmap](docs/production-roadmap.md)
-has delivered **Phases 1–9**. Still outstanding: **Phase 10 (portfolio monitoring
-digest)**, which is unimplemented and gated behind Phase 9's live-AGOL exit
+has shipped code for **Phases 1–9**, though the gate isn't fully closed on every
+phase — see [CLAUDE.md](CLAUDE.md#post-catalog-production-roadmap) for the
+authoritative per-phase gate log. Notably: **Phase 5's gate is not yet met**
+(recipe save/validate/run ship, but GUI recipe *load* is still CLI-only via
+`envmon validate-recipe`/`run-recipe`), and Phases 7–9 each have one owner-gated
+acceptance leg still open (issue #307 tracks Phase 9's). Still unimplemented:
+**Phase 10 (portfolio monitoring digest)**, gated behind Phase 9's live-AGOL exit
 criteria (ADR-0111), and the four deferred §11 AI tools.
 
 A separate [Survey123 optional add-on roadmap](docs/survey123-add-on-roadmap.md)
-defines an opt-in install boundary plus eight phases and four milestones. It is
-accepted planning direction, not part of or a blocker for the core production
-sequence (ADR-0112).
+defines an opt-in install boundary plus eight phases and four milestones
+(ADR-0112). It does not block or reorder the core production sequence above.
+Phase 0 slice A has already shipped (ADR-0113, PR #359) — the lifecycle
+SampleID contract — so this track is no longer pure planning; Phases 1–7
+remain to be started.
 
 **Counts are not pinned in this README** — they drift faster than the prose does.
 Derive them live:
@@ -61,7 +68,7 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [FigureSpecTemplate](autogis/core/common/config.py) | 10 | `envmon figure-spec` | Tool 10: load and validate a figure spec (headless) |
 | [ValidateEnvConfig](autogis/core/envmon/validate_config.py) | 10.2 | `envmon validate-config` | Tool: validate a per-site config bundle (headless) |
 | [ManageAnalyteDictionary](autogis/core/envmon/manage_analyte_dict.py) | 3.3 | `envmon manage-analyte-dict` | Tool: validate / inspect the analyte dictionary (read-only, headless) |
-| [ManageScreeningLevels](autogis/core/envmon/manage_screening_levels.py) | 3.x | `envmon manage-screening-levels` | Validate and inspect the screening levels YAML (headless) |
+| [ManageScreeningLevels](autogis/core/envmon/manage_screening_levels.py) | 3.x | `envmon manage-screening-levels` *(DRAFT pre-production stub — see `envmon list-tools`)* | Validate and inspect the screening levels YAML (headless) |
 | [ReconcileSampleLocations](autogis/core/envmon/reconcile_locations.py) | 3.2 | `envmon reconcile-locations` *(HYBRID)* | Tool: pre-flight check that workbook location IDs match the well layer |
 | [ValidateAndConvertUnits](autogis/core/envmon/validate_units.py) | 3.5 | `envmon validate-units` | Tool: validate analyte/screening units for convertibility (headless) |
 | [EvaluateDuplicateRPD](autogis/core/envmon/evaluate_rpd_qa.py) | 3.6 | `envmon evaluate-rpd-qa` / `envmon evaluate-rpd` | Tool: compute RPD for EDD duplicate samples and emit QA records |
@@ -97,8 +104,8 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [BatchImportEnvironmentalWorkbooks](autogis/core/envmon/batch_workbook_importer.py) | 2.2 | `envmon batch-import-workbooks` | Tool 2.2: batch-import EDD workbooks from a manifest CSV or a directory (headless) |
 | [MigrateLegacyMonitoringData](autogis/core/envmon/legacy_migrator.py) | 2.4 | `envmon migrate-legacy-data` | Tool 2.4: convert wide-format legacy CSV to long-format result records (headless) |
 | [CreateSurvey123SamplingEvent](autogis/core/envmon/create_sampling_event.py) | 2.7 | `envmon create-sampling-event` | Tool 2.7: generate pre-field sampling event plan (headless) |
-| [SurveyToWellElevationUpdate](autogis/core/envmon/survey_to_well_elevation.py) | 8.5 | `envmon survey-to-well-elevation` *(HYBRID — `--gdb` write path is LOCAL)* | Tool 8.5: push QA-passed RTK survey elevations to MonitoringWells.TOC_ft |
-| [RegisterDroneFlight](autogis/core/envmon/register_drone_flight.py) | 8.6 | `envmon register-drone-flight` *(HYBRID — GDB write path is LOCAL)* | Tool 8.6: register a drone flight from an inventory YAML (ArcGIS Pro) |
+| [SurveyToWellElevationUpdate](autogis/core/envmon/survey_to_well_elevation.py) | 8.5 | `envmon survey-to-well-elevation` *(registered LOCAL — headless via `--wells-csv`; `--gdb` write path needs arcpy)* | Tool 8.5: push QA-passed RTK survey elevations to MonitoringWells.TOC_ft |
+| [RegisterDroneFlight](autogis/core/envmon/register_drone_flight.py) | 8.6 | `envmon register-drone-flight` *(registered LOCAL — headless via `--dry-run`; GDB write path needs arcpy)* | Tool 8.6: register a drone flight from an inventory YAML (ArcGIS Pro) |
 | [ImportDroneProducts](autogis/core/envmon/import_drone_products.py) | 8.8 | `envmon validate-drone-products` (headless QA half; the GDB-writing half is LOCAL — see below) | Tool 8.8: validate a drone product manifest CSV (headless) |
 | [ImportFieldBoringLogs](autogis/core/envmon/import_boring_logs.py) | 8.0b | `envmon validate-boring-logs` (headless QA half; the GDB-writing half is LOCAL — see below) | Tool 8.0b: validate a boring-log CSV package (headless) |
 | [CreateBoringLogDatabase](autogis/core/envmon/create_boring_log_database.py) | 8.0a | `envmon create-boring-log-db` | Tool 8.0a: create (or --validate) the normalized boring-log SQLite database (headless) |
@@ -112,19 +119,19 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [IngestReviewerMapComments](autogis/core/envmon/ingest_reviewer_comments.py) | 9.4 | `envmon ingest-reviewer-comments` | Tool 9.4: ingest reviewer map comments/redlines into a tracked table |
 | [GenerateSyntheticEnvWorkbook](autogis/core/envmon/synthetic_workbook.py) | 10.6 | `envmon gen-synthetic-workbook` | Tool 10.6: write a seeded synthetic environmental workbook for parser hardening |
 | [RunEnvJobQueue](autogis/core/envmon/job_queue.py) | 10.4 | `envmon generate-job-queue` | Tool 10.4: generate an ordered job-queue JSON from a manifest YAML (headless) |
-| [GenerateDraftPlumeBoundary](autogis/core/envmon/draft_plume_boundary.py) | 4.5 | `envmon draft-plume-boundary` *(HYBRID — `--gdb` write path is LOCAL; DRAFT output)* | Tool 4.5: draft plume-extent polygon (convex/concave hull) from exceedance points |
+| [GenerateDraftPlumeBoundary](autogis/core/envmon/draft_plume_boundary.py) | 4.5 | `envmon draft-plume-boundary` *(registered LOCAL — headless without `--gdb`; `--gdb` write path needs arcpy; DRAFT output)* | Tool 4.5: draft plume-extent polygon (convex/concave hull) from exceedance points |
 | [RefreshMonitoringDashboardData](autogis/core/agol/dashboard_refresh.py) | 6.4 | `agol refresh-dashboard` | Tool 6.4: push local Dash_* data-mart tables to hosted AGOL layers (HYBRID) |
 | [AuditAGOLSchemaAgainstLocalConfig](autogis/core/agol/audit_schema.py) | 6.6 | `agol audit-schema` | Tool 6.6: compare a hosted AGOL feature layer schema against a local spec (HYBRID) |
 | [PublishDashboardFromSpec](autogis/core/agol/dashboard_publish.py) | 6.8 | `agol publish-dashboard` | Tool 6.8: compile a YAML dashboard spec and create-or-update the AGOL Dashboard item |
 | [AuditAGOLItemDependencies](autogis/core/agol/audit_dependencies.py) | 6.9 | `agol audit-dependencies` | Tool 6.9: find items that reference/depend on an AGOL item (HYBRID) |
 | [PromoteAGOLDataBetweenStages](autogis/core/agol/promote.py) | 6.10 | `agol promote` | Tool 6.10: promote an AGOL layer's data between DEV/QA/PROD stages |
-| [UpdateWellElevationsFromLevelLoop](autogis/core/envmon/level_loop.py) | 8.2 | `envmon update-well-elevations` *(HYBRID — `--gdb` write path is LOCAL)* | Tool 8.2: push a closed level-loop run's elevations to MonitoringWells.TOC_ft |
+| [UpdateWellElevationsFromLevelLoop](autogis/core/envmon/level_loop.py) | 8.2 | `envmon update-well-elevations` *(registered LOCAL — headless via `--wells-csv`; `--gdb` write path needs arcpy)* | Tool 8.2: push a closed level-loop run's elevations to MonitoringWells.TOC_ft |
 | [ExportContoursForCivil3D](autogis/core/envmon/civil3d_points.py) | 8.2 | `envmon export-civil3d` | Tool 8.2: PNEZD point CSV + projection note + `--landxml` CgPoints export, all headless (ADR-0088); the `.pyt` tool exports an existing Pro TIN as a triangulated LandXML surface (ADR-0089) |
 | [GenerateSubsurfaceProfileFromBorings](autogis/core/envmon/subsurface_profile.py) | — | `envmon generate-subsurface-profile` | Render a subsurface profile figure from borings projected onto a line (headless; `profile` extra for matplotlib) |
 | [DraftLithologyFromScan](autogis/core/envmon/draft_lithology_from_scan.py) | — | `envmon draft-lithology-from-scan` (DRAFT, unreviewed OCR output) | Draft a lithology CSV from a scanned boring log via a Table-Transformer + TrOCR pipeline (ADR-0074, headless; `ocr` extra) |
 | [UpdateAGOLWebMapFromFigureSpec](autogis/core/agol/webmap.py) | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) | Tool 6.3: push a figure spec's display config into an AGOL web map |
 | [CreateHostedViewsForStakeholders](autogis/core/agol/hosted_views.py) | 6.11 | `agol create-views` | Tool 6.11: create/update audience-specific hosted views (sensitive-field leak is blocking) |
-| [SyncAGOLFeatureLayerToGDB](autogis/core/agol/sync_layer.py) | 6.2 | `agol sync-to-gdb` *(HYBRID — `--gdb` upsert path is LOCAL; attribute sync only — attachments stay with `autogis harvest` + `envmon index-field-attachments`)* | Tool 6.2: download hosted feature layer edits into the local FGDB (HYBRID) |
+| [SyncAGOLFeatureLayerToGDB](autogis/core/agol/sync_layer.py) | 6.2 | `agol sync-to-gdb` *(registered LOCAL — headless via `--out-csv`; `--gdb` upsert path needs arcpy; attribute sync only — attachments stay with `autogis harvest` + `envmon index-field-attachments`)* | Tool 6.2: download hosted feature layer edits into the local FGDB |
 
 Post-roadmap extras (not counted in the 79-tool catalog):
 
@@ -312,6 +319,12 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 
 ### Headless (CLOUD / HYBRID) — run anywhere without ArcGIS Pro
 
+A few commands below are registered `LOCAL` (arcpy required) yet still have a
+genuinely headless invocation — the note column says which flag combination
+avoids arcpy. They're listed here for that reason, but `envmon list-tools`
+correctly reports them as `LOCAL`, since the registry classifies by command,
+not by flag.
+
 | Command | Runtime | Backing module |
 |---------|---------|----------------|
 | `autogis harvest` | HYBRID | `core/harvest/` |
@@ -382,8 +395,8 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon validate-boring-logs` | CLOUD | `core/envmon/import_boring_logs.py` (QA-only half; GDB write is LOCAL) |
 | `autogis envmon create-boring-log-db` | CLOUD | `core/envmon/create_boring_log_database.py` |
 | `autogis envmon index-field-attachments` | CLOUD | `core/envmon/index_field_attachments.py` |
-| `autogis envmon survey-to-well-elevation --wells-csv` | HYBRID | `core/envmon/survey_to_well_elevation.py` (`--gdb` write path is LOCAL) |
-| `autogis envmon register-drone-flight --dry-run` | HYBRID | `core/envmon/register_drone_flight.py` (GDB write path is LOCAL) |
+| `autogis envmon survey-to-well-elevation --wells-csv` | LOCAL* | `core/envmon/survey_to_well_elevation.py` (`--gdb` write path needs arcpy) |
+| `autogis envmon register-drone-flight --dry-run` | LOCAL* | `core/envmon/register_drone_flight.py` (GDB write path needs arcpy) |
 | `autogis envmon rtk-control-check` | CLOUD | `core/envmon/rtk_control_check.py` |
 | `autogis envmon portfolio-metrics` | CLOUD | `core/envmon/portfolio_metrics.py` |
 | `autogis envmon evaluate-gw-models` | CLOUD | `core/envmon/evaluate_gw_models.py` |
@@ -405,12 +418,12 @@ and backing modules below are taken directly from `autogis/runtime/capabilities.
 | `autogis envmon event-status` | CLOUD | `core/envmon/event_status.py` |
 | `autogis envmon create-sampling-event` | CLOUD | `core/envmon/create_sampling_event.py` |
 | `autogis envmon gen-boring-logs` | CLOUD | `core/envmon/boring_log_report.py` |
-| `autogis envmon update-well-elevations --wells-csv` | HYBRID | `core/envmon/level_loop.py` (`--gdb` write path is LOCAL) |
-| `autogis envmon draft-plume-boundary` (no `--gdb`) | HYBRID | `core/envmon/draft_plume_boundary.py` (`--gdb` write path is LOCAL; DRAFT output) |
-| `autogis envmon build-fieldmaps --dry-run` | HYBRID | `core/envmon/fieldmaps_plan.py` (plan preview; `--gdb` provisioning is LOCAL) |
-| `autogis envmon gen-map-series --dry-run` | HYBRID | `core/envmon/map_series_plan.py` (job planning; the export loop is LOCAL) |
-| `autogis envmon build-conc-surface --dry-run` | HYBRID | `core/envmon/concentration_surface.py` (headless point preview; interpolate/clip/write is LOCAL) |
-| `autogis agol sync-to-gdb --out-csv` | HYBRID | `core/agol/sync_layer.py` (headless edits dump; `--gdb` upsert is LOCAL) |
+| `autogis envmon update-well-elevations --wells-csv` | LOCAL* | `core/envmon/level_loop.py` (`--gdb` write path needs arcpy) |
+| `autogis envmon draft-plume-boundary` (no `--gdb`) | LOCAL* | `core/envmon/draft_plume_boundary.py` (`--gdb` write path needs arcpy; DRAFT output) |
+| `autogis envmon build-fieldmaps --dry-run` | LOCAL* | `core/envmon/fieldmaps_plan.py` (plan preview; `--gdb` provisioning needs arcpy) |
+| `autogis envmon gen-map-series --dry-run` | LOCAL* | `core/envmon/map_series_plan.py` (job planning; the export loop needs arcpy) |
+| `autogis envmon build-conc-surface --dry-run` | LOCAL* | `core/envmon/concentration_surface.py` (headless point preview; interpolate/clip/write needs arcpy) |
+| `autogis agol sync-to-gdb --out-csv` | LOCAL* | `core/agol/sync_layer.py` (headless edits dump; `--gdb` upsert needs arcpy) |
 | `autogis agol audit-schema` | — (AGOL auth) | `core/agol/audit_schema.py` |
 | `autogis agol audit-dependencies` | — (AGOL auth) | `core/agol/audit_dependencies.py` |
 | `autogis agol refresh-dashboard` | — (AGOL auth) | `core/agol/dashboard_refresh.py` |
@@ -513,6 +526,7 @@ python -m pytest -q           # count is extras-dependent: python -m pytest --co
 | `profile` | matplotlib | subsurface profile rendering (`generate-subsurface-profile`) |
 | `opentopo` | pyproj | non-WGS84 AOI reprojection for `envmon download-dem` (headless path only) |
 | `ocr` | torch, transformers, pillow, pymupdf | boring-log OCR digitization (`draft-lithology-from-scan`, DRAFT tool) |
+| `notebook` | nbclient, ipykernel | real-kernel restart-run-all test for the Phase 4 monitoring-event review notebook (ADR-0105); opt-in, not needed to use the notebook itself |
 
 ---
 
@@ -653,9 +667,13 @@ autogis envmon build-conc-surface ...                       # Phase-5 slice 2, D
 
 > `import-edd`, `import-rtk-survey`, `route-survey123`, `import-drone-products`,
 > `import-boring-logs`, and `build-dashboard-data-mart` are also Pro-only; the `.pyt` toolbox is
-> the primary UI for all LOCAL commands. `survey-to-well-elevation --gdb` and
-> `register-drone-flight` (non-dry-run) are HYBRID: headless without `--gdb` /
-> with `--dry-run`, Pro-only when writing to the geodatabase.
+> the primary UI for all LOCAL commands. `survey-to-well-elevation`,
+> `register-drone-flight`, `update-well-elevations`, `draft-plume-boundary`,
+> `build-fieldmaps`, `gen-map-series`, `build-conc-surface`, and `agol sync-to-gdb`
+> are registered `LOCAL` (see the runtime matrix above for why, not `HYBRID`
+> like `reconcile-locations`) but each has a headless invocation: no `--gdb` /
+> with `--dry-run` / `--wells-csv` / `--out-csv`, Pro-only when actually writing
+> to the geodatabase.
 
 ---
 

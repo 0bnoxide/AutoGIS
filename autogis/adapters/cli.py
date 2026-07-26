@@ -639,13 +639,13 @@ def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
 @click.option("--samples-csv", default=None, type=click.Path(exists=True),
-              help="CSV export of Env_Samples (optional; used for metadata only).")
+              help="CSV export of Env_Samples (optional; adds a 'Samples' sheet).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output .xlsx path.")
-@click.option("--site-id", default="", help="Site ID label for the summary.")
-@click.option("--event-id", default="", help="Event ID label for the summary.")
+@click.option("--site-id", default="", help="Site ID label added to a 'Metadata' sheet.")
+@click.option("--event-id", default="", help="Event ID label added to a 'Metadata' sheet.")
 def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
-    """Tool: export Env_AnalyticalResults to a four-sheet Excel summary."""
+    """Tool: export Env_AnalyticalResults to an Excel summary workbook."""
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
     from autogis.core.common.records_csv import read_records_csv
     from autogis.core.common.qa import QACollector
@@ -4708,14 +4708,18 @@ def merge_event_results_cmd(result_paths, results_dir, event_labels,
 def build_max_result_dataset_cmd(results_path, sl_path, analytes, wells,
                                   date_from, date_to, include_nd, out, report):
     """Build max-detected dataset across all events (headless)."""
-    import csv as _csv, yaml as _yaml
+    import csv as _csv
     from autogis.core.envmon.max_result_dataset import (
         build_max_result_dataset, write_max_result_csv)
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     qa = QACollector()
     records = build_max_result_dataset(
         rows, screening_levels=sl,
@@ -4763,13 +4767,17 @@ def generate_qc_summary_cmd(results_path, out, report):
 @click.option("--report", default=None, type=click.Path())
 def build_compliance_table_cmd(results_path, sl_path, analytes, date_from, out, report):
     """Build cross-event compliance summary matrix + detail workbook (headless)."""
-    import csv as _csv, yaml as _yaml
+    import csv as _csv
     from autogis.core.envmon.compliance_summary import (
         build_compliance_summary, write_compliance_workbook)
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     analyte_list = [a.strip() for a in analytes.split(",")] if analytes else None
     result = build_compliance_summary(rows, screening_levels=sl,
                                        analytes=analyte_list, date_from=date_from)
@@ -4793,10 +4801,14 @@ def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
     import csv as _csv, yaml as _yaml
     from autogis.core.envmon.regulatory_table_builder import (
         build_regulatory_table_specs, write_regulatory_workbook)
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     gm = _yaml.safe_load(Path(gm_path).read_text(encoding="utf-8")) if gm_path else None
     specs = build_regulatory_table_specs(rows, group_map=gm, screening_levels=sl)
     result = write_regulatory_workbook(rows, specs, Path(out), site_id=site_id,
@@ -4970,10 +4982,13 @@ def generate_site_narrative_cmd(site_id, event_label, max_results_path,
                                  change_log_path, plan_path, results_path,
                                  sl_path, top_n, out, report):
     """Generate template-driven site monitoring narrative (headless)."""
-    import yaml as _yaml
     from autogis.core.envmon.site_narrative_generator import generate_site_narrative
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
-    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     result = generate_site_narrative(
         site_id, event_label,
         max_result_path=Path(max_results_path) if max_results_path else None,
@@ -5054,10 +5069,14 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
     from autogis.core.envmon.report_appendix_builder import (
         build_appendix_sheet_specs, write_appendix_workbook)
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     group_map = (_yaml.safe_load(Path(group_map_path).read_text())
                  if group_map_path else None)
     dates = [d.strip() for d in event_dates.split(",")] if event_dates else None
@@ -5104,13 +5123,16 @@ def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
     """Build exceedance event dataset with ratio/tier enrichment (headless)."""
     import csv as _csv
     from autogis.core.envmon.build_exceedance_event import (
-        build_exceedance_event, load_screening_levels_yaml,
-        write_exceedance_event_csv)
+        build_exceedance_event, write_exceedance_event_csv)
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = load_screening_levels_yaml(Path(sl_path))
+    try:
+        sl = load_flat_screening_levels(Path(sl_path))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     date_range = (date_from, date_to) if (date_from and date_to) else None
     qa = QACollector()
     records = build_exceedance_event(
@@ -5178,17 +5200,14 @@ def generate_trend_charts_cmd(history_csv, out, analytes, wells, sl_path,
         keep_wells = {w.strip() for w in wells.split(",")}
         series_list = [s for s in series_list if s.location_id in keep_wells]
     if sl_path:
-        sl_map = yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) or {}
-        if not isinstance(sl_map, dict):
-            raise click.ClickException(
-                f"--screening-levels {sl_path} must be a YAML mapping of "
-                f"{{AnalyteName: level}}, got {type(sl_map).__name__}.")
+        from autogis.core.common.config import ConfigError, load_flat_screening_levels
+        try:
+            sl_map = load_flat_screening_levels(Path(sl_path))
+        except ConfigError as exc:
+            raise click.ClickException(str(exc))
         for s in series_list:
             if s.analyte_name in sl_map:
-                try:
-                    s.screening_level = float(sl_map[s.analyte_name])
-                except (TypeError, ValueError):
-                    pass
+                s.screening_level = sl_map[s.analyte_name]
     chart_count = write_trend_charts(series_list, Path(out),
                                      max_per_sheet=max_per_sheet)
     click.echo(f"Written: {out}  ({len(series_list)} series, "

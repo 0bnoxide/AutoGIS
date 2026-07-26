@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -49,6 +50,7 @@ class SnapshotManifest:
     tables_skipped: list[str] = field(default_factory=list)
     feature_classes_copied: list[str] = field(default_factory=list)
     row_counts: dict[str, int] = field(default_factory=dict)
+    compressed_path: Optional[str] = None
 
 
 def format_manifest(manifest: SnapshotManifest) -> str:
@@ -57,6 +59,10 @@ def format_manifest(manifest: SnapshotManifest) -> str:
         f"Exported: {manifest.exported_at}  Schema: v{manifest.schema_version}",
         f"Source: {manifest.source_gdb}",
         f"Output: {manifest.output_path}",
+    ]
+    if manifest.compressed_path:
+        lines.append(f"Compressed: {manifest.compressed_path}")
+    lines += [
         "",
         f"Tables copied ({len(manifest.tables_copied)}):",
     ]
@@ -72,6 +78,23 @@ def format_manifest(manifest: SnapshotManifest) -> str:
     return "\n".join(lines)
 
 
+def _escape_sql_literal(value: str) -> str:
+    """Escape a value for embedding in a single-quoted SQL string literal by
+    doubling embedded single quotes (issue #366 -- site_id/event_id are
+    config-sourced, not remote-untrusted, but an unescaped quote still
+    produces a malformed or attacker-shaped predicate)."""
+    return value.replace("'", "''")
+
+
+def compress_snapshot_gdb(out_gdb: str) -> str:
+    """ZIP a file GDB directory into a sibling ``<out_gdb>.zip``. Arcpy-free
+    (a file GDB is an ordinary directory on disk) -- returns the archive path.
+    """
+    gdb_path = Path(out_gdb)
+    return shutil.make_archive(str(gdb_path), "zip",
+                               root_dir=str(gdb_path.parent), base_dir=gdb_path.name)
+
+
 def build_where(
     site_id: str,
     event_id: str,
@@ -81,9 +104,9 @@ def build_where(
     """Build WHERE clause for a site/event filter. Returns None for lookup tables."""
     parts = []
     if has_site:
-        parts.append(f"SiteID = '{site_id}'")
+        parts.append(f"SiteID = '{_escape_sql_literal(site_id)}'")
     if has_event:
-        parts.append(f"EventID = '{event_id}'")
+        parts.append(f"EventID = '{_escape_sql_literal(event_id)}'")
     return " AND ".join(parts) if parts else None
 
 
@@ -150,7 +173,7 @@ def export_event_snapshot(   # pragma: no cover
             continue
         fields = [f.name for f in arcpy.ListFields(src)]
         has_site = "SiteID" in fields
-        where = f"SiteID = '{site_id}'" if has_site else None
+        where = build_where(site_id, "", has_site, False)
         dst = str(Path(out_gdb) / fc_name)
         if where:
             arcpy.conversion.ExportFeatures(src, dst, where)
@@ -158,6 +181,11 @@ def export_event_snapshot(   # pragma: no cover
             arcpy.management.Copy(src, dst)
         fc_copied.append(fc_name)
         row_counts[fc_name] = int(arcpy.management.GetCount(dst).getOutput(0))
+
+    # Issue #342: --compress was accepted and documented ("ZIP the output
+    # GDB") but silently did nothing. Archive as a sibling .zip rather than
+    # deleting the GDB out from under a caller that might still hold it open.
+    compressed_path = compress_snapshot_gdb(out_gdb) if compress else None
 
     manifest = SnapshotManifest(
         site_id=site_id, event_id=event_id,
@@ -168,6 +196,7 @@ def export_event_snapshot(   # pragma: no cover
         tables_copied=copied, tables_skipped=skipped,
         feature_classes_copied=fc_copied,
         row_counts=row_counts,
+        compressed_path=compressed_path,
     )
     # Named after the GDB, not a bare "manifest.json": the manifest lands in
     # the shared --out folder, so a fixed name is clobbered by the next export

@@ -21,9 +21,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 
+from ..common.config import ND_QUALIFIERS as _ND_QUALIFIERS
 from ..common.qa import QACollector, QARecord, SEV_INFO
-
-_ND_QUALIFIERS = frozenset({"ND", "U", "BDL"})
 
 
 class IntervalTier:
