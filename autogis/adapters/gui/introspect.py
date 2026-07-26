@@ -28,6 +28,8 @@ from dataclasses import dataclass
 
 import click
 
+from autogis.adapters.param_types import CommaList, IsoDate, SuggestedChoice
+
 __all__ = ["FormField", "CommandForm", "XOR_PAIRS", "LABEL_OVERRIDES", "introspect_cli"]
 
 
@@ -100,7 +102,7 @@ class FormField:
 
     name: str  # click param name (python identifier, e.g. "wells_csv")
     label: str  # humanized name for display
-    kind: str  # "text" | "int" | "float" | "flag" | "choice" | "path"
+    kind: str  # "text" | "int" | "float" | "flag" | "choice" | "path" | "date" | "multichoice"
     required: bool
     default: object
     choices: tuple[str, ...] | None = None  # populated for kind == "choice"
@@ -109,6 +111,9 @@ class FormField:
     is_path_output: bool = False  # kind == "path": save picker vs open picker
     is_dir: bool = False  # kind == "path": directory-only -> folder picker
     xor_group: str | None = None  # shared id; fill one, grey its sibling
+    strict: bool = True  # kind == "choice": False -> editable combo (SuggestedChoice)
+    minimum: float | None = None  # kind == "int"/"float": from IntRange/FloatRange
+    maximum: float | None = None
 
 
 @dataclass(frozen=True)
@@ -141,9 +146,20 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
     choices: tuple[str, ...] | None = None
     is_path_output = False
     is_dir = False
+    strict = True
+    minimum = maximum = None
     ptype = param.type
     if getattr(param, "is_flag", False):
         kind = "flag"
+    elif isinstance(ptype, SuggestedChoice):
+        kind = "choice"
+        choices = tuple(ptype.choices)
+        strict = False
+    elif isinstance(ptype, CommaList):
+        kind = "multichoice"
+        choices = tuple(ptype.choices)
+    elif isinstance(ptype, IsoDate):
+        kind = "date"
     elif isinstance(ptype, click.Choice):
         kind = "choice"
         choices = tuple(str(c) for c in ptype.choices)
@@ -153,10 +169,14 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
         # dir_okay & file_okay both default True (ambiguous, most params) --
         # only a param that opts out of files is unambiguously a folder.
         is_dir = ptype.dir_okay and not ptype.file_okay
-    elif ptype.name == "integer":
+    elif ptype.name in ("integer", "integer range"):
+        # click.IntRange.name is "integer range", not "integer"; a bare
+        # click.INT has no .min/.max, hence getattr(..., None).
         kind = "int"
-    elif ptype.name == "float":
+        minimum, maximum = getattr(ptype, "min", None), getattr(ptype, "max", None)
+    elif ptype.name in ("float", "float range"):
         kind = "float"
+        minimum, maximum = getattr(ptype, "min", None), getattr(ptype, "max", None)
     # everything else — incl. comma-separated list options like
     # --analytes "a,b,c" — is deliberately plain text: the value passes
     # through unchanged and the option's help documents the format.
@@ -198,6 +218,9 @@ def _field(param: click.Parameter, xor_pair: tuple[str, str] | None) -> FormFiel
         is_path_output=is_path_output,
         is_dir=is_dir,
         xor_group=xor_group,
+        strict=strict,
+        minimum=minimum,
+        maximum=maximum,
     )
 
 

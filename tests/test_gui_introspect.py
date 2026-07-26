@@ -2,9 +2,12 @@
 form-field list without errors, and the hardcoded XOR_PAIRS table must
 resolve to real parameter names (drift guard against option renames)."""
 
+import click
+
+from autogis.adapters.param_types import CommaList, IsoDate, SuggestedChoice
 from autogis.adapters.gui.introspect import LABEL_OVERRIDES, XOR_PAIRS, introspect_cli
 
-KINDS = {"text", "int", "float", "flag", "choice", "path"}
+KINDS = {"text", "int", "float", "flag", "choice", "path", "date", "multichoice"}
 
 
 def _by_label():
@@ -123,3 +126,53 @@ def test_unreachable_marking():
         assert forms[label].unreachable_reason == reason
         assert forms[label].fields is not None  # still described, not omitted
     assert forms["envmon inspect"].unreachable_reason is None
+
+
+def _only_field(param_decls, **kw):
+    """Build a one-option command and return its non-help FormField."""
+    @click.group()
+    def root():
+        pass
+
+    @root.command("probe")
+    @click.option(*param_decls, **kw)
+    def probe(**_):
+        pass
+
+    form = next(f for f in introspect_cli(root) if f.path == ("probe",))
+    return form.fields[0]
+
+
+def test_comma_list_becomes_multichoice_with_choices():
+    f = _only_field(["--features"], type=CommaList(("a", "b")), default="")
+    assert f.kind == "multichoice"
+    assert f.choices == ("a", "b")
+
+
+def test_suggested_choice_is_a_non_strict_choice():
+    f = _only_field(["--matrix"], type=SuggestedChoice(("GW", "SOIL")))
+    assert f.kind == "choice"
+    assert f.choices == ("GW", "SOIL")
+    assert f.strict is False
+
+
+def test_plain_click_choice_stays_strict():
+    f = _only_field(["--fmt"], type=click.Choice(["a", "b"]))
+    assert f.kind == "choice"
+    assert f.strict is True
+
+
+def test_iso_date_becomes_date_kind():
+    f = _only_field(["--event-date"], type=IsoDate())
+    assert f.kind == "date"
+
+
+def test_int_range_exposes_bounds():
+    f = _only_field(["--limit"], type=click.IntRange(min=0, max=99))
+    assert f.kind == "int"
+    assert (f.minimum, f.maximum) == (0, 99)
+
+
+def test_unbounded_int_has_no_bounds():
+    f = _only_field(["--limit"], type=int)
+    assert (f.minimum, f.maximum) == (None, None)
