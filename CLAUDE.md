@@ -183,8 +183,15 @@ The user accepted the planning direction on 2026-07-25.
 the opt-in install boundary, eight sequential phases, four milestones, and
 per-phase production gates; ADR-0112 records the packaging and ordering
 decision. This optional track does not delay, reorder, parallelize, or satisfy
-the core production-roadmap phases above. Publishing the plan does not start
-implementation; phase starts and fast-tracking remain explicit user decisions.
+the core production-roadmap phases above. Publishing the plan does not by
+itself start implementation; phase starts and fast-tracking remain explicit
+user decisions.
+
+Gate changes: 2026-07-26 — Phase 0 slice A (lifecycle SampleID contract)
+shipped via ADR-0113 (PR #359, owner-merged); envelope leg deliberately
+deferred to Phase 2 (first consumer). An explicit owner decision, not a
+default fast-track — remaining Phase 0 scope and Phases 1-8 are still
+unstarted.
 
 ## Decision records
 
