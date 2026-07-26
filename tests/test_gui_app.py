@@ -1031,3 +1031,14 @@ def test_tooltip_reaches_choice_and_flag_widgets(qapp):
     win._command_box.setCurrentText("envmon init-site")
     force = win._field_widgets["force"]                   # QCheckBox, has help
     assert force.toolTip() == "Overwrite existing target files (default: refuse)."
+
+
+def test_raw_values_rejects_an_unknown_widget_type(qapp):
+    """A widget class nobody taught _raw_values about must fail loudly, not
+    fall through to .text() and ship whatever string Qt happens to render."""
+    from PySide6.QtWidgets import QSpinBox
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-history")
+    win._field_widgets["limit"] = QSpinBox()  # not yet handled
+    with pytest.raises(TypeError, match="QSpinBox"):
+        win._raw_values()

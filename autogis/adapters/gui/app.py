@@ -433,8 +433,15 @@ class MainWindow(QMainWindow):
                 values[name] = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 values[name] = widget.currentText()
-            else:
+            elif isinstance(widget, QLineEdit):
                 values[name] = widget.text()
+            else:
+                # QSpinBox/QDoubleSpinBox/QDateEdit all inherit .text(), so a
+                # silent fallthrough would ship "(use default)" or a
+                # comma-decimal "0,800" to the child process. Fail loudly.
+                raise TypeError(
+                    f"_raw_values has no rule for {type(widget).__name__} "
+                    f"(field {name!r})")
         return values
 
     def _on_run(self) -> None:
