@@ -1035,13 +1035,51 @@ def test_tooltip_reaches_choice_and_flag_widgets(qapp):
 
 def test_raw_values_rejects_an_unknown_widget_type(qapp):
     """A widget class nobody taught _raw_values about must fail loudly, not
-    fall through to .text() and ship whatever string Qt happens to render."""
-    from PySide6.QtWidgets import QSpinBox
+    fall through to .text() and ship whatever string Qt happens to render.
+    QDateEdit (not QSpinBox -- Task 10 taught _raw_values that one) is the
+    still-unhandled stand-in; date fields render as QLineEdit today (kind
+    "date" falls into the generic branch), so this stays a genuine gap."""
+    from PySide6.QtWidgets import QDateEdit
     win = MainWindow()
     win._command_box.setCurrentText("envmon run-history")
-    win._field_widgets["limit"] = QSpinBox()  # not yet handled
-    with pytest.raises(TypeError, match="QSpinBox"):
+    win._field_widgets["limit"] = QDateEdit()  # not yet handled
+    with pytest.raises(TypeError, match="QDateEdit"):
         win._raw_values()
+
+
+def test_optional_numeric_defaults_to_the_use_default_sentinel(qapp):
+    """envmon run-recipe --timeout: FloatRange(min=0), default=None (verified
+    against the real CLI -- envmon run-history --limit, the brief's original
+    pick, actually defaults to 0, not None, so it takes the plain-range branch
+    instead; see test_setting_a_number_round_trips_to_argv for that case)."""
+    from PySide6.QtWidgets import QDoubleSpinBox
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-recipe")
+    w = win._field_widgets["timeout"]
+    assert isinstance(w, QDoubleSpinBox)
+    assert w.value() == w.minimum()
+    assert w.specialValueText() == "(use default)"
+    assert win._raw_values()["timeout"] == ""   # -> omitted by forms._normalize
+
+
+def test_setting_a_number_round_trips_to_argv(qapp):
+    from autogis.adapters.gui.executor import build_argv
+    from autogis.adapters.gui.forms import build_step
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-history")
+    win._field_widgets["history_path"].setText("h.csv")  # required arg
+    win._field_widgets["limit"].setValue(25)
+    step = build_step(win._forms["envmon run-history"], win._raw_values())
+    assert "--limit" in build_argv(step.command, step.values)
+    assert "25" in build_argv(step.command, step.values)
+
+
+def test_float_uses_c_locale_so_a_comma_decimal_machine_cannot_break_it(qapp):
+    from PySide6.QtCore import QLocale
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon reconcile-locations")
+    w = win._field_widgets["threshold"]
+    assert w.locale() == QLocale.c()
 
 
 def test_window_can_shrink_below_the_form_height(qapp):

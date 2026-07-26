@@ -29,13 +29,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QLocale, Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QCompleter,
-    QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QMainWindow, QPushButton, QScrollArea, QSplitter, QTableWidget,
-    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QMainWindow, QPushButton, QScrollArea, QSpinBox, QSplitter,
+    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from . import settings
@@ -387,6 +387,34 @@ class MainWindow(QMainWindow):
                 widget.addItems(field.choices or ())
                 if field.default is not None:
                     widget.setCurrentText(str(field.default))
+            elif field.kind in ("int", "float"):
+                widget = QSpinBox() if field.kind == "int" else QDoubleSpinBox()
+                # A comma-decimal locale renders e.g. "0,800", which Click's
+                # FLOAT parser in the child process rejects with a usage
+                # error the user has no way to connect back to this field.
+                widget.setLocale(QLocale.c())
+                if isinstance(widget, QDoubleSpinBox):
+                    # Qt's default (2) truncates a real tolerance like 0.001;
+                    # 6 covers that and finer geospatial/ratio values without
+                    # per-field tuning.
+                    widget.setDecimals(6)
+                low = field.minimum if field.minimum is not None else -10**6
+                high = field.maximum if field.maximum is not None else 10**6
+                if field.default is None:
+                    # A spin box always holds a number, but blank->omitted is
+                    # the contract (forms._normalize). Qt's own answer: put a
+                    # sentinel one step below the floor and label it -- this
+                    # applies even to a required field with no default (e.g.
+                    # a coordinate argument): the sentinel round-trips to ""
+                    # -> None, and build_step's own required check catches it
+                    # with a clear "is required" message before any process
+                    # launches, so the softer label costs nothing real.
+                    widget.setRange(low - 1, high)
+                    widget.setSpecialValueText("(use default)")
+                    widget.setValue(low - 1)
+                else:
+                    widget.setRange(low, high)
+                    widget.setValue(field.default)
             else:
                 widget = QLineEdit()
                 if field.default is not None:
@@ -439,6 +467,10 @@ class MainWindow(QMainWindow):
                 values[name] = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 values[name] = widget.currentText()
+            elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                # The sentinel means "unset" -> "" -> omitted by _normalize.
+                values[name] = ("" if widget.text() == widget.specialValueText()
+                                else widget.value())
             elif isinstance(widget, QLineEdit):
                 values[name] = widget.text()
             else:
