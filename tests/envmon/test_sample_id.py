@@ -185,6 +185,28 @@ def test_qc_class_falls_back_to_profile_markers(sample_id):
     assert qc_class(sample_id, ["DUP", "-D", "FD"]) == "field_duplicate"
 
 
+@pytest.mark.parametrize("sample_id", [
+    "MW-1-DUP-20260715-GW",   # marker in the location segment: still parses,
+    "MW-1DUP-20260715-GW",    # so the suffix is empty and only markers can
+    "DUP-MW-1-20260715-GW",   # tell it apart from a primary
+])
+def test_qc_class_honours_a_marker_inside_the_location(sample_id):
+    """table_normalizer matches markers against the location string, so this
+    spelling is one the repo already expects. Classing it PRIMARY would let it
+    fuzzy-consume the real primary — the exact defect the guard exists for."""
+    assert qc_class(sample_id, ["DUP", "-D", "FD"]) == "field_duplicate"
+
+
+def test_qc_class_suffix_beats_a_marker_in_the_location():
+    """An explicit lifecycle suffix is authoritative over a location that
+    merely happens to contain a marker substring."""
+    assert qc_class("MW-1-DUP-20260715-GW-MB", ["DUP"]) == "method_blank"
+
+
+def test_qc_class_does_not_invent_markers_that_are_not_configured():
+    assert qc_class("MW-1-DUP-20260715-GW", ["ZZZ"]) == PRIMARY
+
+
 def test_qc_class_is_none_when_there_is_no_signal():
     """None must not be read as 'primary' — the caller cannot know."""
     assert qc_class("H281-MW01-Q3-VOCs") is None      # sampling_plan identity

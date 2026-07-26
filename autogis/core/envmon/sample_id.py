@@ -33,11 +33,13 @@ QC_SUFFIXES = {
 #: suffix. Distinct from None, which means "carries no QC signal at all".
 PRIMARY = "primary"
 
-#: Fallback duplicate markers for laboratory IDs that are not lifecycle
-#: identities. Same default the parser profiles ship (``duplicate_markers``);
-#: table_normalizer.detect_duplicate_sample reads it from here so the default
-#: lives in one place.
-DEFAULT_DUPLICATE_MARKERS = ["DUP", "-D", " FD", "FD-"]
+#: Fallback duplicate markers, used only when a parser profile declares no
+#: ``duplicate_markers`` of its own (the shipped profiles declare
+#: ``["DUP", "-D", "FD"]``, which is deliberately not this list — a bare "FD"
+#: matches too much without a delimiter). table_normalizer.
+#: detect_duplicate_sample reads it from here so the fallback lives in one
+#: place.
+DEFAULT_DUPLICATE_MARKERS = ("DUP", "-D", " FD", "FD-")
 
 
 @dataclass(frozen=True)
@@ -133,21 +135,36 @@ def qc_class(sample_id: str,
     """Classify a SampleID as a QC type, PRIMARY, or None.
 
     A lifecycle identity answers from its own suffix (so ``-FD``, ``-FD-A``
-    and ``-FD-B`` all class as ``field_duplicate``). Anything else falls back
-    to the parser profile's ``duplicate_markers`` — this repo's own labs ship
+    and ``-FD-B`` all class as ``field_duplicate``). Otherwise the parser
+    profile's ``duplicate_markers`` decide — this repo's own labs ship
     ``-DUP``/``-D`` identities, which are duplicates but not lifecycle IDs.
+    A marker is honoured inside the *location* segment too (``MW-1-DUP-…``
+    parses as a lifecycle ID whose location happens to carry the marker);
+    ``table_normalizer.detect_duplicate_sample`` matches markers the same way,
+    so that spelling is one this repo already expects from labs.
 
-    None means "no recognizable QC signal", never "primary": a caller must
-    not read an unparseable, unmarked lab ID as a primary sample.
+    Markers can only say "duplicate", not which kind, so a marked ID classes
+    as ``field_duplicate``: a lab's ``-DUP`` is the reported half of a field
+    duplicate. A lifecycle ``-LD`` stays ``lab_duplicate`` — a lab split is a
+    different sample from a field duplicate, so the two must not pair.
+
+    None means "no recognizable QC signal", never "primary". Callers must not
+    treat it as primary; the reconciliation guard lets None through only
+    because an unclassifiable ID carries no evidence either way.
     """
+    markers = duplicate_markers or DEFAULT_DUPLICATE_MARKERS
+
+    def marked(text: str) -> bool:
+        upper = (text or "").upper()
+        return any(str(m).upper() in upper for m in markers)
+
     parts = parse_sample_id(sample_id)
     if parts is not None:
-        return QC_SUFFIXES[f"-{parts.qc.lower()}"] if parts.qc else PRIMARY
-    markers = duplicate_markers or DEFAULT_DUPLICATE_MARKERS
-    upper = (sample_id or "").upper()
-    if any(str(m).upper() in upper for m in markers):
-        return "field_duplicate"
-    return None
+        if parts.qc:
+            return QC_SUFFIXES[f"-{parts.qc.lower()}"]
+        # suffix wins over markers; only a bare lifecycle ID consults them
+        return "field_duplicate" if marked(parts.location_id) else PRIMARY
+    return "field_duplicate" if marked(sample_id) else None
 
 
 def xform_sample_id_calc(well_field: str = "WellID",

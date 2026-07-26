@@ -1,5 +1,17 @@
 # Survey123 SampleID Contract (Phase 0 Slice A) Implementation Plan
 
+> **SUPERSEDED IN PART — this is the plan as approved, kept as a record; it is
+> not a description of what shipped.** Code review during PR #359 rejected the
+> `IsFieldDup` `select_one yes_no` question this plan specifies (Task 3, and its
+> references in Tasks 2/4 and the `dup_field` parameter). It duplicated the
+> `QAFlags` choice `field_dup` that ADR-0021 already provided, and two
+> affordances for one fact let a crew tick the labelled one and silently emit a
+> SampleID identical to the primary. What shipped: no new question, no `yes_no`
+> list, and the duplicate leg reads `selected(${QAFlags}, "field_dup")`. The
+> shipped design also adds `strip_qc` / `qc_class`, populates the duplicate
+> metadata RPD pairing reads, and extends the reconcile guard to profile
+> duplicate markers. **ADR-0113 is authoritative.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** One owner module for the lifecycle SampleID (`{location}-{YYYYMMDD}-{matrix}[-{qc}]`), consumed by all five call sites, fixing the unproducible field-duplicate defect and the fuzzy-match duplicate-consumes-primary defect.

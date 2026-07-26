@@ -84,6 +84,16 @@ def test_sample_id_calc_comes_from_shared_contract(wb):
     pytest.fail("SampleID row not found")
 
 
+def test_sample_id_calculate_follows_the_question_it_reads(wb):
+    """SampleID reads ${QAFlags}, so it is emitted after it. XLSForm resolves
+    calculates by dependency rather than row order, but a backward reference
+    needs no such guarantee — and a calculate renders nothing, so ordering it
+    this way is free."""
+    ws = wb["survey"]
+    names = [ws.cell(r, 2).value for r in range(2, ws.max_row + 1)]
+    assert names.index("SampleID") > names.index("QAFlags")
+
+
 def test_field_duplicate_reuses_the_single_qa_flags_question(wb):
     """One affordance only. A second question (the withdrawn IsFieldDup) let a
     crew tick the ADR-0021 flag, leave the other at its default, and produce a

@@ -123,6 +123,17 @@ def test_primary_never_consumes_configured_lab_duplicate_marker(lab_id):
     assert [s.sample_id for s in r.lab_only] == [lab_id]
 
 
+def test_primary_never_consumes_a_location_marked_lab_duplicate():
+    """MW-1-DUP-... parses as a lifecycle ID whose *location* carries the
+    marker, so the suffix is empty. Reading that as a primary let it consume
+    the real primary at 0.8889."""
+    fs = [Survey123Sample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")]
+    lab = [LabSample("MW-1-DUP-20260715-GW", "MW-1", "2026-07-15", "GW")]
+    r = reconcile_field_lab(fs, lab, duplicate_markers=_PROFILE_MARKERS)
+    assert r.matched == []
+    assert [s.sample_id for s in r.lab_only] == ["MW-1-DUP-20260715-GW"]
+
+
 def test_guard_is_symmetric_for_marked_field_ids():
     """A marker on the field side filters too — the guard reads both."""
     fs = [Survey123Sample("MW-1-20260715-GW-DUP", "MW-1", "2026-07-15", "GW")]

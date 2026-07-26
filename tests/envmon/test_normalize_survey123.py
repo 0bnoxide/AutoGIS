@@ -120,6 +120,9 @@ def test_field_dup_flag_appends_fd_suffix():
     "turbid field_dup",               # space-delimited (XLSForm export)
     "turbid,field_dup",               # comma-delimited (feature service)
     "FIELD_DUP",                      # case-insensitive
+    ["field_dup"],                    # JSON payload carrying a real list
+    ["turbid", "field_dup"],          # str() of this matches nothing
+    ("turbid", "field_dup"),
 ])
 def test_field_dup_recognized_in_multi_select_shapes(raw):
     qa = QACollector()

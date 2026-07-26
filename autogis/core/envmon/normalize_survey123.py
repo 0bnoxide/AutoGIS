@@ -32,6 +32,22 @@ class Survey123Field:
     qa_flags_field: str = "QAFlags"
 
 
+def _qa_flags(payload: dict, fm: "Survey123Field") -> set:
+    """The ticked qa_flags choices, lowercased.
+
+    Survey123 renders a select_multiple as one space-delimited string; some
+    feature-service exports comma-delimit, and a JSON payload may carry a real
+    list. str() on a list yields "['a', 'b']", whose split matches nothing —
+    which would silently normalize a field duplicate as its own primary.
+    An absent field means "nothing ticked", so submissions from forms built
+    before the -FD calculate normalize exactly as before.
+    """
+    raw = payload.get(fm.qa_flags_field, "") or ""
+    if isinstance(raw, (list, tuple, set)):
+        raw = " ".join(str(v) for v in raw)
+    return {f for f in re.split(r"[,\s]+", str(raw).lower()) if f}
+
+
 def _parse_date(value: str, qa: QACollector, context: str) -> Optional[datetime]:
     value_text = str(value).strip() if value is not None else ""
     if not value_text:
@@ -87,11 +103,7 @@ def normalize_survey123_submission(
             qa.add(QARecord(SEV_WARNING, "invalid_dtw",
                             f"{well_id}: cannot parse DTW value {dtw_raw!r}"))
 
-    # An unticked (or absent) QAFlags means "not a duplicate", so submissions
-    # from forms built before the -FD calculate normalize exactly as before.
-    flags = re.split(r"[,\s]+",
-                     str(payload.get(fm.qa_flags_field, "") or "").lower())
-    is_dup = FIELD_DUP_FLAG in flags
+    is_dup = FIELD_DUP_FLAG in _qa_flags(payload, fm)
     sample_id = build_sample_id(well_id, dt, matrix,
                                 qc="FD" if is_dup else None)
     # Env_Samples has carried IsDuplicate/DuplicateType/ParentSampleID since
