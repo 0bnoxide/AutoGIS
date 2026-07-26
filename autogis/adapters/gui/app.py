@@ -368,7 +368,11 @@ class MainWindow(QMainWindow):
         for field in form.fields:
             if field.kind == "flag":
                 widget: QWidget = QCheckBox()
-                widget.setChecked(bool(field.default))
+                if field.default is None:
+                    widget.setTristate(True)
+                    widget.setCheckState(Qt.CheckState.PartiallyChecked)
+                else:
+                    widget.setChecked(bool(field.default))
             elif field.kind == "choice":
                 widget = QComboBox()
                 # A leading blank item: an untouched combo box otherwise
@@ -425,7 +429,12 @@ class MainWindow(QMainWindow):
         values: dict[str, object] = {}
         for name, widget in self._field_widgets.items():
             if isinstance(widget, QCheckBox):
-                values[name] = widget.isChecked()
+                state = widget.checkState()
+                values[name] = (
+                    None
+                    if state == Qt.CheckState.PartiallyChecked
+                    else state == Qt.CheckState.Checked
+                )
             elif isinstance(widget, QComboBox):
                 values[name] = widget.currentText()
             else:
