@@ -529,11 +529,20 @@ def test_every_field_widget_gets_its_help_as_a_tooltip(qapp):
 
 
 def test_tooltip_reaches_choice_and_flag_widgets(qapp):
-    """Regression for #356: the choice/flag branches never touched help_text."""
+    """Regression for #356: the choice/flag branches never touched help_text.
+
+    BOTH halves must be asserted. envmon run-history has NO flag options, so a
+    choice-only assertion leaves the flag branch unpinned -- a change that
+    special-cased QCheckBox to skip the tooltip would still pass."""
     win = MainWindow()
     win._command_box.setCurrentText("envmon run-history")
     status = win._field_widgets["status"]          # QComboBox, has help
     assert status.toolTip() == "Filter by run status."
+
+    # A second command, chosen because it HAS a flag option carrying help text.
+    win._command_box.setCurrentText("envmon init-site")
+    force = win._field_widgets["force"]            # QCheckBox, has help
+    assert force.toolTip() != ""
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
