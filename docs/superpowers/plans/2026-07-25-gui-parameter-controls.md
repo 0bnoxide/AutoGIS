@@ -622,7 +622,7 @@ def test_bad_tiers_is_a_usage_error_not_a_silent_empty_file(tmp_path):
     src.write_text("LocationID,Top,Bottom,Result\nB-1,0,5,1.0\n", encoding="utf-8")
     res = CliRunner().invoke(autogis, [
         "envmon", "select-soil-intervals",
-        "--input", str(src), "--out", str(tmp_path / "o.csv"),
+        "--results-csv", str(src), "--out", str(tmp_path / "o.csv"),
         "--tiers", "HOTSPT",
     ])
     assert res.exit_code == 2, res.output
@@ -647,15 +647,14 @@ def test_valid_tiers_still_works(tmp_path):
     src.write_text("LocationID,Top,Bottom,Result\nB-1,0,5,1.0\n", encoding="utf-8")
     res = CliRunner().invoke(autogis, [
         "envmon", "select-soil-intervals",
-        "--input", str(src), "--out", str(tmp_path / "o.csv"),
+        "--results-csv", str(src), "--out", str(tmp_path / "o.csv"),
         "--tiers", "HOTSPOT",
     ])
     assert res.exit_code == 0, res.output
 ```
 
-> Before writing the assertions, run `python -c "from autogis.core.envmon.soil_interval_selector
-> import IntervalTier; print(IntervalTier)"` and use the **real** tier names in place of
-> `HOTSPOT`. Do not guess them.
+> Verified during implementation: the real tier names are `HOTSPOT`, `DETECT`, `ND`,
+> `NO_DATA`, and `select-soil-intervals` takes `--results-csv`, not `--input`.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -758,7 +757,7 @@ def test_suggested_matrix_still_accepts_an_unlisted_code(tmp_path):
     src = tmp_path / "legacy.csv"
     src.write_text("LocationID,Analyte,Result\nB-1,Benzene,1.0\n", encoding="utf-8")
     res = CliRunner().invoke(autogis, [
-        "envmon", "migrate-legacy-data", "--input", str(src),
+        "envmon", "migrate-legacy-data", "--results-csv", str(src),
         "--out", str(tmp_path / "o.csv"), "--default-matrix", "SED",
     ])
     assert res.exit_code == 0, res.output
