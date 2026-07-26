@@ -20,7 +20,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
 
@@ -28,7 +28,10 @@ import autogis.adapters.gui.app as app_mod
 import autogis.adapters.gui.runner as runner_mod
 from autogis.adapters.gui import settings as settings_mod
 from autogis.adapters.gui.app import MainWindow, _dialog_kind, _window_forms
-from autogis.adapters.gui.executor import Decision, StepResult, needs_arcpy_env
+from autogis.adapters.gui.executor import (
+    Decision, StepResult, build_argv, needs_arcpy_env,
+)
+from autogis.adapters.gui.forms import build_step
 from autogis.adapters.gui.introspect import FormField
 
 
@@ -478,6 +481,57 @@ def test_optional_choice_field_with_no_default_starts_blank(qapp):
     widget = win._field_widgets["runtime_filter"]
     assert widget.currentText() == ""
     assert win._raw_values()["runtime_filter"] == ""
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_flag"),
+    [
+        (None, None),
+        (Qt.CheckState.Checked, "--incremental"),
+        (Qt.CheckState.Unchecked, "--no-incremental"),
+    ],
+)
+def test_harvest_incremental_checkbox_state_to_argv(
+        qapp, state, expected_flag):
+    win = MainWindow()
+    form = win._forms["harvest"]
+    win._command_box.setCurrentText(form.label)
+    win._field_widgets["config_path"].setText("site.yaml")
+
+    checkbox = win._field_widgets["incremental"]
+    if state is None:
+        assert checkbox.checkState() == Qt.CheckState.PartiallyChecked
+    else:
+        checkbox.setCheckState(state)
+
+    step = build_step(form, win._raw_values())
+    argv = build_argv(step.command, step.values)
+    actual = {"--incremental", "--no-incremental"}.intersection(argv)
+
+    assert actual == ({expected_flag} if expected_flag else set())
+
+
+def test_ordinary_flags_stay_two_state(qapp):
+    """Only a default=None flag becomes tri-state.
+
+    Without this the suite would still pass if *every* checkbox were made
+    tri-state -- and an ordinary default=False flag rendered partially
+    checked would start omitting itself instead of sending False. harvest
+    carries the only nullable flag in the tree, so the negative control has
+    to come from a different command.
+    """
+    win = MainWindow()
+    form = win._forms["envmon init-site"]
+    win._command_box.setCurrentText(form.label)
+
+    two_state = [f for f in form.fields
+                 if f.kind == "flag" and f.default is not None]
+    assert two_state, "expected at least one ordinary flag on init-site"
+    values = win._raw_values()
+    for field in two_state:
+        widget = win._field_widgets[field.name]
+        assert not widget.isTristate(), field.name
+        assert values[field.name] is bool(field.default), field.name
 
 
 def test_close_while_step_running_is_refused(qapp, monkeypatch):
