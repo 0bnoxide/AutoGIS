@@ -66,6 +66,39 @@ def test_reader_missing_sheets_yield_empty_structures(tmp_path):
     assert s.questions == [] and s.choices == {} and s.settings == {}
 
 
+def test_reader_rejects_a_workbook_with_no_survey_sheet(tmp_path):
+    """Not an XLSForm. Returning an empty schema made diff_forms report every
+    question in the OTHER form as a safe addition, so a mistyped
+    --baseline-form produced a clean bill of health on a publication gate."""
+    wb = openpyxl.Workbook()
+    wb.active.title = "Data"
+    wb.active.append(["a", "b"])
+    p = tmp_path / "not_a_form.xlsx"
+    wb.save(p)
+    with pytest.raises(ValueError, match="not an XLSForm"):
+        read_xlsform(p)
+
+
+def test_reader_accepts_capitalized_sheet_names(tmp_path):
+    """Excel round-trips capitalize sheet names; such a form is still valid,
+    and treating it as unreadable would be the same false-negative."""
+    wb = openpyxl.Workbook()
+    wb.active.title = "Survey"
+    wb.active.append(["type", "name"])
+    wb.active.append(["text", "A"])
+    cs = wb.create_sheet("Choices")
+    cs.append(["list_name", "name", "label"])
+    cs.append(["l1", "c1", "C1"])
+    st = wb.create_sheet("Settings")
+    st.append(["form_id"]); st.append(["f1"])
+    p = tmp_path / "caps.xlsx"
+    wb.save(p)
+    s = read_xlsform(p)
+    assert [q.name for q in s.questions] == ["A"]
+    assert s.choices == {"l1": [("c1", "C1")]}
+    assert s.settings["form_id"] == "f1"
+
+
 def test_reader_keeps_structural_rows_in_order(tmp_path):
     p = make_form(tmp_path, [
         ("begin_group", "g1", "G"),
@@ -110,6 +143,88 @@ def test_duplicate_and_invalid_names(tmp_path):
                               ("text", "9bad", "")])
     assert "duplicate_name" in _cats(qa)
     assert "invalid_name" in _cats(qa)
+
+
+def test_xlsform_legal_question_names_accepted(tmp_path):
+    """xlsform.org: names may contain letters, digits, hyphens, underscores
+    and periods after a leading letter/underscore."""
+    qa = _validate(tmp_path, [("text", "Depth.ft", ""),
+                              ("text", "Depth-to-water", ""),
+                              ("text", "_private", "")])
+    assert "invalid_name" not in _cats(qa)
+
+
+@pytest.mark.parametrize("code", ["1", "2", "101-MW", "2A", "a b"])
+def test_choice_values_are_not_identifiers(tmp_path, code):
+    """xlsform.org constrains choice VALUES exactly once -- no spaces for
+    select_multiple. Likert codes 1/2 and location ids like 101-MW are legal,
+    and build_xlsform writes location_ids verbatim as choice codes, so the
+    identifier rule made validate-survey-form reject its own builder."""
+    qa = _validate(tmp_path,
+                   [("select_one l1", "Q", "")],
+                   [("l1", code, "Label")])
+    assert "invalid_choice_name" not in _cats(qa)
+
+
+def test_select_multiple_choice_with_space_is_error(tmp_path):
+    """The one real constraint: spaces separate saved multi-select values."""
+    qa = _validate(tmp_path,
+                   [("select_multiple l1", "Q", "")],
+                   [("l1", "has space", "Label")])
+    assert "invalid_choice_name" in _cats(qa)
+
+
+def test_empty_choice_name_is_still_an_error(tmp_path):
+    qa = _validate(tmp_path,
+                   [("select_one l1", "Q", "")],
+                   [("l1", "", "Label"), ("l1", "ok", "OK")])
+    assert "invalid_choice_name" in _cats(qa)
+
+
+def test_allow_choice_duplicates_suppresses_duplicate_choice(tmp_path):
+    """xlsform.org documents this setting for cascading selects."""
+    rows = [("select_one l1", "Q", "")]
+    dupes = [("l1", "c1", "A"), ("l1", "c1", "B")]
+    assert "duplicate_choice" in _cats(_validate(tmp_path, rows, dupes))
+    qa = _validate(tmp_path, rows, dupes,
+                   settings={"form_id": "f", "form_title": "t",
+                             "version": "1", "allow_choice_duplicates": "yes"})
+    assert "duplicate_choice" not in _cats(qa)
+
+
+def test_reference_to_repeat_group_and_note_resolves(tmp_path):
+    """count(${rep}) and indexed-repeat are standard XLSForm; a note is a
+    legal relevant target. Building the name set from field-type rows only
+    made every one of these a false unresolved_reference."""
+    qa = _validate(tmp_path, [
+        ("begin_repeat", "rep", "R"),
+        ("text", "Depth", ""),
+        ("end_repeat", "", ""),
+        ("note", "n1", "hello"),
+        ("calculate", "C", "", "", "", "count(${rep})"),
+        ("calculate", "D", "", "", "", "indexed-repeat(${Depth}, ${rep}, 1)"),
+        ("text", "E", "", "", "", "", "", "", "${n1}"),
+    ])
+    assert "unresolved_reference" not in _cats(qa)
+
+
+def test_unknown_reference_is_still_an_error(tmp_path):
+    qa = _validate(tmp_path,
+                   [("calculate", "C", "", "", "", "${nope}")])
+    assert "unresolved_reference" in _cats(qa)
+
+
+def test_skipped_cross_checks_are_reported(tmp_path):
+    """Without a config, checks 11-13 do not run. Returning silently let a
+    bare `validate-survey-form form.xlsx` report PASS as though the form had
+    been checked against its configs."""
+    qa = _validate(tmp_path, [("text", "A", "")])
+    assert "cross_checks_skipped" in _cats(qa)
+
+
+def test_cross_checks_not_reported_as_skipped_when_config_given(tmp_path):
+    qa = _validate(tmp_path, [("text", "A", "")], event_config=EVENT)
+    assert "cross_checks_skipped" not in _cats(qa)
 
 
 def test_missing_name_and_unknown_type(tmp_path):
@@ -202,7 +317,11 @@ EVENT = {
     "analyte_groups": {"VOCs": ["Benzene", "Toluene"], "Metals": ["Arsenic"]},
     "crew_list": ["Alice Smith", "Bob Jones"],
     "coc_prefix": "H281-COC", "matrices": ["GW"],
-    "location_ids": ["MW-1", "MW-2", "MW-3"],
+    # "101-MW" is deliberate: build_xlsform writes location_ids verbatim as
+    # choice codes, and a leading digit is legal for a choice value. With only
+    # MW-* names the round-trip test passed while validate-survey-form still
+    # rejected build-survey-form's own output for real sites.
+    "location_ids": ["MW-1", "MW-2", "MW-3", "101-MW"],
 }
 ADICT = {"analytes": {
     "Benzene": {"abbreviation": "B",

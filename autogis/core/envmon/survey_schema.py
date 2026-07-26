@@ -25,7 +25,11 @@ _FIELD_BASES = {"text", "integer", "decimal", "date", "datetime", "time",
                 "select_one", "select_multiple"}
 _STRUCT_BASES = {"begin_group", "end_group", "begin_repeat", "end_repeat",
                  "note"}
-_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+#: xlsform.org: "Names have to start with a letter or an underscore. Names
+#: can only contain letters, digits, hyphens, underscores, and periods."
+#: Applies to the survey sheet's name column only -- choice VALUES are far
+#: more permissive (see _check_choices).
+_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.\-]*$")
 _REF_RE = re.compile(r"\$\{([^}]+)\}")
 _TRUTHY_REQUIRED = {"yes", "true", "true()"}
 _REQUIRED_VALUES = {"", "yes", "no", "true", "false", "true()", "false()"}
@@ -76,14 +80,34 @@ def _cell(ws, r, col: Optional[int]) -> str:
     return str(v).strip() if v is not None else ""
 
 
+def _sheet(wb, name: str):
+    """Case-insensitive sheet lookup. Excel round-trips capitalize sheet
+    names, and an XLSForm with a 'Survey' sheet is still an XLSForm."""
+    for sn in wb.sheetnames:
+        if sn.lower() == name:
+            return wb[sn]
+    return None
+
+
 def read_xlsform(path) -> FormSchema:
     """Read an XLSForm .xlsx. Columns map by header row, not position;
     absent optional columns/sheets yield empty values — validation, not the
-    reader, decides what is an error."""
+    reader, decides what is an error.
+
+    A workbook with no 'survey' sheet is not an XLSForm and raises. Returning
+    an empty schema instead would make diff_forms report every question in the
+    *other* form as a safe addition, so pointing --baseline-form at the wrong
+    workbook would produce a clean bill of health on a publication gate.
+    """
     wb = openpyxl.load_workbook(str(path), data_only=True)
     schema = FormSchema()
-    if "survey" in wb.sheetnames:
-        ws = wb["survey"]
+    ws = _sheet(wb, "survey")
+    if ws is None:
+        wb.close()
+        raise ValueError(
+            f"{path}: no 'survey' sheet -- not an XLSForm "
+            f"(sheets: {', '.join(wb.sheetnames) or 'none'})")
+    if ws is not None:
         h = _header_map(ws)
         for r in range(2, ws.max_row + 1):
             q = SurveyQuestion(
@@ -101,8 +125,8 @@ def read_xlsform(path) -> FormSchema:
             )
             if q.type or q.name or q.label or q.calculation:
                 schema.questions.append(q)
-    if "choices" in wb.sheetnames:
-        cs = wb["choices"]
+    cs = _sheet(wb, "choices")
+    if cs is not None:
         h = _header_map(cs)
         for r in range(2, cs.max_row + 1):
             ln = _cell(cs, r, h.get("list_name"))
@@ -110,8 +134,8 @@ def read_xlsform(path) -> FormSchema:
             lb = _cell(cs, r, h.get("label"))
             if ln or nm:
                 schema.choices.setdefault(ln, []).append((nm, lb))
-    if "settings" in wb.sheetnames:
-        st = wb["settings"]
+    st = _sheet(wb, "settings")
+    if st is not None:
         h = _header_map(st)
         for key, col in h.items():
             schema.settings[key] = _cell(st, 2, col)
@@ -189,21 +213,41 @@ def validate_form(schema: FormSchema, qa: QACollector, *,
             elif not [c for c, _ in schema.choices[q.list_name] if c]:
                 _err(qa, "empty_choice_list",
                      f"row {q.row}: choice list {q.list_name!r} is empty")
+    # Choice VALUES are not identifiers. xlsform.org constrains them exactly
+    # once: "Choice names for select_multiple must not contain spaces because
+    # spaces are used as a separator"; select_one "may contain spaces".
+    # Applying the survey-sheet name rule here rejected Likert codes 1/2 and
+    # -- because build_xlsform writes location_ids verbatim as choice codes --
+    # made validate-survey-form fail on build-survey-form's own output.
+    multi_lists = {q.list_name for q in fields
+                   if q.base == "select_multiple" and q.list_name}
+    allow_dupes = str(
+        schema.settings.get("allow_choice_duplicates", "")).strip().lower() \
+        in ("yes", "true")
     for ln, pairs in schema.choices.items():
         seen = set()
         for cname, _lbl in pairs:
-            if not cname or not _NAME_RE.match(cname.replace("-", "_")):
+            if not cname:
                 _err(qa, "invalid_choice_name",
-                     f"list {ln!r}: invalid choice name {cname!r}")
+                     f"list {ln!r}: empty choice name")
                 continue
-            if (ln, cname) in seen:
+            if ln in multi_lists and " " in cname:
+                _err(qa, "invalid_choice_name",
+                     f"list {ln!r}: select_multiple choice {cname!r} "
+                     "contains a space")
+                continue
+            if cname in seen and not allow_dupes:
                 _err(qa, "duplicate_choice",
                      f"list {ln!r}: duplicate choice {cname!r}")
-            seen.add((ln, cname))
+            seen.add(cname)
 
     # 5. ${ref} resolution (order-independent by design — ADR-0113 emits
     # SampleID after QAFlags; XLSForm resolves calculates by dependency)
-    all_names = {q.name for q in fields if q.name}
+    # Every named row is addressable, not just field-type ones: count(${rep})
+    # over a begin_repeat, indexed-repeat(...), and a relevant that references
+    # a note are all standard XLSForm. Only the end_* rows carry no name.
+    all_names = {q.name for q in schema.questions
+                 if q.name and q.base not in ("end_group", "end_repeat")}
     for q in schema.questions:
         for expr in (q.calculation, q.relevant, q.constraint):
             for ref in _REF_RE.findall(expr or ""):
@@ -299,6 +343,12 @@ def _set_check(schema, qa, qname, expected, miss_cat, extra_cat, what, ctx):
 def _cross_reference_checks(schema, qa, event_config, analyte_dict, ctx):
     """Spec checks 11-13 — each only when its config is supplied."""
     if not event_config:
+        # Say so. Returning silently let `validate-survey-form form.xlsx` with
+        # no config flags report PASS having run none of 11-13 -- a green
+        # light for an unverified form on what is meant to be a gate.
+        qa.add(QARecord(SEV_INFO, "cross_checks_skipped",
+                        f"{ctx}no event config supplied -- location, matrix, "
+                        "crew and analyte cross-checks were not run"))
         return
     from .survey123_form_builder import _field_name, _slug
 

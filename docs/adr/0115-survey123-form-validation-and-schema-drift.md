@@ -38,7 +38,36 @@ will eventually publish to, with no detection until field data arrived wrong.
   questions, calculation changes, choice removals, list re-pointing, and
   group moves are review-required; additions and cosmetic edits are safe).
   Semantic exits per the `coc reconcile`/`event-status` precedent:
-  0 none-or-safe, 2 review-required, 3 destructive, 1 usage/IO.
+  0 none-or-safe, 2 review-required, 3 destructive, 1 usage/IO. Because 2 is
+  load-bearing for CI gates, usage and IO errors are raised as
+  `ClickException` (exit 1) and `click.Path(exists=True)` is deliberately not
+  used — otherwise a mistyped path would exit 2 and read as
+  "review-required". A malformed invocation caught by click's own parser
+  (e.g. `--bogus`) still exits 2; that is inherent to click and writes no
+  run-history record.
+- **Semantic exits must also be registered for run history.** ADR-0093
+  established the exit-code half of this pattern; the recorder half lives in
+  `_SEMANTIC_EXIT_CODES` in `cli.py`, keyed by exact leaf command name, so a
+  review-required diff logs `status=success` rather than a tool failure
+  feeding `run-history-report` / `evaluate-readiness` / `portfolio-metrics`.
+  A future command with a semantic nonzero exit registers there too.
+- **Name rules follow xlsform.org, not intuition** (verified against the
+  spec 2026-07-26). Question names start with a letter or underscore and may
+  then contain letters, digits, hyphens, underscores and periods. Choice
+  **values are not identifiers**: the only documented constraint is that a
+  `select_multiple` choice may not contain a space (`select_one` may).
+  Applying the question rule to choice values rejected Likert codes `1`/`2`
+  and — because `build_xlsform` writes `location_ids` verbatim as choice
+  codes — made this command reject `build-survey-form`'s own output for any
+  site with a location like `101-MW`. The `allow_choice_duplicates` setting
+  suppresses the duplicate-choice error, as the spec documents for cascading
+  selects.
+- **A workbook with no `survey` sheet is rejected by the reader**, not
+  tolerated as an empty schema. Tolerating it made `diff-survey-schema`
+  report every question in the other form as a safe addition, so pointing
+  `--baseline-form` at the wrong workbook returned exit 0 — a clean bill of
+  health from a publication gate. Sheet names match case-insensitively,
+  since Excel round-trips capitalize them.
 - **Feature-layer leg reuses `audit_schema`:** the saved feature-layer
   definition is the existing audit-schema local-spec YAML; form questions
   map to AGOL-REST-shaped fields (XLSForm→esriFieldType table;
@@ -61,7 +90,13 @@ will eventually publish to, with no detection until field data arrived wrong.
   separately user-gated.
 - A builder/validator round-trip test pins `build_xlsform` output to
   zero findings against its own configs — the Phase 1 analogue of the
-  ADR-0113 planner/normalizer agreement test.
+  ADR-0113 planner/normalizer agreement test. Its fixture deliberately
+  includes a leading-digit location (`101-MW`): with only `MW-*` names the
+  test passed while the validator still rejected real sites' generated forms.
+- `validate-survey-form` run without config flags now emits a
+  `cross_checks_skipped` INFO record. It previously returned PASS having run
+  none of checks 11-13, which reads as "verified against its configs" on a
+  gate that had checked nothing of the sort.
 - Read-only commands over local files; no migration, credentials, or PII.
   Rollback = revert.
 - Deferred: XForm expression execution (the ADR-0113 `ponytail:` ceiling),

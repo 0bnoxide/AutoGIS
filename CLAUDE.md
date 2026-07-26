@@ -193,6 +193,12 @@ deferred to Phase 2 (first consumer). An explicit owner decision, not a
 default fast-track — the remaining Phase 0 scope and Phases 1-7 each get
 their own dated entry here as they ship.
 
+Gate changes: 2026-07-26 — Phase 1 (form validation and schema drift) shipped
+via ADR-0115 (PR #364): `validate-survey-form` and `diff-survey-schema`, both
+headless with no portal I/O. Started on an explicit user instruction, not by
+the roadmap's own momentum. Phase 2 (the first live, read-only command, and
+the relocated submission envelope) remains unstarted and user-gated.
+
 ## Decision records
 
 Two separate records — easy to conflate, keep both:
