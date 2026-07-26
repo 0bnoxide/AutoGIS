@@ -7,10 +7,34 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+# Windows-illegal filename characters plus control chars; site_id/event_id
+# get interpolated straight into a GDB folder name (issue #219).
+_ILLEGAL_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def validate_snapshot_id(value: str, label: str) -> None:
+    """Raise ValueError if ``value`` cannot be used as part of a filename.
+
+    Applies to ``site_id``/``event_id`` before they are interpolated into
+    the output GDB folder name -- catches illegal characters early with a
+    clear message instead of letting CreateFileGDB fail as an opaque
+    ERROR 999999.
+    """
+    if not value or not value.strip():
+        raise ValueError(f"{label} must not be empty")
+    if value != value.strip():
+        raise ValueError(f"{label} {value!r} has leading/trailing whitespace")
+    m = _ILLEGAL_NAME_CHARS.search(value)
+    if m:
+        raise ValueError(
+            f"{label} {value!r} contains a character not allowed in a "
+            f"filename: {m.group()!r}")
 
 
 @dataclass
@@ -75,12 +99,20 @@ def export_event_snapshot(   # pragma: no cover
     from .gdb_schema import TABLE_SCHEMAS, FEATURE_SCHEMAS
     from .upgrade_schema import SCHEMA_VERSION
 
+    validate_snapshot_id(site_id, "site_id")
+    validate_snapshot_id(event_id, "event_id")
+
     gdb = str(gdb_path)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d")
     out_name = f"{site_id}_{event_id}_snapshot_{ts}.gdb"
     out_gdb = str(out / out_name)
+    if Path(out_gdb).exists():
+        raise FileExistsError(
+            f"Snapshot target already exists: {out_gdb} "
+            "(re-running export-snapshot for the same site/event/day "
+            "overwrites nothing -- remove it or wait for the next day)")
 
     arcpy.management.CreateFileGDB(str(out), out_name)
 

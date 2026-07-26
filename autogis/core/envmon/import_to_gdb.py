@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..common.logging import get_logger
-from ..common.qa import QACollector, SEV_ERROR, SEV_INFO
+from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 from ..common.config import ParserProfile, SiteConfig, load_analyte_dictionary, load_screening_levels
 from .excel_profile_reader import ProfileWorkbookReader
 from .gdb_schema import TABLE_SCHEMAS, UNIQUE_KEYS, create_or_update_gdb_schema, compute_unique_key, _norm_key_part
@@ -297,6 +297,13 @@ def run_import(
 
     counts = {"water_levels": len(water_levels), "samples": len(samples),
               "analytical_results": len(results), "rpd_results": len(rpd)}
+    if not any(counts.values()):
+        qa.add(SEV_WARNING, "zero_rows_parsed",
+               "No sheet produced any rows -- check parser profile "
+               "compatibility with this workbook (wrong sheet names, "
+               "unwired data_type, or a workbook/profile mismatch).",
+               site_id=site_id, import_batch_id=batch_id,
+               source_workbook=Path(workbook).name)
     summary = {
         "workbook": str(workbook),
         "mode": mode,
