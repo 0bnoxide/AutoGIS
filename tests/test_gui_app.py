@@ -1026,3 +1026,8 @@ def test_tooltip_reaches_choice_and_flag_widgets(qapp):
     win._command_box.setCurrentText("envmon run-history")
     status = win._field_widgets["status"]          # QComboBox, has help
     assert status.toolTip() == "Filter by run status."
+    # Verify flag widgets also get help text as tooltip (the #356 regression
+    # for flags: init-site --force is a flag with help text).
+    win._command_box.setCurrentText("envmon init-site")
+    force = win._field_widgets["force"]                   # QCheckBox, has help
+    assert force.toolTip() == "Overwrite existing target files (default: refuse)."
