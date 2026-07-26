@@ -196,6 +196,12 @@ submission sync) started by explicit user direction; slice 1 implemented
 (ADR-0116: canonical envelope + `envmon sync-survey123` + `survey123`
 extra), live non-production gate legs owner-gated.
 
+Gate changes: 2026-07-26 — Phase 1 (form validation and schema drift) shipped
+via ADR-0115 (PR #364): `validate-survey-form` and `diff-survey-schema`, both
+headless with no portal I/O. Started on an explicit user instruction, not by
+the roadmap's own momentum. (Phase 2 was separately user-directed and has its
+own entry above.)
+
 ## Decision records
 
 Two separate records — easy to conflate, keep both:

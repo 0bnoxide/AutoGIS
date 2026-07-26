@@ -25,6 +25,28 @@
 - **Revisit if:** another concurrent session opens an ADR-bearing PR before
   this one merges — renumber at merge per the established collision rule.
 
+## Survey123 Phase 1 started and shipped in-session
+
+- **Decision:** On the user's "continue" after slice A, designed and
+  implemented Phase 1 (validate-survey-form + diff-survey-schema) with
+  user-approved design/spec (AskUserQuestion approvals recorded in-session);
+  based on merged main (053fe18), not the stacked branch the user originally
+  chose, because #359 merged mid-design.
+- **Reasoning:** the merge made stacking moot and picked up the review-forced
+  QAFlags-based SampleID contract the validator must enforce.
+- **Revisit if:** owner wants a different taxonomy severity (notably
+  choice_removed=review vs choice_code_changed=destructive via the
+  same-label heuristic) or true rename detection.
+
+## ADR numbered 0115 (0114 taken mid-flight)
+
+- **Decision:** ADR number chosen as 0115 after finding open PR #363 already
+  claims 0114.
+- **Reasoning:** highest on origin/main is 0113; ADR lessons require checking
+  open PRs, which caught the collision.
+- **Revisit if:** #363 closes without merging — do NOT renumber; gaps are
+  cheaper than collisions.
+
 ## Survey123 Phase 2 branched from main, not stacked on Phase 1 (#364)
 
 - **Decision:** Implemented Phase 2 slice 1 on
