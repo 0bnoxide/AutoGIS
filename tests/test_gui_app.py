@@ -20,7 +20,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
 
@@ -478,6 +478,32 @@ def test_optional_choice_field_with_no_default_starts_blank(qapp):
     widget = win._field_widgets["runtime_filter"]
     assert widget.currentText() == ""
     assert win._raw_values()["runtime_filter"] == ""
+
+
+def test_suggested_choice_combo_is_editable_and_accepts_typed_text(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon build-conc-surface")
+    w = win._field_widgets["matrix"]
+    assert w.isEditable() is True
+    w.setCurrentText("SED")                     # not in the suggestion list
+    assert win._raw_values()["matrix"] == "SED"
+
+
+def test_strict_choice_stays_non_editable(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon run-history")
+    assert win._field_widgets["fmt"].isEditable() is False
+
+
+def test_multichoice_renders_a_checklist_in_one_row(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon gen-synthetic-workbook")
+    form = win._forms["envmon gen-synthetic-workbook"]
+    assert win._form_layout.rowCount() == len(form.fields)   # still 1 row/field
+    w = win._field_widgets["features"]
+    w.item(0).setCheckState(Qt.Checked)
+    w.item(1).setCheckState(Qt.Checked)
+    assert "," in win._raw_values()["features"]
 
 
 def test_close_while_step_running_is_refused(qapp, monkeypatch):

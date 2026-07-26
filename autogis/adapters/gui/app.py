@@ -34,8 +34,9 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QCompleter,
     QDateEdit, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QMainWindow, QPushButton, QScrollArea, QSpinBox,
-    QSplitter, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QPushButton,
+    QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QTextEdit, QVBoxLayout, QWidget,
 )
 
 from . import settings
@@ -387,6 +388,25 @@ class MainWindow(QMainWindow):
                 widget.addItems(field.choices or ())
                 if field.default is not None:
                     widget.setCurrentText(str(field.default))
+                if not field.strict:
+                    # SuggestedChoice: pick from the list or type a value the
+                    # CLI hasn't seen yet -- NoInsert keeps typed text from
+                    # permanently growing the dropdown's own item list.
+                    widget.setEditable(True)
+                    widget.setInsertPolicy(QComboBox.NoInsert)
+            elif field.kind == "multichoice":
+                # CommaList: a checkable list, one widget in one form row.
+                # Height is fixed (not scaled to item count) so the 11-item
+                # MESSINESS vocabulary can't dominate the form -- shorter
+                # lists (e.g. 4-tier) just leave blank space below their
+                # items; QListWidget scrolls internally past the cap.
+                widget = QListWidget()
+                widget.setMaximumHeight(120)
+                for choice in field.choices or ():
+                    item = QListWidgetItem(choice)
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Unchecked)
+                    widget.addItem(item)
             elif field.kind in ("int", "float"):
                 widget = QSpinBox() if field.kind == "int" else QDoubleSpinBox()
                 # A comma-decimal locale renders e.g. "0,800", which Click's
@@ -480,6 +500,12 @@ class MainWindow(QMainWindow):
                 values[name] = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 values[name] = widget.currentText()
+            elif isinstance(widget, QListWidget):
+                # CommaList round-trip: checked items, list order, joined --
+                # matches exactly what the CLI's CommaList type parses back.
+                checked = [widget.item(i).text() for i in range(widget.count())
+                          if widget.item(i).checkState() == Qt.Checked]
+                values[name] = ",".join(checked)
             elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
                 # The sentinel means "unset" -> "" -> omitted by _normalize.
                 values[name] = ("" if widget.text() == widget.specialValueText()
