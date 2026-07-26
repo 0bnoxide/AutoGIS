@@ -787,7 +787,7 @@ def portfolio_metrics_cmd(run_history, required_tools, site_ids, output,
               help="CSV export of Env_AnalyticalResults.")
 @click.option("--output", required=True, type=click.Path(),
               help="Output comparison CSV path.")
-@click.option("--current-event-date", default=None,
+@click.option("--current-event-date", default=None, type=IsoDate(),
               help="ISO date (YYYY-MM-DD) to force as the current event.")
 @click.option("--stable-threshold", default=10.0, type=float,
               help="abs(%% change) <= this is STABLE (default 10).")
@@ -819,7 +819,8 @@ def compare_events_cmd(results_csv, output, current_event_date,
               help="CSV of LevelLoopObservation rows (ordered).")
 @click.option("--run-id", required=True)
 @click.option("--site-id", required=True)
-@click.option("--survey-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--survey-date", required=True, type=IsoDate(),
+              help="ISO date YYYY-MM-DD.")
 @click.option("--benchmark-id", required=True, help="point_id of the benchmark.")
 @click.option("--known-elevation", required=True, type=float)
 @click.option("--tolerance", default=None, type=float,
@@ -864,7 +865,8 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
               help="CSV of ElevationHistory rows.")
 @click.option("--output", required=True, type=click.Path(),
               help="Output GW level summary CSV path.")
-@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--event-date", required=True, type=IsoDate(),
+              help="ISO date YYYY-MM-DD.")
 @click.option("--toc-csv", default=None, type=click.Path(exists=True),
               help="Optional CSV with location_id,toc_elevation columns.")
 @click.option("--report", default=None, type=click.Path())
@@ -920,7 +922,8 @@ def _read_id_list(path) -> set:
 @envmon.command("build-gwe-event")
 @click.option("--water-levels", required=True, type=click.Path(exists=True),
               help="CSV of water-level rows (location_id,gwe_ft,dtw_ft,status,...).")
-@click.option("--event-date", required=True, help="ISO date YYYY-MM-DD.")
+@click.option("--event-date", required=True, type=IsoDate(),
+              help="ISO date YYYY-MM-DD.")
 @click.option("--out", "out_path", required=True, type=click.Path(),
               help="Output EnvWaterLevelEvent CSV path.")
 @click.option("--exclude", default=None, type=click.Path(exists=True),
@@ -1023,7 +1026,8 @@ def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
               help="Expected-schedule YAML (wells + required_analytes).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output data-gap CSV path.")
-@click.option("--event-date", default=None, help="ISO date YYYY-MM-DD.")
+@click.option("--event-date", default=None, type=IsoDate(),
+              help="ISO date YYYY-MM-DD.")
 @click.option("--event-window-days", default=30, type=int)
 @click.option("--dry-wells", default=None, type=click.Path(exists=True),
               help="Optional CSV: location_id,reason.")
@@ -1148,7 +1152,7 @@ def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
               help="CSV of AnalyticalResultRecord rows.")
 @click.option("--output", required=True, type=click.Path(),
               help="Output CSV path for gap/excess report.")
-@click.option("--event-date", default=None,
+@click.option("--event-date", default=None, type=IsoDate(),
               help="Event date ISO (YYYY-MM-DD); inferred from results if omitted.")
 @click.option("--window-days", type=int, default=30, show_default=True,
               help="Include results within this many days before event-date.")
@@ -1583,7 +1587,8 @@ def well_inspection_report_cmd(wells_csv, site_id, output_dir,
     type=click.Choice(["success", "warning", "error", "cancelled"]),
     help="Filter by run status.",
 )
-@click.option("--since", default=None, help="Only runs since this ISO date (YYYY-MM-DD).")
+@click.option("--since", default=None, type=IsoDate(allow_time=True),
+              help="Only runs since this ISO date (YYYY-MM-DD).")
 @click.option("--limit", type=int, default=0, help="Max records to show (0 = all).")
 @click.option(
     "--format", "fmt",
@@ -2161,7 +2166,7 @@ def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fa
               help="Analyte dictionary YAML (optional).")
 @click.option("--screening", default=None, type=click.Path(exists=True),
               help="Screening levels YAML (optional).")
-@click.option("--event-date", default=None,
+@click.option("--event-date", default=None, type=IsoDate(),
               help="Override event date ISO8601 (YYYY-MM-DD).")
 @click.option("--event", "event_id", default="",
               help="Event ID label (e.g. 2026-Q2) stamped on the run-history "
@@ -2869,7 +2874,7 @@ def audit_schema_cmd(spec_path, layer_url, item_id, layer_index, profile,
 @click.option("--manifest", "manifest_path", default=None,
               type=click.Path(exists=True),
               help="Harvester manifest.csv for the attachment checks.")
-@click.option("--since", default=None,
+@click.option("--since", default=None, type=IsoDate(),
               help="ISO date - hosted edits after this count as pending.")
 @click.option("--key-field", default="GlobalID", show_default=True,
               help="Identity key for duplicate/conflict matching.")
@@ -3185,7 +3190,7 @@ def create_views_cmd(profile, view_spec_path, report):
               help="Layer index within the item (0-based).")
 @click.option("--where", default=None,
               help="SQL where clause filtering the hosted layer.")
-@click.option("--since", default=None,
+@click.option("--since", default=None, type=IsoDate(),
               help="ISO date YYYY-MM-DD — only records with EditDate after this "
                    "(hosted layer needs editor tracking).")
 @click.option("--key-field", default="GlobalID", show_default=True,
@@ -4043,7 +4048,8 @@ def download_dem_cmd(dataset, bbox, aoi, out_path, overwrite, output_format,
               help="Max vertical RMS error (ft) for QA pass.")
 @click.option("--elevation-type", default="TOC", show_default=True,
               help="ElevationType tag for ElevationHistory (e.g. TOC, GS).")
-@click.option("--survey-date", default=None, help="ISO date YYYY-MM-DD; defaults to today.")
+@click.option("--survey-date", default=None, type=IsoDate(),
+              help="ISO date YYYY-MM-DD; defaults to today.")
 @click.option("--vertical-datum", default="NAVD88", show_default=True,
               help="Vertical datum label stored in ElevationHistory.")
 @click.option("--wells-csv", default=None, type=click.Path(exists=True),
@@ -4625,7 +4631,7 @@ def validate_field_completeness_cmd(plan_path, results_path, out, report, fail_o
 @click.option("--wells-csv", required=True, type=click.Path(exists=True),
               help="CSV with columns: well_id, easting, northing, gwe_ft.")
 @click.option("--site-id", required=True, help="Site identifier.")
-@click.option("--event-date", required=True,
+@click.option("--event-date", required=True, type=IsoDate(),
               help="Event date YYYY-MM-DD (metadata only; not used in math).")
 @click.option("--run-id", default=None,
               help="Run identifier; auto-generated UUID4 if omitted.")
@@ -5229,7 +5235,7 @@ def validate_lab_profile_cmd(profile_yaml, report, fail_on):
               help="Analyte dictionary YAML (optional).")
 @click.option("--screening", default=None, type=click.Path(exists=True),
               help="Screening levels YAML (optional).")
-@click.option("--event-date", default=None,
+@click.option("--event-date", default=None, type=IsoDate(),
               help="Force event date for all workbooks (YYYY-MM-DD).")
 @click.option("--report", default=None, type=click.Path())
 @click.option("--fail-on", type=click.Choice(["error", "warning"]),
@@ -5357,10 +5363,10 @@ def migrate_legacy_data_cmd(input_csv, output, location_col, date_col,
 @click.option("--analyte-groups", required=True, type=click.Path(exists=True),
               help="YAML mapping group_name -> {bottles, bottle_size_ml, "
                    "preservation, matrix}.")
-@click.option("--event-date", required=True,
+@click.option("--event-date", required=True, type=IsoDate(),
               help="Planned sampling date YYYY-MM-DD.")
 @click.option("--site-id", default="", help="Site ID.")
-@click.option("--prior-event-date", default=None,
+@click.option("--prior-event-date", default=None, type=IsoDate(),
               help="Prior event date YYYY-MM-DD (optional).")
 @click.option("--samples-output", required=True, type=click.Path(),
               help="Path to write planned sample list CSV.")
@@ -5541,7 +5547,7 @@ def draft_plume_boundary_cmd(results_csv, coords_csv, points_csv, site_id, analy
               help="AnalyteCanonicalName — one surface per analyte "
                    "(ADR-0085 decision 5).")
 @click.option("--site", "site_id", required=True, help="Site ID.")
-@click.option("--event-date", required=True,
+@click.option("--event-date", required=True, type=IsoDate(),
               help="Event date YYYY-MM-DD (raster naming + registry row).")
 @click.option("--nondetect-rule",
               type=click.Choice(["exclude", "half_rl", "use_rl", "use_zero"]),

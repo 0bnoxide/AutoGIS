@@ -83,3 +83,30 @@ def test_run_history_tool_filter_accepts_a_retired_tool_name(tmp_path):
                                        "--tool", "a-retired-tool"])
     assert res.exit_code == 0, res.output
     assert "a-retired-tool" in res.output
+
+
+def test_malformed_event_date_is_a_usage_error(tmp_path):
+    res = CliRunner().invoke(autogis, ["envmon", "gw-level-summary",
+                                       "--event-date", "25-07-2026"])
+    assert res.exit_code == 2
+    assert "25-07-2026" in res.output
+
+
+def test_since_still_accepts_a_full_timestamp(tmp_path):
+    """cli.py:1590 uses datetime.fromisoformat -- narrowing to date-only would
+    reject a value that works today."""
+    hist = tmp_path / "run_history.csv"
+    hist.write_text("timestamp,site_id,tool_name,status,message\n", encoding="utf-8")
+    res = CliRunner().invoke(autogis, ["envmon", "run-history",
+                                       "--run-history", str(hist),
+                                       "--since", "2026-07-01T10:30:00"])
+    assert res.exit_code == 0, res.output
+
+
+def test_all_sixteen_date_options_are_isodate():
+    """Guard against a future option being added as bare text."""
+    from autogis.adapters.param_types import IsoDate
+    from autogis.adapters.gui.introspect import introspect_cli
+    dated = [(f.label, x.name) for f in introspect_cli() for x in f.fields
+             if x.kind == "date"]
+    assert len(dated) == 16, dated
