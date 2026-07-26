@@ -173,6 +173,36 @@ def test_matrix_scoped_replace_skips_tables_with_no_matrix_column(monkeypatch):
         "Env_WaterLevels", "Env_RPDResults"}
 
 
+def test_matrix_gw_replace_still_deletes_water_levels_and_rpd(monkeypatch):
+    """A --matrix GW replace DOES parse new Env_WaterLevels/Env_RPDResults
+    rows (run_import's run_gw branch), so it must still delete-then-insert
+    them unscoped -- skipping unconditionally (the first cut of the #369 fix)
+    left stale rows in place, and append_records_idempotent then silently
+    dropped the new rows as duplicates of the same unique key. Caught by
+    Codex review on PR #373."""
+    from autogis.core.common.qa import QACollector
+
+    calls = []
+    monkeypatch.setattr(import_to_gdb, "delete_rows",
+                        lambda gdb, table, where: calls.append((table, where)) or 0)
+    qa = QACollector()
+    import_to_gdb._delete_for_replace(
+        gdb=None, mode="replace_site_event", site_id="H281",
+        batch_id_to_replace=None, event_date="2026-07-15",
+        matrix="GW", qa=qa)
+
+    tables_deleted = {t for t, _where in calls}
+    assert tables_deleted == {"Env_WaterLevels", "Env_Samples",
+                              "Env_AnalyticalResults", "Env_RPDResults"}
+    for table, where in calls:
+        if table in ("Env_Samples", "Env_AnalyticalResults"):
+            assert "Matrix = 'GW'" in where
+        else:
+            assert "Matrix" not in where  # no such column on these two tables
+    assert not [r for r in qa.records
+               if r.category == "replace_skipped_unscopable_table"]
+
+
 def test_unscoped_replace_still_deletes_all_four_tables(monkeypatch):
     """No --matrix given: the pre-#369 behavior (delete all four tables) is
     unchanged, since there's no matrix to scope by."""

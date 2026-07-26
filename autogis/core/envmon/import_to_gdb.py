@@ -187,12 +187,17 @@ def _delete_for_replace(gdb: Path, mode: str, site_id: str,
                               ("Env_Samples", "SampleDate"),
                               ("Env_AnalyticalResults", "SampleDate"),
                               ("Env_RPDResults", "EventDate")):
-            if matrix and t in ("Env_WaterLevels", "Env_RPDResults"):
-                # Neither table carries a Matrix column (issue #369), so a
-                # matrix-scoped replace has no safe way to limit the delete
-                # to this run's matrix alone. Skip rather than over-delete
-                # rows for a matrix this run was never meant to touch (e.g.
-                # a --matrix SOIL replace wiping GW water levels).
+            if matrix == "SOIL" and t in ("Env_WaterLevels", "Env_RPDResults"):
+                # Neither table carries a Matrix column (issue #369), and
+                # neither is ever populated by a SOIL-matrix run (run_import
+                # only calls normalize_gw_table_2/normalize_rpd_table when
+                # matrix_filter is None or "GW"). So a --matrix SOIL replace
+                # must skip them -- deleting would wipe GW rows this run
+                # never parsed and never intends to replace. A --matrix GW
+                # replace, by contrast, DOES parse new rows for both tables
+                # and must still delete-then-insert unscoped, or the new
+                # rows are silently dropped as idempotent-append duplicates
+                # of the stale ones left behind (a P1 caught in review).
                 qa.add(SEV_INFO, "replace_skipped_unscopable_table",
                        f"{t} has no Matrix column; left untouched by this "
                        f"--matrix {matrix} replace_site_event.", site_id=site_id)
