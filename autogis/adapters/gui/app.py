@@ -34,7 +34,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QCompleter,
     QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QMainWindow, QPushButton, QSplitter, QTableWidget,
+    QMainWindow, QPushButton, QScrollArea, QSplitter, QTableWidget,
     QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -211,7 +211,13 @@ class MainWindow(QMainWindow):
         self._form_layout = QFormLayout()
         form_container = QWidget()
         form_container.setLayout(self._form_layout)
-        outer.addWidget(form_container)
+        # Without a scroll area the layout minimum pins the window at ~874x871
+        # for a 15-field command, pushing Run and the output pane off a 768p
+        # screen with no way to shrink (#357).
+        form_scroll = QScrollArea()
+        form_scroll.setWidgetResizable(True)
+        form_scroll.setWidget(form_container)
+        outer.addWidget(form_scroll)
 
         row = QHBoxLayout()
         self._run_button = QPushButton("Run")

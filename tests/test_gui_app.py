@@ -1042,3 +1042,13 @@ def test_raw_values_rejects_an_unknown_widget_type(qapp):
     win._field_widgets["limit"] = QSpinBox()  # not yet handled
     with pytest.raises(TypeError, match="QSpinBox"):
         win._raw_values()
+
+
+def test_window_can_shrink_below_the_form_height(qapp):
+    """#357: the layout minimum pinned the window to ~874x871, putting the Run
+    button and output pane permanently off-screen on a 768p display."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon build-conc-surface")  # 15 fields
+    win.resize(400, 300)
+    qapp.processEvents()
+    assert win.minimumSizeHint().height() < 700
