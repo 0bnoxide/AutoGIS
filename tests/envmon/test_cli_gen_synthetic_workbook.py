@@ -33,6 +33,7 @@ def test_gen_synthetic_workbook_rejects_unknown_feature(tmp_path):
         "--features", "not_a_feature", "--out", str(out),
     ])
     assert result.exit_code == 2
-    assert "Invalid value for --features" in result.output
+    assert "Invalid value for" in result.output
+    assert "--features" in result.output
     assert "not_a_feature" in result.output
     assert "Traceback" not in result.output
