@@ -100,15 +100,36 @@ CLI/`.pyt` parity. That is why the CLI-typing slice comes first.
 
 **Touches:** `cli.py`, `introspect.py`, one line of `app.py`. **Ships independently.**
 
+> ### ⚠ AMENDED 2026-07-25 after per-option verification
+>
+> The table below is the **verified** version. The original draft proposed `click.Choice` on 9
+> options and `click.DateTime` on 16; per-option derivation found that **7 of the 9 dropdowns and
+> all 16 date swaps would reject input the CLI accepts today**, violating this spec's own
+> constraint. The mechanism changed, the goal did not — see
+> `docs/superpowers/plans/2026-07-25-gui-parameter-controls.md` § "Scope corrections".
+>
+> The unifying fix: three custom `ParamType`s that **annotate rather than restrict**, each
+> returning the input string unchanged so **no command body changes**.
+
 | Change | Count | Declaration |
 |---|---:|---|
-| Constrained options → dropdown | 5 | `click.Choice(sorted(CONSTANT))` |
-| Date options → date control | 16 | `click.DateTime(formats=["%Y-%m-%d"])` |
-| Tool-name options → dropdown | 4 | `click.Choice(sorted(TOOL_REGISTRY))` |
-| Closed-vocabulary comma lists → checklist | 4 | new `CommaList(vocab)` `ParamType` |
-| Numeric bounds | ~18 of 54 | `click.IntRange` / `click.FloatRange` |
-| Folder params on a save-file dialog | 10 | `click.Path(file_okay=False)` |
+| Constrained options → strict dropdown | 2 | `click.Choice(...)` — only where the body already validates the same set |
+| Open-vocabulary options → editable dropdown | 7 | new `SuggestedChoice(values)` — suggests, refuses nothing |
+| Date options → calendar | 16 | new `IsoDate(allow_time=...)` — validates, returns the string |
+| Closed-vocabulary comma lists → checklist | 4 | new `CommaList(vocab)` |
+| Numeric bounds | 46 of 54 | `click.IntRange` / `click.FloatRange` (only **2** get a maximum) |
+| Folder params on a save-file dialog | 12 | `click.Path(file_okay=False)` |
 | Undocumented options | 110 | add `help=` |
+
+**Why `SuggestedChoice` and not `click.Choice`:** `KNOWN_MATRICES` is `{"GW","SOIL"}` but is a
+*figure-spec* vocabulary — `config/lab_profiles/nysdec.yaml:75-81` maps to `SED`. `UNIT_REGISTRY`
+omits `ppb`/`ppm` by design (`units.py:3-7`) while legacy workbooks use them, and a strict Choice
+rejects `µg/L` spelled U+00B5 vs U+03BC. `run-history --tool` is a *log query* — restricting it to
+today's command set makes a row written by a since-renamed command unqueryable.
+
+**Why `IsoDate` and not `click.DateTime`:** all 16 bodies call `date.fromisoformat(...)` on the
+value; a `datetime` raises `TypeError` there. `estimate-gw-flow-direction` fails **silently**,
+writing `2026-07-01 00:00:00` into a CSV cell.
 
 ### 3.1 The `CommaList` param type
 
