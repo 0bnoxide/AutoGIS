@@ -225,6 +225,15 @@ def _fake_pulls(features, all_gids, **kw):
 @pytest.fixture()
 def live_fakes(monkeypatch):
     monkeypatch.setattr(cli, "agol_from_profile", lambda profile=None: object())
+    # The command guards on find_spec("arcgis") before anything else. These
+    # tests stub every network seam, so they must run in the arcgis-free CI
+    # env too -- without this, they only pass on machines that happen to have
+    # arcgis installed, which is how they shipped red to main (CI is the
+    # arcpy/arcgis-free authority; a local arcgis-present run masks it).
+    real_find = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util, "find_spec",
+        lambda name, *a: object() if name == "arcgis" else real_find(name, *a))
     return monkeypatch
 
 
