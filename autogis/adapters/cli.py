@@ -74,6 +74,10 @@ _QA_COUNTS_META_KEY = "autogis.qa_counts"
 # nonzero exit code, so a stale-finding read isn't mislogged as an error).
 # `coc` uses its per-transition custody audit instead of run history (ADR-0107).
 _SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
+# Semantic nonzero exits that are findings, not failures (ADR-0115):
+# diff-survey-schema exits 2 (review-required) / 3 (destructive drift).
+# Without this, every drift finding would be mislogged as a tool error.
+_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}}
 
 
 def _record_tool_name(ctx) -> str:
@@ -169,6 +173,9 @@ class RecordingCommand(click.Command):
             status = _classify_exit(exc)
             if status is None:
                 return
+            if (isinstance(exc, SystemExit)
+                    and exc.code in _SEMANTIC_EXIT_CODES.get(tool_name, ())):
+                status = "success"
             from autogis.core.common.run_history import RunHistory, RunRecord
 
             counts = ctx.meta.get(_QA_COUNTS_META_KEY, {})
@@ -2278,12 +2285,12 @@ _DIFF_DESTRUCTIVE_EXIT = 3
 
 
 @envmon.command("diff-survey-schema")
-@click.argument("form_xlsx", type=click.Path(exists=True))
+@click.argument("form_xlsx", type=click.Path())
 @click.option("--baseline-form", "baseline_path", default=None,
-              type=click.Path(exists=True),
+              type=click.Path(),
               help="Previous XLSForm .xlsx to diff against.")
 @click.option("--layer-spec", "spec_path", default=None,
-              type=click.Path(exists=True),
+              type=click.Path(),
               help="Saved feature-layer spec YAML/JSON (audit-schema format).")
 @click.option("--report", default=None, type=click.Path(),
               help="Write the change list to PATH (.json or .md).")
@@ -2297,8 +2304,10 @@ def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
         CLASS_DESTRUCTIVE, CLASS_REVIEW, diff_forms, diff_form_vs_layer,
         read_xlsform, worst_classification,
     )
+    # ClickException (exit 1), not UsageError (exit 2): 2 is reserved for
+    # the review-required semantic exit and must never mean "typo".
     if not baseline_path and not spec_path:
-        raise click.UsageError(
+        raise click.ClickException(
             "provide --baseline-form and/or --layer-spec to diff against")
     try:
         new = read_xlsform(form_xlsx)

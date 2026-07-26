@@ -1,6 +1,6 @@
 """survey_schema.py — XLSForm reader, validator, and schema-drift classifier.
 
-Survey123 add-on roadmap Phase 1 (ADR-0112; decision record ADR-0114).
+Survey123 add-on roadmap Phase 1 (ADR-0112; decision record ADR-0115).
 openpyxl + stdlib only — no arcpy, no arcgis. The form-vs-layer leg reuses
 autogis.core.agol.audit_schema.diff_schema (itself arcgis-free).
 """
@@ -135,7 +135,7 @@ def validate_form(schema: FormSchema, qa: QACollector, *,
                   event_config: Optional[dict] = None,
                   site_config: Optional[dict] = None,
                   analyte_dict: Optional[dict] = None) -> None:
-    """Static XLSForm validation (ADR-0114 checks 1-13). Appends QARecords."""
+    """Static XLSForm validation (ADR-0115 checks 1-13). Appends QARecords."""
     site_id = (site_config or {}).get("site_id", "")
     ctx = f"[{site_id}] " if site_id else ""
 
@@ -280,6 +280,10 @@ def _list_for(schema: FormSchema, qname: str) -> Optional[str]:
 def _set_check(schema, qa, qname, expected, miss_cat, extra_cat, what, ctx):
     ln = _list_for(schema, qname)
     if ln is None:
+        if expected:
+            _err(qa, miss_cat,
+                 f"{ctx}form has no {qname!r} select question to carry "
+                 f"{what}: {', '.join(sorted(set(expected)))}")
         return
     have = {c for c, _ in schema.choices.get(ln, [])}
     missing = sorted(set(expected) - have)
@@ -390,7 +394,7 @@ def _scopes(questions) -> dict:
 
 
 def diff_forms(old: FormSchema, new: FormSchema) -> list:
-    """Classify every change between two forms (ADR-0114 taxonomy table)."""
+    """Classify every change between two forms (ADR-0115 taxonomy table)."""
     changes: list = []
 
     def add(kind, cls, name, detail):
@@ -520,7 +524,12 @@ _DRIFT_CLASS = {
 def form_layer_fields(schema: FormSchema) -> list:
     """Map form questions to AGOL-REST-shaped field dicts (the 'fetched'
     side of audit_schema.diff_schema). select_multiple gets no domain —
-    Survey123 stores it comma-joined."""
+    Survey123 stores it comma-joined.
+
+    ponytail: no `nullable` is emitted, so audit_schema's NULLABLE_MISMATCH
+    cannot fire from the form side (the _DRIFT_CLASS row is forward-compat
+    only); upgrade path is mapping required -> nullable if a saved spec
+    ever needs the check."""
     fields = []
     for q in schema.questions:
         esri = _FIELD_TYPE_TO_ESRI.get(q.base)

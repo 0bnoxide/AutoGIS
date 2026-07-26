@@ -567,3 +567,131 @@ def test_new_commands_registered_in_capabilities():
     assert TOOLS["diff-survey-schema"] is Runtime.CLOUD
     names = {c.command for c in TOOL_REGISTRY}
     assert {"validate-survey-form", "diff-survey-schema"} <= names
+
+
+# ------------------------------------------------- review-fix regressions
+
+def test_semantic_exit_logs_run_history_success(tmp_path, monkeypatch):
+    """Blocker fix: a destructive diff (exit 3) records status=success in
+    run history, not error — a drift finding is not a tool failure."""
+    import csv as csv_mod
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    hist = tmp_path / "run_history.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(hist))
+    old = make_form(tmp_path, [("text", "A", "L")], name="rh_o.xlsx")
+    removed = make_form(tmp_path, [("text", "Z", "L")], name="rh_n.xlsx")
+    r = CliRunner().invoke(autogis, ["envmon", "diff-survey-schema",
+                                     str(removed), "--baseline-form",
+                                     str(old)])
+    assert r.exit_code == 3
+    with hist.open(newline="", encoding="utf-8") as fh:
+        rows = [row for row in csv_mod.DictReader(fh)
+                if row["tool_name"] == "diff-survey-schema"]
+    assert rows and rows[-1]["status"] == "success"
+
+
+def test_diff_usage_errors_exit_1_not_2(tmp_path):
+    """Should-fix: usage/IO errors exit 1; 2 stays reserved for
+    review-required drift."""
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    runner = CliRunner()
+    f = make_form(tmp_path, [("text", "A", "")])
+    # no baseline at all
+    assert runner.invoke(autogis, ["envmon", "diff-survey-schema",
+                                   str(f)]).exit_code == 1
+    # nonexistent baseline file
+    assert runner.invoke(autogis, ["envmon", "diff-survey-schema", str(f),
+                                   "--baseline-form",
+                                   str(tmp_path / "nope.xlsx")]).exit_code == 1
+    # nonexistent form file
+    assert runner.invoke(autogis, ["envmon", "diff-survey-schema",
+                                   str(tmp_path / "gone.xlsx"),
+                                   "--baseline-form",
+                                   str(f)]).exit_code == 1
+
+
+def test_missing_select_question_is_error_not_silence(tmp_path):
+    """Should-fix: config supplies crew but the form has no SampledBy
+    question at all — must ERROR, not pass silently."""
+    qa = _validate(tmp_path, [("text", "A", "")],
+                   event_config={"crew_list": ["Alice Smith"],
+                                 "location_ids": [], "matrices": [],
+                                 "analyte_groups": {}})
+    recs = [r for r in qa.records if r.category == "missing_crew_choice"]
+    assert recs and recs[0].severity == "ERROR"
+    assert "SampledBy" in recs[0].message
+
+
+def test_domain_drift_positive(tmp_path):
+    """A form choice absent from the spec's coded values -> DOMAIN_DRIFT,
+    review-required."""
+    rows = [("select_one matrix_list", "Matrix", "Matrix")]
+    choices = [("matrix_list", "GW", "Groundwater"),
+               ("matrix_list", "SW", "Surface Water")]   # SW not in spec
+    s = read_xlsform(make_form(tmp_path, rows, choices))
+    changes = diff_form_vs_layer(s, LAYER_SPEC)
+    assert any(c.kind == "domain_drift" and c.name == "Matrix" and
+               c.classification == CLASS_REVIEW for c in changes)
+
+
+def test_group_move_is_review_required(tmp_path):
+    old_rows = [("begin_group", "g1", "G1"), ("text", "A", ""),
+                ("end_group", "", "")]
+    new_rows = [("begin_group", "g2", "G2"), ("text", "A", ""),
+                ("end_group", "", "")]
+    old = read_xlsform(make_form(tmp_path, old_rows, name="g_o.xlsx"))
+    new = read_xlsform(make_form(tmp_path, new_rows, name="g_n.xlsx"))
+    assert ("group_changed", CLASS_REVIEW) in _kinds(diff_forms(old, new))
+
+
+def test_settings_shape_warnings(tmp_path):
+    qa = _validate(tmp_path, [("text", "A", "")],
+                   settings={"form_title": "T", "form_id": "Not A Slug",
+                             "version": ""})
+    msgs = [r.message for r in qa.records
+            if r.category == "settings_incomplete"]
+    assert any("form_id" in m for m in msgs)
+    assert any("version" in m for m in msgs)
+
+
+def test_matrix_missing_and_extra_choices(tmp_path):
+    rows = [("select_one matrix_list", "Matrix", "Matrix")]
+    choices = [("matrix_list", "GW", "GW"), ("matrix_list", "SOIL", "Soil")]
+    qa = _validate(tmp_path, rows, choices,
+                   event_config={"matrices": ["GW", "SW"],
+                                 "location_ids": [], "crew_list": [],
+                                 "analyte_groups": {}})
+    cats = _cats(qa)
+    assert "missing_matrix_choice" in cats     # SW planned, not in form
+    assert "extra_matrix_choice" in cats       # SOIL in form, not planned
+
+
+def test_unexpected_analyte_question_warns(tmp_path):
+    rows = [("begin_group", "grp_vocs", "VOCs"),
+            ("decimal", "Benzene", "B"),
+            ("decimal", "Stray", "not an analyte"),
+            ("end_group", "", "")]
+    qa = _validate(tmp_path, rows,
+                   event_config={"analyte_groups": {"VOCs": ["Benzene"]},
+                                 "location_ids": [], "matrices": [],
+                                 "crew_list": []})
+    rec = next(r for r in qa.records
+               if r.category == "unexpected_analyte_question")
+    assert rec.severity == "WARNING" and "Stray" in rec.message
+
+
+def test_diff_cli_markdown_report(tmp_path):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    old = make_form(tmp_path, [("text", "A", "L")], name="md_o.xlsx")
+    new = make_form(tmp_path, [("text", "A", "L2")], name="md_n.xlsx")
+    rpt = tmp_path / "out.md"
+    r = CliRunner().invoke(autogis, ["envmon", "diff-survey-schema",
+                                     str(new), "--baseline-form", str(old),
+                                     "--report", str(rpt)])
+    assert r.exit_code == 0
+    text = rpt.read_text(encoding="utf-8")
+    assert "| class | kind | name | detail |" in text
+    assert "cosmetic_changed" in text

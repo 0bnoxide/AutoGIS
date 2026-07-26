@@ -45,8 +45,10 @@ will eventually publish to, with no detection until field data arrived wrong.
   `select_one` choices become coded values, domain names normalized to the
   spec's so only coded-value drift surfaces) and `audit_schema.diff_schema`
   does the comparison. DriftItem classification: TYPE_MISMATCH destructive;
-  EXTRA_FIELD/DOMAIN_DRIFT/NULLABLE_MISMATCH review-required; MISSING_FIELD
-  safe.
+  EXTRA_FIELD/DOMAIN_DRIFT review-required; MISSING_FIELD safe.
+  (NULLABLE_MISMATCH maps review-required for forward-compat but cannot
+  currently fire: the form side emits no `nullable` — see the `ponytail:`
+  note in `form_layer_fields`.)
 - Both commands registered `Runtime.CLOUD`, `stable`, domain `field`,
   roadmap ids `S123-1.1`/`S123-1.2`. No ADR-0076 `--site`/`--event` stamps:
   neither produces event artifacts that `event-status` tracks.
