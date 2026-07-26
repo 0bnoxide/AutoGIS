@@ -542,7 +542,7 @@ def test_tooltip_reaches_choice_and_flag_widgets(qapp):
     # A second command, chosen because it HAS a flag option carrying help text.
     win._command_box.setCurrentText("envmon init-site")
     force = win._field_widgets["force"]            # QCheckBox, has help
-    assert force.toolTip() != ""
+    assert force.toolTip() == "Overwrite existing target files (default: refuse)."
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
