@@ -83,6 +83,77 @@ def _pick_path(kind: str, parent, title: str, start: str) -> str:
     return QFileDialog.getOpenFileName(parent, title, start)[0]
 
 
+class _RepeatableRows(QWidget):
+    """One :class:`QFormLayout` row for a ``multiple=True`` field (#350): a
+    value row plus a ``+`` button; every row after the first gets its own
+    ``−`` to remove itself. ``values()``/``set_values()`` are the container's
+    list round-trip -- ``forms._normalize``/``executor.build_argv`` already
+    handle a list correctly, so this is the only piece #350 needed.
+
+    Rows are plain ``QLineEdit`` for every repeatable kind, including the two
+    repeatable SuggestedChoice fields (--required-tool): an editable combo per
+    row would need the choice list threaded in and kept in sync across
+    add/remove, for a field the CLI already accepts free text on (strict=False)
+    -- typing the tool name is acceptable ponytail over that. ``on_browse``,
+    when given, adds a Browse… button to every row (objectName
+    ``repeatable-browse``, distinct from the single-field ``field-browse`` the
+    browse-count tests target) -- used for the 5 repeatable path fields.
+    """
+
+    def __init__(self, on_browse=None, parent=None):
+        super().__init__(parent)
+        self._on_browse = on_browse  # Callable[[QLineEdit], None] | None
+        self._rows: list[tuple[QWidget, QLineEdit]] = []
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        add_btn = QPushButton("+")
+        add_btn.setObjectName("repeatable-add")
+        add_btn.clicked.connect(lambda: self._add_row())
+        self._layout.addWidget(add_btn)
+        self._add_row()  # baseline: one row, no remove button yet
+
+    def _add_row(self, text: str = "") -> None:
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        line = QLineEdit(text)
+        row_layout.addWidget(line)
+        if self._on_browse is not None:
+            browse = QPushButton("Browse…")
+            browse.setObjectName("repeatable-browse")
+            browse.clicked.connect(lambda _=False, le=line: self._on_browse(le))
+            row_layout.addWidget(browse)
+        if self._rows:  # every row after the first can remove itself
+            minus = QPushButton("−")
+            minus.setObjectName("repeatable-remove")
+            minus.clicked.connect(lambda _=False, r=row: self._remove_row(r))
+            row_layout.addWidget(minus)
+        self._layout.insertWidget(self._layout.count() - 1, row)  # before "+"
+        self._rows.append((row, line))
+
+    def _remove_row(self, row: QWidget) -> None:
+        self._rows = [(r, le) for r, le in self._rows if r is not row]
+        self._layout.removeWidget(row)
+        # removeWidget only unmanages it from the layout -- it stays a child
+        # of this container (and findable via findChildren) until reparented.
+        row.setParent(None)
+        row.deleteLater()
+
+    def values(self) -> list[str]:
+        """Non-empty row values, in row order -- a blank middle row is
+        skipped entirely, never emitted as an empty-string argument."""
+        return [le.text().strip() for _, le in self._rows if le.text().strip()]
+
+    def set_values(self, values: list[str]) -> None:
+        """Replace every row with one per item in ``values`` (at least one
+        blank row if ``values`` is empty), matching the container's own
+        just-built layout."""
+        for row, _ in list(self._rows):
+            self._remove_row(row)
+        for v in (values or [""]):
+            self._add_row(v)
+
+
 class _StepWorker(QThread):
     """Runs one WorkflowRunner.advance() off the UI thread."""
 
@@ -373,6 +444,20 @@ class MainWindow(QMainWindow):
             return
         self._help_label.setText(form.help_text or "")
         for field in form.fields:
+            # Must precede every kind-specific branch below (#350): a
+            # repeatable path/choice field would otherwise be captured by
+            # the path/choice branch and rendered as a single-value widget.
+            if field.repeatable:
+                on_browse = ((lambda le, f=field: self._browse(f, le))
+                            if field.kind == "path" else None)
+                widget = _RepeatableRows(on_browse=on_browse)
+                if field.help_text:
+                    widget.setToolTip(field.help_text)
+                label_text = field.label + (
+                    " *" if (field.required or field.xor_group) else "")
+                self._form_layout.addRow(label_text, widget)
+                self._field_widgets[field.name] = widget
+                continue
             if field.kind == "flag":
                 widget: QWidget = QCheckBox()
                 widget.setChecked(bool(field.default))
@@ -515,6 +600,8 @@ class MainWindow(QMainWindow):
                                 else widget.date().toString("yyyy-MM-dd"))
             elif isinstance(widget, QLineEdit):
                 values[name] = widget.text()
+            elif isinstance(widget, _RepeatableRows):
+                values[name] = widget.values()
             else:
                 # QSpinBox/QDoubleSpinBox/QDateEdit all inherit .text(), so an
                 # unhandled widget class falling through here would silently

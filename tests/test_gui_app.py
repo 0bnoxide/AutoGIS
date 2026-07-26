@@ -22,7 +22,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
+from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
 
 import autogis.adapters.gui.app as app_mod
 import autogis.adapters.gui.runner as runner_mod
@@ -504,6 +504,102 @@ def test_multichoice_renders_a_checklist_in_one_row(qapp):
     w.item(0).setCheckState(Qt.Checked)
     w.item(1).setCheckState(Qt.Checked)
     assert "," in win._raw_values()["features"]
+
+
+# ---- repeatable (multiple=True) fields -- #350 ----------------------------
+
+def test_repeatable_field_emits_the_option_once_per_value(qapp):
+    from autogis.adapters.gui.executor import build_argv
+    from autogis.adapters.gui.forms import build_step
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    w = win._field_widgets["set_pairs"]
+    w.set_values(["temperature_c=4.0", "carrier=FedEx"])   # helper on the container
+    assert win._raw_values()["set_pairs"] == ["temperature_c=4.0", "carrier=FedEx"]
+    form = win._forms["envmon coc advance"]
+    step = build_step(form, {**win._raw_values(), "store_path": "s.json",
+                             "to_state": "released", "actor": "t", "coc": "C-1"})
+    assert build_argv(step.command, step.values).count("--set") == 2
+
+
+def test_repeatable_container_is_one_form_row(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    form = win._forms["envmon coc advance"]
+    assert win._form_layout.rowCount() == len(form.fields)
+
+
+def test_repeatable_values_skip_blank_rows(qapp):
+    """An empty middle row is not an empty-string argument -- it's just not
+    there, matching CommaList/build_argv's own "skip nothing" contract."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    w = win._field_widgets["set_pairs"]
+    w.set_values(["a=1", "", "b=2"])
+    assert w.values() == ["a=1", "b=2"]
+    assert win._raw_values()["set_pairs"] == ["a=1", "b=2"]
+
+
+def test_repeatable_empty_container_is_omitted(qapp):
+    """No rows filled in -> field.repeatable's own _is_empty(()) -> None, so
+    the option never reaches argv (same contract as every other blank field)."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    assert win._raw_values()["set_pairs"] == []
+
+
+def test_repeatable_plus_button_adds_a_row_with_its_own_minus(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    w = win._field_widgets["set_pairs"]
+    assert len(w.findChildren(QPushButton, "repeatable-remove")) == 0  # lone row
+    add = w.findChild(QPushButton, "repeatable-add")
+    add.click()
+    assert len(w.findChildren(QPushButton, "repeatable-remove")) == 1
+    minus = w.findChildren(QPushButton, "repeatable-remove")[0]
+    minus.click()
+    assert len(w.findChildren(QPushButton, "repeatable-remove")) == 0
+    assert w.values() == []  # both rows blank again
+
+
+def test_repeatable_path_field_gets_its_own_browse_not_field_browse(qapp):
+    """7-of-10-are-path constraint (#350): a repeatable path field's row(s)
+    get a Browse button, but it must not be counted by the single-field
+    ``field-browse`` probes (test_path_fields_render_a_browse_button_each &
+    friends) -- envmon lab-qa-trends mixes a repeatable path (qc_paths) with
+    3 plain path fields, so it exercises both counts at once."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon lab-qa-trends")
+    form = win._forms["envmon lab-qa-trends"]
+    n_plain_path = sum(1 for f in form.fields if f.kind == "path" and not f.repeatable)
+    w = win._field_widgets["qc_paths"]
+    assert len(win.findChildren(QPushButton, "field-browse")) == n_plain_path
+    assert len(w.findChildren(QPushButton, "repeatable-browse")) == 1
+    w.findChild(QPushButton, "repeatable-add").click()
+    assert len(w.findChildren(QPushButton, "repeatable-browse")) == 2
+    assert len(win.findChildren(QPushButton, "field-browse")) == n_plain_path  # unaffected
+
+
+def test_repeatable_choice_field_does_not_collapse_to_a_single_combo(qapp):
+    """evaluate-readiness/portfolio-metrics --required-tool is a repeatable
+    SuggestedChoice: it must render through the repeatable container, never
+    fall into the single-QComboBox branch (that would silently drop back to
+    one value)."""
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon evaluate-readiness")
+    w = win._field_widgets["required_tools"]
+    assert not isinstance(w, QComboBox)
+    w.set_values(["coc", "qualify"])
+    assert win._raw_values()["required_tools"] == ["coc", "qualify"]
+
+
+def test_repeatable_container_gets_help_text_tooltip(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText("envmon coc advance")
+    form = win._forms["envmon coc advance"]
+    field = next(f for f in form.fields if f.name == "set_pairs")
+    assert field.help_text  # sanity: this field actually has help
+    assert win._field_widgets["set_pairs"].toolTip() == field.help_text
 
 
 def test_close_while_step_running_is_refused(qapp, monkeypatch):
