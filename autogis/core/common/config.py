@@ -299,7 +299,12 @@ def load_flat_screening_levels(path: Path) -> Dict[str, float]:
             value = entry.get("value") if isinstance(entry, dict) else entry
             if value is None:
                 continue
-            value = float(value)
+            try:
+                value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(
+                    f"{path}: screening level for {analyte!r} in matrix "
+                    f"{matrix!r} is not a number ({value!r}).") from exc
             if analyte in flat and flat[analyte] != value:
                 raise ConfigError(
                     f"{path}: analyte {analyte!r} has conflicting screening "

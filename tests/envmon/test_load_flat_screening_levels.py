@@ -51,6 +51,20 @@ def test_matrix_nested_conflicting_values_raises(tmp_path):
         load_flat_screening_levels(p)
 
 
+def test_matrix_nested_non_numeric_value_raises_config_error(tmp_path):
+    """A malformed nested value must raise ConfigError (caught by every CLI
+    call site) rather than a raw ValueError/TypeError from float()."""
+    p = tmp_path / "sl.yaml"
+    p.write_text(
+        "screening_levels:\n"
+        "  GW:\n"
+        "    Benzene: {value: not-a-number, units: ug/L, source: x}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="is not a number"):
+        load_flat_screening_levels(p)
+
+
 def test_matrix_nested_agreeing_values_do_not_raise(tmp_path):
     p = tmp_path / "sl.yaml"
     p.write_text(
