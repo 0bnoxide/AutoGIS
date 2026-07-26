@@ -1,7 +1,8 @@
 import json
 import dataclasses
+import pytest
 from autogis.core.envmon.export_snapshot import (
-    SnapshotManifest, format_manifest, build_where,
+    SnapshotManifest, format_manifest, build_where, validate_snapshot_id,
 )
 from autogis.core.envmon.gdb_schema import TABLE_SCHEMAS
 from click.testing import CliRunner
@@ -73,3 +74,33 @@ def test_build_where_no_sql_injection():
 def test_export_snapshot_in_help():
     result = CliRunner().invoke(autogis, ["envmon", "--help"])
     assert "export-snapshot" in result.output
+
+
+def test_validate_snapshot_id_accepts_normal_value():
+    validate_snapshot_id("H281", "site_id")  # must not raise
+
+
+def test_validate_snapshot_id_rejects_empty():
+    with pytest.raises(ValueError, match="empty"):
+        validate_snapshot_id("", "site_id")
+
+
+def test_validate_snapshot_id_rejects_whitespace_only():
+    with pytest.raises(ValueError, match="empty"):
+        validate_snapshot_id("   ", "site_id")
+
+
+def test_validate_snapshot_id_rejects_leading_trailing_whitespace():
+    with pytest.raises(ValueError, match="whitespace"):
+        validate_snapshot_id(" H281", "site_id")
+
+
+@pytest.mark.parametrize("bad_char", list('<>:"/\\|?*'))
+def test_validate_snapshot_id_rejects_illegal_chars(bad_char):
+    with pytest.raises(ValueError, match="not allowed"):
+        validate_snapshot_id(f"H281{bad_char}", "event_id")
+
+
+def test_validate_snapshot_id_error_names_the_field_and_value():
+    with pytest.raises(ValueError, match="event_id"):
+        validate_snapshot_id("<bad>", "event_id")

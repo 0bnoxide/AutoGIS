@@ -55,6 +55,7 @@ TOOLS: dict[str, Runtime] = {
     "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
     "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
+    "sync-survey123": Runtime.CLOUD,     # S123 Phase 2 live read-only pull (arcgis via lazy provider)
     "build-dashboard-data-mart": Runtime.LOCAL,  # truncates/repopulates GDB
     "generate-trend-charts": Runtime.CLOUD,  # tool 4.6 headless openpyxl charts
     "ingest-reviewer-comments": Runtime.CLOUD,  # tool 9.4 headless parser
@@ -273,6 +274,8 @@ _REGISTRY_SEED = [
      "field", "Import RTK survey points into the GDB"),
     ("route-survey123", "RouteSurvey123Submission", "", "LOCAL", "stable",
      "field", "Route a Survey123 submission into the GDB"),
+    ("sync-survey123", "SyncSurvey123Submissions", "", "CLOUD", "stable",
+     "field", "Pull new/changed Survey123 submissions into staging (live, read-only)"),
     ("reconcile-survey123-lab", "ReconcileSurvey123Lab", "", "CLOUD", "stable",
      "qa", "Reconcile Survey123 field data against lab results"),
     ("process-level-loop", "ProcessLevelLoop", "8.1", "CLOUD", "stable",

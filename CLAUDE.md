@@ -191,13 +191,16 @@ Gate changes: 2026-07-26 — Phase 0 slice A (lifecycle SampleID contract)
 shipped via ADR-0113 (PR #359, owner-merged); envelope leg deliberately
 deferred to Phase 2 (first consumer). An explicit owner decision, not a
 default fast-track — the remaining Phase 0 scope and Phases 1-7 each get
-their own dated entry here as they ship.
+their own dated entry here as they ship. 2026-07-25 — Phase 2 (incremental
+submission sync) started by explicit user direction; slice 1 implemented
+(ADR-0116: canonical envelope + `envmon sync-survey123` + `survey123`
+extra), live non-production gate legs owner-gated.
 
 Gate changes: 2026-07-26 — Phase 1 (form validation and schema drift) shipped
 via ADR-0115 (PR #364): `validate-survey-form` and `diff-survey-schema`, both
 headless with no portal I/O. Started on an explicit user instruction, not by
-the roadmap's own momentum. Phase 2 (the first live, read-only command, and
-the relocated submission envelope) remains unstarted and user-gated.
+the roadmap's own momentum. (Phase 2 was separately user-directed and has its
+own entry above.)
 
 ## Decision records
 

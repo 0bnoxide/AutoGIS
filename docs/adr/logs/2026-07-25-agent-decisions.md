@@ -46,3 +46,37 @@
   open PRs, which caught the collision.
 - **Revisit if:** #363 closes without merging — do NOT renumber; gaps are
   cheaper than collisions.
+
+## Survey123 Phase 2 branched from main, not stacked on Phase 1 (#364)
+
+- **Decision:** Implemented Phase 2 slice 1 on
+  `worktree-survey123-phase2-submission-sync` cut from `origin/main`, while
+  Phase 1 (PR #364, ADR-0115) is still open.
+- **Reasoning:** The user directed the Phase 2 start ("pickup phase 2 of
+  survey123"). The puller/envelope shares no code with Phase 1's XLSForm
+  validator, and a stacked PR risks the close-not-retarget hazard when the
+  parent's head branch is deleted (documented lesson).
+- **Revisit if:** merge order ever makes the CLAUDE.md gate-changes paragraph
+  conflict — resolve by concatenating both phases' entries.
+
+## Deletion detection: GlobalID sweep, not extractChanges
+
+- **Decision:** Deletes are detected by diffing a full current-GlobalID query
+  against the checkpoint's known-ID set, instead of the feature-service
+  `extractChanges` API.
+- **Reasoning:** The sweep works on any editor-tracked hosted layer;
+  `extractChanges` needs the ChangeTracking capability enabled and a new,
+  unverified API surface. Ceiling (noted in ADR-0116): a row added and
+  deleted entirely between runs is never observed.
+- **Revisit if:** surveys grow large enough that a full ID sweep per run is a
+  real cost, or the between-runs blind spot matters — then `extractChanges`.
+
+## Attachment metadata via harvester-verified get_list, per in-window feature
+
+- **Decision:** `fetch_item_pulls` reuses `layer.attachments.get_list(oid=…)`
+  (the harvester's shipped call) per in-window feature rather than the bulk
+  `attachments.search()` API.
+- **Reasoning:** get_list is already live-verified in this repo; the N+1 cost
+  is bounded by the incremental window, not the layer size. search() would be
+  a new call needing its own doc-verification for a marginal win.
+- **Revisit if:** live QA shows attachment fetch dominating pull time.
