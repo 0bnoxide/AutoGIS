@@ -178,11 +178,13 @@ def test_clear_calls_core_and_reports_count(fake_files):
         result = CliRunner().invoke(
             autogis,
             ["envmon", "manage-callout-overrides", "clear",
-             str(fake_files["gdb"]), "--site", "SITE1", "--spec", "SPEC1"],
+             str(fake_files["gdb"]), "--site", "SITE1", "--spec", "SPEC1",
+             "--map-type", "GW"],
         )
     assert result.exit_code == 0, result.output
-    cu.assert_called_once_with(str(fake_files["gdb"]), "SITE1", "SPEC1")
+    cu.assert_called_once_with(str(fake_files["gdb"]), "SITE1", "SPEC1", "GW")
     assert "3 unlocked override(s)" in result.output
+    assert "SITE1/SPEC1/GW" in result.output
 
 
 def test_lock_new_override_sets_anchor_and_locks(fake_files):

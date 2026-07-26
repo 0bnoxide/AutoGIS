@@ -214,9 +214,12 @@ def test_clear_unlocked_overrides_deletes_and_returns_count(tmp_path):
         from autogis.core.envmon.manage_callout_overrides import (
             clear_unlocked_overrides,
         )
-        n = clear_unlocked_overrides(tmp_path / "fake.gdb", "SITE1", "SPEC1")
+        n = clear_unlocked_overrides(
+            tmp_path / "fake.gdb", "SITE1", "SPEC1", map_type="GW")
     assert n == 3
     assert len(deleted) == 3
+    where = mock.da.UpdateCursor.call_args.kwargs["where_clause"]
+    assert "MapType = 'GW'" in where
 
 
 def test_clear_unlocked_overrides_zero_when_table_missing(tmp_path):

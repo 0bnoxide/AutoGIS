@@ -961,12 +961,17 @@ def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
 def gen_synthetic_workbook_cmd(site_id, wells, events, features, seed, out_path):
     """Tool 10.6: write a seeded synthetic environmental workbook for parser hardening."""
     from autogis.core.envmon.synthetic_workbook import (
-        generate_workbook, WorkbookScenario)
+        MESSINESS, generate_workbook, WorkbookScenario)
 
     feats = {f.strip() for f in features.split(",") if f.strip()}
     scenario = WorkbookScenario(site_id=site_id, n_wells=wells, n_events=events,
                                 features=feats, seed=seed)
-    out = generate_workbook(scenario, Path(out_path))
+    try:
+        out = generate_workbook(scenario, Path(out_path))
+    except ValueError as exc:
+        raise click.BadParameter(
+            f"{exc}; valid: {', '.join(sorted(MESSINESS))}",
+            param_hint="--features")
     click.echo(f"Written: {out}  (wells={wells}, events={events}, "
                f"features={sorted(feats) or 'clean'}, seed={seed})")
 
@@ -1526,7 +1531,7 @@ def generate_event_report_cmd(
 @click.option("--wells-csv", required=True, type=click.Path(exists=True),
               help="Wells CSV; must include a WellID column.")
 @click.option("--site", "site_id", required=True, help="Site ID.")
-@click.option("--output-dir", required=True, type=click.Path(),
+@click.option("--output-dir", required=True, type=click.Path(file_okay=False),
               help="Directory to write one Markdown file per well + SiteSummary.md.")
 @click.option("--maintenance-log-csv", default=None, type=click.Path(),
               help="Optional maintenance log CSV (WellID, InspectionDate, "
@@ -1536,7 +1541,7 @@ def generate_event_report_cmd(
               help="Output format for each per-well file + the site summary.")
 @click.option("--manifest", "manifest_path", default=None, type=click.Path(),
               help="Attachment harvester manifest (.csv/.json); HTML only, enables photos.")
-@click.option("--harvest-dir", default=None, type=click.Path(),
+@click.option("--harvest-dir", default=None, type=click.Path(file_okay=False),
               help="Harvest output dir (photo saved_path root); HTML only, enables photos.")
 @qa_report_options
 def well_inspection_report_cmd(wells_csv, site_id, output_dir,
@@ -1952,14 +1957,17 @@ def manage_overrides_list_cmd(gdb, site, spec, map_type):
 @_OV_GDB
 @_OV_SITE
 @_OV_SPEC
-def manage_overrides_clear_cmd(gdb, site, spec):
-    """Delete all unlocked overrides for a site/figure spec."""
+@click.option("--map-type", default="",
+              help="MapType key of the rows to clear (default: blank).")
+def manage_overrides_clear_cmd(gdb, site, spec, map_type):
+    """Delete unlocked overrides for a site/figure spec/map type."""
     _guard("manage-callout-overrides")
     from autogis.core.envmon.manage_callout_overrides import (
         clear_unlocked_overrides,
     )
-    n = clear_unlocked_overrides(gdb, site, spec)
-    click.echo(f"Cleared {n} unlocked override(s) for {site}/{spec}.")
+    n = clear_unlocked_overrides(gdb, site, spec, map_type)
+    click.echo(f"Cleared {n} unlocked override(s) for {site}/{spec}"
+               f"/{map_type or 'blank'}.")
 
 
 @manage_callout_overrides_group.command("lock")
@@ -2217,7 +2225,8 @@ def upgrade_schema_cmd(gdb, spatial_reference):
 @click.argument("gdb", type=click.Path())
 @click.option("--site", "site_id", required=True)
 @click.option("--event", "event_id", required=True)
-@click.option("--out", "out_dir", required=True, type=click.Path())
+@click.option("--out", "out_dir", required=True,
+              type=click.Path(file_okay=False))
 @click.option("--compress", is_flag=True, default=False,
               help="ZIP the output GDB after creation.")
 def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
@@ -2357,7 +2366,8 @@ def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
 @click.option("--analytes", "analytes_path", required=True,
               type=click.Path(exists=True),
               help="Path to analyte dictionary YAML or JSON.")
-@click.option("--out-dir", "out_dir", required=True, type=click.Path(),
+@click.option("--out-dir", "out_dir", required=True,
+              type=click.Path(file_okay=False),
               help="Output directory for the sampling plan workbook.")
 def create_sampling_event_cmd(site_path, event_path, analytes_path, out_dir):
     """Tool 2.7: generate pre-field sampling event plan (headless).
@@ -2714,7 +2724,8 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path, report, fail_on):
                    "longitude, horizontal_datum) — the coordinate source.")
 @click.option("--config", "config_path", default=None, type=click.Path(exists=True),
               help="Optional YAML/JSON: allowed_qualifiers, default_datum.")
-@click.option("--out-dir", "out_dir", required=True, type=click.Path(),
+@click.option("--out-dir", "out_dir", required=True,
+              type=click.Path(file_okay=False),
               help="Output dir for wqx_submission.csv, wqx_rejections.csv, "
                    "wqx_provenance.json.")
 def export_wqx_cmd(results_paths, locations_path, config_path, out_dir):
@@ -3417,7 +3428,7 @@ def validate_rtk_survey_cmd(csv_path, hrms_threshold, vrms_threshold, coord_form
 @click.option("--feature-code-map", "map_path", required=True, type=click.Path(exists=True),
               help="YAML feature-code -> layer-name mapping "
                    "(e.g. {MW: MonitoringWells, GCP: DroneControlPoints}).")
-@click.option("--output-dir", required=True, type=click.Path(),
+@click.option("--output-dir", required=True, type=click.Path(file_okay=False),
               help="Directory to write one CSV (+ manifest.json) per layer.")
 @click.option("--geojson/--no-geojson", default=False,
               help="Also write a GeoJSON FeatureCollection per layer.")
@@ -3686,7 +3697,7 @@ def import_drone_products_cmd(manifest_path, flight_id, site_id, gdb_path,
               help="File geodatabase path (ArcGIS Pro required).")
 @click.option("--flight-id", required=True,
               help="Drone flight ID; its DroneFlights.DEMPath is conditioned.")
-@click.option("--out-dir", required=True, type=click.Path(),
+@click.option("--out-dir", required=True, type=click.Path(file_okay=False),
               help="Directory for the conditioned DEM and derived rasters.")
 @click.option("--fill-voids", is_flag=False, flag_value=9, default=None,
               type=int, metavar="[MAX_PIXELS]",
@@ -4362,7 +4373,7 @@ def _ids_arg(value: str) -> list:
                    "site x event x spec matrix.")
 @click.option("--format", "out_format", type=click.Choice(["pdf", "png"]),
               default="pdf", show_default=True)
-@click.option("--out-dir", default=None, type=click.Path(),
+@click.option("--out-dir", default=None, type=click.Path(file_okay=False),
               help="Export folder (required unless --dry-run).")
 @click.option("--gdb", default=None, type=click.Path(),
               help="File geodatabase to repath layers to and register exports "
@@ -4654,7 +4665,8 @@ def sync_survey123_cmd(item_id, out_dir, profile, since_date, no_attachments,
 @envmon.command("merge-event-results")
 @click.option("--results", "result_paths", multiple=True, type=click.Path(exists=True),
               help="Result CSV file(s). Repeatable.")
-@click.option("--results-dir", default=None, type=click.Path(exists=True),
+@click.option("--results-dir", default=None,
+              type=click.Path(exists=True, file_okay=False),
               help="Directory to scan for result CSVs.")
 @click.option("--event-labels", default=None,
               help="Comma-separated event labels (parallel to --results).")
@@ -4977,7 +4989,7 @@ def generate_site_narrative_cmd(site_id, event_label, max_results_path,
 
 @envmon.command("build-report-package")
 @click.option("--spec", "spec_path", required=True, type=click.Path(exists=True))
-@click.option("--out-dir", required=True, type=click.Path())
+@click.option("--out-dir", required=True, type=click.Path(file_okay=False))
 @click.option("--site", "site_id", default="")
 @click.option("--event-label", default="")
 @click.option("--report", default=None, type=click.Path())
@@ -5239,11 +5251,18 @@ def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft,
                               report, fail_on):
     """Assign display tiers to soil sample intervals and write a mapping CSV (headless)."""
     from autogis.core.envmon.soil_interval_selector import (
-        load_soil_results_csv, select_intervals, write_intervals_csv)
+        IntervalTier, load_soil_results_csv, select_intervals,
+        write_intervals_csv)
     from autogis.core.common.qa import QACollector
 
     analyte_list = [a.strip() for a in analytes.split(",")] if analytes else None
     tier_list = [t.strip().upper() for t in tiers.split(",")] if tiers else None
+    unknown_tiers = sorted(set(tier_list or ()) - IntervalTier.ALL)
+    if unknown_tiers:
+        raise click.BadParameter(
+            f"unknown tier(s): {', '.join(unknown_tiers)}; "
+            f"valid: {', '.join(sorted(IntervalTier.ALL))}",
+            param_hint="--tiers")
     qa = QACollector()
     intervals = load_soil_results_csv(results_csv)
     rows = select_intervals(intervals, analytes=analyte_list, tiers=tier_list,
@@ -5413,7 +5432,7 @@ def validate_lab_profile_cmd(profile_yaml, report, fail_on):
 @click.option("--pattern", default=None,
               help="Glob for --edd-dir (default *.csv, falling back to "
                    "*.xlsx if no CSV matches).")
-@click.option("--output-dir", required=True, type=click.Path(),
+@click.option("--output-dir", required=True, type=click.Path(file_okay=False),
               help="Directory to write sample_records.csv, result_records.csv, "
                    "and batch_manifest.csv.")
 @click.option("--analytes", default=None, type=click.Path(exists=True),
@@ -5784,12 +5803,27 @@ def build_conc_surface_cmd(results_csv, coords_csv, analyte, site_id,
     if gdb and not dry_run:
         _guard("build-conc-surface")
 
+    # Validate the unit up front and narrowly: collect_concentration_points
+    # also raises ValueError for malformed --coords rows, and a blanket
+    # "Invalid value for --unit" would send the operator to fix the wrong
+    # option (codex review). Same registry check the core function runs.
+    from autogis.core.common.units import normalize_unit
+    if normalize_unit(surface_unit) is None:
+        raise click.BadParameter(
+            f"not in the ADR-0022 unit registry: {surface_unit!r}",
+            param_hint="--unit")
+
     qa = QACollector()
-    points = collect_concentration_points(
-        Path(results_csv), Path(coords_csv), site_id=site_id,
-        event_date=event_date, analyte=analyte,
-        nondetect_rule=nondetect_rule, surface_unit=surface_unit,
-        matrix=matrix, qa=qa)
+    try:
+        points = collect_concentration_points(
+            Path(results_csv), Path(coords_csv), site_id=site_id,
+            event_date=event_date, analyte=analyte,
+            nondetect_rule=nondetect_rule, surface_unit=surface_unit,
+            matrix=matrix, qa=qa)
+    except ValueError as exc:
+        # remaining ValueErrors (coords parse, date shape) still get a clean
+        # message instead of a traceback, just not blamed on --unit
+        raise click.ClickException(str(exc))
     click.echo(f"[DRAFT] {len(points)} interpolation point(s) for {analyte} "
                f"({surface_unit}, nondetect_rule={nondetect_rule})")
     if dry_run:
@@ -5830,7 +5864,7 @@ def build_cad_package_cmd(layers, mapping, crs):
 @click.option("--points", "points_csv", required=True, type=click.Path(exists=True),
               help="CSV of elevation points: location_id,x,y,z[,description].")
 @click.option("--crs", required=True, help="e.g. EPSG:2256; recorded in the projection note.")
-@click.option("--out-dir", required=True, type=click.Path(),
+@click.option("--out-dir", required=True, type=click.Path(file_okay=False),
               help="Directory for points_pnezd.csv + projection_note.txt.")
 @click.option("--start-number", type=int, default=1, show_default=True,
               help="First PNEZD point number.")

@@ -179,3 +179,17 @@ def test_cli_select_soil_intervals_end_to_end(tmp_path):
         rows = list(csv.DictReader(fh))
     assert len(rows) == 1
     assert rows[0]["display_tier"] == "HOTSPOT"
+
+
+def test_cli_select_soil_intervals_rejects_unknown_tier(tmp_path):
+    src = tmp_path / "soil.csv"
+    _write_soil_csv(src, [])
+    out = tmp_path / "tiered.csv"
+    result = CliRunner().invoke(autogis, [
+        "envmon", "select-soil-intervals",
+        "--results-csv", str(src), "--out", str(out), "--tiers", "HOTSPT",
+    ])
+    assert result.exit_code == 2
+    assert "Invalid value for --tiers" in result.output
+    assert "HOTSPT" in result.output
+    assert not out.exists()
