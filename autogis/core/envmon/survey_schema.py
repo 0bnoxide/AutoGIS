@@ -347,3 +347,151 @@ def _cross_reference_checks(schema, qa, event_config, analyte_dict, ctx):
         _warn(qa, "unexpected_analyte_question",
               f"{ctx}decimal question(s) in analyte groups with no "
               f"analyte behind them: {', '.join(sorted(unexpected))}")
+
+
+# ------------------------------------------------------------------ diffing
+
+@dataclass
+class SchemaChange:
+    kind: str
+    classification: str
+    name: str
+    detail: str
+
+
+def worst_classification(changes) -> Optional[str]:
+    worst = None
+    for c in changes:
+        if worst is None or _CLASS_RANK[c.classification] > _CLASS_RANK[worst]:
+            worst = c.classification
+    return worst
+
+
+def _is_required(v: str) -> bool:
+    return (v or "").strip().lower() in _TRUTHY_REQUIRED
+
+
+def _scopes(questions) -> dict:
+    """name -> (repeat_path, group_path) for field-type questions."""
+    out, rstack, gstack = {}, [], []
+    for q in questions:
+        b = q.base
+        if b == "begin_repeat":
+            rstack.append(q.name)
+        elif b == "end_repeat":
+            rstack and rstack.pop()
+        elif b == "begin_group":
+            gstack.append(q.name)
+        elif b == "end_group":
+            gstack and gstack.pop()
+        elif b in _FIELD_BASES and q.name:
+            out[q.name] = (tuple(rstack), tuple(gstack))
+    return out
+
+
+def diff_forms(old: FormSchema, new: FormSchema) -> list:
+    """Classify every change between two forms (ADR-0114 taxonomy table)."""
+    changes: list = []
+
+    def add(kind, cls, name, detail):
+        changes.append(SchemaChange(kind, cls, name, detail))
+
+    oldq = {q.name: q for q in old.questions
+            if q.base in _FIELD_BASES and q.name}
+    newq = {q.name: q for q in new.questions
+            if q.base in _FIELD_BASES and q.name}
+    oscope, nscope = _scopes(old.questions), _scopes(new.questions)
+
+    orep = {q.name for q in old.questions if q.base == "begin_repeat"}
+    nrep = {q.name for q in new.questions if q.base == "begin_repeat"}
+    for name in sorted(orep - nrep):
+        add("repeat_removed", CLASS_DESTRUCTIVE, name,
+            f"repeat {name!r} removed — submission data shape changes")
+    for name in sorted(nrep - orep):
+        add("repeat_added", CLASS_DESTRUCTIVE, name,
+            f"repeat {name!r} added — submission data shape changes")
+
+    for name in sorted(oldq.keys() - newq.keys()):
+        add("question_removed", CLASS_DESTRUCTIVE, name,
+            f"question {name!r} removed (a rename is a removal)")
+    for name in sorted(newq.keys() - oldq.keys()):
+        q = newq[name]
+        if _is_required(q.required):
+            add("question_added_required", CLASS_REVIEW, name,
+                f"new required question {name!r}")
+        else:
+            add("question_added", CLASS_SAFE, name,
+                f"new optional question {name!r}")
+
+    for name in sorted(oldq.keys() & newq.keys()):
+        o, n = oldq[name], newq[name]
+        if o.base != n.base:
+            add("type_changed", CLASS_DESTRUCTIVE, name,
+                f"type {o.base!r} -> {n.base!r}")
+        elif o.base.startswith("select_") and o.list_name != n.list_name:
+            add("list_repointed", CLASS_REVIEW, name,
+                f"choice list {o.list_name!r} -> {n.list_name!r}")
+        if oscope.get(name, ((), ()))[0] != nscope.get(name, ((), ()))[0]:
+            add("repeat_scope_changed", CLASS_DESTRUCTIVE, name,
+                f"repeat scope {oscope.get(name)!r} -> {nscope.get(name)!r}")
+        elif oscope.get(name, ((), ()))[1] != nscope.get(name, ((), ()))[1]:
+            add("group_changed", CLASS_REVIEW, name,
+                f"group {oscope.get(name)!r} -> {nscope.get(name)!r}")
+        if _is_required(o.required) != _is_required(n.required):
+            if _is_required(n.required):
+                add("required_tightened", CLASS_REVIEW, name,
+                    "optional -> required")
+            else:
+                add("required_relaxed", CLASS_SAFE, name,
+                    "required -> optional")
+        oc = " ".join((o.calculation or "").split())
+        nc = " ".join((n.calculation or "").split())
+        if oc != nc:
+            if name == "SampleID":
+                add("sample_id_calculation_changed", CLASS_DESTRUCTIVE, name,
+                    "the ADR-0113 identity calculation changed")
+            else:
+                add("calculation_changed", CLASS_REVIEW, name,
+                    f"calculation {oc!r} -> {nc!r}")
+        cosmetic = [c for c in ("label", "hint", "appearance", "default")
+                    if getattr(o, c) != getattr(n, c)]
+        if cosmetic:
+            add("cosmetic_changed", CLASS_SAFE, name,
+                f"changed: {', '.join(cosmetic)}")
+
+    # choices, per list
+    for ln in sorted(old.choices.keys() | new.choices.keys()):
+        omap = dict(old.choices.get(ln, []))
+        nmap = dict(new.choices.get(ln, []))
+        removed = {c: omap[c] for c in omap.keys() - nmap.keys()}
+        added = {c: nmap[c] for c in nmap.keys() - omap.keys()}
+        # same label on a removed+added pair = a code change
+        for rc, rl in sorted(removed.items()):
+            match = next((ac for ac, al in sorted(added.items())
+                          if al == rl and rl != ""), None)
+            if match is not None:
+                add("choice_code_changed", CLASS_DESTRUCTIVE, ln,
+                    f"list {ln!r}: code {rc!r} -> {match!r} (label {rl!r})")
+                del added[match]
+            else:
+                add("choice_removed", CLASS_REVIEW, ln,
+                    f"list {ln!r}: choice {rc!r} removed")
+        for ac in sorted(added):
+            add("choice_added", CLASS_SAFE, ln,
+                f"list {ln!r}: choice {ac!r} added")
+        for c in sorted(omap.keys() & nmap.keys()):
+            if omap[c] != nmap[c]:
+                add("choice_label_changed", CLASS_SAFE, ln,
+                    f"list {ln!r}: {c!r} label {omap[c]!r} -> {nmap[c]!r}")
+
+    # settings
+    of, nf = old.settings.get("form_id", ""), new.settings.get("form_id", "")
+    if of != nf:
+        add("form_id_changed", CLASS_DESTRUCTIVE, "form_id",
+            f"form_id {of!r} -> {nf!r} rebinds the portal item")
+    for key in ("form_title", "version", "instance_name"):
+        if old.settings.get(key, "") != new.settings.get(key, ""):
+            add("settings_changed", CLASS_SAFE, key,
+                f"{key} {old.settings.get(key, '')!r} -> "
+                f"{new.settings.get(key, '')!r}")
+    return changes

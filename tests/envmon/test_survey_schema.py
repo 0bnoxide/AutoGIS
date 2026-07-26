@@ -266,3 +266,149 @@ def test_unknown_analyte_warns_with_dict(tmp_path):
     validate_form(read_xlsform(p), qa, event_config=event,
                   analyte_dict=ADICT)
     assert "unknown_analyte" in _cats(qa)
+
+
+# -------------------------------------------------------------- diff_forms
+
+from autogis.core.envmon.survey_schema import (
+    diff_forms, worst_classification, SchemaChange,
+)
+
+
+BASE_ROWS = [
+    ("text", "A", "Label A", "", "yes"),
+    ("select_one lst", "S", "Sel"),
+    ("begin_repeat", "rep", "R"),
+    ("decimal", "InRep", "d"),
+    ("end_repeat", "", ""),
+    ("calculate", "C", "", "", "", "${A}"),
+    ("calculate", "SampleID", "", "", "", "x"),
+]
+BASE_CHOICES = [("lst", "one", "One"), ("lst", "two", "Two")]
+BASE_SETTINGS = {"form_title": "T", "form_id": "t_id", "version": "1"}
+
+
+def _diff(tmp_path, new_rows, new_choices=None, new_settings=None):
+    old = read_xlsform(make_form(tmp_path, BASE_ROWS, BASE_CHOICES,
+                                 dict(BASE_SETTINGS), name="old.xlsx"))
+    new = read_xlsform(make_form(
+        tmp_path, new_rows,
+        BASE_CHOICES if new_choices is None else new_choices,
+        dict(BASE_SETTINGS) if new_settings is None else new_settings,
+        name="new.xlsx"))
+    return diff_forms(old, new)
+
+
+def _kinds(changes):
+    return {(c.kind, c.classification) for c in changes}
+
+
+def test_diff_taxonomy_rows(tmp_path):
+    rows = list(BASE_ROWS)
+
+    # unchanged -> no changes
+    assert _diff(tmp_path, rows) == []
+
+    # added optional / added required
+    ch = _kinds(_diff(tmp_path, rows + [("text", "NewOpt", "")]))
+    assert ("question_added", CLASS_SAFE) in ch
+    ch = _kinds(_diff(tmp_path, rows + [("text", "NewReq", "", "", "yes")]))
+    assert ("question_added_required", CLASS_REVIEW) in ch
+
+    # removed -> destructive
+    ch = _kinds(_diff(tmp_path, [r for r in rows if r[1] != "A"]))
+    assert ("question_removed", CLASS_DESTRUCTIVE) in ch
+
+    # type change -> destructive
+    ch = _kinds(_diff(tmp_path,
+                      [("integer", *r[1:]) if r[1] == "A" else r for r in rows]))
+    assert ("type_changed", CLASS_DESTRUCTIVE) in ch
+
+    # required flips
+    ch = _kinds(_diff(tmp_path,
+                      [("text", "A", "Label A", "", "") if r[1] == "A" else r
+                       for r in rows]))
+    assert ("required_relaxed", CLASS_SAFE) in ch
+    rows_opt = [("text", "A", "Label A", "", "") if r[1] == "A" else r
+                for r in rows]
+    old_opt = read_xlsform(make_form(tmp_path, rows_opt, BASE_CHOICES,
+                                     dict(BASE_SETTINGS), name="o2.xlsx"))
+    new_req = read_xlsform(make_form(tmp_path, rows, BASE_CHOICES,
+                                     dict(BASE_SETTINGS), name="n2.xlsx"))
+    assert ("required_tightened", CLASS_REVIEW) in _kinds(
+        diff_forms(old_opt, new_req))
+
+    # calculation changes
+    ch = _kinds(_diff(tmp_path,
+                      [("calculate", "C", "", "", "", "${A} + 1")
+                       if r[1] == "C" else r for r in rows]))
+    assert ("calculation_changed", CLASS_REVIEW) in ch
+    ch = _kinds(_diff(tmp_path,
+                      [("calculate", "SampleID", "", "", "", "y")
+                       if r[1] == "SampleID" else r for r in rows]))
+    assert ("sample_id_calculation_changed", CLASS_DESTRUCTIVE) in ch
+
+    # list re-pointed
+    ch = _kinds(_diff(tmp_path,
+                      [("select_one other", "S", "Sel") if r[1] == "S" else r
+                       for r in rows],
+                      new_choices=BASE_CHOICES + [("other", "x", "X")]))
+    assert ("list_repointed", CLASS_REVIEW) in ch
+
+    # repeat scope move -> destructive
+    moved = [("text", "A", "Label A", "", "yes"),
+             ("select_one lst", "S", "Sel"),
+             ("begin_repeat", "rep", "R"),
+             ("end_repeat", "", ""),
+             ("decimal", "InRep", "d"),
+             ("calculate", "C", "", "", "", "${A}"),
+             ("calculate", "SampleID", "", "", "", "x")]
+    assert ("repeat_scope_changed", CLASS_DESTRUCTIVE) in _kinds(
+        _diff(tmp_path, moved))
+
+    # repeat added / removed -> destructive
+    ch = _kinds(_diff(tmp_path, rows + [("begin_repeat", "rep2", "R2"),
+                                        ("end_repeat", "", "")]))
+    assert ("repeat_added", CLASS_DESTRUCTIVE) in ch
+    norep = [r for r in rows if r[1] not in ("rep", "InRep")
+             and r[0] != "end_repeat"]
+    assert ("repeat_removed", CLASS_DESTRUCTIVE) in _kinds(
+        _diff(tmp_path, norep))
+
+    # cosmetic -> safe
+    ch = _kinds(_diff(tmp_path,
+                      [("text", "A", "Renamed label", "", "yes")
+                       if r[1] == "A" else r for r in rows]))
+    assert ("cosmetic_changed", CLASS_SAFE) in ch
+
+
+def test_diff_choice_rows(tmp_path):
+    rows = list(BASE_ROWS)
+    # choice added / label changed -> safe
+    ch = _kinds(_diff(tmp_path, rows,
+                      new_choices=BASE_CHOICES + [("lst", "three", "Three")]))
+    assert ("choice_added", CLASS_SAFE) in ch
+    ch = _kinds(_diff(tmp_path, rows,
+                      new_choices=[("lst", "one", "Uno"),
+                                   ("lst", "two", "Two")]))
+    assert ("choice_label_changed", CLASS_SAFE) in ch
+    # choice removed -> review
+    ch = _kinds(_diff(tmp_path, rows, new_choices=[("lst", "one", "One")]))
+    assert ("choice_removed", CLASS_REVIEW) in ch
+    # code change (same label, new code) -> destructive
+    ch = _kinds(_diff(tmp_path, rows,
+                      new_choices=[("lst", "uno", "One"),
+                                   ("lst", "two", "Two")]))
+    assert ("choice_code_changed", CLASS_DESTRUCTIVE) in ch
+
+
+def test_diff_settings_and_worst(tmp_path):
+    rows = list(BASE_ROWS)
+    ch = _diff(tmp_path, rows,
+               new_settings={"form_title": "T", "form_id": "other",
+                             "version": "2"})
+    kinds = _kinds(ch)
+    assert ("form_id_changed", CLASS_DESTRUCTIVE) in kinds
+    assert ("settings_changed", CLASS_SAFE) in kinds
+    assert worst_classification(ch) == CLASS_DESTRUCTIVE
+    assert worst_classification([]) is None
