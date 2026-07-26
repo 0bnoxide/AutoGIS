@@ -138,7 +138,9 @@ def plan_layer_envelopes(
         if gid in (None, ""):
             qa.add(SEV_WARNING, "missing_global_id",
                    f"{pull.name}: feature without {pull.global_id_field!r} "
-                   f"skipped — no stable identity to sync by")
+                   f"skipped — no stable identity to sync by. Once the "
+                   f"watermark passes its edit time this record will NEVER "
+                   f"sync; fix the layer's GlobalID and replay with --since")
             continue
         gid = str(gid)
         edit_ms = _as_int_ms(attrs.get(pull.edit_field))
@@ -231,9 +233,13 @@ def _atomic_write_text(path: Path, text: str) -> Path:
     tmp = path.with_name(path.name + ".tmp")
     # newline="" — the CSV writer already emits \r\n; platform newline
     # translation would double it to \r\r\n (blank rows on Windows).
-    with tmp.open("w", encoding="utf-8", newline="") as fh:
-        fh.write(text)
-    os.replace(tmp, path)
+    try:
+        with tmp.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -335,7 +341,7 @@ def fetch_item_pulls(  # pragma: no cover — live seam, headless tests use fake
     pulls: List[LayerPull] = []
     for lyr, is_table in ([(l, False) for l in (item.layers or [])]
                           + [(t, True) for t in (item.tables or [])]):
-        props = lyr.properties
+        props = dict(lyr.properties)   # hedge PropertyMap quirks (audit_schema pattern)
         layer_id = int(props["id"])
         name = props.get("name") or f"sublayer_{layer_id}"
         efi = props.get("editFieldsInfo") or {}

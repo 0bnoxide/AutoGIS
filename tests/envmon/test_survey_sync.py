@@ -295,6 +295,31 @@ def test_cli_dry_run_writes_nothing(tmp_path, live_fakes):
     assert not out.exists() or not list(out.iterdir())
 
 
+def test_cli_rejects_checkpoint_from_a_different_survey(tmp_path, live_fakes):
+    # review round 1: a foreign checkpoint would silently apply the other
+    # survey's watermarks and fabricate deletes from its known-ID set
+    out = tmp_path / "stage"
+    live_fakes.setattr(ss, "fetch_item_pulls", _fake_pulls(
+        [_feat("g1", 1000)], ["g1"]))
+    assert _invoke(["--item-id", "SURVEY-A", "--out", str(out)]).exit_code == 0
+    result = _invoke(["--item-id", "SURVEY-B", "--out", str(out)])
+    assert result.exit_code != 0
+    assert "SURVEY-A" in result.output and "SURVEY-B" in result.output
+
+
+def test_cli_empty_replay_window_says_checkpoint_not_advanced(
+        tmp_path, live_fakes):
+    out = tmp_path / "stage"
+    live_fakes.setattr(ss, "fetch_item_pulls", _fake_pulls(
+        [_feat("g1", 1000)], ["g1"]))
+    assert _invoke(["--item-id", "I", "--out", str(out)]).exit_code == 0
+    live_fakes.setattr(ss, "fetch_item_pulls", _fake_pulls([], ["g1"]))
+    result = _invoke(["--item-id", "I", "--out", str(out),
+                      "--since", "2026-01-01"])
+    assert result.exit_code == 0
+    assert "checkpoint not advanced" in result.output
+
+
 def test_cli_interrupted_staging_write_leaves_checkpoint_unwritten(
         tmp_path, live_fakes):
     out = tmp_path / "stage"

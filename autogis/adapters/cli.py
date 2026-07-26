@@ -4485,6 +4485,13 @@ def sync_survey123_cmd(item_id, out_dir, profile, since_date, no_attachments,
     qa = QACollector()
     out = Path(out_dir)
     checkpoint = ss.read_checkpoint(out)
+    # A checkpoint from a different survey would silently apply its
+    # watermarks and fabricate deletes from its known-ID set (review round 1).
+    if checkpoint and checkpoint.get("item_id") not in (None, item_id):
+        raise click.ClickException(
+            f"Staging directory {out} holds a checkpoint for item "
+            f"{checkpoint.get('item_id')!r}, not {item_id!r} — use a "
+            f"separate --out per survey.")
     gis = agol_from_profile(profile)
     pulls = ss.fetch_item_pulls(
         gis, item_id, checkpoint=checkpoint, replay_since_ms=replay_ms,
@@ -4505,12 +4512,14 @@ def sync_survey123_cmd(item_id, out_dir, profile, since_date, no_attachments,
         _render_qa(qa, report, fail_on)
         return
     if not envelopes and checkpoint is not None:
-        click.echo(f"Up to date — {summary}.")
+        click.echo(f"Up to date — {summary}." if mode == "sync" else
+                   f"Replay window empty — {summary}; checkpoint not advanced.")
         _render_qa(qa, report, fail_on)
         return
 
-    stamp = dt.fromtimestamp(pulled_at_ms / 1000,
-                             tz=tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = (dt.fromtimestamp(pulled_at_ms / 1000,
+                              tz=tz.utc).strftime("%Y%m%dT%H%M%S")
+             + f"{pulled_at_ms % 1000:03d}Z")
     jsonl = out / f"envelopes_{stamp}.jsonl"
     csv_path = out / f"submissions_{stamp}.csv"
     ss.write_envelopes_jsonl(envelopes, jsonl)

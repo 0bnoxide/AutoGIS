@@ -43,8 +43,10 @@ path.
 - **Deletions by GlobalID sweep:** each run queries the full current
   GlobalID set and diffs it against the checkpoint's known-ID set.
   `ponytail:` a row added *and* deleted entirely between runs is never
-  observed — the envelope stream is a change feed, not an audit log; upgrade
-  path is the feature-service `extractChanges` API if that gap ever matters.
+  observed, and a layer removed from the service drops its checkpoint state
+  without emitting deletes for its known IDs — the envelope stream is a
+  change feed, not an audit log; upgrade path is the feature-service
+  `extractChanges` API if either gap ever matters.
 - **Checkpoint after durable output:** `.survey123_sync_state.json` in the
   staging directory is written (atomically, tmp + `os.replace`) only after
   the staging artifacts are on disk. An interrupted run re-pulls the same
@@ -75,11 +77,14 @@ path.
 ## Consequences
 
 - Exit-gate legs verifiable headlessly are met and pinned by tests
-  (19 in `tests/envmon/test_survey_sync.py`): interrupted-run resume without
+  (21 in `tests/envmon/test_survey_sync.py`): interrupted-run resume without
   checkpoint advance, repeat-run no-duplicates, edit/delete visibility,
   attachment metadata by stable identity, repeat-table envelopes, replay
   boundedness, dry-run writing nothing, staging CSV feeding the existing
-  normalizer, and the pre-network install hint. Suite 2621 green.
+  normalizer, the pre-network install hint, and (review round 1) the
+  checkpoint↔`--item-id` mismatch guard — a foreign checkpoint would
+  silently apply another survey's watermarks and fabricate deletes from its
+  known-ID set. Suite 2623 green.
 - **Owner-gated live legs remain open** (shared gate item 5 + "counts match a
   non-production hosted survey"): a live pull against a non-production
   hosted survey with representative new/edited/deleted/repeat/attachment
