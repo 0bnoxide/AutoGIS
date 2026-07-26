@@ -16,6 +16,7 @@ cloud = ["arcgis>=2.4,<3", "setuptools"]   # Pro 3.4+ / arcgis-dist.json unverif
     # ships a vendored `distutils` shim that satisfies the import -- no code
     # change needed, just having the package present. Confirmed against the
     # exact failure on arcgis 2.4.3 / Python 3.14.
+survey123 = ["arcgis>=2.4,<3", "setuptools"]   # live Survey123 pull (ADR-0112/0116); same stack + distutils caveat as `cloud` above
 report = ["Pillow>=9.0"]   # photo embedding for generate-inspection-report (openpyxl Image needs PIL)
 gui = ["PySide6"]   # unified GUI adapter (ADR-0050); not needed for CLI/.pyt use
 profile = ["matplotlib>=3.7"]   # subsurface profile rendering (generate-subsurface-profile)

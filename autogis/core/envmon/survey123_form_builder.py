@@ -12,6 +12,8 @@ from typing import Dict, List
 
 import openpyxl
 
+from .sample_id import xform_sample_id_calc
+
 _QA_FLAGS = [
     ("resampled", "Resampled"),
     ("field_dup", "Field Duplicate"),
@@ -28,7 +30,7 @@ _MATRIX_LABELS = {
 }
 
 _SURVEY_HEADERS = ["type", "name", "label", "hint", "required", "calculation",
-                   "appearance"]
+                   "appearance", "default"]
 _CHOICES_HEADERS = ["list_name", "name", "label"]
 _SETTINGS_HEADERS = ["form_title", "form_id", "version", "instance_name"]
 
@@ -95,15 +97,11 @@ def build_xlsform(
         _write_row(survey, r, list(vals))
         r += 1
 
-    sample_id_calc = (
-        'concat(${WellID}, "-", format-date(${SamplingDate}, "%Y%m%d"), '
-        '"-", ${Matrix})'
-    )
+    sample_id_calc = xform_sample_id_calc()
 
     row("select_one well_list", "WellID", "Well ID", "", "yes")
     row("date", "SamplingDate", "Sampling Date", "", "yes")
     row("select_one matrix_list", "Matrix", "Sample Matrix", "", "yes")
-    row("calculate", "SampleID", "", "", "", sample_id_calc)
     row("select_one crew_list", "SampledBy", "Sampled By", "", "yes")
     row("text", "COCNumber", "COC Number")
 
@@ -123,6 +121,13 @@ def build_xlsform(
 
     row("decimal", "DepthToWater_ft", "Depth to Water (ft)", "GW only")
     row("select_multiple qa_flags", "QAFlags", "QA Flags")
+    # After QAFlags, which the duplicate leg reads: XLSForm resolves
+    # calculates by dependency rather than row order, but a backward
+    # reference needs no such guarantee and costs nothing — the question is
+    # a calculate, so it renders nothing wherever it sits. The leg reuses the
+    # qa_flags choice "field_dup" that has existed since ADR-0021; a second
+    # question would let a crew tick one affordance and miss the other.
+    row("calculate", "SampleID", "", "", "", sample_id_calc)
     row("text", "Notes", "Notes")
 
     # ----------------------------------------------------------------- choices

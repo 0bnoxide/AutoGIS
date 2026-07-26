@@ -95,7 +95,13 @@ When the codebase-memory-mcp tools are unavailable, say so explicitly, degrade t
 
 # Persistent Agent Memory
 
-You have a persistent, file-based memory system at `C:\Users\ichbi\AutoGIS\.claude\agent-memory-local\graph-codebase-navigator\`. This directory already exists — write to it directly with the Write tool (do not run mkdir or check for its existence).
+You have a persistent, file-based memory system at
+`.claude/agent-memory-local/graph-codebase-navigator/`, resolved relative to
+the repository root (use the repo root's absolute path on disk this session,
+not a hardcoded machine-specific path — this repo is cloned onto different
+machines and cloud containers, and an absolute path baked in for one of them
+silently breaks on every other). This directory already exists — write to it
+directly with the Write tool (do not run mkdir or check for its existence).
 
 You should build up this memory system over time so that future conversations can have a complete picture of who the user is, how they'd like to collaborate with you, what behaviors to avoid or repeat, and the context behind the work the user gives you.
 

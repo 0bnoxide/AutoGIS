@@ -82,6 +82,10 @@ _QA_COUNTS_META_KEY = "autogis.qa_counts"
 # nonzero exit code, so a stale-finding read isn't mislogged as an error).
 # `coc` uses its per-transition custody audit instead of run history (ADR-0107).
 _SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
+# Semantic nonzero exits that are findings, not failures (ADR-0115):
+# diff-survey-schema exits 2 (review-required) / 3 (destructive drift).
+# Without this, every drift finding would be mislogged as a tool error.
+_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}}
 
 
 def _record_tool_name(ctx) -> str:
@@ -177,6 +181,9 @@ class RecordingCommand(click.Command):
             status = _classify_exit(exc)
             if status is None:
                 return
+            if (isinstance(exc, SystemExit)
+                    and exc.code in _SEMANTIC_EXIT_CODES.get(tool_name, ())):
+                status = "success"
             from autogis.core.common.run_history import RunHistory, RunRecord
 
             counts = ctx.meta.get(_QA_COUNTS_META_KEY, {})
@@ -641,13 +648,13 @@ def evaluate_rpd_qa_cmd(samples_csv, results_csv, batch_id, report, fail_on):
 @click.option("--results-csv", required=True, type=click.Path(exists=True),
               help="CSV export of Env_AnalyticalResults.")
 @click.option("--samples-csv", default=None, type=click.Path(exists=True),
-              help="CSV export of Env_Samples (optional; used for metadata only).")
+              help="CSV export of Env_Samples (optional; adds a 'Samples' sheet).")
 @click.option("--output", required=True, type=click.Path(),
               help="Output .xlsx path.")
-@click.option("--site-id", default="", help="Site ID label for the summary.")
-@click.option("--event-id", default="", help="Event ID label for the summary.")
+@click.option("--site-id", default="", help="Site ID label added to a 'Metadata' sheet.")
+@click.option("--event-id", default="", help="Event ID label added to a 'Metadata' sheet.")
 def export_summary_cmd(results_csv, samples_csv, output, site_id, event_id):
-    """Tool: export Env_AnalyticalResults to a four-sheet Excel summary."""
+    """Tool: export Env_AnalyticalResults to an Excel summary workbook."""
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
     from autogis.core.common.records_csv import read_records_csv
     from autogis.core.common.qa import QACollector
@@ -968,12 +975,17 @@ def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
 def gen_synthetic_workbook_cmd(site_id, wells, events, features, seed, out_path):
     """Tool 10.6: write a seeded synthetic environmental workbook for parser hardening."""
     from autogis.core.envmon.synthetic_workbook import (
-        generate_workbook, WorkbookScenario)
+        MESSINESS, generate_workbook, WorkbookScenario)
 
     feats = {f.strip() for f in features.split(",") if f.strip()}
     scenario = WorkbookScenario(site_id=site_id, n_wells=wells, n_events=events,
                                 features=feats, seed=seed)
-    out = generate_workbook(scenario, Path(out_path))
+    try:
+        out = generate_workbook(scenario, Path(out_path))
+    except ValueError as exc:
+        raise click.BadParameter(
+            f"{exc}; valid: {', '.join(sorted(MESSINESS))}",
+            param_hint="--features")
     click.echo(f"Written: {out}  (wells={wells}, events={events}, "
                f"features={sorted(feats) or 'clean'}, seed={seed})")
 
@@ -1967,14 +1979,17 @@ def manage_overrides_list_cmd(gdb, site, spec, map_type):
 @_OV_GDB
 @_OV_SITE
 @_OV_SPEC
-def manage_overrides_clear_cmd(gdb, site, spec):
-    """Delete all unlocked overrides for a site/figure spec."""
+@click.option("--map-type", default="",
+              help="MapType key of the rows to clear (default: blank).")
+def manage_overrides_clear_cmd(gdb, site, spec, map_type):
+    """Delete unlocked overrides for a site/figure spec/map type."""
     _guard("manage-callout-overrides")
     from autogis.core.envmon.manage_callout_overrides import (
         clear_unlocked_overrides,
     )
-    n = clear_unlocked_overrides(gdb, site, spec)
-    click.echo(f"Cleared {n} unlocked override(s) for {site}/{spec}.")
+    n = clear_unlocked_overrides(gdb, site, spec, map_type)
+    click.echo(f"Cleared {n} unlocked override(s) for {site}/{spec}"
+               f"/{map_type or 'blank'}.")
 
 
 @manage_callout_overrides_group.command("lock")
@@ -2232,14 +2247,20 @@ def upgrade_schema_cmd(gdb, spatial_reference):
 @click.argument("gdb", type=click.Path())
 @click.option("--site", "site_id", required=True)
 @click.option("--event", "event_id", required=True)
-@click.option("--out", "out_dir", required=True, type=click.Path(file_okay=False))
+@click.option("--out", "out_dir", required=True,
+              type=click.Path(file_okay=False))
 @click.option("--compress", is_flag=True, default=False,
               help="ZIP the output GDB after creation.")
 def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
     """Freeze a GDB snapshot for a reporting event (ArcGIS Pro)."""
     _guard("export-snapshot")
     from autogis.core.envmon.export_snapshot import export_event_snapshot, format_manifest
-    manifest = export_event_snapshot(gdb, site_id, event_id, out_dir, compress)
+    try:
+        manifest = export_event_snapshot(gdb, site_id, event_id, out_dir, compress)
+    except (ValueError, FileExistsError) as exc:
+        # The point of validating the snapshot name up front is an actionable
+        # message; a raw traceback in the Pro tool dialog is not one.
+        raise click.ClickException(str(exc))
     click.echo(format_manifest(manifest))
 
 @envmon.command("build-survey-form")
@@ -2263,6 +2284,102 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     click.echo(f"XLSForm written to {out_path}")
 
 
+@envmon.command("validate-survey-form")
+@click.argument("form_xlsx", type=click.Path(exists=True))
+@click.option("--site-config", "site_path", default=None,
+              type=click.Path(exists=True), help="Site config YAML.")
+@click.option("--event-config", "event_path", default=None,
+              type=click.Path(exists=True), help="Event config YAML.")
+@click.option("--analyte-dict", "analytes_path", default=None,
+              type=click.Path(exists=True), help="Analyte dictionary YAML.")
+@qa_report_options
+def validate_survey_form_cmd(form_xlsx, site_path, event_path, analytes_path,
+                             report, fail_on):
+    """S123-1.1: static XLSForm validation — structure, choices, references,
+    the ADR-0113 SampleID contract, and config cross-checks."""
+    import yaml
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.survey_schema import read_xlsform, validate_form
+    try:
+        schema = read_xlsform(form_xlsx)
+    except Exception as exc:
+        raise click.ClickException(f"cannot read XLSForm: {exc}")
+
+    def _load(p):
+        return yaml.safe_load(open(p, encoding="utf-8")) if p else None
+
+    qa = QACollector()
+    validate_form(schema, qa,
+                  event_config=_load(event_path),
+                  site_config=_load(site_path),
+                  analyte_dict=_load(analytes_path))
+    _render_qa(qa, report, fail_on)
+
+
+_DIFF_REVIEW_EXIT = 2
+_DIFF_DESTRUCTIVE_EXIT = 3
+
+
+@envmon.command("diff-survey-schema")
+@click.argument("form_xlsx", type=click.Path())
+@click.option("--baseline-form", "baseline_path", default=None,
+              type=click.Path(),
+              help="Previous XLSForm .xlsx to diff against.")
+@click.option("--layer-spec", "spec_path", default=None,
+              type=click.Path(),
+              help="Saved feature-layer spec YAML/JSON (audit-schema format).")
+@click.option("--report", default=None, type=click.Path(),
+              help="Write the change list to PATH (.json or .md).")
+def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
+    """S123-1.2: classify XLSForm changes as safe / review-required /
+    destructive. Exit 0 none-or-safe, 2 review-required, 3 destructive."""
+    import dataclasses
+    import json
+    import yaml
+    from autogis.core.envmon.survey_schema import (
+        CLASS_DESTRUCTIVE, CLASS_REVIEW, diff_forms, diff_form_vs_layer,
+        read_xlsform, worst_classification,
+    )
+    # ClickException (exit 1), not UsageError (exit 2): 2 is reserved for
+    # the review-required semantic exit and must never mean "typo".
+    if not baseline_path and not spec_path:
+        raise click.ClickException(
+            "provide --baseline-form and/or --layer-spec to diff against")
+    try:
+        new = read_xlsform(form_xlsx)
+        changes = []
+        if baseline_path:
+            changes += diff_forms(read_xlsform(baseline_path), new)
+        if spec_path:
+            spec = yaml.safe_load(open(spec_path, encoding="utf-8"))
+            changes += diff_form_vs_layer(new, spec)
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(f"cannot diff: {exc}")
+
+    for c in changes:
+        click.echo(f"[{c.classification.upper():>15}] {c.kind}: {c.name} — "
+                   f"{c.detail}")
+    worst = worst_classification(changes)
+    click.echo(f"Changes: {len(changes)}  Worst: {worst or 'none'}")
+    if report:
+        p = Path(report)
+        rows = [dataclasses.asdict(c) for c in changes]
+        if p.suffix == ".json":
+            p.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        else:
+            lines = ["| class | kind | name | detail |", "|---|---|---|---|"]
+            lines += [f"| {c.classification} | {c.kind} | {c.name} | "
+                      f"{c.detail} |" for c in changes]
+            p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        click.echo(f"Wrote report: {p}")
+    if worst == CLASS_DESTRUCTIVE:
+        raise SystemExit(_DIFF_DESTRUCTIVE_EXIT)
+    if worst == CLASS_REVIEW:
+        raise SystemExit(_DIFF_REVIEW_EXIT)
+
+
 @envmon.command("create-sampling-event")
 @click.option("--site", "site_path", required=True, type=click.Path(exists=True),
               help="Path to site config YAML or JSON.")
@@ -2271,7 +2388,8 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
 @click.option("--analytes", "analytes_path", required=True,
               type=click.Path(exists=True),
               help="Path to analyte dictionary YAML or JSON.")
-@click.option("--out-dir", "out_dir", required=True, type=click.Path(file_okay=False),
+@click.option("--out-dir", "out_dir", required=True,
+              type=click.Path(file_okay=False),
               help="Output directory for the sampling plan workbook.")
 def create_sampling_event_cmd(site_path, event_path, analytes_path, out_dir):
     """Tool 2.7: generate pre-field sampling event plan (headless).
@@ -2628,7 +2746,8 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path, report, fail_on):
                    "longitude, horizontal_datum) — the coordinate source.")
 @click.option("--config", "config_path", default=None, type=click.Path(exists=True),
               help="Optional YAML/JSON: allowed_qualifiers, default_datum.")
-@click.option("--out-dir", "out_dir", required=True, type=click.Path(file_okay=False),
+@click.option("--out-dir", "out_dir", required=True,
+              type=click.Path(file_okay=False),
               help="Output dir for wqx_submission.csv, wqx_rejections.csv, "
                    "wqx_provenance.json.")
 def export_wqx_cmd(results_paths, locations_path, config_path, out_dir):
@@ -4402,7 +4521,15 @@ def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
     profile = ParserProfile.load(Path(profile_path))
     lab_samples = extract_sample_roster(Path(edd_path), profile)
 
-    result = reconcile_field_lab(field_samples, lab_samples, threshold=threshold)
+    # The profile declares its lab's duplicate markers per sheet (e.g.
+    # "-DUP"/"-D"); the guard needs them to tell a lab duplicate from the
+    # primary it would otherwise fuzzy-consume.
+    markers = sorted({m for s in profile.sheets.values()
+                      for m in (s.raw.get("duplicate_markers") or [])}) or None
+
+    result = reconcile_field_lab(field_samples, lab_samples,
+                                 threshold=threshold,
+                                 duplicate_markers=markers)
     qa = reconcile_to_qa(result)
     _render_qa(qa, report, fail_on)
 
@@ -4460,6 +4587,103 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("sync-survey123")
+@click.option("--item-id", required=True,
+              help="AGOL item ID of the survey's feature service.")
+@click.option("--out", "out_dir", required=True, type=click.Path(),
+              help="Staging directory (also holds the sync checkpoint).")
+@click.option("--profile", default=None,
+              help="ArcGIS API for Python profile name.")
+@click.option("--since", "since_date", default=None,
+              help="Bounded replay: re-pull edits since this UTC date/time "
+                   "(YYYY-MM-DD[THH:MM]); the checkpoint is not advanced.")
+@click.option("--no-attachments", is_flag=True, default=False,
+              help="Skip attachment-metadata fetch.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Fetch and summarize only; write nothing.")
+@qa_report_options
+def sync_survey123_cmd(item_id, out_dir, profile, since_date, no_attachments,
+                       dry_run, report, fail_on):
+    """S123 Phase 2: pull new/changed submissions into staging (live, read-only)."""
+    import importlib.util
+    import time as _time
+    from datetime import datetime as dt, timezone as tz
+
+    # Live command: fail before any network work with the exact install hint
+    # (ADR-0112 install contract). find_spec never imports arcgis.
+    if importlib.util.find_spec("arcgis") is None:
+        raise click.ClickException(
+            "sync-survey123 is a live command and needs the ArcGIS API for "
+            'Python. Install it with: pip install "autogis[survey123]"')
+
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon import survey_sync as ss
+
+    replay_ms = None
+    if since_date:
+        try:
+            parsed = dt.fromisoformat(since_date)
+        except ValueError:
+            raise click.UsageError(
+                f"--since: cannot parse {since_date!r} (use YYYY-MM-DD[THH:MM]).")
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=tz.utc)
+        replay_ms = int(parsed.timestamp() * 1000)
+
+    qa = QACollector()
+    out = Path(out_dir)
+    checkpoint = ss.read_checkpoint(out)
+    # A checkpoint from a different survey would silently apply its
+    # watermarks and fabricate deletes from its known-ID set (review round 1).
+    if checkpoint and checkpoint.get("item_id") not in (None, item_id):
+        raise click.ClickException(
+            f"Staging directory {out} holds a checkpoint for item "
+            f"{checkpoint.get('item_id')!r}, not {item_id!r} — use a "
+            f"separate --out per survey.")
+    gis = agol_from_profile(profile)
+    pulls = ss.fetch_item_pulls(
+        gis, item_id, checkpoint=checkpoint, replay_since_ms=replay_ms,
+        include_attachments=not no_attachments)
+    pulled_at_ms = int(_time.time() * 1000)
+    mode = "replay" if replay_ms is not None else "sync"
+    envelopes, new_cp = ss.sync_item(
+        pulls, checkpoint, item_id=item_id, pulled_at_ms=pulled_at_ms,
+        mode=mode, profile=profile or "", replay_since_ms=replay_ms, qa=qa)
+
+    ops = {op: sum(1 for e in envelopes if e.operation == op)
+           for op in ("add", "update", "delete")}
+    summary = (f"{len(envelopes)} envelope(s): {ops['add']} add, "
+               f"{ops['update']} update, {ops['delete']} delete "
+               f"across {len(pulls)} layer(s)")
+    if dry_run:
+        click.echo(f"[dry-run] {summary} — nothing written.")
+        _render_qa(qa, report, fail_on)
+        return
+    if not envelopes and checkpoint is not None:
+        click.echo(f"Up to date — {summary}." if mode == "sync" else
+                   f"Replay window empty — {summary}; checkpoint not advanced.")
+        _render_qa(qa, report, fail_on)
+        return
+
+    stamp = (dt.fromtimestamp(pulled_at_ms / 1000,
+                              tz=tz.utc).strftime("%Y%m%dT%H%M%S")
+             + f"{pulled_at_ms % 1000:03d}Z")
+    jsonl = out / f"envelopes_{stamp}.jsonl"
+    csv_path = out / f"submissions_{stamp}.csv"
+    ss.write_envelopes_jsonl(envelopes, jsonl)
+    n_rows = ss.write_submissions_csv(
+        envelopes, csv_path,
+        date_fields={f for p in pulls for f in p.date_fields})
+    if mode == "sync":
+        # checkpoint only advances after the staging artifacts are durable
+        ss.write_checkpoint(out, new_cp)
+    click.echo(f"{summary}\n  envelopes: {jsonl}\n  submissions CSV: "
+               f"{csv_path} ({n_rows} row(s))"
+               + ("" if mode == "sync"
+                  else "\n  replay: checkpoint not advanced"))
+    _render_qa(qa, report, fail_on)
+
+
 # ---------------------------------------------------------------------------
 # Headless envmon batch (2026-06-28): max-result, merge, QC, compliance,
 # regulatory tables, field completeness, GW flow direction, GeoPackage export,
@@ -4513,14 +4737,18 @@ def merge_event_results_cmd(result_paths, results_dir, event_labels,
 def build_max_result_dataset_cmd(results_path, sl_path, analytes, wells,
                                   date_from, date_to, include_nd, out, report):
     """Build max-detected dataset across all events (headless)."""
-    import csv as _csv, yaml as _yaml
+    import csv as _csv
     from autogis.core.envmon.max_result_dataset import (
         build_max_result_dataset, write_max_result_csv)
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     qa = QACollector()
     records = build_max_result_dataset(
         rows, screening_levels=sl,
@@ -4568,13 +4796,17 @@ def generate_qc_summary_cmd(results_path, out, report):
 @click.option("--report", default=None, type=click.Path())
 def build_compliance_table_cmd(results_path, sl_path, analytes, date_from, out, report):
     """Build cross-event compliance summary matrix + detail workbook (headless)."""
-    import csv as _csv, yaml as _yaml
+    import csv as _csv
     from autogis.core.envmon.compliance_summary import (
         build_compliance_summary, write_compliance_workbook)
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     analyte_list = [a.strip() for a in analytes.split(",")] if analytes else None
     result = build_compliance_summary(rows, screening_levels=sl,
                                        analytes=analyte_list, date_from=date_from)
@@ -4598,10 +4830,14 @@ def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
     import csv as _csv, yaml as _yaml
     from autogis.core.envmon.regulatory_table_builder import (
         build_regulatory_table_specs, write_regulatory_workbook)
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     gm = _yaml.safe_load(Path(gm_path).read_text(encoding="utf-8")) if gm_path else None
     specs = build_regulatory_table_specs(rows, group_map=gm, screening_levels=sl)
     result = write_regulatory_workbook(rows, specs, Path(out), site_id=site_id,
@@ -4775,10 +5011,13 @@ def generate_site_narrative_cmd(site_id, event_label, max_results_path,
                                  change_log_path, plan_path, results_path,
                                  sl_path, top_n, out, report):
     """Generate template-driven site monitoring narrative (headless)."""
-    import yaml as _yaml
     from autogis.core.envmon.site_narrative_generator import generate_site_narrative
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
-    sl = _yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     result = generate_site_narrative(
         site_id, event_label,
         max_result_path=Path(max_results_path) if max_results_path else None,
@@ -4859,10 +5098,14 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
     from autogis.core.envmon.report_appendix_builder import (
         build_appendix_sheet_specs, write_appendix_workbook)
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = _yaml.safe_load(Path(sl_path).read_text()) if sl_path else None
+    try:
+        sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     group_map = (_yaml.safe_load(Path(group_map_path).read_text())
                  if group_map_path else None)
     dates = [d.strip() for d in event_dates.split(",")] if event_dates else None
@@ -4909,13 +5152,16 @@ def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
     """Build exceedance event dataset with ratio/tier enrichment (headless)."""
     import csv as _csv
     from autogis.core.envmon.build_exceedance_event import (
-        build_exceedance_event, load_screening_levels_yaml,
-        write_exceedance_event_csv)
+        build_exceedance_event, write_exceedance_event_csv)
     from autogis.core.common.qa import QACollector
+    from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
     with open(results_path, newline="", encoding="utf-8") as fh:
         rows = list(_csv.DictReader(fh))
-    sl = load_screening_levels_yaml(Path(sl_path))
+    try:
+        sl = load_flat_screening_levels(Path(sl_path))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     date_range = (date_from, date_to) if (date_from and date_to) else None
     qa = QACollector()
     records = build_exceedance_event(
@@ -4985,17 +5231,14 @@ def generate_trend_charts_cmd(history_csv, out, analytes, wells, sl_path,
         keep_wells = {w.strip() for w in wells.split(",")}
         series_list = [s for s in series_list if s.location_id in keep_wells]
     if sl_path:
-        sl_map = yaml.safe_load(Path(sl_path).read_text(encoding="utf-8")) or {}
-        if not isinstance(sl_map, dict):
-            raise click.ClickException(
-                f"--screening-levels {sl_path} must be a YAML mapping of "
-                f"{{AnalyteName: level}}, got {type(sl_map).__name__}.")
+        from autogis.core.common.config import ConfigError, load_flat_screening_levels
+        try:
+            sl_map = load_flat_screening_levels(Path(sl_path))
+        except ConfigError as exc:
+            raise click.ClickException(str(exc))
         for s in series_list:
             if s.analyte_name in sl_map:
-                try:
-                    s.screening_level = float(sl_map[s.analyte_name])
-                except (TypeError, ValueError):
-                    pass
+                s.screening_level = sl_map[s.analyte_name]
     chart_count = write_trend_charts(series_list, Path(out),
                                      max_per_sheet=max_per_sheet)
     click.echo(f"Written: {out}  ({len(series_list)} series, "
@@ -5062,11 +5305,18 @@ def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft,
                               report, fail_on):
     """Assign display tiers to soil sample intervals and write a mapping CSV (headless)."""
     from autogis.core.envmon.soil_interval_selector import (
-        load_soil_results_csv, select_intervals, write_intervals_csv)
+        IntervalTier, load_soil_results_csv, select_intervals,
+        write_intervals_csv)
     from autogis.core.common.qa import QACollector
 
     analyte_list = [a.strip() for a in analytes.split(",")] if analytes else None
     tier_list = [t.strip().upper() for t in tiers.split(",")] if tiers else None
+    unknown_tiers = sorted(set(tier_list or ()) - IntervalTier.ALL)
+    if unknown_tiers:
+        raise click.BadParameter(
+            f"unknown tier(s): {', '.join(unknown_tiers)}; "
+            f"valid: {', '.join(sorted(IntervalTier.ALL))}",
+            param_hint="--tiers")
     qa = QACollector()
     intervals = load_soil_results_csv(results_csv)
     rows = select_intervals(intervals, analytes=analyte_list, tiers=tier_list,
@@ -5611,12 +5861,27 @@ def build_conc_surface_cmd(results_csv, coords_csv, analyte, site_id,
     if gdb and not dry_run:
         _guard("build-conc-surface")
 
+    # Validate the unit up front and narrowly: collect_concentration_points
+    # also raises ValueError for malformed --coords rows, and a blanket
+    # "Invalid value for --unit" would send the operator to fix the wrong
+    # option (codex review). Same registry check the core function runs.
+    from autogis.core.common.units import normalize_unit
+    if normalize_unit(surface_unit) is None:
+        raise click.BadParameter(
+            f"not in the ADR-0022 unit registry: {surface_unit!r}",
+            param_hint="--unit")
+
     qa = QACollector()
-    points = collect_concentration_points(
-        Path(results_csv), Path(coords_csv), site_id=site_id,
-        event_date=event_date, analyte=analyte,
-        nondetect_rule=nondetect_rule, surface_unit=surface_unit,
-        matrix=matrix, qa=qa)
+    try:
+        points = collect_concentration_points(
+            Path(results_csv), Path(coords_csv), site_id=site_id,
+            event_date=event_date, analyte=analyte,
+            nondetect_rule=nondetect_rule, surface_unit=surface_unit,
+            matrix=matrix, qa=qa)
+    except ValueError as exc:
+        # remaining ValueErrors (coords parse, date shape) still get a clean
+        # message instead of a traceback, just not blamed on --unit
+        raise click.ClickException(str(exc))
     click.echo(f"[DRAFT] {len(points)} interpolation point(s) for {analyte} "
                f"({surface_unit}, nondetect_rule={nondetect_rule})")
     if dry_run:

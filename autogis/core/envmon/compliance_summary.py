@@ -9,9 +9,9 @@ from typing import Optional
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 
+from ..common.config import ND_QUALIFIERS
 from ..common.qa import QACollector, QARecord, SEV_INFO
 
-ND_QUALIFIERS = frozenset({"ND", "U", "BDL"})
 _FILL_EXCEED = PatternFill(fill_type="solid", fgColor="FF9999")
 _FILL_DETECT = PatternFill(fill_type="solid", fgColor="FFFF99")
 

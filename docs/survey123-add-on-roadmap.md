@@ -73,20 +73,27 @@ A phase is complete only when:
 
 ## Phase 0 — Client and submission contract
 
-Choose the supported Survey123 client baseline and define one canonical
-submission envelope covering survey/item/layer identity, GlobalID, edit time,
-operation type, repeat path, attachment metadata, raw-payload hash, and source
-provenance. Pin the existing SampleID calculation shared by event planning,
-XLSForm generation, normalization, and reconciliation.
+Choose the supported Survey123 client baseline and pin the existing SampleID
+calculation shared by event planning, XLSForm generation, normalization, and
+reconciliation.
 
 The first slice targets Survey123 Connect plus the field app. A compatibility
 matrix records which generated constructs are also supported by Survey123
 Studio/Mobile; AutoGIS does not assume client parity.
 
-**Exit gate:** representative new, edited, deleted, repeated, attachment-bearing,
-and replayed submissions normalize into the envelope without importing
-`arcgis` or `arcpy`, and the SampleID contract is identical across all existing
-producers and consumers.
+**Exit gate:** the SampleID contract is identical across all existing producers
+and consumers, and remains `arcgis`- and `arcpy`-free.
+
+> **Amended by ADR-0113 (2026-07-25):** the canonical submission envelope
+> (survey/item/layer identity, GlobalID, edit time, operation type, repeat path,
+> attachment metadata, raw-payload hash, source provenance) has moved from this
+> phase to **Phase 2**, where its first consumer lives, and the envelope leg of
+> this exit gate moved with it. Building it here would mean designing an
+> envelope against no reader — every field shape would be a guess, and the first
+> real puller would relitigate it. Phase 5's gate depends on the envelope and so
+> now depends on Phase 2 rather than Phase 0; the strict phase ordering is
+> unaffected, since 2 still precedes 5. The SampleID leg was delivered in
+> Phase 0 slice A (ADR-0113).
 
 ## Phase 1 — Form validation and schema drift
 
@@ -114,12 +121,19 @@ stable identity and edit timestamp; include geometry, repeats, attachments,
 edits, and deletions. Persist a checkpoint only after a durable normalized
 output is written. Support bounded replay and a dry-run summary.
 
+Define here the one canonical submission envelope — survey/item/layer identity,
+GlobalID, edit time, operation type, repeat path, attachment metadata,
+raw-payload hash, and source provenance — designed against this puller, its
+first real consumer (relocated from Phase 0 by ADR-0113).
+
 The first slice writes JSON/CSV staging artifacts and feeds the existing
 normalizer. Direct GDB writes remain an explicit downstream LOCAL operation.
 
 **Exit gate:** an interrupted run resumes without loss, a repeated run creates
 no duplicates, edits and deletions remain visible, attachments reconcile by
-stable identity, and counts match a non-production hosted survey.
+stable identity, counts match a non-production hosted survey, and
+representative new, edited, deleted, repeated, attachment-bearing, and replayed
+submissions normalize into the envelope without importing `arcgis` or `arcpy`.
 
 ## Phase 3 — Planned, field, COC, lab, and GDB reconciliation
 
@@ -154,9 +168,9 @@ mutation.
 ## Phase 5 — Webhook processing and replay
 
 Add a pure payload processor plus adapter wiring for Survey123 webhook events.
-Validate the source and operation, normalize through the Phase 0 envelope,
-deduplicate by stable event identity, record processing state, and support
-failure replay. External hosting and automation products own HTTP uptime,
+Validate the source and operation, normalize through the Phase 2 envelope
+(relocated from Phase 0 by ADR-0113), deduplicate by stable event identity,
+record processing state, and support failure replay. External hosting and automation products own HTTP uptime,
 delivery, scheduling, and human notification.
 
 **Exit gate:** duplicate, delayed, out-of-order, edited, and deleted webhook

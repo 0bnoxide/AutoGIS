@@ -174,18 +174,15 @@ def save_override(gdb_path, override: CalloutOverride) -> None:
 
 
 def clear_unlocked_overrides(
-    gdb_path, site_id: str, figure_spec_id: str
+    gdb_path, site_id: str, figure_spec_id: str, map_type: str = ""
 ) -> int:
-    """Delete all unlocked overrides for the given site/spec; return count."""
+    """Delete unlocked overrides for the given site/spec/map type; return count."""
     arcpy = _arcpy()
     table = str(Path(gdb_path) / _TABLE)
     if not arcpy.Exists(table):
         return 0
-    where = (
-        f"SiteID = '{_q(site_id)}' "
-        f"AND FigureSpecID = '{_q(figure_spec_id)}' "
-        f"AND (LockedPlacement = 0 OR LockedPlacement IS NULL)"
-    )
+    where = (_scope_where(site_id, figure_spec_id, map_type)
+             + " AND (LockedPlacement = 0 OR LockedPlacement IS NULL)")
     n = 0
     with arcpy.da.UpdateCursor(table, ["OID@"], where_clause=where) as cur:
         for _ in cur:

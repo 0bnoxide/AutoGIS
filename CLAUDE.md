@@ -73,8 +73,12 @@ Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
 ## Key invariants
 
 - `core/` and `adapters/` import with neither `arcpy` nor `arcgis` present.
-- Tools 1, 9, 10 are headless (openpyxl only). Tools 2-8 are LOCAL (arcpy) — CLI
-  commands for 2-8 guard then redirect to the `.pyt` toolbox.
+- Tools 1, 9, 10 are headless (openpyxl only). Tools 2-8 are LOCAL (arcpy). CLI
+  commands for LOCAL tools always guard on `arcpy` first, then either redirect
+  to the `.pyt` toolbox (no CLI execution) or execute directly in the CLI —
+  which pattern applies is per-command, not uniform across 2-8 (Tool 8
+  `validate-db`, for instance, guards then executes directly). See README's
+  Runtime Matrix for the per-command breakdown.
 - `HarvestConfig` is canonical in `core/common/config.py`; re-exported from
   `core/harvest/models.py` for back-compat.
 - Screening levels and the H281 parser profile are pre-production stubs — do not
@@ -157,9 +161,13 @@ Gate changes (record each here):
   (ADR-0105, owner sign-off). Phase 5 (saved workflow recipes) started in
   parallel with the still-open Phase 4 under the standing "continue roadmap
   development" directive rather than the sequential default (ADR-0103;
-  agent-decision log 2026-07-22) and shipped in two slices (ADR-0103/0104) —
-  GUI save/load wiring and the monitoring-event/RTK-to-CAD example recipes
-  remain, so the Phase 5 gate is **not yet met**.
+  agent-decision log 2026-07-22) and shipped in two slices (ADR-0103/0104).
+  The monitoring-event/RTK-to-CAD example recipes now ship
+  (`autogis/config/recipes/`) and the GUI gained recipe **save**
+  (`app.py:_on_save_recipe`); recipe **load** in the GUI is the one piece
+  still missing (validate/run today only via the headless
+  `envmon validate-recipe`/`run-recipe` CLI), so the Phase 5 gate is **not
+  yet met**.
 - 2026-07-23 — Phase 6 shipped (ADR-0107; `.pyt`/CLI run-history logging
   deferred, gate items 3 & 6); Phase 7 slice 1 shipped (ADR-0108,
   historical-events acceptance leg owner-gated — "acceptance pending");
@@ -175,8 +183,24 @@ The user accepted the planning direction on 2026-07-25.
 the opt-in install boundary, eight sequential phases, four milestones, and
 per-phase production gates; ADR-0112 records the packaging and ordering
 decision. This optional track does not delay, reorder, parallelize, or satisfy
-the core production-roadmap phases above. Publishing the plan does not start
-implementation; phase starts and fast-tracking remain explicit user decisions.
+the core production-roadmap phases above. Publishing the plan does not by
+itself start implementation; phase starts and fast-tracking remain explicit
+user decisions.
+
+Gate changes: 2026-07-26 — Phase 0 slice A (lifecycle SampleID contract)
+shipped via ADR-0113 (PR #359, owner-merged); envelope leg deliberately
+deferred to Phase 2 (first consumer). An explicit owner decision, not a
+default fast-track — the remaining Phase 0 scope and Phases 1-7 each get
+their own dated entry here as they ship. 2026-07-25 — Phase 2 (incremental
+submission sync) started by explicit user direction; slice 1 implemented
+(ADR-0116: canonical envelope + `envmon sync-survey123` + `survey123`
+extra), live non-production gate legs owner-gated.
+
+Gate changes: 2026-07-26 — Phase 1 (form validation and schema drift) shipped
+via ADR-0115 (PR #364): `validate-survey-form` and `diff-survey-schema`, both
+headless with no portal I/O. Started on an explicit user instruction, not by
+the roadmap's own momentum. (Phase 2 was separately user-directed and has its
+own entry above.)
 
 ## Decision records
 

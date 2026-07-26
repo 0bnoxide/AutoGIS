@@ -274,4 +274,4 @@ def test_cli_screening_levels_non_dict_errors(tmp_path):
         "--screening-levels", str(sl),
     ])
     assert result.exit_code != 0
-    assert "must be a YAML mapping" in result.output
+    assert "must contain a mapping" in result.output

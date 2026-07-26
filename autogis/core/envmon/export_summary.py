@@ -1,4 +1,7 @@
-"""Export Env_Samples + Env_AnalyticalResults to a four-sheet Excel summary.
+"""Export Env_Samples + Env_AnalyticalResults to an Excel summary workbook.
+
+Always: "All Results", "Detections", "Exceedances", "Summary by Analyte".
+Added when provided: "Metadata" (site_id/event_id) and "Samples" (samples).
 
 Headless: reads in-memory record lists, writes with openpyxl.  No arcpy.
 """
@@ -41,7 +44,11 @@ def export_analytical_summary(
     event_id: str = "",
     qa: Optional[QACollector] = None,
 ) -> Path:
-    """Write a four-sheet Excel summary and return the written path."""
+    """Write an Excel summary workbook and return the written path.
+
+    A "Metadata" sheet (SiteID/EventID) is added when either is non-empty,
+    and a "Samples" sheet is added when *samples* is non-empty (issue #343:
+    these were previously accepted but silently never written)."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     qa = qa or QACollector()
@@ -76,6 +83,24 @@ def export_analytical_summary(
 
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
+
+    if site_id or event_id:
+        ws_meta = wb.create_sheet("Metadata")
+        ws_meta.append(["Field", "Value"])
+        for cell in ws_meta[1]:
+            cell.font = _HEADER_FONT
+            cell.fill = _HEADER_FILL
+        if site_id:
+            ws_meta.append(["SiteID", site_id])
+        if event_id:
+            ws_meta.append(["EventID", event_id])
+        ws_meta.column_dimensions["A"].width = 14
+        ws_meta.column_dimensions["B"].width = 24
+
+    if samples:
+        sample_fields = [f.name for f in dc_fields(SampleRecord)]
+        ws_samples = wb.create_sheet("Samples")
+        _write_sheet(ws_samples, [asdict(s) for s in samples], sample_fields)
 
     ws_all = wb.create_sheet("All Results")
     _write_sheet(ws_all, all_rows, result_fields)

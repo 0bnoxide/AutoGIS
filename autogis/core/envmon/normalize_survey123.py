@@ -6,13 +6,19 @@ normalize_*.py so the existing import_to_gdb write layer can consume them.
 from __future__ import annotations
 
 import csv
-import uuid
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_WARNING
+from .sample_id import build_sample_id, strip_qc
+
+#: The qa_flags choice (ADR-0021) that marks a submission as a field
+#: duplicate. Survey123 exports select_multiple answers space-delimited;
+#: some feature-service exports comma-delimit instead.
+FIELD_DUP_FLAG = "field_dup"
 
 
 @dataclass
@@ -23,6 +29,23 @@ class Survey123Field:
     sampled_by_field: str = "SampledBy"
     coc_number_field: str = "COCNumber"
     dtw_field: str = "DepthToWater_ft"
+    qa_flags_field: str = "QAFlags"
+
+
+def _qa_flags(payload: dict, fm: "Survey123Field") -> set:
+    """The ticked qa_flags choices, lowercased.
+
+    Survey123 renders a select_multiple as one space-delimited string; some
+    feature-service exports comma-delimit, and a JSON payload may carry a real
+    list. str() on a list yields "['a', 'b']", whose split matches nothing —
+    which would silently normalize a field duplicate as its own primary.
+    An absent field means "nothing ticked", so submissions from forms built
+    before the -FD calculate normalize exactly as before.
+    """
+    raw = payload.get(fm.qa_flags_field, "") or ""
+    if isinstance(raw, (list, tuple, set)):
+        raw = " ".join(str(v) for v in raw)
+    return {f for f in re.split(r"[,\s]+", str(raw).lower()) if f}
 
 
 def _parse_date(value: str, qa: QACollector, context: str) -> Optional[datetime]:
@@ -39,12 +62,6 @@ def _parse_date(value: str, qa: QACollector, context: str) -> Optional[datetime]
     qa.add(QARecord(SEV_ERROR, "invalid_date",
                     f"{context}: cannot parse date {value!r}"))
     return None
-
-
-def _build_sample_id(well_id: str, dt: Optional[datetime], matrix: str) -> str:
-    if dt is not None:
-        return f"{well_id}-{dt.strftime('%Y%m%d')}-{matrix}"
-    return f"{well_id}-NODATE-{uuid.uuid4().hex[:6].upper()}-{matrix}"
 
 
 def normalize_survey123_submission(
@@ -86,16 +103,25 @@ def normalize_survey123_submission(
             qa.add(QARecord(SEV_WARNING, "invalid_dtw",
                             f"{well_id}: cannot parse DTW value {dtw_raw!r}"))
 
-    sample_id = _build_sample_id(well_id, dt, matrix)
+    is_dup = FIELD_DUP_FLAG in _qa_flags(payload, fm)
+    sample_id = build_sample_id(well_id, dt, matrix,
+                                qc="FD" if is_dup else None)
+    # Env_Samples has carried IsDuplicate/DuplicateType/ParentSampleID since
+    # the EDD importer; evaluate_duplicate_rpd pairs on IsDuplicate == 0 / 1,
+    # so leaving them NULL makes a record neither a parent nor a duplicate and
+    # silently skips RPD QA. Both sides must be populated, not just the -FD.
     samples: list[dict] = [{
         "ImportBatchID": batch_id,
         "SiteID": site_id,
         "LocationID": str(well_id),
         "SampleID": sample_id,
+        "ParentSampleID": strip_qc(sample_id) if is_dup else "",
         "SampleDate": dt,
         "Matrix": matrix,
         "SampledBy": sampled_by,
         "COCNumber": coc,
+        "IsDuplicate": int(is_dup),
+        "DuplicateType": "FIELD_DUP" if is_dup else "",
         "SampleSource": "Survey123",
     }]
     return water_levels, samples

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from ..common.config import load_config
+from .sample_id import build_sample_id
 
 
 # ---------------------------------------------------------------------------
@@ -76,12 +77,6 @@ def _date_to_yyyymmdd(iso_date: str) -> str:
         raise ValueError(
             f"event_date must be ISO format YYYY-MM-DD, got: {iso_date!r}")
     return m.group(1) + m.group(2) + m.group(3)
-
-
-def _sample_id(location_id: str, date_compact: str, matrix: str,
-               is_dup: bool) -> str:
-    base = f"{location_id}-{date_compact}-{matrix}"
-    return f"{base}-FD" if is_dup else base
 
 
 def _coc_number(prefix: str, seq: int) -> str:
@@ -197,8 +192,8 @@ def build_sampling_event_plan(
 
             # Primary sample
             expected_samples.append(ExpectedSampleRow(
-                sample_id=_sample_id(location_id, date_compact,
-                                     primary_matrix, False),
+                sample_id=build_sample_id(location_id, date_compact,
+                                          primary_matrix),
                 location_id=location_id,
                 event_date=event_date,
                 matrix=primary_matrix,
@@ -216,8 +211,8 @@ def build_sampling_event_plan(
             # Field duplicate (counts as real bottles for crew logistics)
             if is_dup_well:
                 expected_samples.append(ExpectedSampleRow(
-                    sample_id=_sample_id(location_id, date_compact,
-                                         primary_matrix, True),
+                    sample_id=build_sample_id(location_id, date_compact,
+                                              primary_matrix, qc="FD"),
                     location_id=location_id,
                     event_date=event_date,
                     matrix=primary_matrix,

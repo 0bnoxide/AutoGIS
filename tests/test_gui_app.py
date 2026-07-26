@@ -605,6 +605,57 @@ def test_repeatable_container_gets_help_text_tooltip(qapp):
     assert win._field_widgets["set_pairs"].toolTip() == field.help_text
 
 
+@pytest.mark.parametrize(
+    ("state", "expected_flag"),
+    [
+        (None, None),
+        (Qt.CheckState.Checked, "--incremental"),
+        (Qt.CheckState.Unchecked, "--no-incremental"),
+    ],
+)
+def test_harvest_incremental_checkbox_state_to_argv(
+        qapp, state, expected_flag):
+    win = MainWindow()
+    form = win._forms["harvest"]
+    win._command_box.setCurrentText(form.label)
+    win._field_widgets["config_path"].setText("site.yaml")
+
+    checkbox = win._field_widgets["incremental"]
+    if state is None:
+        assert checkbox.checkState() == Qt.CheckState.PartiallyChecked
+    else:
+        checkbox.setCheckState(state)
+
+    step = build_step(form, win._raw_values())
+    argv = build_argv(step.command, step.values)
+    actual = {"--incremental", "--no-incremental"}.intersection(argv)
+
+    assert actual == ({expected_flag} if expected_flag else set())
+
+
+def test_ordinary_flags_stay_two_state(qapp):
+    """Only a default=None flag becomes tri-state.
+
+    Without this the suite would still pass if *every* checkbox were made
+    tri-state -- and an ordinary default=False flag rendered partially
+    checked would start omitting itself instead of sending False. harvest
+    carries the only nullable flag in the tree, so the negative control has
+    to come from a different command.
+    """
+    win = MainWindow()
+    form = win._forms["envmon init-site"]
+    win._command_box.setCurrentText(form.label)
+
+    two_state = [f for f in form.fields
+                 if f.kind == "flag" and f.default is not None]
+    assert two_state, "expected at least one ordinary flag on init-site"
+    values = win._raw_values()
+    for field in two_state:
+        widget = win._field_widgets[field.name]
+        assert not widget.isTristate(), field.name
+        assert values[field.name] is bool(field.default), field.name
+
+
 def test_close_while_step_running_is_refused(qapp, monkeypatch):
     release = threading.Event()
     monkeypatch.setattr(

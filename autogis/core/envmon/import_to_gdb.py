@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..common.logging import get_logger
-from ..common.qa import QACollector, SEV_ERROR, SEV_INFO
+from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 from ..common.config import ParserProfile, SiteConfig, load_analyte_dictionary, load_screening_levels
 from .excel_profile_reader import ProfileWorkbookReader
 from .gdb_schema import TABLE_SCHEMAS, UNIQUE_KEYS, create_or_update_gdb_schema, compute_unique_key, _norm_key_part
@@ -187,6 +187,21 @@ def _delete_for_replace(gdb: Path, mode: str, site_id: str,
                               ("Env_Samples", "SampleDate"),
                               ("Env_AnalyticalResults", "SampleDate"),
                               ("Env_RPDResults", "EventDate")):
+            if matrix == "SOIL" and t in ("Env_WaterLevels", "Env_RPDResults"):
+                # Neither table carries a Matrix column (issue #369), and
+                # neither is ever populated by a SOIL-matrix run (run_import
+                # only calls normalize_gw_table_2/normalize_rpd_table when
+                # matrix_filter is None or "GW"). So a --matrix SOIL replace
+                # must skip them -- deleting would wipe GW rows this run
+                # never parsed and never intends to replace. A --matrix GW
+                # replace, by contrast, DOES parse new rows for both tables
+                # and must still delete-then-insert unscoped, or the new
+                # rows are silently dropped as idempotent-append duplicates
+                # of the stale ones left behind (a P1 caught in review).
+                qa.add(SEV_INFO, "replace_skipped_unscopable_table",
+                       f"{t} has no Matrix column; left untouched by this "
+                       f"--matrix {matrix} replace_site_event.", site_id=site_id)
+                continue
             where = (f"SiteID = '{site_id}' AND "
                      + where_date(date_field, event_date))
             if matrix and t in ("Env_Samples", "Env_AnalyticalResults"):
@@ -297,6 +312,20 @@ def run_import(
 
     counts = {"water_levels": len(water_levels), "samples": len(samples),
               "analytical_results": len(results), "rpd_results": len(rpd)}
+    if not any(counts.values()):
+        # A matrix filter that matches no sheet is a legitimate zero-row run
+        # (no shipped profile declares a SOIL data_type, yet the .pyt offers
+        # SOIL in its dropdown), so name the filter rather than blaming the
+        # profile for it. The guard itself stays unconditional: a filtered
+        # run whose sheet names have drifted is still a real mismatch.
+        filter_note = (f" (matrix filter: {matrix_filter})"
+                       if matrix_filter else "")
+        qa.add(SEV_WARNING, "zero_rows_parsed",
+               "No sheet produced any rows -- check parser profile "
+               "compatibility with this workbook (wrong sheet names, "
+               f"unwired data_type, or a workbook/profile mismatch){filter_note}.",
+               site_id=site_id, import_batch_id=batch_id,
+               source_workbook=Path(workbook).name)
     summary = {
         "workbook": str(workbook),
         "mode": mode,
@@ -315,8 +344,22 @@ def run_import(
         summary["written"] = {"inserted": 0, "skipped": 0}
     else:
         if mode in ("replace_batch", "replace_site_event"):
-            _delete_for_replace(gdb, mode, site_id, batch_id_to_replace,
-                                event_date, matrix_filter, qa)
+            if not any(counts.values()):
+                # Deleting here would remove the existing rows and then
+                # insert nothing, so a profile/workbook mismatch would
+                # silently ERASE the prior event rather than replace it.
+                # zero_rows_parsed is deliberately non-blocking (an empty or
+                # filtered workbook is legitimate), which means has_blocking()
+                # is False and this is the only place that can stop it.
+                qa.add(SEV_WARNING, "replace_skipped_zero_rows",
+                       f"{mode}: refusing to delete existing rows because "
+                       "this run parsed none -- nothing would replace them. "
+                       "Existing data is untouched.",
+                       site_id=site_id, import_batch_id=batch_id,
+                       source_workbook=Path(workbook).name)
+            else:
+                _delete_for_replace(gdb, mode, site_id, batch_id_to_replace,
+                                    event_date, matrix_filter, qa)
         ins = skp = 0
         for table_name, recs in (("Env_WaterLevels", water_levels),
                                  ("Env_Samples", samples),

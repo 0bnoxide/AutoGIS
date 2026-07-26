@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from ..common.config import ND_QUALIFIERS
 from ..common.qa import QACollector, QARecord, SEV_INFO
-
-ND_QUALIFIERS = frozenset({"ND", "U", "BDL"})
 
 
 @dataclass

@@ -60,6 +60,13 @@ DepthToWater_ft (decimal, GW hint), QAFlags (select_multiple), Notes (text).
 SampleID calculate expression: `concat(${WellID}, "-", format-date(${SamplingDate},
 "%Y%m%d"), "-", ${Matrix})`.
 
+> **Amended by ADR-0113 (2026-07-25):** the calculate now appends a field-duplicate
+> suffix — `concat(${WellID}, "-", format-date(${SamplingDate}, "%Y%m%d"), "-",
+> ${Matrix}, if(selected(${QAFlags}, "field_dup"), "-FD", ""))` — and is emitted by
+> `core/envmon/sample_id.xform_sample_id_calc()` rather than written inline here.
+> The question list above is unchanged: the duplicate leg reads the existing
+> `QAFlags` choice `field_dup` instead of adding a question.
+
 ### CLI
 
 ```

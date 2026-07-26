@@ -18,6 +18,13 @@ import yaml
 
 AGENTS_DIR = Path(__file__).resolve().parent.parent / ".claude" / "agents"
 DELIM = "---\n"
+PR_REVIEW_PROBE_IDS = (
+    "BOUNDARY_SHAPE",
+    "CONTRACT_REACHABILITY",
+    "IDENTITY_PROVENANCE",
+    "SIDE_EFFECT_SAFETY",
+    "ENVIRONMENT_SEAM",
+)
 
 
 def _agent_files() -> list[Path]:
@@ -68,3 +75,22 @@ def test_agent_frontmatter_is_valid(path: Path) -> None:
 
     # Body has to carry actual instructions, not just frontmatter.
     assert body.strip(), f"{path.name}: no instruction body after frontmatter"
+
+
+def test_pr_reviewer_requires_recurring_failure_mode_evidence() -> None:
+    """Keep issue #332's adversarial probes in the review output contract."""
+    text = (AGENTS_DIR / "pr-reviewer.md").read_text(encoding="utf-8")
+    _, body = _split_frontmatter(text)
+    audit_path = (
+        AGENTS_DIR.parent.parent / "docs" / "pr-review-failure-mode-audit.md"
+    )
+
+    for probe_id in PR_REVIEW_PROBE_IDS:
+        assert f"`{probe_id}`" in body, f"pr-reviewer is missing {probe_id}"
+
+    assert audit_path.is_file()
+    assert "docs/pr-review-failure-mode-audit.md" in body
+    assert "## Output" in body
+    output_contract = body.split("## Output", 1)[1]
+    assert "PASS / FAIL / N/A" in output_contract
+    assert "evidence" in output_contract.lower()

@@ -104,3 +104,8 @@ def test_summary_sheet_present(tmp_path):
     write_qc_summary_workbook(result, out)
     wb = openpyxl.load_workbook(str(out))
     assert "Summary" in wb.sheetnames
+
+
+def test_infer_qc_type_field_duplicate_suffix():
+    from autogis.core.envmon.qc_sample_summary import _infer_qc_type
+    assert _infer_qc_type("MW-1-20260715-GW-FD", "") == "field_duplicate"

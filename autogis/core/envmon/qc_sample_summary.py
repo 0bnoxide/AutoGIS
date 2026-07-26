@@ -8,7 +8,9 @@ from typing import Optional
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 
+from ..common.config import ND_QUALIFIERS
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
+from .sample_id import QC_SUFFIXES as _SUFFIX_MAP
 
 QC_TYPES = (
     "method_blank", "field_blank", "trip_blank",
@@ -18,16 +20,6 @@ QC_TYPES = (
 )
 
 _QC_TYPE_SET = frozenset(QC_TYPES)
-ND_QUALIFIERS = frozenset({"ND", "U", "BDL"})
-
-# Suffix → qc_type inference
-_SUFFIX_MAP = {
-    "-mb": "method_blank", "-fb": "field_blank", "-tb": "trip_blank",
-    "-ms": "matrix_spike", "-msd": "matrix_spike_duplicate",
-    "-ld": "lab_duplicate", "-fd": "field_duplicate",
-    "-ld-a": "lab_duplicate", "-ld-b": "lab_duplicate",
-    "-fd-a": "field_duplicate", "-fd-b": "field_duplicate",
-}
 
 _FILL_FAIL = PatternFill(fill_type="solid", fgColor="FF9999")
 _FILL_WARN = PatternFill(fill_type="solid", fgColor="FFFF99")
