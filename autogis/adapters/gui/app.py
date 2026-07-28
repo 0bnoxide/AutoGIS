@@ -239,6 +239,7 @@ class MainWindow(QMainWindow):
         self._forms = {f.label: f for f in _window_forms()
                        if not f.unreachable_reason}
         self._field_widgets: dict[str, QWidget] = {}
+        self._field_browse_buttons: dict[str, QPushButton] = {}
         self._worker: _StepWorker | None = None
         self._job_root: Path | None = None
         self._runner: WorkflowRunner | None = None
@@ -449,6 +450,7 @@ class MainWindow(QMainWindow):
         while self._form_layout.rowCount():
             self._form_layout.removeRow(0)
         self._field_widgets.clear()
+        self._field_browse_buttons.clear()
         form = self._forms.get(label)
         if form is None:
             self._help_label.clear()
@@ -622,6 +624,7 @@ class MainWindow(QMainWindow):
                 row.addWidget(widget)
                 row.addWidget(browse)
                 self._form_layout.addRow(label_text, row)
+                self._field_browse_buttons[field.name] = browse
             else:
                 self._form_layout.addRow(label_text, widget)
             self._field_widgets[field.name] = widget
@@ -631,7 +634,7 @@ class MainWindow(QMainWindow):
     def _wire_xor_groups(self, form: CommandForm) -> None:
         """Grey out an xor sibling once its pair is filled (reuses the shape
         of ``config_builder_dialog._sync_xor``): fill one side and the other
-        disables but keeps its typed text; clear it and both re-enable
+        control disables but keeps its typed text; clear it and both re-enable
         (owner decision, spec Sec 4.1a). Driven off each widget's own
         ``textChanged`` -- never ``labelForField()``, which returns None for
         a path row (wrapped in its own Browse-button ``QHBoxLayout``, not
@@ -648,6 +651,9 @@ class MainWindow(QMainWindow):
                 groups.setdefault(field.xor_group, []).append(field)
         for members in groups.values():
             widgets = [self._field_widgets[f.name] for f in members]
+            browse_buttons = [
+                self._field_browse_buttons.get(f.name) for f in members
+            ]
             # Every live xor pair today (besides the reconcile-locations
             # exception above) is two plain path QLineEdits -- verified via
             # introspect_cli() before writing this. A repeatable/choice/flag
@@ -656,11 +662,15 @@ class MainWindow(QMainWindow):
             if not all(isinstance(w, QLineEdit) for w in widgets):
                 continue
 
-            def _sync(_text: str = "", widgets=widgets) -> None:
+            def _sync(_text: str = "", widgets=widgets,
+                      browse_buttons=browse_buttons) -> None:
                 filled = [bool(w.text().strip()) for w in widgets]
-                for i, w in enumerate(widgets):
+                for i, (w, browse) in enumerate(zip(widgets, browse_buttons)):
                     other_filled = any(f for j, f in enumerate(filled) if j != i)
-                    w.setEnabled(not other_filled)
+                    enabled = not other_filled
+                    w.setEnabled(enabled)
+                    if browse is not None:
+                        browse.setEnabled(enabled)
 
             for w in widgets:
                 w.textChanged.connect(_sync)

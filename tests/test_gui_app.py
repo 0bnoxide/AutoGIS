@@ -1333,18 +1333,25 @@ def test_bbox_nargs4_stays_a_line_edit_and_emits_four_separate_tokens(qapp):
 
 def test_filling_one_xor_side_disables_the_other_but_keeps_its_text(qapp):
     """Owner decision (spec Sec 4.1a): filling one xor sibling disables the
-    other but preserves its typed text; clearing re-enables both."""
+    complete control but preserves its typed text; clearing re-enables both."""
     win = MainWindow()
     win._command_box.setCurrentText("envmon update-well-elevations")
     gdb, csv = win._field_widgets["gdb"], win._field_widgets["wells_csv"]
+    gdb_browse = win._field_browse_buttons["gdb"]
+    csv_browse = win._field_browse_buttons["wells_csv"]
     gdb.setText("C:/old/site.gdb")
+    qapp.processEvents()
+    assert csv.isEnabled() is False
+    assert csv_browse.isEnabled() is False
     csv.setText("C:/data/wells.csv")
     qapp.processEvents()
     assert gdb.isEnabled() is False
+    assert gdb_browse.isEnabled() is False
     assert gdb.text() == "C:/old/site.gdb"      # preserved, per owner decision
     csv.clear()
     qapp.processEvents()
     assert gdb.isEnabled() is True
+    assert gdb_browse.isEnabled() is True
 
 
 def test_reconcile_locations_gdb_flag_pair_is_left_ungreyed(qapp):
