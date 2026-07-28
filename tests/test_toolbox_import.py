@@ -108,6 +108,7 @@ def test_redirect_only_pyt_tools_use_shared_run_recorder():
         "ConditionDEM": "condition-dem",
         "CompareDroneSurfaces": "compare-drone-surfaces",
         "ExportContoursForCivil3D": "export-civil3d",
+        "TransformLandXMLSurface": "transform-landxml",
         "BuildCADExportPackage": "build-cad-package",
     }
 

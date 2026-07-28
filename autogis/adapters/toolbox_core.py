@@ -197,18 +197,15 @@ def export_tin_landxml(arcpy_module, input_tin: str, output_path: Path, *,
     with an undefined VCS the declaration is trusted (the caller must know
     the data, e.g. a meters-elevation TIN on a State Plane feet CRS).
     """
-    from autogis.core.common.landxml import parse_epsg, write_landxml_surface
+    from autogis.core.common.landxml import (
+        METERS_PER_LANDXML_UNIT, parse_epsg, write_landxml_surface)
 
     if not surface_name or not surface_name.strip():
         raise ValueError("Civil 3D surface name must not be blank.")
     expected_epsg = parse_epsg(crs)
     if expected_epsg is None:
         raise ValueError(f"CRS {crs!r} is not an EPSG code (e.g. EPSG:2256).")
-    expected_units = {
-        "meter": 1.0,
-        "foot": 0.3048,
-        "USSurveyFoot": 1200.0 / 3937.0,
-    }
+    expected_units = METERS_PER_LANDXML_UNIT
     if linear_unit not in expected_units:
         raise ValueError(
             f"Unsupported LandXML linear unit {linear_unit!r}; expected one "

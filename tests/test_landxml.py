@@ -50,6 +50,38 @@ def test_parse_landxml_surface_unknown_name_raises(tmp_path):
         parse_landxml_surface(_write(tmp_path), surface_name="Bogus")
 
 
+@pytest.mark.parametrize(("fragment", "match"), [
+    ("<P id=\"1\">0 0 100</P><P id=\"1\">0 10 102</P>",
+     "repeats point id 1"),
+    ("<P id=\"1\">0 0</P>", "must have 3 coordinates"),
+    ("<P id=\"1\">0 0 nan</P>", "finite coordinates"),
+])
+def test_parse_landxml_surface_rejects_invalid_points(
+        tmp_path, fragment, match):
+    xml = (
+        "<LandXML><Surfaces><Surface name=\"EG\"><Definition><Pnts>"
+        f"{fragment}</Pnts><Faces/></Definition></Surface></Surfaces></LandXML>"
+    )
+    with pytest.raises(ValueError, match=match):
+        parse_landxml_surface(_write(tmp_path, xml))
+
+
+@pytest.mark.parametrize(("face", "match"), [
+    ("1 2 3 4", "must have 3 point ids"),
+    ("1 1 2", "3 distinct points"),
+    ("1 2 4", "unknown point id"),
+])
+def test_parse_landxml_surface_rejects_invalid_faces(tmp_path, face, match):
+    xml = (
+        "<LandXML><Surfaces><Surface name=\"EG\"><Definition><Pnts>"
+        "<P id=\"1\">0 0 100</P><P id=\"2\">0 10 102</P>"
+        "<P id=\"3\">10 0 98</P></Pnts><Faces>"
+        f"<F>{face}</F></Faces></Definition></Surface></Surfaces></LandXML>"
+    )
+    with pytest.raises(ValueError, match=match):
+        parse_landxml_surface(_write(tmp_path, xml))
+
+
 def test_elevation_at_centroid_is_average_of_vertices(tmp_path):
     surface = parse_landxml_surface(_write(tmp_path))
     z = elevation_at(surface, 10.0 / 3, 10.0 / 3)

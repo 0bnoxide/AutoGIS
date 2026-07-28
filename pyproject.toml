@@ -22,6 +22,7 @@ gui = ["PySide6"]   # unified GUI adapter (ADR-0050); not needed for CLI/.pyt us
 profile = ["matplotlib>=3.7"]   # subsurface profile rendering (generate-subsurface-profile)
 ocr = ["torch", "transformers", "pillow", "pymupdf"]   # boring-log OCR digitization assist (draft-lithology-from-scan); DRAFT tool, see docs/superpowers/specs/2026-07-08-draft-lithology-from-scan-design.md
 opentopo = ["pyproj"]   # non-WGS84 AOI reprojection for envmon download-dem (lazy import; stdlib urllib covers the download itself)
+landxml = ["pyproj>=3.1"]   # projected CRS transformation for LandXML TIN surfaces
 notebook = ["nbclient", "ipykernel"]   # Phase 4 monitoring-event review notebook (ADR-0105): real-kernel restart-run-all test; opt-in, not a default dep
 
 [project.scripts]
