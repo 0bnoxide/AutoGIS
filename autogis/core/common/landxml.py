@@ -55,12 +55,29 @@ _METRIC_UNITS = {
 _IMPERIAL_LINEAR = ("foot", "USSurveyFoot")
 _METRIC_LINEAR = ("meter",)
 SUPPORTED_LINEAR_UNITS = _IMPERIAL_LINEAR + _METRIC_LINEAR
+METERS_PER_LANDXML_UNIT = {
+    "meter": 1.0,
+    "foot": 0.3048,
+    "USSurveyFoot": 1200.0 / 3937.0,
+}
 
 
 def parse_epsg(crs: Optional[str]) -> Optional[int]:
     """``"EPSG:2256"`` / ``"2256"`` -> 2256; anything else -> None."""
     m = _EPSG_RE.match(crs or "")
     return int(m.group(1)) if m else None
+
+
+def linear_unit_scale(source_unit: str, target_unit: str) -> float:
+    """Exact multiplier for any supported LandXML linear-unit pair."""
+    try:
+        source = METERS_PER_LANDXML_UNIT[source_unit]
+        target = METERS_PER_LANDXML_UNIT[target_unit]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported LandXML linear unit {exc.args[0]!r}; expected one "
+            f"of {', '.join(SUPPORTED_LINEAR_UNITS)}.") from None
+    return source / target
 
 
 def _landxml_root(*, crs: Optional[str], linear_unit: Optional[str]) -> ET.Element:
@@ -206,15 +223,43 @@ def parse_landxml_surface(path: Path, *, surface_name: str = "") -> LandXMLSurfa
 
     points: dict = {}
     for p in surface.findall(".//{*}Pnts/{*}P"):
-        pid = int(p.get("id"))
-        n, e, z = (float(v) for v in p.text.split())
+        try:
+            pid = int(p.get("id"))
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"LandXML surface {surface.get('name', '')!r} has a point "
+                "without an integer id.") from None
+        if pid in points:
+            raise ValueError(
+                f"LandXML surface {surface.get('name', '')!r} repeats point "
+                f"id {pid}.")
+        values = (p.text or "").split()
+        if len(values) != 3:
+            raise ValueError(
+                f"LandXML point {pid} must have 3 coordinates, not "
+                f"{len(values)}.")
+        n, e, z = (float(v) for v in values)
+        if not all(math.isfinite(value) for value in (n, e, z)):
+            raise ValueError(
+                f"LandXML point {pid} must have 3 finite coordinates.")
         points[pid] = (n, e, z)
 
     faces: list = []
     for f in surface.findall(".//{*}Faces/{*}F"):
-        ids = tuple(int(x) for x in f.text.split())
-        if len(ids) == 3:
-            faces.append(ids)
+        ids = tuple(int(x) for x in (f.text or "").split())
+        if len(ids) != 3:
+            raise ValueError(
+                f"LandXML TIN face must have 3 point ids: {ids!r}.")
+        if len(set(ids)) != 3:
+            raise ValueError(
+                f"LandXML TIN face must reference 3 distinct points: "
+                f"{ids!r}.")
+        missing = [pid for pid in ids if pid not in points]
+        if missing:
+            raise ValueError(
+                f"Face {ids} references unknown point id(s) {missing} — "
+                f"malformed LandXML surface {surface.get('name', '')!r}.")
+        faces.append(ids)
 
     return LandXMLSurface(name=surface.get("name", ""), points=points, faces=faces)
 

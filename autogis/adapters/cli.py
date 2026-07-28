@@ -5978,6 +5978,68 @@ def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("transform-landxml")
+@click.option("--input", "input_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Input LandXML file containing one or more TIN surfaces.")
+@click.option("--output", "output_path", required=True,
+              type=click.Path(dir_okay=False),
+              help="Output single-surface LandXML file.")
+@click.option("--source-crs", required=True,
+              help="Projected source CRS, e.g. EPSG:26913.")
+@click.option("--target-crs", required=True,
+              help="Projected target CRS, e.g. EPSG:2232.")
+@click.option("--source-unit",
+              type=click.Choice(["meter", "foot", "USSurveyFoot"]),
+              required=True,
+              help="Unit of input X/Y (and Z unless --source-z-unit is set).")
+@click.option("--target-unit",
+              type=click.Choice(["meter", "foot", "USSurveyFoot"]),
+              required=True, help="Unit of the output X/Y/Z coordinates.")
+@click.option("--source-z-unit",
+              type=click.Choice(["meter", "foot", "USSurveyFoot"]),
+              default=None,
+              help="Actual input elevation unit when it differs from "
+                   "--source-unit; default is --source-unit.")
+@click.option("--surface", "surface_name", default="",
+              help="Surface name to transform; required when input has several.")
+@click.option("--output-surface-name", default="",
+              help="Optional renamed surface in the output LandXML.")
+@click.option("--override-source-metadata", is_flag=True, default=False,
+              help="Trust --source-crs/--source-unit when input metadata differs.")
+@click.option("--overwrite", is_flag=True, default=False,
+              help="Replace an existing output file (never overwrites input).")
+def transform_landxml_cmd(input_path, output_path, source_crs, target_crs,
+                          source_unit, target_unit, source_z_unit, surface_name,
+                          output_surface_name, override_source_metadata,
+                          overwrite):
+    """Transform one LandXML TIN surface between projected CRSs and units."""
+    from autogis.core.envmon.landxml_transform import transform_landxml_surface
+
+    try:
+        result = transform_landxml_surface(
+            Path(input_path),
+            Path(output_path),
+            source_crs=source_crs,
+            target_crs=target_crs,
+            source_unit=source_unit,
+            target_unit=target_unit,
+            source_z_unit=source_z_unit,
+            surface_name=surface_name,
+            output_surface_name=output_surface_name,
+            override_source_metadata=override_source_metadata,
+            overwrite=overwrite,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise click.ClickException(str(exc))
+    click.echo(
+        f"{result.surface_name}: {result.point_count} points / "
+        f"{result.face_count} faces; {result.source_crs} ({result.source_unit}) "
+        f"-> {result.target_crs} ({result.target_unit}); Z "
+        f"{result.source_z_unit} -> {result.target_unit}")
+    click.echo(f"LandXML surface -> {result.output_path}")
+
+
 # Legacy single-command entry point kept as an alias.
 main = autogis
 

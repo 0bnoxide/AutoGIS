@@ -74,6 +74,7 @@ class Toolbox(object):
             ConditionDEM,
             CompareDroneSurfaces,
             ExportContoursForCivil3D,  # tool 8.2 TIN -> LandXML surface
+            TransformLandXMLSurface,   # tool 8.2a LandXML -> LandXML
             BuildCADExportPackage,   # tool 8.9
             DownloadOpenTopoDEM,     # OpenTopography DEM fetch + add-to-map
         ]
@@ -1023,6 +1024,7 @@ _CAD_OUTPUT_TYPES = (
     "DXF_R2004", "DXF_R2000", "DXF_R14",
     "DGN_V8",
 )
+_LANDXML_LINEAR_UNITS = ("meter", "foot", "USSurveyFoot")
 
 
 class BuildCADExportPackage(object):
@@ -1154,7 +1156,7 @@ class ExportContoursForCivil3D(object):
                    "validated against the input)", "GPString"),
             _param("units", "Horizontal and elevation units", "GPString",
                    default="USSurveyFoot",
-                   domain=("foot", "USSurveyFoot", "meter")),
+                   domain=_LANDXML_LINEAR_UNITS),
             _param("output_file", "Output LandXML surface", "DEFile",
                    direction="Output"),
             # Appended AFTER output_file: the arcpy-generated signature is
@@ -1165,7 +1167,7 @@ class ExportContoursForCivil3D(object):
             _param("z_unit", "TIN vertical unit (blank = same as units; "
                    "declare when the TIN's elevations use a different unit "
                    "-- they are converted by the exact factor)", "GPString",
-                   required=False, domain=("foot", "USSurveyFoot", "meter")),
+                   required=False, domain=_LANDXML_LINEAR_UNITS),
         ]
 
     @toolbox_core.record_pyt_run(
@@ -1192,6 +1194,78 @@ class ExportContoursForCivil3D(object):
                 f"Converted TIN elevations from {z_unit} to {units} by the "
                 f"exact unit ratio.")
         messages.addMessage(f"Civil 3D LandXML TIN surface -> {output}")
+
+
+class TransformLandXMLSurface(object):
+    """Tool 8.2a — transform a LandXML TIN surface CRS and linear units."""
+
+    def __init__(self):
+        self.label = "8.2a Transform LandXML Surface"
+        self.description = (
+            "Transform one LandXML TIN surface between projected EPSG "
+            "coordinate systems and meter, international-foot, or US-survey-"
+            "foot units while preserving its triangle faces.")
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        return [
+            _param("input_xml", "Input LandXML surface", "DEFile"),
+            _param("output_file", "Output LandXML surface", "DEFile",
+                   direction="Output"),
+            _param("source_crs", "Source projected CRS (e.g. EPSG:26913)",
+                   "GPString"),
+            _param("target_crs", "Target projected CRS (e.g. EPSG:2232)",
+                   "GPString"),
+            _param("source_unit", "Source X/Y unit", "GPString",
+                   domain=_LANDXML_LINEAR_UNITS),
+            _param("target_unit", "Target X/Y/Z unit", "GPString",
+                   domain=_LANDXML_LINEAR_UNITS),
+            _param("surface_name", "Input surface name (required only when "
+                   "the file contains several)", "GPString", required=False),
+            _param("output_surface_name", "Output surface name (blank = "
+                   "preserve input name)", "GPString", required=False),
+            _param("override_source_metadata", "Trust source CRS/unit values "
+                   "when input metadata differs", "GPBoolean",
+                   required=False, default=False),
+            _param("overwrite", "Overwrite an existing output", "GPBoolean",
+                   required=False, default=False),
+            _param("source_z_unit", "Source elevation unit (blank = same as "
+                   "source X/Y unit)", "GPString", required=False,
+                   domain=_LANDXML_LINEAR_UNITS),
+        ]
+
+    @toolbox_core.record_pyt_run(
+        "transform-landxml", gdb_param="output_file", site_config_param=None)
+    def execute(self, parameters, messages):
+        from autogis.core.envmon.landxml_transform import (
+            transform_landxml_surface)
+
+        p = {q.name: q for q in parameters}
+        try:
+            result = transform_landxml_surface(
+                Path(p["input_xml"].valueAsText),
+                Path(p["output_file"].valueAsText),
+                source_crs=p["source_crs"].valueAsText,
+                target_crs=p["target_crs"].valueAsText,
+                source_unit=p["source_unit"].valueAsText,
+                target_unit=p["target_unit"].valueAsText,
+                source_z_unit=p["source_z_unit"].valueAsText or None,
+                surface_name=p["surface_name"].valueAsText or "",
+                output_surface_name=p["output_surface_name"].valueAsText or "",
+                override_source_metadata=bool(
+                    p["override_source_metadata"].value),
+                overwrite=bool(p["overwrite"].value),
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            messages.addErrorMessage(str(exc))
+            return
+        messages.addMessage(
+            f"{result.surface_name}: {result.point_count} points / "
+            f"{result.face_count} faces; {result.source_crs} "
+            f"({result.source_unit}) -> {result.target_crs} "
+            f"({result.target_unit}); Z {result.source_z_unit} -> "
+            f"{result.target_unit}")
+        messages.addMessage(f"LandXML surface -> {result.output_path}")
 
 
 class DownloadOpenTopoDEM(object):
