@@ -1,4 +1,4 @@
-# ADR-XXXX: LandXML surface CRS and unit transformation
+# ADR-0118: LandXML surface CRS and unit transformation
 
 **Status:** Proposed
 
