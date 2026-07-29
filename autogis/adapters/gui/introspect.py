@@ -258,7 +258,10 @@ def introspect_cli(root: click.Group | None = None,
         forms.append(CommandForm(
             path=path,
             help_text=cmd.help,
-            fields=tuple(_field(p, pair) for p in cmd.params),
+            fields=tuple(
+                _field(p, pair) for p in cmd.params
+                if not getattr(p, "hidden", False)
+            ),
             unreachable_reason=unreachable.get(label),
         ))
     return forms

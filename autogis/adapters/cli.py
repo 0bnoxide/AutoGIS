@@ -5986,34 +5986,45 @@ def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
               type=click.Path(dir_okay=False),
               help="Output single-surface LandXML file.")
 @click.option("--source-crs", required=True,
-              help="Projected source CRS, e.g. EPSG:26913.")
+              help="Authority-coded source CRS, e.g. EPSG:4326 or "
+                   "ESRI:102700.")
 @click.option("--target-crs", required=True,
               help="Projected target CRS, e.g. EPSG:2232.")
 @click.option("--source-unit",
               type=click.Choice(["meter", "foot", "USSurveyFoot"]),
-              required=True,
-              help="Unit of input X/Y (and Z unless --source-z-unit is set).")
+              default=None, hidden=True,
+              help="Deprecated assertion for the source unit.")
 @click.option("--target-unit",
               type=click.Choice(["meter", "foot", "USSurveyFoot"]),
-              required=True, help="Unit of the output X/Y/Z coordinates.")
+              default=None, hidden=True,
+              help="Deprecated assertion for the target unit.")
 @click.option("--source-z-unit",
               type=click.Choice(["meter", "foot", "USSurveyFoot"]),
               default=None,
-              help="Actual input elevation unit when it differs from "
-                   "--source-unit; default is --source-unit.")
+              help="Actual input elevation unit; default is inferred from "
+                   "the source CRS or geographic LandXML <Units>.")
+@click.option("--geographic-transformation", default=None,
+              help="Exact geographic transformation name or authority code "
+                   "(for example ESRI:108190); default selects the best "
+                   "available operation for the surface extent.")
+@click.option("--z-scale", type=float, default=None,
+              help="Positive custom Z multiplier. Replaces automatic unit "
+                   "conversion and cannot be combined with --source-z-unit.")
 @click.option("--surface", "surface_name", default="",
               help="Surface name to transform; required when input has several.")
 @click.option("--output-surface-name", default="",
               help="Optional renamed surface in the output LandXML.")
 @click.option("--override-source-metadata", is_flag=True, default=False,
-              help="Trust --source-crs/--source-unit when input metadata differs.")
+              help="Trust the explicit source CRS/unit interpretation when "
+                   "input metadata differs.")
 @click.option("--overwrite", is_flag=True, default=False,
               help="Replace an existing output file (never overwrites input).")
 def transform_landxml_cmd(input_path, output_path, source_crs, target_crs,
-                          source_unit, target_unit, source_z_unit, surface_name,
+                          source_unit, target_unit, source_z_unit,
+                          geographic_transformation, z_scale, surface_name,
                           output_surface_name, override_source_metadata,
                           overwrite):
-    """Transform one LandXML TIN surface between projected CRSs and units."""
+    """Project one LandXML TIN surface and scale its elevations."""
     from autogis.core.envmon.landxml_transform import transform_landxml_surface
 
     try:
@@ -6025,6 +6036,8 @@ def transform_landxml_cmd(input_path, output_path, source_crs, target_crs,
             source_unit=source_unit,
             target_unit=target_unit,
             source_z_unit=source_z_unit,
+            geographic_transformation=geographic_transformation,
+            z_scale=z_scale,
             surface_name=surface_name,
             output_surface_name=output_surface_name,
             override_source_metadata=override_source_metadata,
@@ -6036,7 +6049,19 @@ def transform_landxml_cmd(input_path, output_path, source_crs, target_crs,
         f"{result.surface_name}: {result.point_count} points / "
         f"{result.face_count} faces; {result.source_crs} ({result.source_unit}) "
         f"-> {result.target_crs} ({result.target_unit}); Z "
-        f"{result.source_z_unit} -> {result.target_unit}")
+        f"{result.source_z_unit} -> {result.target_unit} x "
+        f"{result.z_scale:.15g} ({result.z_scale_mode})")
+    operation_id = (
+        f" [{result.operation_authority}:{result.operation_code}]"
+        if result.operation_authority and result.operation_code else ""
+    )
+    accuracy = (
+        f"; accuracy {result.operation_accuracy:g} m"
+        if result.operation_accuracy is not None else ""
+    )
+    click.echo(
+        f"Coordinate operation: {result.operation_name}{operation_id}"
+        f"{accuracy}")
     click.echo(f"LandXML surface -> {result.output_path}")
 
 

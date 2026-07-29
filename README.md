@@ -146,7 +146,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [GenerateQCSampleSummary](autogis/core/envmon/qc_sample_summary.py) | `envmon generate-qc-summary` | Generate QC data summary workbook (blanks, spikes, duplicates) (headless) |
 | [GenerateRegulatorySubmissionTables](autogis/core/envmon/regulatory_table_builder.py) | `envmon generate-reg-tables` | Build regulatory submission pivot table workbook (headless, openpyxl) |
 | [GenerateSiteNarrative](autogis/core/envmon/site_narrative_generator.py) | `envmon generate-site-narrative` | Generate template-driven site monitoring narrative (headless) |
-| [TransformLandXMLSurface](autogis/core/envmon/landxml_transform.py) | `envmon transform-landxml` | Transform one selected LandXML TIN between projected EPSG CRSs and meter, international-foot, or US-survey-foot units while preserving point IDs and triangle faces (headless; `landxml` extra; also Tool 8.2a in the `.pyt` toolbox) |
+| [TransformLandXMLSurface](autogis/core/envmon/landxml_transform.py) | `envmon transform-landxml` | ArcGIS Project-style transformation of one selected LandXML TIN from a geographic or projected authority-coded CRS to a projected EPSG CRS, with extent-ranked or explicitly selected geographic transformation and automatic or custom Z scaling (headless; `landxml` extra; also Tool 8.2a in the `.pyt` toolbox) |
 | [ListAvailableEnvTools](autogis/core/envmon/tool_registry.py) | `envmon list-tools` | List available envmon tools with capability metadata (headless) |
 | [MergeEventResults](autogis/core/envmon/event_results_merger.py) | `envmon merge-event-results` | Merge multiple event result CSVs into one long-format file (headless) |
 | [ValidateFieldDataCompleteness](autogis/core/envmon/field_completeness_validator.py) | `envmon validate-field-completeness` | Compare sampling plan vs. lab results for completeness (headless) |
@@ -530,7 +530,7 @@ python -m pytest -q           # count is extras-dependent: python -m pytest --co
 | `gui` | PySide6 | `autogis-gui`, the unified desktop GUI (ADR-0050) |
 | `report` | Pillow | photo embedding in `generate-inspection-report` |
 | `profile` | matplotlib | subsurface profile rendering (`generate-subsurface-profile`) |
-| `landxml` | pyproj | projected-CRS and linear-unit transformation for `envmon transform-landxml` |
+| `landxml` | pyproj | CRS operation selection and Z scaling for `envmon transform-landxml` |
 | `opentopo` | pyproj | non-WGS84 AOI reprojection for `envmon download-dem` (headless path only) |
 | `ocr` | torch, transformers, pillow, pymupdf | boring-log OCR digitization (`draft-lithology-from-scan`, DRAFT tool) |
 | `notebook` | nbclient, ipykernel | real-kernel restart-run-all test for the Phase 4 monitoring-event review notebook (ADR-0105); opt-in, not needed to use the notebook itself |
@@ -590,7 +590,9 @@ autogis envmon drone-checkpoint-qa --checkpoints <gcps.csv>
 autogis envmon rtk-control-check --control-points <control.csv> --horizontal-tolerance-ft 0.05 --vertical-tolerance-ft 0.10
 autogis envmon export-survey-cad <points.csv> --feature-code-map <map.yaml> --output-dir <out>
 autogis envmon export-civil3d --points <gwe_points.csv> --crs EPSG:2256 --out-dir <out> --landxml --units foot   # headless point export; use the .pyt tool for an existing Pro TIN surface (ADRs 0088–0089)
-autogis envmon transform-landxml --input <surface.xml> --output <transformed.xml> --source-crs EPSG:26913 --target-crs EPSG:2232 --source-unit meter --target-unit USSurveyFoot   # use --source-z-unit for mixed-unit CAD surfaces
+autogis envmon transform-landxml --input <surface.xml> --output <transformed.xml> --source-crs ESRI:102700 --target-crs EPSG:2256
+autogis envmon transform-landxml --input <wgs84.xml> --output <montana.xml> --source-crs EPSG:4326 --target-crs EPSG:2256 --geographic-transformation ESRI:108190
+autogis envmon transform-landxml --input <surface.xml> --output <scaled.xml> --source-crs EPSG:26913 --target-crs EPSG:26913 --z-scale 3.28   # custom multiplier replaces automatic Z-unit conversion
 autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --maintenance-log-csv <log.csv>
 autogis envmon well-inspection-report --wells-csv <wells.csv> --site <id> --output-dir <out> --format html   # photo grid (ADR-0083)
 autogis envmon generate-inspection-report --inspections <inspections.csv> --manifest <manifest.csv> --harvest-dir <dir> --site <id> --out <report.xlsx>

@@ -86,7 +86,7 @@ TOOLS: dict[str, Runtime] = {
     "draft-plume-boundary": Runtime.LOCAL,    # tool 4.5 GDB write (--gdb path)
     "build-cad-package": Runtime.LOCAL,  # tool 8.9 Export-to-CAD — needs arcpy
     "export-civil3d": Runtime.CLOUD,     # CLI point outputs headless; Pro .pyt adds TIN LandXML (ADR-0089)
-    "transform-landxml": Runtime.CLOUD,  # projected LandXML TIN CRS/unit transform
+    "transform-landxml": Runtime.CLOUD,  # LandXML Project-style CRS/Z transform
     "update-layout-text": Runtime.LOCAL,  # tool 5.8 APRX layout edit — needs arcpy
     "build-fieldmaps": Runtime.LOCAL,  # tool 7.1 GDB layer/field provisioning — needs arcpy
     "sync-to-gdb": Runtime.LOCAL,  # tool 6.2 GDB upsert (--gdb path); agol group
@@ -382,9 +382,9 @@ _REGISTRY_SEED = [
      "headlessly (ADR-0088), or an existing Pro TIN as a triangulated LandXML "
      "surface through the .pyt toolbox (ADR-0089)"),
     ("transform-landxml", "TransformLandXMLSurface", "8.2a", "CLOUD", "stable",
-     "cartography", "Transform one LandXML TIN surface between projected EPSG "
-     "coordinate systems and meter/international-foot/US-survey-foot units "
-     "while preserving triangle faces"),
+     "cartography", "Project one LandXML TIN surface from a geographic or "
+     "projected authority-coded CRS to a projected EPSG CRS, select or infer "
+     "the geographic transformation, and scale Z while preserving faces"),
     ("draft-parser-profile", "DraftParserProfile", "2.1", "CLOUD", "stable",
      "admin", "Inspect a workbook and write a draft parser profile YAML"),
     ("batch-import-workbooks", "BatchImportWorkbooks", "2.2", "CLOUD", "stable",

@@ -1197,14 +1197,14 @@ class ExportContoursForCivil3D(object):
 
 
 class TransformLandXMLSurface(object):
-    """Tool 8.2a — transform a LandXML TIN surface CRS and linear units."""
+    """Tool 8.2a — project a LandXML TIN surface and scale elevations."""
 
     def __init__(self):
         self.label = "8.2a Transform LandXML Surface"
         self.description = (
-            "Transform one LandXML TIN surface between projected EPSG "
-            "coordinate systems and meter, international-foot, or US-survey-"
-            "foot units while preserving its triangle faces.")
+            "Project one LandXML TIN surface from a geographic or projected "
+            "authority-coded CRS to a projected EPSG CRS while preserving "
+            "its triangle faces. Horizontal units come from the CRSs.")
         self.canRunInBackground = False
 
     def getParameterInfo(self):
@@ -1212,13 +1212,17 @@ class TransformLandXMLSurface(object):
             _param("input_xml", "Input LandXML surface", "DEFile"),
             _param("output_file", "Output LandXML surface", "DEFile",
                    direction="Output"),
-            _param("source_crs", "Source projected CRS (e.g. EPSG:26913)",
+            _param("source_crs", "Source CRS (e.g. EPSG:4326 or ESRI:102700)",
                    "GPString"),
             _param("target_crs", "Target projected CRS (e.g. EPSG:2232)",
                    "GPString"),
-            _param("source_unit", "Source X/Y unit", "GPString",
+            # Original public slots remain in place for positional
+            # model/script compatibility; CRS axes are now authoritative.
+            _param("source_unit", "Legacy source-unit assertion", "GPString",
+                   required=False,
                    domain=_LANDXML_LINEAR_UNITS),
-            _param("target_unit", "Target X/Y/Z unit", "GPString",
+            _param("target_unit", "Legacy target-unit assertion", "GPString",
+                   required=False,
                    domain=_LANDXML_LINEAR_UNITS),
             _param("surface_name", "Input surface name (required only when "
                    "the file contains several)", "GPString", required=False),
@@ -1230,8 +1234,14 @@ class TransformLandXMLSurface(object):
             _param("overwrite", "Overwrite an existing output", "GPBoolean",
                    required=False, default=False),
             _param("source_z_unit", "Source elevation unit (blank = same as "
-                   "source X/Y unit)", "GPString", required=False,
+                   "source CRS or geographic LandXML Units)", "GPString",
+                   required=False,
                    domain=_LANDXML_LINEAR_UNITS),
+            _param("geographic_transformation", "Geographic transformation "
+                   "(blank = best available; name or authority code)",
+                   "GPString", required=False),
+            _param("z_scale", "Custom positive Z multiplier (replaces "
+                   "automatic unit conversion)", "GPDouble", required=False),
         ]
 
     @toolbox_core.record_pyt_run(
@@ -1247,9 +1257,14 @@ class TransformLandXMLSurface(object):
                 Path(p["output_file"].valueAsText),
                 source_crs=p["source_crs"].valueAsText,
                 target_crs=p["target_crs"].valueAsText,
-                source_unit=p["source_unit"].valueAsText,
-                target_unit=p["target_unit"].valueAsText,
+                source_unit=p["source_unit"].valueAsText or None,
+                target_unit=p["target_unit"].valueAsText or None,
                 source_z_unit=p["source_z_unit"].valueAsText or None,
+                geographic_transformation=(
+                    p["geographic_transformation"].valueAsText or None),
+                z_scale=(
+                    float(p["z_scale"].valueAsText)
+                    if p["z_scale"].valueAsText else None),
                 surface_name=p["surface_name"].valueAsText or "",
                 output_surface_name=p["output_surface_name"].valueAsText or "",
                 override_source_metadata=bool(
@@ -1264,7 +1279,17 @@ class TransformLandXMLSurface(object):
             f"{result.face_count} faces; {result.source_crs} "
             f"({result.source_unit}) -> {result.target_crs} "
             f"({result.target_unit}); Z {result.source_z_unit} -> "
-            f"{result.target_unit}")
+            f"{result.target_unit} x {result.z_scale:.15g} "
+            f"({result.z_scale_mode})")
+        operation_id = (
+            f" [{result.operation_authority}:{result.operation_code}]"
+            if result.operation_authority and result.operation_code else "")
+        accuracy = (
+            f"; accuracy {result.operation_accuracy:g} m"
+            if result.operation_accuracy is not None else "")
+        messages.addMessage(
+            f"Coordinate operation: {result.operation_name}{operation_id}"
+            f"{accuracy}")
         messages.addMessage(f"LandXML surface -> {result.output_path}")
 
 
