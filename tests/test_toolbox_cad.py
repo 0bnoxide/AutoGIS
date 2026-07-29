@@ -328,3 +328,25 @@ def test_export_civil3d_pyt_parameter_order():
              and getattr(call.func, "id", "") == "_param"]
     assert names == ["input_tin", "surface_name", "crs", "units",
                      "output_file", "z_unit"]
+
+
+def test_transform_landxml_pyt_parameter_order():
+    """Keep Tool 8.2a's original positional slots and append new options."""
+    pyt = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
+    tree = ast.parse(pyt.read_text(encoding="utf-8"), filename=str(pyt))
+    cls = next(n for n in tree.body
+               if isinstance(n, ast.ClassDef)
+               and n.name == "TransformLandXMLSurface")
+    get_info = next(n for n in cls.body
+                    if isinstance(n, ast.FunctionDef)
+                    and n.name == "getParameterInfo")
+    names = [call.args[0].value
+             for call in ast.walk(get_info)
+             if isinstance(call, ast.Call)
+             and getattr(call.func, "id", "") == "_param"]
+    assert names == [
+        "input_xml", "output_file", "source_crs", "target_crs",
+        "source_unit", "target_unit", "surface_name", "output_surface_name",
+        "override_source_metadata", "overwrite", "source_z_unit",
+        "geographic_transformation", "z_scale",
+    ]

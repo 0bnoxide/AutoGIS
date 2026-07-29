@@ -57,6 +57,14 @@ def test_field_mapping_spot_checks():
     assert ready["required_tools"].strict is False
     assert ready["required_tools"].choices
 
+    transform = {
+        f.name: f for f in forms["envmon transform-landxml"].fields
+    }
+    assert "source_unit" not in transform
+    assert "target_unit" not in transform
+    assert transform["geographic_transformation"].kind == "text"
+    assert transform["z_scale"].kind == "float"
+
 
 def test_is_dir_flags_directory_only_path_params():
     """A folder-only param (click.Path(file_okay=False)) is marked is_dir so a

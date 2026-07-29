@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -120,22 +121,235 @@ def test_transform_rejects_unit_that_does_not_match_crs(tmp_path):
         _surface(), tmp_path / "input.xml",
         crs="EPSG:26913", linear_unit="meter")
 
-    with pytest.raises(ValueError, match="EPSG:2256.*international foot"):
+    with pytest.raises(ValueError, match="target-unit.*international foot"):
         transform_landxml_surface(
             input_xml, tmp_path / "out.xml",
             source_crs="EPSG:26913", target_crs="EPSG:2256",
             source_unit="meter", target_unit="USSurveyFoot")
 
 
-def test_transform_rejects_geographic_crs(tmp_path):
+def _montana_geographic_surface() -> LandXMLSurface:
+    return LandXMLSurface(
+        name="Montana",
+        points={
+            1: (47.0, -110.0, 100.0),
+            2: (47.0, -109.999, 101.0),
+            3: (47.001, -110.0, 102.0),
+        },
+        faces=[(1, 2, 3)],
+    )
+
+
+@pytest.mark.parametrize("operation", [
+    "ESRI:108190",
+    "WGS_1984_(ITRF00)_To_NAD_1983",
+])
+def test_transform_geographic_source_uses_requested_esri_operation(
+        tmp_path, operation):
+    source = _montana_geographic_surface()
+    input_xml = write_landxml_surface(
+        source, tmp_path / "input.xml",
+        crs="EPSG:4326", linear_unit="meter")
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="EPSG:4326", target_crs="EPSG:2256",
+        geographic_transformation=operation)
+    transformed = parse_landxml_surface(result.output_path)
+
+    assert transformed.faces == source.faces
+    assert transformed.points[1][:2] == pytest.approx(
+        (1_002_946.0212775877, 1_843_819.8537481118), abs=1e-5)
+    assert result.source_unit == "degree"
+    assert result.target_unit == "foot"
+    assert result.operation_name == "WGS_1984_(ITRF00)_To_NAD_1983"
+    assert result.operation_authority == "ESRI"
+    assert result.operation_code == "108190"
+    assert result.operation_accuracy == pytest.approx(0.1)
+
+
+def test_transform_auto_selects_best_montana_operation(tmp_path):
+    input_xml = write_landxml_surface(
+        _montana_geographic_surface(), tmp_path / "input.xml",
+        crs="EPSG:4326", linear_unit="meter")
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="EPSG:4326", target_crs="EPSG:2256")
+
+    assert result.operation_authority == "ESRI"
+    assert result.operation_code == "108190"
+    assert result.operation_accuracy == pytest.approx(0.1)
+
+
+def test_transform_projected_us_survey_foot_to_international_foot(tmp_path):
+    source = LandXMLSurface(
+        name="Montana",
+        points={
+            1: (1_000_000.0, 1_968_500.0, 100.0),
+            2: (1_000_000.0, 1_968_510.0, 101.0),
+            3: (1_000_010.0, 1_968_500.0, 102.0),
+        },
+        faces=[(1, 2, 3)],
+    )
+    input_xml = write_landxml_surface(
+        source, tmp_path / "input.xml",
+        crs="EPSG:2256", linear_unit="USSurveyFoot")
+    root = ET.parse(input_xml)
+    coordinate_system = root.getroot().find("{*}CoordinateSystem")
+    coordinate_system.set("name", "ESRI:102700")
+    coordinate_system.attrib.pop("epsgCode")
+    root.write(input_xml, encoding="utf-8", xml_declaration=True)
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="ESRI:102700", target_crs="EPSG:2256")
+    transformed = parse_landxml_surface(result.output_path)
+
+    assert transformed.faces == source.faces
+    assert transformed.points[1][1] == pytest.approx(1_968_503.937, abs=1e-6)
+    assert result.source_unit == "USSurveyFoot"
+    assert result.target_unit == "foot"
+
+
+@pytest.mark.parametrize("custom_scale", [3.28, 0.03])
+def test_transform_custom_z_scale_changes_only_elevation(
+        tmp_path, custom_scale):
+    source = _surface()
+    input_xml = write_landxml_surface(
+        source, tmp_path / "input.xml",
+        crs="EPSG:26913", linear_unit="meter")
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="EPSG:26913", target_crs="EPSG:26913",
+        z_scale=custom_scale)
+    transformed = parse_landxml_surface(result.output_path)
+
+    assert transformed.points[1][:2] == pytest.approx(source.points[1][:2])
+    assert transformed.points[1][2] == pytest.approx(
+        source.points[1][2] * custom_scale)
+    assert result.z_scale == pytest.approx(custom_scale)
+    assert result.z_scale_mode == "explicit"
+
+
+def test_custom_z_scale_needs_no_geographic_source_unit_metadata(tmp_path):
+    source = _montana_geographic_surface()
+    input_xml = write_landxml_surface(
+        source, tmp_path / "input.xml",
+        crs="EPSG:4326", linear_unit="meter")
+    tree = ET.parse(input_xml)
+    tree.getroot().remove(tree.getroot().find("{*}Units"))
+    tree.write(input_xml, encoding="utf-8", xml_declaration=True)
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="EPSG:4326", target_crs="EPSG:2256",
+        z_scale=3.28)
+    transformed = parse_landxml_surface(result.output_path)
+
+    assert transformed.points[1][2] == pytest.approx(328.0)
+    assert result.source_z_unit is None
+    assert result.z_scale == pytest.approx(3.28)
+    assert result.z_scale_mode == "explicit"
+
+
+def test_geographic_source_z_unit_still_drives_automatic_scale(tmp_path):
+    input_xml = write_landxml_surface(
+        _montana_geographic_surface(), tmp_path / "input.xml",
+        crs="EPSG:4326", linear_unit="meter")
+    tree = ET.parse(input_xml)
+    tree.getroot().remove(tree.getroot().find("{*}Units"))
+    tree.write(input_xml, encoding="utf-8", xml_declaration=True)
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="EPSG:4326", target_crs="EPSG:2256",
+        source_z_unit="meter")
+    transformed = parse_landxml_surface(result.output_path)
+
+    assert transformed.points[1][2] == pytest.approx(
+        100.0 / 0.3048)
+    assert result.source_z_unit == "meter"
+    assert result.z_scale_mode == "automatic"
+
+
+@pytest.mark.parametrize("invalid_scale", [0, -1, float("nan"), float("inf")])
+def test_transform_rejects_invalid_custom_z_scale(tmp_path, invalid_scale):
     input_xml = write_landxml_surface(
         _surface(), tmp_path / "input.xml",
-        crs="EPSG:4326", linear_unit="meter")
-    with pytest.raises(ValueError, match="projected"):
+        crs="EPSG:26913", linear_unit="meter")
+
+    with pytest.raises(ValueError, match="positive finite"):
         transform_landxml_surface(
             input_xml, tmp_path / "out.xml",
-            source_crs="EPSG:4326", target_crs="EPSG:26913",
-            source_unit="meter", target_unit="meter")
+            source_crs="EPSG:26913", target_crs="EPSG:26913",
+            z_scale=invalid_scale)
+
+
+def test_transform_rejects_z_unit_and_custom_scale_together(tmp_path):
+    input_xml = write_landxml_surface(
+        _surface(), tmp_path / "input.xml",
+        crs="EPSG:26913", linear_unit="meter")
+
+    with pytest.raises(ValueError, match="source_z_unit.*z_scale"):
+        transform_landxml_surface(
+            input_xml, tmp_path / "out.xml",
+            source_crs="EPSG:26913", target_crs="EPSG:26913",
+            source_z_unit="meter", z_scale=3.28)
+
+
+def test_transform_rejects_unknown_geographic_transformation(tmp_path):
+    input_xml = write_landxml_surface(
+        _montana_geographic_surface(), tmp_path / "input.xml",
+        crs="EPSG:4326", linear_unit="meter")
+
+    with pytest.raises(ValueError, match="Montana.*not available"):
+        transform_landxml_surface(
+            input_xml, tmp_path / "out.xml",
+            source_crs="EPSG:4326", target_crs="EPSG:2256",
+            geographic_transformation="Montana_Magic")
+
+
+def test_transform_rejects_missing_best_operation_grid(tmp_path, monkeypatch):
+    input_xml = write_landxml_surface(
+        _montana_geographic_surface(), tmp_path / "input.xml",
+        crs="EPSG:4326", linear_unit="meter")
+    unavailable = SimpleNamespace(
+        operations=(),
+        grids=(SimpleNamespace(short_name="required.gsb", available=False),),
+    )
+    fake_group = SimpleNamespace(
+        best_available=False,
+        transformers=(),
+        unavailable_operations=(unavailable,),
+    )
+    import pyproj.transformer
+    monkeypatch.setattr(
+        pyproj.transformer, "TransformerGroup",
+        lambda *args, **kwargs: fake_group)
+
+    with pytest.raises(ValueError, match="required.gsb"):
+        transform_landxml_surface(
+            input_xml, tmp_path / "out.xml",
+            source_crs="EPSG:4326", target_crs="EPSG:2256")
+
+
+def test_transform_requires_override_for_authority_metadata_conflict(tmp_path):
+    input_xml = write_landxml_surface(
+        _montana_geographic_surface(), tmp_path / "input.xml",
+        crs="EPSG:26913", linear_unit="meter")
+
+    with pytest.raises(ValueError, match="declares EPSG:26913"):
+        transform_landxml_surface(
+            input_xml, tmp_path / "blocked.xml",
+            source_crs="EPSG:4326", target_crs="EPSG:2256")
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="EPSG:4326", target_crs="EPSG:2256",
+        override_source_metadata=True)
+    assert result.output_path.exists()
 
 
 def test_transform_requires_surface_name_when_input_has_multiple_surfaces(
@@ -203,3 +417,29 @@ def test_transform_landxml_cli(tmp_path):
     assert result.exit_code == 0, result.output
     assert "3 points / 1 faces" in result.output
     assert output_xml.exists()
+
+
+def test_transform_landxml_cli_hides_legacy_units_and_reports_custom_z(
+        tmp_path):
+    help_result = CliRunner().invoke(
+        autogis, ["envmon", "transform-landxml", "--help"])
+    assert help_result.exit_code == 0
+    assert "--source-unit" not in help_result.output
+    assert "--target-unit" not in help_result.output
+    assert "--geographic-transformation" in help_result.output
+    assert "--z-scale" in help_result.output
+
+    input_xml = write_landxml_surface(
+        _surface(), tmp_path / "input.xml",
+        crs="EPSG:26913", linear_unit="meter")
+    output_xml = tmp_path / "out.xml"
+    result = CliRunner().invoke(autogis, [
+        "envmon", "transform-landxml",
+        "--input", str(input_xml), "--output", str(output_xml),
+        "--source-crs", "EPSG:26913", "--target-crs", "EPSG:26913",
+        "--z-scale", "0.03",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert "x 0.03 (explicit)" in result.output
+    assert "Coordinate operation:" in result.output
