@@ -26,10 +26,11 @@ its own documented pain points:
 Add three pieces of workflow tooling (no product/architecture code changes):
 
 - **`.github/workflows/ci.yml`** — runs `pip install -e .[dev]` + `pytest` on
-  `pull_request` and pushes to `main`. Runner is **`windows-latest`**, not
-  ubuntu: the repo is Windows-native (`C:\` path fixtures, PowerShell +
-  Windows-path coordination logic) and the suite is demonstrably green there;
-  ubuntu would be an unverified OS change layered on top of introducing CI.
+  `pull_request` and pushes to `main`. Runner is **Windows**, not ubuntu: the
+  repo is Windows-native (`C:\` path fixtures, PowerShell + Windows-path
+  coordination logic) and the suite is demonstrably green there; ubuntu would
+  be an unverified OS change layered on top of introducing CI. ADR-0119 amends
+  the original floating `windows-latest` selection to pin **`windows-2022`**.
   arcpy/arcgis stay uninstalled (core/adapters import without them by invariant;
   the extras are Pro-conda-only). gui and real-file tests self-skip
   (`importorskip("PySide6")`, `skipif(not path.exists())`).
@@ -64,8 +65,9 @@ Add three pieces of workflow tooling (no product/architecture code changes):
 
 ### Negative consequences
 
-- windows-latest Actions minutes bill ~2× ubuntu; acceptable for this repo and
-  it buys OS fidelity.
+- Windows Actions minutes bill ~2× ubuntu; acceptable for this repo and they
+  buy OS fidelity. The `windows-2022` pin added by ADR-0119 must be maintained
+  when GitHub retires that image.
 - The **preflight alone** reduces, not eliminates, collisions (the pre-PR window);
   `reserve-adr` closes that but only for sessions that opt to call it. This ADR
   proved the point live: it was first drafted as 0107, collided with PR #296 (also
@@ -89,3 +91,4 @@ Add three pieces of workflow tooling (no product/architecture code changes):
 - [ADR-0077: arcpy API-currency policy](0077-arcpy-api-currency-policy.md) — the invariant the verifier enforces
 - `docs/arcpy-official-references.md` — the versioned URL list the verifier cites (added separately, in a Codex PR)
 - [ADR-0091: ArcGIS Pro qualification / release floor](0091-arcgis-pro-qualification-runner.md)
+- [ADR-0119: Pin CI runner to Windows 2022](0119-pin-ci-runner-windows-2022.md) — amends the CI runner selection
