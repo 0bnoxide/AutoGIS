@@ -1,6 +1,6 @@
 # ADR-0119: Pin CI runner to Windows 2022
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Date:** 2026-07-28
 
