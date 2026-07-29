@@ -138,6 +138,7 @@ Each ADR follows this structure:
 | [117](0117-click-parameter-types-carry-gui-intent.md) | Click parameter types carry GUI intent without narrowing CLI input | Proposed | 2026-07-26 |
 | [118](0118-landxml-surface-crs-unit-transformation.md) | LandXML surface CRS and unit transformation | Proposed | 2026-07-27 |
 | [119](0119-pin-ci-runner-windows-2022.md) | Pin the arcpy-free GitHub Actions job to `windows-2022` so hosted-image migrations are explicit and reviewable; retains Windows fidelity from ADR-0110, rejects the failed Ubuntu render split, and leaves the remaining hosted-Windows Matplotlib bottleneck tracked by #388 | Accepted | 2026-07-28 |
+| [XXXX](XXXX-groundwater-model-approval-review-surfaces.md) | Expose groundwater-model approval in the desktop GUI and Python toolbox through one review-data seam and the existing approval backend; require reviewer identity at the backend boundary | Proposed | 2026-07-29 |
 
 ## File naming
 

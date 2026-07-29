@@ -2080,7 +2080,8 @@ def run_gw_model_pipeline_cmd(site_config):
 @click.option("--model", required=True,
               help="Model name to approve (must have been in the run; any "
                    "rank — hydro judgment trumps the metric).")
-@click.option("--reviewer", default="", help="Reviewer name for the record.")
+@click.option("--reviewer", required=True,
+              help="Reviewer name or initials for the approval record.")
 @click.option("--site", "site_id", default="",
               help="Site ID stamped on the run-history record so event-status "
                    "can match this approval to the site's groundwater-surface "

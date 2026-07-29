@@ -99,8 +99,8 @@ def test_toolbox_probes_all_registered_tools(monkeypatch):
     checks = qualification.check_toolbox()
 
     assert checks[0].id == "toolbox.import"
-    assert checks[1].detail == "20 registered tool(s)"
-    assert len(checks) == 22
+    assert checks[1].detail == "21 registered tool(s)"
+    assert len(checks) == 23
     assert all(check.outcome == "pass" for check in checks)
 
 
