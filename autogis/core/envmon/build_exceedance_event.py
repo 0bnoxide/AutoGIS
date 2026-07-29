@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ..common.config import ND_QUALIFIERS
+from .report_input import normalize_report_rows, validate_iso_date
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
 
 # Lower-bound-inclusive tiers: lo <= ratio < hi. Exceedance starts at ratio 1.0,
@@ -104,15 +105,18 @@ def build_exceedance_event(
         raise ValueError(f"Unsupported rule {rule!r}; "
                          f"expected one of {SUPPORTED_RULES}")
 
-    rows = result_rows
+    rows = normalize_report_rows(result_rows, qa)
     if rule == "specific_event_date":
         if not event_date:
             raise ValueError("specific_event_date requires event_date")
+        validate_iso_date(event_date, "event_date")
         rows = [r for r in rows if r.get("SampleDate", "") == event_date]
     elif rule == "date_range_latest":
         if not date_range:
             raise ValueError("date_range_latest requires date_range")
         lo, hi = date_range
+        validate_iso_date(lo, "date_range[0]")
+        validate_iso_date(hi, "date_range[1]")
         rows = [r for r in rows if lo <= r.get("SampleDate", "") <= hi]
 
     groups: Dict[Tuple[str, str], List[dict]] = defaultdict(list)

@@ -10,6 +10,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill
 
 from ..common.config import ND_QUALIFIERS
+from .report_input import normalize_report_rows, validate_iso_date
 from ..common.qa import QACollector, QARecord, SEV_INFO
 
 _FILL_EXCEED = PatternFill(fill_type="solid", fgColor="FF9999")
@@ -88,8 +89,10 @@ def build_compliance_summary(
     if qa is None:
         qa = QACollector()
     sl = screening_levels or {}
+    validate_iso_date(date_from, "date_from")
+    validate_iso_date(date_to, "date_to")
 
-    rows = result_rows
+    rows = normalize_report_rows(result_rows, qa)
     if analytes:
         rows = [r for r in rows if r.get("AnalyteName") in analytes]
     if wells:

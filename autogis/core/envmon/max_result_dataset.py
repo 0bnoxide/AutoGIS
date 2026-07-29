@@ -8,6 +8,7 @@ from typing import Optional
 
 from ..common.config import ND_QUALIFIERS
 from ..common.qa import QACollector, QARecord, SEV_INFO
+from .report_input import normalize_report_rows, validate_iso_date
 
 
 @dataclass
@@ -50,9 +51,11 @@ def build_max_result_dataset(
     if qa is None:
         qa = QACollector()
     sl = screening_levels or {}
+    validate_iso_date(date_from, "date_from")
+    validate_iso_date(date_to, "date_to")
 
     # Filters
-    rows = result_rows
+    rows = normalize_report_rows(result_rows, qa)
     if analytes:
         rows = [r for r in rows if r.get("AnalyteName") in analytes]
     if wells:

@@ -20,6 +20,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 from ..common.config import ND_QUALIFIERS
+from .report_input import normalize_report_rows
 from ..common.logging import get_logger
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 
@@ -79,7 +80,7 @@ def build_appendix_sheet_specs(
     gmap = group_map or {}
     units_by_analyte: Dict[str, str] = {}
     groups: Dict[str, set] = {}
-    for r in result_rows:
+    for r in normalize_report_rows(result_rows):
         analyte = r.get("AnalyteName", "")
         if not analyte:
             continue
@@ -125,7 +126,7 @@ def write_appendix_workbook(
     """Build the multi-sheet appendix workbook. Returns AppendixBuildResult."""
     qa = qa or QACollector()
     out_path = Path(out_path)
-    rows = result_rows
+    rows = normalize_report_rows(result_rows, qa)
     if site_id:
         rows = [r for r in rows if r.get("SiteID", site_id) == site_id]
 

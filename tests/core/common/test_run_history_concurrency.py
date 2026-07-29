@@ -6,6 +6,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 import autogis
 from autogis.core.common.run_history import RunHistory
 
@@ -41,6 +43,15 @@ for i in range(int(n)):
 """
 
 
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="ADR-0051's _sentinel_lock is built on msvcrt.locking and is a "
+           "documented no-op off Windows, so this races a lock that does not "
+           "exist and asserts an invariant the code makes no attempt to hold "
+           "there (~1 in 3 failures on Linux, issue #374). The deployment "
+           "target is Windows/SMB; on Windows this stays a real regression "
+           "test for the TOCTOU race below.",
+)
 def test_two_process_writers_single_header_and_clean_parse(tmp_path):
     """Two real processes racing on first-write must yield exactly one header
     row, 2N data rows, and a file query() parses cleanly.

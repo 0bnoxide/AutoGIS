@@ -38,9 +38,17 @@ criteria (ADR-0111), and the four deferred §11 AI tools.
 A separate [Survey123 optional add-on roadmap](docs/survey123-add-on-roadmap.md)
 defines an opt-in install boundary plus eight phases and four milestones
 (ADR-0112). It does not block or reorder the core production sequence above.
-Phase 0 slice A has already shipped (ADR-0113, PR #359) — the lifecycle
-SampleID contract — so this track is no longer pure planning; Phases 1–7
-remain to be started.
+This track is no longer pure planning — three phases have shipped code, each
+on an explicit user decision rather than the roadmap's own momentum:
+**Phase 0 slice A** (lifecycle SampleID contract, ADR-0113, PR #359; the
+envelope leg was deliberately deferred to Phase 2), **Phase 1** in full
+(`validate-survey-form` + `diff-survey-schema`, both headless with no portal
+I/O, ADR-0115, PR #364), and **Phase 2 slice 1** (canonical envelope +
+`envmon sync-survey123` + the `survey123` extra, ADR-0116 — its live
+non-production gate legs are owner-gated). The rest of Phase 0/2 and Phases
+3–7 remain to be started. See
+[CLAUDE.md](CLAUDE.md#survey123-optional-add-on-roadmap) for the dated
+per-phase gate log.
 
 **Counts are not pinned in this README** — they drift faster than the prose does.
 Derive them live:
@@ -533,6 +541,7 @@ python -m pytest -q           # count is extras-dependent: python -m pytest --co
 | `landxml` | pyproj | CRS operation selection and Z scaling for `envmon transform-landxml` |
 | `opentopo` | pyproj | non-WGS84 AOI reprojection for `envmon download-dem` (headless path only) |
 | `ocr` | torch, transformers, pillow, pymupdf | boring-log OCR digitization (`draft-lithology-from-scan`, DRAFT tool) |
+| `survey123` | arcgis, setuptools | live Survey123/AGOL submission pull for `envmon sync-survey123` (optional add-on track, ADR-0116) |
 | `notebook` | nbclient, ipykernel | real-kernel restart-run-all test for the Phase 4 monitoring-event review notebook (ADR-0105); opt-in, not needed to use the notebook itself |
 
 ---

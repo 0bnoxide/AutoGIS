@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..common.config import ND_QUALIFIERS as _ND_QUALIFIERS
+from .report_input import normalize_report_rows
 from ..common.qa import QACollector, QARecord, SEV_INFO
 
 
@@ -128,9 +129,9 @@ def load_soil_results_csv(path) -> list:
     path = Path(path)
     intervals = []
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            qualifier = row.get("ResultQualifier", "").strip().upper()
-            result_value = _parse_float(row.get("ResultValue", "").strip())
+        for row in normalize_report_rows(list(csv.DictReader(fh))):
+            qualifier = str(row.get("ResultQualifier", "")).strip().upper()
+            result_value = _parse_float(str(row.get("ResultValue", "")).strip())
             is_detect = (qualifier not in _ND_QUALIFIERS
                          and result_value is not None)
             intervals.append(SoilInterval(

@@ -8,10 +8,20 @@ from .templates import render_path_component, sanitize
 from .download import download_one
 from .state import read_last_run, write_last_run
 
-try:  # arcgis is optional at import time (tests inject the layer)
-    from arcgis.features import FeatureLayer
-except Exception:  # pragma: no cover - exercised only without arcgis installed
-    FeatureLayer = None
+def _feature_layer_cls():
+    """Import ``arcgis.features.FeatureLayer`` on demand, or return None.
+
+    Deliberately lazy (issue #371): a module-scope import pulled ``arcgis``
+    into ``sys.modules`` on any clean ``import autogis`` wherever the optional
+    package happened to be installed, breaking the documented invariant that
+    ``core/`` and ``adapters/`` import with neither arcpy nor arcgis present.
+    Only the URL branch of ``resolve_layer`` ever needs the class.
+    """
+    try:
+        from arcgis.features import FeatureLayer
+    except Exception:  # pragma: no cover - only without arcgis installed
+        return None
+    return FeatureLayer
 
 
 def _prop(props, key, default=None):
@@ -22,9 +32,10 @@ def _prop(props, key, default=None):
 
 def resolve_layer(gis, config):
     if config.url:
-        if FeatureLayer is None:
+        feature_layer_cls = _feature_layer_cls()
+        if feature_layer_cls is None:
             raise RuntimeError("arcgis is required to resolve a layer by URL")
-        layer = FeatureLayer(config.url, gis)
+        layer = feature_layer_cls(config.url, gis)
     else:
         item = gis.content.get(config.item_id)
         # config.layer_index is AGOL's REST/portal sublayer id (the

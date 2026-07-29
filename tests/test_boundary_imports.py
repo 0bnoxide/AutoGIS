@@ -16,8 +16,8 @@ So the GUI modules are skipped only when PySide6 is absent; when the extra IS
 installed they are still checked, preserving the boundary guarantee for them.
 """
 import ast
-import importlib
-import pkgutil
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,21 +29,44 @@ try:
 except ImportError:
     _HAS_PYSIDE6 = False
 
+# Run the walk in a FRESH interpreter (issue #371). In-process, any autogis
+# module already imported by an earlier test in the session is a no-op on
+# re-import, so an eager `arcgis` pulled in back then never reappears in
+# sys.modules here — the assertion passed in the full suite while failing
+# when the file was run alone. A subprocess has no such history.
+_WALK = r"""
+import importlib, json, pkgutil, sys
+import autogis
+try:
+    import PySide6  # noqa: F401
+    has_pyside6 = True
+except ImportError:
+    has_pyside6 = False
+failed = []
+for mod in pkgutil.walk_packages(autogis.__path__, prefix="autogis."):
+    if not has_pyside6 and mod.name.startswith("autogis.adapters.gui"):
+        continue
+    try:
+        importlib.import_module(mod.name)
+    except Exception as exc:  # noqa: BLE001 - report every failure at once
+        failed.append("%s: %r" % (mod.name, exc))
+print(json.dumps({
+    "failed": failed,
+    "eager": [n for n in ("arcpy", "arcgis") if n in sys.modules],
+}))
+"""
+
 
 def test_every_autogis_module_imports_headless():
-    for name in ("arcpy", "arcgis"):
-        sys.modules.pop(name, None)
-    failed = []
-    for mod in pkgutil.walk_packages(autogis.__path__, prefix="autogis."):
-        if not _HAS_PYSIDE6 and mod.name.startswith("autogis.adapters.gui"):
-            continue
-        try:
-            importlib.import_module(mod.name)
-        except Exception as exc:  # noqa: BLE001 - report every failure at once
-            failed.append(f"{mod.name}: {exc!r}")
-    assert not failed, "not importable without arcpy/arcgis:\n" + "\n".join(failed)
-    eager = [n for n in ("arcpy", "arcgis") if n in sys.modules]
-    assert not eager, f"importing autogis eagerly pulled in: {eager}"
+    proc = subprocess.run([sys.executable, "-c", _WALK],
+                          capture_output=True, text=True)
+    assert proc.returncode == 0, f"walker crashed:\n{proc.stderr}"
+    report = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert not report["failed"], (
+        "not importable without arcpy/arcgis:\n"
+        + "\n".join(report["failed"]))
+    assert not report["eager"], (
+        f"importing autogis eagerly pulled in: {report['eager']}")
 
 
 def test_pyt_toolbox_parses():
