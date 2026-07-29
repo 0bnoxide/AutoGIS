@@ -829,7 +829,8 @@ Test baseline: derive live with `python -m pytest --collect-only -q` — the cou
 extras-dependent (a `[dev]`-only env collects fewer tests than a full-extras env with
 PySide6/torch installed), so this README does not pin a number. All core logic is
 arcpy-free, and the suite runs in CI on every push and pull request
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml), windows-latest, ADR-0110).
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml), `windows-2022`,
+ADR-0119 amending ADR-0110).
 The LOCAL arcpy paths are still excluded — see *Caveats*.
 
 ```bash
