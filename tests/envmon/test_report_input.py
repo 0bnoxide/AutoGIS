@@ -39,6 +39,14 @@ def test_normalize_does_not_mutate_input():
     assert "ResultValue" not in row
 
 
+def test_no_copy_when_there_is_nothing_to_backfill():
+    """Report-vocabulary input is handed back as-is -- no per-row copy on the
+    common path (and nothing is mutated, since no alias is active)."""
+    rows = [dict(REPORT_ROW)]
+    out = normalize_report_rows(rows)
+    assert out[0] is rows[0]
+
+
 def test_report_vocabulary_wins_when_both_present():
     row = {**CANONICAL_ROW, "ResultValue": "99"}
     assert normalize_report_rows([row])[0]["ResultValue"] == "99"

@@ -49,15 +49,22 @@ def normalize_report_rows(rows: Sequence[dict],
     A row set carrying *neither* vocabulary is the genuinely broken input that
     used to fail silently — it gets a QA WARNING rather than being coerced.
     """
-    out = [dict(r) if isinstance(r, dict) else r for r in rows]
-    if not out:
-        return out
+    rows = list(rows)
+    if not rows:
+        return rows
 
-    present = {k for r in out if isinstance(r, dict) for k in r}
+    present = {k for r in rows if isinstance(r, dict) for k in r}
+    # Only the aliases whose canonical source is actually present can do any
+    # work. When that set is empty -- the overwhelmingly common case of input
+    # already in the report vocabulary -- nothing is copied and the caller's
+    # own dicts are handed straight back.
+    active = {rep: can for rep, can in REPORT_FIELD_ALIASES.items()
+              if can in present}
+    out = [dict(r) if isinstance(r, dict) else r for r in rows] if active \
+        else rows
+
     substituted: set = set()
-    for report_name, canonical_name in REPORT_FIELD_ALIASES.items():
-        if canonical_name not in present:
-            continue
+    for report_name, canonical_name in active.items():
         for r in out:
             if isinstance(r, dict) and _blank(r.get(report_name)) \
                     and not _blank(r.get(canonical_name)):
