@@ -52,6 +52,6 @@ jobs:
       - name: Run Matplotlib render tests
         run: >-
           python -m pytest -q
-          tests/envmon/test_cli_subsurface_profile.py::test_generate_subsurface_profile_renders
           tests/envmon/test_subsurface_profile.py::test_render_profile_skips_boring_with_missing_ground_elevation
+          tests/envmon/test_cli_subsurface_profile.py::test_generate_subsurface_profile_renders
           --durations=5
