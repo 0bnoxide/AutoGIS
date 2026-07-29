@@ -233,6 +233,47 @@ def test_transform_custom_z_scale_changes_only_elevation(
     assert result.z_scale_mode == "explicit"
 
 
+def test_custom_z_scale_needs_no_geographic_source_unit_metadata(tmp_path):
+    source = _montana_geographic_surface()
+    input_xml = write_landxml_surface(
+        source, tmp_path / "input.xml",
+        crs="EPSG:4326", linear_unit="meter")
+    tree = ET.parse(input_xml)
+    tree.getroot().remove(tree.getroot().find("{*}Units"))
+    tree.write(input_xml, encoding="utf-8", xml_declaration=True)
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="EPSG:4326", target_crs="EPSG:2256",
+        z_scale=3.28)
+    transformed = parse_landxml_surface(result.output_path)
+
+    assert transformed.points[1][2] == pytest.approx(328.0)
+    assert result.source_z_unit is None
+    assert result.z_scale == pytest.approx(3.28)
+    assert result.z_scale_mode == "explicit"
+
+
+def test_geographic_source_z_unit_still_drives_automatic_scale(tmp_path):
+    input_xml = write_landxml_surface(
+        _montana_geographic_surface(), tmp_path / "input.xml",
+        crs="EPSG:4326", linear_unit="meter")
+    tree = ET.parse(input_xml)
+    tree.getroot().remove(tree.getroot().find("{*}Units"))
+    tree.write(input_xml, encoding="utf-8", xml_declaration=True)
+
+    result = transform_landxml_surface(
+        input_xml, tmp_path / "out.xml",
+        source_crs="EPSG:4326", target_crs="EPSG:2256",
+        source_z_unit="meter")
+    transformed = parse_landxml_surface(result.output_path)
+
+    assert transformed.points[1][2] == pytest.approx(
+        100.0 / 0.3048)
+    assert result.source_z_unit == "meter"
+    assert result.z_scale_mode == "automatic"
+
+
 @pytest.mark.parametrize("invalid_scale", [0, -1, float("nan"), float("inf")])
 def test_transform_rejects_invalid_custom_z_scale(tmp_path, invalid_scale):
     input_xml = write_landxml_surface(

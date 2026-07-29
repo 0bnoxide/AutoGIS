@@ -1278,7 +1278,8 @@ class TransformLandXMLSurface(object):
             f"{result.surface_name}: {result.point_count} points / "
             f"{result.face_count} faces; {result.source_crs} "
             f"({result.source_unit}) -> {result.target_crs} "
-            f"({result.target_unit}); Z {result.source_z_unit} -> "
+            f"({result.target_unit}); Z "
+            f"{result.source_z_unit or 'unspecified'} -> "
             f"{result.target_unit} x {result.z_scale:.15g} "
             f"({result.z_scale_mode})")
         operation_id = (

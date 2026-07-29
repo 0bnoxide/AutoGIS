@@ -6049,7 +6049,7 @@ def transform_landxml_cmd(input_path, output_path, source_crs, target_crs,
         f"{result.surface_name}: {result.point_count} points / "
         f"{result.face_count} faces; {result.source_crs} ({result.source_unit}) "
         f"-> {result.target_crs} ({result.target_unit}); Z "
-        f"{result.source_z_unit} -> {result.target_unit} x "
+        f"{result.source_z_unit or 'unspecified'} -> {result.target_unit} x "
         f"{result.z_scale:.15g} ({result.z_scale_mode})")
     operation_id = (
         f" [{result.operation_authority}:{result.operation_code}]"

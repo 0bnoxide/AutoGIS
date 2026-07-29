@@ -29,7 +29,7 @@ class LandXMLTransformResult:
     source_crs: str
     target_crs: str
     source_unit: str
-    source_z_unit: str
+    source_z_unit: str | None
     target_unit: str
     operation_name: str
     operation_authority: str | None
@@ -436,24 +436,28 @@ def transform_landxml_surface(
             f"with {_unit_label(inferred_target_unit)} used by "
             f"{target_authority}.")
 
-    effective_source_z_unit = source_z_unit
-    if effective_source_z_unit is None:
-        if source.is_geographic:
-            effective_source_z_unit = declared_unit or source_unit
-            if effective_source_z_unit is None:
-                raise ValueError(
-                    "A geographic LandXML source needs declared <Units>, "
-                    "source_z_unit, or the deprecated source_unit assertion "
-                    "so elevations can be converted safely.")
-        else:
-            effective_source_z_unit = inferred_source_unit
-    # Validates even when a custom multiplier replaces the exact conversion.
-    automatic_z_scale = linear_unit_scale(
-        effective_source_z_unit, inferred_target_unit)
-    effective_z_scale = (
-        float(z_scale) if z_scale is not None else automatic_z_scale
-    )
-    z_scale_mode = "explicit" if z_scale is not None else "automatic"
+    if z_scale is not None:
+        effective_source_z_unit = (
+            inferred_source_unit
+            if source.is_projected else declared_unit or source_unit
+        )
+        effective_z_scale = z_scale
+        z_scale_mode = "explicit"
+    else:
+        effective_source_z_unit = source_z_unit
+        if effective_source_z_unit is None:
+            if source.is_geographic:
+                effective_source_z_unit = declared_unit or source_unit
+                if effective_source_z_unit is None:
+                    raise ValueError(
+                        "A geographic LandXML source needs declared <Units>, "
+                        "source_z_unit, or the deprecated source_unit assertion "
+                        "so elevations can be converted safely.")
+            else:
+                effective_source_z_unit = inferred_source_unit
+        effective_z_scale = linear_unit_scale(
+            effective_source_z_unit, inferred_target_unit)
+        z_scale_mode = "automatic"
 
     from pyproj import network
     network_was_enabled = network.is_network_enabled()
