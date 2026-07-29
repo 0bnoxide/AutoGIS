@@ -27,6 +27,17 @@ jobs:
           cache: pip
       - name: Install (arcpy-free dev extras)
         run: python -m pip install -e ".[dev]" pytest-xdist
+      - name: Resolve Matplotlib cache key
+        id: matplotlib
+        shell: pwsh
+        run: |
+          $version = python -c "from importlib.metadata import version; print(version('matplotlib'))"
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Cache Matplotlib font discovery
+        uses: actions/cache@v6
+        with:
+          path: ~/.matplotlib
+          key: matplotlib-${{ runner.os }}-${{ runner.arch }}-py3.11-${{ steps.matplotlib.outputs.version }}
       - name: Run test suite
         env:
           # repo-root on the path so gui-executor subprocess tests import autogis
