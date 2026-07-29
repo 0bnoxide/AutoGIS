@@ -36,10 +36,11 @@ jobs:
       - name: Cache Matplotlib font discovery
         uses: actions/cache@v6
         with:
-          path: ~/.matplotlib
+          path: ${{ runner.temp }}/matplotlib
           key: matplotlib-${{ runner.os }}-${{ runner.arch }}-py3.11-${{ steps.matplotlib.outputs.version }}
       - name: Run test suite
         env:
           # repo-root on the path so gui-executor subprocess tests import autogis
           PYTHONPATH: ${{ github.workspace }}
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
         run: python -m pytest -q -n auto --durations=20
