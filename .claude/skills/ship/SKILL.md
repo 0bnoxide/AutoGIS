@@ -33,6 +33,16 @@ Take the current branch from "code written" to "draft PR open", with a test gate
 ## Summary
 <one or two lines on what changed and why>
 
+## Failure-mode preflight
+
+| Probe | Result | Evidence |
+|---|---|---|
+| `BOUNDARY_SHAPE` | PASS / FAIL / N/A | <adversarial command/test or N/A reason> |
+| `CONTRACT_REACHABILITY` | PASS / FAIL / N/A | <adversarial command/test or N/A reason> |
+| `IDENTITY_PROVENANCE` | PASS / FAIL / N/A | <adversarial command/test or N/A reason> |
+| `SIDE_EFFECT_SAFETY` | PASS / FAIL / N/A | <adversarial command/test or N/A reason> |
+| `ENVIRONMENT_SEAM` | PASS / FAIL / N/A | <adversarial command/test or N/A reason> |
+
 ## Test plan
 - [ ] `python -m pytest -q` passes
 - [ ] Manually verified via CLI or the .pyt toolbox (if applicable)
@@ -42,6 +52,11 @@ EOF
 )"
    ```
    Fill the Summary from the branch's commits (`git log main..HEAD --oneline`).
+   Classify every failure-mode probe exactly once. Applicable probes require a
+   minimal adversarial command or regression test at the real call-site seam;
+   `N/A` requires a concrete reason. A green full suite alone is not probe
+   evidence. The table may remain incomplete while the PR is a draft, but must
+   be complete before it is marked ready.
 
 6. Report the PR URL. Mention it was opened as a **draft** â€” mark ready with
    `gh pr ready <n>` when satisfied.
