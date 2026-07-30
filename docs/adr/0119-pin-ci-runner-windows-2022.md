@@ -53,6 +53,23 @@ be explicit and must run the full suite before replacing this pin.
 - **Use a self-hosted Windows runner** — rejected because its administration and
   security burden are not justified for this CI gate.
 
+## Amendment (2026-07-30): pin moved to `windows-2025`
+
+The anticipated maintenance case arrived one day after acceptance: from
+~07:00 UTC on 2026-07-29 the `windows-2022` label stopped receiving runners.
+Every job since fails in ~5 seconds with no runner assigned (`runner_id: 0`,
+no logs, empty check-run output) — including the post-merge run of PR #387 on
+`main` and the pytest checks on PRs #389 and #390. The same suite was green on
+`windows-2022` at 06:53 UTC the same day, so this is image availability, not a
+code regression.
+
+The decision's substance is unchanged — the CI job stays on a **pinned, named
+Windows image**, never the floating `windows-latest` alias. Only the pin value
+moves: **`windows-2025`**. A full-suite `workflow_dispatch` validation run on
+`windows-2025` preceded the change landing on any PR branch, satisfying this
+ADR's migration requirement. The Matplotlib render slowness observed on this
+image family remains tracked by issue #388.
+
 ## Related decisions
 
 - [ADR-0110: GitHub Actions CI + arcpy-doc-verifier agent + next-adr preflight](0110-ci-and-agent-tooling-batch.md)

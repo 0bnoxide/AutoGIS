@@ -18,7 +18,10 @@ jobs:
     # arcpy/arcgis stay uninstalled: core/ and adapters/ import without them by
     # invariant, and those extras are Pro-conda-only anyway. gui + real-file
     # tests self-skip (pytest.importorskip("PySide6"), skipif not path.exists()).
-    runs-on: windows-2022
+    # windows-2025, not windows-2022: the 2022 image stopped receiving runners on
+    # 2026-07-29 (jobs fail in ~5s, runner never assigned). Pinned per ADR-0119;
+    # the Matplotlib render slowness on this image is tracked by issue #388.
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
