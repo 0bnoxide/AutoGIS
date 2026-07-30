@@ -13,7 +13,7 @@ idea concurrently.
 
 - Each capability owns one phase and must reach its production gate before the
   next phase starts. Reordering or parallel fast-tracking requires an explicit
-  user decision recorded in the session guide and an ADR when architectural,
+  user decision recorded in the Gate-change log below and an ADR when architectural,
   structural, invariant, or tool-batch scope changes.
 - Start each phase with the smallest useful slice. Do not pre-build branching
   workflow languages, schedulers, notification services, or other speculative
