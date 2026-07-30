@@ -51,8 +51,7 @@ from autogis.runtime.capabilities import TOOLS, requires_arcpy
 
 __all__ = [
     "Decision", "Step", "StepResult",
-    "needs_arcpy_env", "build_argv", "normalize_step_values", "decide",
-    "run_step",
+    "needs_arcpy_env", "build_argv", "decide", "run_step",
 ]
 
 _SEV_ORDER = {"CRITICAL": 0, "ERROR": 1, "WARNING": 2, "INFO": 3}
@@ -187,29 +186,6 @@ def build_argv(path: Sequence[str], values: Mapping[str, object], *,
 
     exe = str(python) if python is not None else sys.executable
     return [exe, "-m", "autogis.adapters.cli", *path, *positional, *options]
-
-
-def normalize_step_values(
-        path: Sequence[str], values: Mapping[str, object]) -> dict[str, object]:
-    """Validate populated values with their Click types and return conversions.
-
-    Input paths deliberately remain strings: starter recipes contain editable
-    placeholder paths, so existence checks belong to execution. Choices,
-    ranges, dates, repeatables, and other populated values still use Click's
-    own converters before a workflow can run.
-    """
-    cmd = _resolve_command(path)
-    params = {p.name: p for p in cmd.params}
-    unknown = set(values) - set(params)
-    if unknown:
-        raise ValueError(
-            f"{' '.join(path)}: unknown parameter(s) {sorted(unknown)}")
-    ctx = click.Context(cmd, info_name=path[-1])
-    return {
-        name: (value if isinstance(params[name].type, click.Path)
-               else params[name].type_cast_value(ctx, value))
-        for name, value in values.items()
-    }
 
 
 def _read_qa_rows(qa_csv: str | Path | None) -> tuple[dict, ...]:
