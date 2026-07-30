@@ -1003,6 +1003,14 @@ steps:
 name: broken
 steps:
   - command: [envmon, validate-rtk-survey]
+    values:
+      csv_path: survey.csv
+      coord_format: bogus
+""",
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, validate-rtk-survey]
 """,
     """version: 1
 name: broken
@@ -1037,6 +1045,31 @@ def test_load_recipe_failure_preserves_current_workflow(
     assert win._step_list.item(0).text() == before_text
     assert win._workflow_name == "gui-workflow"
     assert "Load failed:" in win._status.text()
+
+
+def test_load_recipe_retains_click_normalized_values(
+        qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    recipe = tmp_path / "bbox.yaml"
+    recipe.write_text(
+        """version: 1
+name: bbox
+steps:
+  - command: [envmon, download-dem]
+    values:
+      bbox: "-105 39 -104 40"
+      dry_run: true
+""",
+        encoding="utf-8")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(recipe), "")))
+
+    win = MainWindow()
+    win._on_load_recipe()
+
+    assert win._steps[0].values["bbox"] == (-105.0, 39.0, -104.0, 40.0)
 
 
 def test_save_recipe_disabled_during_active_run(qapp):

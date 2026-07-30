@@ -44,6 +44,7 @@ from . import settings
 from .config_builder_dialog import ConfigBuilderDialog
 from .executor import (
     Decision, Step, StepResult, _SEV_ORDER, build_argv, needs_arcpy_env,
+    normalize_step_values,
 )
 from .forms import FormValidationError, build_step
 from .gw_model_approval_dialog import GWModelApprovalDialog
@@ -863,15 +864,25 @@ class MainWindow(QMainWindow):
         try:
             workflow = recipe_to_workflow(load_recipe(Path(path)))
             forms_by_path = {form.path: form for form in _window_forms()}
+            validated_steps = []
             for step in workflow.steps:
                 if step.command:
                     build_argv(step.command, step.values,
                                fail_on=step.fail_on)
                     if " ".join(step.command) not in UNREACHABLE:
-                        build_step(
+                        normalized = build_step(
                             forms_by_path[step.command], step.values,
                             fail_on=step.fail_on,
                             pause_on_warning=step.pause_on_warning)
+                        step = Step(
+                            command=step.command,
+                            values=normalize_step_values(
+                                step.command, normalized.values),
+                            fail_on=step.fail_on,
+                            pause_on_warning=step.pause_on_warning,
+                            message=step.message)
+                validated_steps.append(step)
+            workflow = Workflow(workflow.name, tuple(validated_steps))
         except Exception as exc:  # noqa: BLE001 - surface parse/map error in-UI
             self._status.setText(f"Load failed: {exc}")
             return
