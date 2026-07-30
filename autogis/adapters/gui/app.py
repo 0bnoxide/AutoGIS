@@ -836,6 +836,11 @@ class MainWindow(QMainWindow):
             b.setEnabled(active)
 
     def _workflow_blocked_reason(self) -> str | None:
+        for step in self._steps:
+            if step.command:
+                reason = UNREACHABLE.get(" ".join(step.command))
+                if reason:
+                    return reason
         if not self._local_python and any(
                 step.command and needs_arcpy_env(step.command)
                 for step in self._steps):

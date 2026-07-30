@@ -30,7 +30,7 @@ import autogis.adapters.gui.runner as runner_mod
 from autogis.adapters.gui import settings as settings_mod
 from autogis.adapters.gui.app import MainWindow, _dialog_kind, _window_forms
 from autogis.adapters.gui.executor import (
-    Decision, StepResult, build_argv, needs_arcpy_env,
+    Decision, Step, StepResult, build_argv, needs_arcpy_env,
 )
 from autogis.adapters.gui.forms import build_step
 from autogis.adapters.gui.introspect import FormField
@@ -970,6 +970,20 @@ def test_shipped_phase5_recipes_reopen_in_gui(
     win._local_python_edit.setText("C:/pro/python.exe")
     win._on_local_python_changed()
     assert win._run_wf_button.isEnabled()
+
+
+def test_redirect_only_workflow_stays_blocked_with_local_python(
+        qapp, tmp_path):
+    win, _ = _win_with_store(
+        tmp_path, local_python="C:/pro/python.exe")
+    win._steps[:] = [Step(command=("envmon", "import-gdb"))]
+
+    win._refresh_step_controls()
+    assert not win._run_wf_button.isEnabled()
+
+    win._on_run_workflow()
+    assert win._status.text() == app_mod.UNREACHABLE["envmon import-gdb"]
+    assert win._runner is None
 
 
 def test_load_recipe_failure_preserves_current_workflow(
