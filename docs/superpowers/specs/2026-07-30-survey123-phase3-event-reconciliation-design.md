@@ -69,8 +69,32 @@ cleanest reporting but two outputs to keep mutually consistent.
 `LIFECYCLE_FORMAT` = `{location}-{YYYYMMDD}-{matrix}[-{qc}]`, plus
 `build_sample_id`, `parse_sample_id`, `strip_qc`, `qc_class`, `QC_SUFFIXES`,
 and `xform_sample_id_calc`. ADR-0113 converged five previously-drifting
-producers onto it. This is the join key for all five sources — Phase 3 must
-not introduce a second key notion.
+producers onto it. Phase 3 must not introduce a second key notion.
+
+**CORRECTION (2026-07-30, Fable review — verified against source).** The key
+is *not* already uniform across the five sources, and an earlier draft of this
+file wrongly implied it was:
+
+- `sampling_plan.py:139-142` builds `f"{site_id}-{loc}-{event_str}-{group_name}"`
+  and carries an explicit comment: *"Non-lifecycle identity: per-analyte-group
+  granularity, deliberately NOT the lifecycle SampleID format —
+  sample_id.parse_sample_id returns None for it."* So `sampling_plan` is the
+  **wrong plan leg** for this join.
+- The lifecycle-key plan producer is `create_sampling_event.py`:
+  `ExpectedSampleRow.sample_id` is built via `build_sample_id`
+  (`create_sampling_event.py:195`, `:214`), and `SamplingEventPlan` exposes
+  `expected_samples` (`:62`).
+- That is also exactly what the COC bridge already consumes:
+  `custody.records_from_plan` reads `plan.expected_samples` and groups by
+  `row.coc_number` (`custody.py:204-206`).
+
+**Consequence:** the plan leg is `SamplingEventPlan.expected_samples`, not
+`sampling_plan.PlannedSample`. Note the roadmap's phrase "sampling plan"
+ambiguously names the non-lifecycle module — see Q9.
+
+Key normalization across the five sources — not the join itself — is where
+"totals balance" lives or dies: lab feeds ship `-DUP`/`-D` spellings, and
+`NODATE` IDs never resolve to a primary (`sample_id.py:121-126`).
 
 ### The arcpy-free constraint is already solved by an established seam pattern
 
@@ -125,7 +149,7 @@ the root so fuzzy results become *suggestions* on the outcome record. Option
 
 | Source | Module | Key types |
 |---|---|---|
-| Plan | `sampling_plan.py` (178 ln) | `PlannedSample`, `BottleCountRow`, `SamplingPlan`, `create_sampling_plan`, `read_well_network_csv` |
+| Plan | `create_sampling_event.py` — **not** `sampling_plan.py`, see correction above | `SamplingEventPlan.expected_samples`, `ExpectedSampleRow` (`.sample_id` via `build_sample_id`, `.coc_number`) |
 | Survey123 | `survey_sync.py` (398 ln, Phase 2) | `SubmissionEnvelope`, `LayerPull`, `plan_layer_envelopes`, `write_envelopes_jsonl`, `write_submissions_csv` |
 | COC | `custody.py` (331 ln, Phase 6) | `CustodyRecord`, `AuditEntry`, `Reconciliation`, `reconcile(record, received_ids)`, `records_from_plan`, `load_store`/`save_store` |
 | Lab | `reconcile_survey123_lab.LabSample`, EDD canonical via `canonical_read.py` | row dicts |
@@ -156,11 +180,13 @@ Other context: `normalize_survey123.py` (146 ln) produces submissions;
 2. **Q2 — Balance statement.** What exactly does "totals balance across all
    five sources" assert, and where is it emitted — a reconciliation summary
    block with per-source counts plus a residual that must be zero?
-3. **Q3 — Fuzzy fix scope.** Fix `reconcile_field_lab`'s auto-consume at the
-   root (affects existing Tool 2.6 callers + tests), or leave Tool 2.6 alone
-   and have Phase 3 use exact-only matching with its own suggestion channel?
-   Root-cause fix is the ponytail-correct instinct, but it is a behavior
-   change to shipped code and may warrant its own issue/PR.
+3. **Q3 — Fuzzy fix scope. RESOLVED in direction (Fable review), confirm on
+   resume.** Phase 3 uses **exact-only** matching; fuzzy becomes a suggestion
+   list computed *after* the set-differences and consuming nothing. That
+   satisfies the roadmap rule without touching Tool 2.6 at all, so Phase 3
+   carries no behavior change to shipped code. Tool 2.6's own auto-consume
+   defect is separated out as its own issue (see §5.1) rather than smuggled
+   into this phase.
 4. **Q4 — Module boundary.** New `reconcile_event.py`, or extend Tool 2.6
    in place? Tool 2.6 is 166 lines; a five-source join plus outcome
    assignment will not fit comfortably without the file doing too much.
@@ -169,6 +195,50 @@ Other context: `normalize_survey123.py` (146 ln) produces submissions;
 6. **Q6 — Dry/inactive locations and attachments.** Which source is
    authoritative for location status, and what counts as an attachment
    exception given Phase 2 carries attachment metadata in the envelope?
+7. **Q7 — COC grain vs the balance claim.** `CustodyRecord` is
+   **per-shipment**, not per-sample: it holds `sample_ids: List[str]`
+   (`custody.py:84-90`) and `reconcile()` is per-record (`custody.py:179-190`).
+   The COC "presence set" for an event must therefore be defined — union of
+   `sample_ids` across the event's COC records — plus rules for a sample
+   appearing on more than one COC, and for deciding which store records belong
+   to the event at all.
+8. **Q8 — Legitimately single-source samples (blocking for the gate).** Some
+   samples correctly exist in only one leg: lab QC (`-MB`, MS/MSD) appears
+   only in the lab feed; a trip blank may be plan+COC but never a field
+   submission. Without an explicit "expected-absent per source" concept the
+   balance residual can never be zero and the exit gate becomes
+   unfalsifiable. Interacts directly with Q1's taxonomy.
+9. **Q9 — Which plan artifact is authoritative.** Follows from the correction
+   in §3: `create_sampling_event.SamplingEventPlan` (lifecycle keys) vs
+   `sampling_plan.SamplingPlan` (non-lifecycle, per-analyte-group). Decide
+   explicitly and state it, because the roadmap's phrase "sampling plan"
+   names the wrong one.
+
+### 5.1 Spun-out defect (not Phase 3 scope)
+
+Fable's review found a **new** defect in Tool 2.6 while fact-checking the
+landmine: `reconcile_field_lab` matches greedily in field-sample input order,
+so an early fuzzy consume can steal a lab record that *exactly* matches a
+later field sample — mispairing A↔L with only a warning, falsely reporting B
+as `field_only`, and leaving L's true owner unmatched
+(`reconcile_survey123_lab.py:84-117`). Same failure family as closed #360 but
+order-driven rather than class-driven; not a duplicate of #360, #391, or #39.
+Fix direction: two-pass — resolve all exact matches across all field samples
+first, then fuzzy over the remainder.
+
+**Filed as issue #395** (2026-07-30) per the project's found-bug-file-an-issue
+rule. Deliberately kept out of Phase 3 so the phase carries no behavior change
+to shipped code.
+
+### 5.2 Implementation shape (Fable's recommendation, not yet approved)
+
+A new file is right — Tool 2.6 is two-source and carries the fuzzy behavior,
+`custody` is COC-only — but the shape should be smaller than a "five-way join
+module": a **presence matrix** (`dict[SampleID, per-source flags]` built from
+five set-builds) plus per-pair attribute checks. `custody.reconcile()` is
+already the per-leg shape, and `_check_pair`'s date/matrix/location checks
+(`reconcile_survey123_lab.py:125-139`) are reusable as logic. Confirm against
+Q1/Q8 before building.
 
 ## 6. Next steps on resume
 
@@ -189,3 +259,11 @@ Other context: `normalize_survey123.py` (146 ln) produces submissions;
 - CI is red repo-wide (issue #392, account Actions billing, ignore until
   2026-08-01) — anything shipped this weekend is locally verified only.
 - No code written. No tests run. Nothing to revert.
+- Design review done by a **Fable**-model advisor agent (Opus advisor was
+  overloaded during the outage). It corrected the plan-leg key error in §3,
+  added Q7–Q9, resolved Q3's direction, and found issue **#395**. Its
+  correction was independently verified against source before acceptance.
+- Brainstorming checklist position: steps 1–2 done (context explored, two
+  clarifying questions answered). **Resume at step 3** — propose 2–3
+  approaches — then design sections, approval, spec rewrite, and only then
+  `writing-plans`.
