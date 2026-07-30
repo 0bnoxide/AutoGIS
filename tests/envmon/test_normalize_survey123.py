@@ -1,7 +1,9 @@
 import csv
 import dataclasses
+import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -247,3 +249,107 @@ def test_route_survey123_json_flag_in_help():
     result = CliRunner().invoke(autogis, ["envmon", "route-survey123", "--help"])
     assert "--format" in result.output
     assert "json" in result.output
+
+
+def test_route_rejects_ambiguous_duplicate_before_partial_insert(
+        tmp_path, monkeypatch):
+    from click.testing import CliRunner
+    from autogis.adapters import cli as cli_mod
+    from autogis.core.envmon import import_to_gdb
+    from autogis.runtime import sessions
+
+    payload = tmp_path / "submission.json"
+    payload.write_text(json.dumps({
+        **_PAYLOAD,
+        "QAFlags": "field_dup_a field_dup_b",
+    }), encoding="utf-8")
+    batch_rows = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def insertRow(self, row):
+            batch_rows.append(row)
+
+    outcomes = []
+    monkeypatch.setattr(cli_mod, "_guard", lambda tool: None)
+    monkeypatch.setattr(
+        sessions, "arcpy_env",
+        lambda: SimpleNamespace(
+            da=SimpleNamespace(InsertCursor=lambda *a: Cursor())))
+    monkeypatch.setattr(
+        import_to_gdb, "append_records_idempotent",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("normalization ERROR reached insertion")))
+    monkeypatch.setattr(
+        import_to_gdb, "finalize_batch",
+        lambda *a, **k: outcomes.append(a[-1]))
+    monkeypatch.setattr(import_to_gdb, "write_qa_to_gdb",
+                        lambda *a, **k: 0)
+
+    result = CliRunner().invoke(
+        cli_mod.autogis,
+        ["envmon", "route-survey123", str(payload),
+         "--site", "H281", "--gdb", str(tmp_path / "test.gdb"),
+         "--format", "json"],
+    )
+
+    assert result.exit_code != 0
+    assert batch_rows
+    assert outcomes == ["BLOCKED_BY_QA"]
+
+
+def test_route_late_insert_error_finalizes_blocked(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+    from autogis.adapters import cli as cli_mod
+    from autogis.core.envmon import import_to_gdb
+    from autogis.runtime import sessions
+
+    payload = tmp_path / "submission.json"
+    payload.write_text(json.dumps(_PAYLOAD), encoding="utf-8")
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def insertRow(self, row):
+            pass
+
+    outcomes = []
+    monkeypatch.setattr(cli_mod, "_guard", lambda tool: None)
+    monkeypatch.setattr(
+        sessions, "arcpy_env",
+        lambda: SimpleNamespace(
+            da=SimpleNamespace(InsertCursor=lambda *a: Cursor())))
+
+    def append_with_late_error(gdb, table_name, records, qa, batch_id):
+        if table_name == "Env_Samples":
+            qa.add("ERROR", "duplicate_key_skipped",
+                   "duplicate QC sample was skipped")
+            return 0, 1
+        return len(records), 0
+
+    monkeypatch.setattr(import_to_gdb, "append_records_idempotent",
+                        append_with_late_error)
+    monkeypatch.setattr(
+        import_to_gdb, "finalize_batch",
+        lambda *a, **k: outcomes.append(a[-1]))
+    monkeypatch.setattr(import_to_gdb, "write_qa_to_gdb",
+                        lambda *a, **k: 0)
+
+    result = CliRunner().invoke(
+        cli_mod.autogis,
+        ["envmon", "route-survey123", str(payload),
+         "--site", "H281", "--gdb", str(tmp_path / "test.gdb"),
+         "--format", "json"],
+    )
+
+    assert result.exit_code != 0
+    assert outcomes == ["BLOCKED_BY_QA"]

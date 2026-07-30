@@ -9,6 +9,8 @@ import json
 @dataclass
 class SurveyPointRaw:
     table_name: ClassVar[str] = "SurveyPoints_Raw"
+    site_id: str
+    batch_id: str
     point_id: str
     northing: Optional[float]
     easting: Optional[float]
@@ -33,6 +35,8 @@ class SurveyPointRaw:
 @dataclass
 class SurveyPointQA:
     table_name: ClassVar[str] = "SurveyPoints_QA"
+    site_id: str
+    batch_id: str
     point_id: str
     qa_status: str
     qa_flags: list = field(default_factory=list)
