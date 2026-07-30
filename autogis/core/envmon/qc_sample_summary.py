@@ -9,6 +9,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill
 
 from ..common.config import ND_QUALIFIERS
+from .report_input import normalize_report_rows
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
 from .sample_id import QC_SUFFIXES as _SUFFIX_MAP
 
@@ -80,7 +81,7 @@ def classify_qc_rows(
     sample_id_field: str = "SampleID",
 ) -> list:
     records = []
-    for r in result_rows:
+    for r in normalize_report_rows(result_rows):
         sid = r.get(sample_id_field, "")
         declared = r.get(qc_type_field, "")
         qc_type = _infer_qc_type(sid, declared)

@@ -4753,12 +4753,15 @@ def build_max_result_dataset_cmd(results_path, sl_path, analytes, wells,
     except ConfigError as exc:
         raise click.ClickException(str(exc))
     qa = QACollector()
-    records = build_max_result_dataset(
-        rows, screening_levels=sl,
-        analytes=[a.strip() for a in analytes.split(",")] if analytes else None,
-        wells=[w.strip() for w in wells.split(",")] if wells else None,
-        date_from=date_from, date_to=date_to, include_nd=include_nd, qa=qa,
-    )
+    try:
+        records = build_max_result_dataset(
+            rows, screening_levels=sl,
+            analytes=[a.strip() for a in analytes.split(",")] if analytes else None,
+            wells=[w.strip() for w in wells.split(",")] if wells else None,
+            date_from=date_from, date_to=date_to, include_nd=include_nd, qa=qa,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
     write_max_result_csv(records, Path(out))
     exceed = sum(1 for r in records if r.has_exceedance)
     click.echo(f"Records: {len(records)}  Exceedances: {exceed}  Output: {out}")
@@ -4811,8 +4814,12 @@ def build_compliance_table_cmd(results_path, sl_path, analytes, date_from, out, 
     except ConfigError as exc:
         raise click.ClickException(str(exc))
     analyte_list = [a.strip() for a in analytes.split(",")] if analytes else None
-    result = build_compliance_summary(rows, screening_levels=sl,
-                                       analytes=analyte_list, date_from=date_from)
+    try:
+        result = build_compliance_summary(rows, screening_levels=sl,
+                                          analytes=analyte_list,
+                                          date_from=date_from)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
     write_compliance_workbook(result, Path(out))
     click.echo(f"Wells: {result.well_count}  Analytes: {result.analyte_count}  "
                f"With exceedances: {result.locations_with_exceedances}  Output: {out}")
@@ -5167,9 +5174,12 @@ def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
         raise click.ClickException(str(exc))
     date_range = (date_from, date_to) if (date_from and date_to) else None
     qa = QACollector()
-    records = build_exceedance_event(
-        rows, sl, rule=rule, event_date=event_date,
-        date_range=date_range, qa=qa)
+    try:
+        records = build_exceedance_event(
+            rows, sl, rule=rule, event_date=event_date,
+            date_range=date_range, qa=qa)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
     write_exceedance_event_csv(records, Path(out))
     exceed = sum(1 for r in records if r.has_exceedance)
     click.echo(f"Records: {len(records)}  Exceedances: {exceed}  Output: {out}")

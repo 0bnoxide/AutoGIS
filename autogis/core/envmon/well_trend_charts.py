@@ -20,6 +20,8 @@ import openpyxl
 from openpyxl.chart import LineChart, Reference
 from openpyxl.utils import get_column_letter
 
+from .report_input import normalize_report_rows
+
 # Each series block occupies this many rows so stacked charts never overlap.
 _BLOCK_ROWS = 20
 
@@ -55,12 +57,12 @@ def load_history_csv(path: Path) -> list[TrendSeries]:
     groups: dict[tuple[str, str], TrendSeries] = {}
 
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
+        for row in normalize_report_rows(list(csv.DictReader(fh))):
             loc = row.get("LocationID", "").strip()
             analyte = row.get("AnalyteName", "").strip()
-            raw_val = row.get("ResultValue", "").strip()
+            raw_val = str(row.get("ResultValue", "")).strip()
             sample_date = row.get("SampleDate", "").strip()
-            units = row.get("ReportedUnits", "").strip()
+            units = str(row.get("ReportedUnits", "")).strip()
             screening_raw = row.get("ScreeningLevel", "").strip()
 
             if not raw_val or raw_val.upper() in ("ND", "NONE", "N/A"):
