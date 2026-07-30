@@ -13,6 +13,7 @@ that the layout looks right.
 """
 import os
 import threading
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -889,6 +890,106 @@ def test_save_recipe_writes_valid_reloadable_recipe(qapp, tmp_path, monkeypatch)
     assert recipe_to_workflow(data).steps == tuple(win._steps)   # round-trips to the built steps
 
 
+def test_load_recipe_restores_named_workflow_and_save_round_trips(
+        qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    from autogis.adapters.recipe_workflow import recipe_to_workflow
+    from autogis.core.common.workflow_recipe import load_recipe, save_recipe
+
+    recipe = {
+        "version": 1,
+        "name": "Monitoring event",
+        "steps": [
+            {
+                "command": ["envmon", "validate-rtk-survey"],
+                "values": {"csv_path": "rtk.csv"},
+                "pause_on_warning": True,
+            },
+            {"command": None, "message": "Review the generated layers."},
+        ],
+    }
+    source = save_recipe(recipe, tmp_path / "source.yaml")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(source), "")))
+
+    win = MainWindow()
+    win._on_load_recipe()
+
+    assert win._workflow_name == recipe["name"]
+    assert tuple(win._steps) == recipe_to_workflow(recipe).steps
+    assert win._step_list.count() == 2
+    assert "validate-rtk-survey" in win._step_list.item(0).text()
+    assert "Review the generated layers." in win._step_list.item(1).text()
+    assert win._run_wf_button.isEnabled()
+
+    saved = tmp_path / "saved.yaml"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName",
+        staticmethod(lambda *a, **k: (str(saved), "")))
+    win._on_save_recipe()
+    assert load_recipe(saved) == recipe
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["monitoring_event_processing.yaml", "rtk_to_cad.yaml"],
+)
+def test_shipped_phase5_recipes_reopen_in_gui(
+        qapp, monkeypatch, filename):
+    from PySide6.QtWidgets import QFileDialog
+
+    import autogis
+    from autogis.core.common.workflow_recipe import load_recipe
+
+    path = (
+        Path(autogis.__file__).resolve().parent
+        / "config" / "recipes" / filename
+    )
+    expected = load_recipe(path)
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(path), "")))
+
+    win = MainWindow()
+    win._on_load_recipe()
+
+    assert win._workflow_name == expected["name"]
+    assert len(win._steps) == len(expected["steps"])
+    assert win._step_list.count() == len(expected["steps"])
+    assert win._run_wf_button.isEnabled()
+    assert any(
+        win._step_list.item(i).text().startswith("Review checkpoint")
+        for i in range(win._step_list.count())
+    )
+
+
+def test_load_recipe_failure_preserves_current_workflow(
+        qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    win = MainWindow()
+    win._command_box.setCurrentText(
+        win._forms["envmon validate-rtk-survey"].label)
+    win._field_widgets["csv_path"].setText("existing.csv")
+    win._on_add_step()
+    before_steps = list(win._steps)
+    before_text = win._step_list.item(0).text()
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("name: broken\nsteps: []\n", encoding="utf-8")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(bad), "")))
+    win._on_load_recipe()
+
+    assert win._steps == before_steps
+    assert win._step_list.item(0).text() == before_text
+    assert win._workflow_name == "gui-workflow"
+    assert "Load failed:" in win._status.text()
+
+
 def test_save_recipe_disabled_during_active_run(qapp):
     """Save must be disabled while a run is active/paused (like the other step
     controls), not merely no-op when clicked. Codex P2."""
@@ -897,10 +998,13 @@ def test_save_recipe_disabled_during_active_run(qapp):
     win._field_widgets["csv_path"].setText("rtk.csv")
     win._on_add_step()
     assert win._save_button.isEnabled()
+    assert win._load_button.isEnabled()
     win._set_authoring_enabled(False)          # a run starts
     assert not win._save_button.isEnabled()
+    assert not win._load_button.isEnabled()
     win._set_authoring_enabled(True)           # run finished, steps remain
     assert win._save_button.isEnabled()
+    assert win._load_button.isEnabled()
 
 
 def test_save_recipe_noop_when_dialog_cancelled(qapp, tmp_path, monkeypatch):

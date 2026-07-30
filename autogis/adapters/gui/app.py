@@ -3,8 +3,9 @@
 Pick a command from ``introspect_cli()``, fill its form, and either run it
 (single **Run**) or add it to a multi-step **workflow** the ``WorkflowRunner``
 drives end to end -- per-step QA, pause-on-warning, HALT, and Cancel (the
-workflow builder, ADR-0063). A single Run is just a 1-step workflow through
-the same advance-until-terminal loop. Headless commands run under
+workflow builder, ADR-0063). Workflows can be saved to and reopened from the
+Phase-5 recipe format. A single Run is just a 1-step workflow through the same
+advance-until-terminal loop. Headless commands run under
 ``sys.executable``; LOCAL (arcpy) tools run under a user-set ``local_python``
 (a cloned arcgispro-py3 ``python.exe``, persisted via ``settings.py`` --
 ADR-0062), with the single-Run button gated until one is set, and class-1
@@ -248,6 +249,7 @@ class MainWindow(QMainWindow):
         self._job_root: Path | None = None
         self._runner: WorkflowRunner | None = None
         self._steps: list[Step] = []
+        self._workflow_name = "gui-workflow"
         self._run_is_workflow = False  # True during Run workflow; marks list rows
 
         central = QWidget()
@@ -348,6 +350,8 @@ class MainWindow(QMainWindow):
         self._run_wf_button.clicked.connect(self._on_run_workflow)
         self._clear_button = QPushButton("Clear")
         self._clear_button.clicked.connect(self._on_clear_steps)
+        self._load_button = QPushButton("Load recipe…")
+        self._load_button.clicked.connect(self._on_load_recipe)
         self._save_button = QPushButton("Save recipe…")
         self._save_button.clicked.connect(self._on_save_recipe)
         self._cancel_button = QPushButton("Cancel")
@@ -355,10 +359,15 @@ class MainWindow(QMainWindow):
         self._resume_button = QPushButton("Resume")
         self._resume_button.clicked.connect(self._on_resume)
         for _b in (self._remove_button, self._up_button, self._down_button,
-                   self._run_wf_button, self._clear_button, self._save_button,
+                   self._run_wf_button, self._clear_button,
                    self._cancel_button, self._resume_button):
             wf_row.addWidget(_b)
         steps_layout.addLayout(wf_row)
+        recipe_row = QHBoxLayout()
+        recipe_row.addWidget(self._load_button)
+        recipe_row.addWidget(self._save_button)
+        recipe_row.addStretch()
+        steps_layout.addLayout(recipe_row)
         # -----------------------------------------------------------------
 
         results_container = QWidget()
@@ -806,8 +815,10 @@ class MainWindow(QMainWindow):
         if enabled:
             self._refresh_step_controls()
         else:
-            for b in (self._run_wf_button, self._clear_button, self._save_button,
-                      self._remove_button, self._up_button, self._down_button):
+            for b in (self._run_wf_button, self._clear_button,
+                      self._load_button, self._save_button,
+                      self._remove_button, self._up_button,
+                      self._down_button):
                 b.setEnabled(False)
 
     def _refresh_step_controls(self) -> None:
@@ -816,14 +827,37 @@ class MainWindow(QMainWindow):
         self._run_wf_button.setEnabled(active)
         self._clear_button.setEnabled(active)
         self._save_button.setEnabled(active)
+        self._load_button.setEnabled(self._runner is None)
         for b in (self._remove_button, self._up_button, self._down_button):
             b.setEnabled(active)
 
+    def _on_load_recipe(self) -> None:
+        """Replace the current step list with a validated workflow recipe."""
+        if self._runner is not None:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load workflow recipe", "",
+            "Workflow recipe (*.yaml *.yml *.json)")
+        if not path:
+            return
+        from autogis.adapters.recipe_workflow import recipe_to_workflow
+        from autogis.core.common.workflow_recipe import load_recipe
+        try:
+            workflow = recipe_to_workflow(load_recipe(Path(path)))
+        except Exception as exc:  # noqa: BLE001 - surface parse/map error in-UI
+            self._status.setText(f"Load failed: {exc}")
+            return
+        self._workflow_name = workflow.name
+        self._steps[:] = workflow.steps
+        self._step_list.clear()
+        for step in self._steps:
+            self._step_list.addItem(self._step_row_text(step))
+        self._refresh_step_controls()
+        self._status.setText(
+            f"Loaded recipe: {workflow.name} ({len(workflow.steps)} steps)")
+
     def _on_save_recipe(self) -> None:
-        """Serialize the built workflow to a reusable recipe YAML. Load is
-        deferred to the GUI workstream (it needs command->form reverse-mapping
-        and a UI representation for review checkpoints); the saved file can be
-        validated/run headlessly today via `envmon validate-recipe`/`run-recipe`."""
+        """Serialize the built or loaded workflow to a reusable recipe YAML."""
         if self._runner is not None or not self._steps:
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -833,7 +867,8 @@ class MainWindow(QMainWindow):
         from autogis.adapters.recipe_workflow import workflow_to_recipe
         from autogis.core.common.workflow_recipe import save_recipe
         try:
-            recipe = workflow_to_recipe(Workflow("gui-workflow", tuple(self._steps)))
+            recipe = workflow_to_recipe(
+                Workflow(self._workflow_name, tuple(self._steps)))
             save_recipe(recipe, Path(path))
         except Exception as exc:  # noqa: BLE001 - surface any save error in-UI
             self._status.setText(f"Save failed: {exc}")
@@ -846,6 +881,16 @@ class MainWindow(QMainWindow):
                      if isinstance(v, str) and v.strip()), "")
         hint = f" ({hint})" if hint else ""
         return f"{form_label}{hint}{'  [pause-on-warn]' if pause else ''}"
+
+    def _step_row_text(self, step: Step) -> str:
+        """Render command and review-checkpoint recipe steps in the list."""
+        if step.command is None:
+            return (
+                f"Review checkpoint ({step.message})"
+                if step.message else "Review checkpoint"
+            )
+        return self._step_summary(
+            " ".join(step.command), step.values, step.pause_on_warning)
 
     def _on_add_step(self) -> None:
         if self._runner is not None:
@@ -861,9 +906,10 @@ class MainWindow(QMainWindow):
         except FormValidationError as exc:
             self._status.setText(f"Fix before adding: {exc}")
             return
+        if not self._steps:
+            self._workflow_name = "gui-workflow"
         self._steps.append(step)
-        self._step_list.addItem(
-            self._step_summary(form.label, values, step.pause_on_warning))
+        self._step_list.addItem(self._step_row_text(step))
         self._refresh_step_controls()
 
     def _on_remove_step(self) -> None:
@@ -872,6 +918,8 @@ class MainWindow(QMainWindow):
             return
         del self._steps[i]
         self._step_list.takeItem(i)
+        if not self._steps:
+            self._workflow_name = "gui-workflow"
         self._refresh_step_controls()
 
     def _move_step(self, delta: int) -> None:
@@ -887,6 +935,7 @@ class MainWindow(QMainWindow):
         if self._runner is not None:
             return
         self._steps.clear()
+        self._workflow_name = "gui-workflow"
         self._step_list.clear()
         self._refresh_step_controls()
 
@@ -897,7 +946,8 @@ class MainWindow(QMainWindow):
         for i in range(self._step_list.count()):   # clear any prior-run glyphs
             item = self._step_list.item(i)
             item.setText(item.text().lstrip("✓⏸✗ "))
-        self._start_run(tuple(self._steps), "gui-workflow")  # sets Cancel/Resume
+        self._start_run(
+            tuple(self._steps), self._workflow_name)  # sets Cancel/Resume
 
     def _on_cancel(self) -> None:
         if self._runner is None:

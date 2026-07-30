@@ -99,6 +99,10 @@ output-binding DSL until a demonstrated workflow needs them.
 **Production gate:** monitoring-event processing and RTK-to-CAD recipes can be
 saved, reopened, validated, and repeated deterministically.
 
+**Status:** Gate met 2026-07-30. The GUI now saves and reopens both shipped
+linear recipes through the same validated mapping used by headless
+`validate-recipe` / `run-recipe`.
+
 ## Phase 6 — Electronic chain-of-custody lifecycle
 
 Extend the existing COC draft through generated, released, laboratory-received,
@@ -182,16 +186,19 @@ Moved here from `CLAUDE.md` on 2026-07-29; record each new gate change here.
   parallel with the still-open Phase 4 under the standing "continue roadmap
   development" directive rather than the sequential default (ADR-0103;
   agent-decision log 2026-07-22) and shipped in two slices (ADR-0103/0104).
-  The monitoring-event/RTK-to-CAD example recipes now ship
+  The monitoring-event/RTK-to-CAD example recipes shipped
   (`autogis/config/recipes/`) and the GUI gained recipe **save**
-  (`app.py:_on_save_recipe`); recipe **load** in the GUI is the one piece
-  still missing (validate/run today only via the headless
-  `envmon validate-recipe`/`run-recipe` CLI), so the Phase 5 gate is **not
-  yet met**.
+  (`app.py:_on_save_recipe`); at that point recipe **load** in the GUI was the
+  one missing gate item.
 - 2026-07-23 — Phase 6 shipped (ADR-0107; `.pyt`/CLI run-history logging
   deferred, gate items 3 & 6); Phase 7 slice 1 shipped (ADR-0108,
   historical-events acceptance leg owner-gated — "acceptance pending");
   Phase 8 slice 1 shipped (ADR-0109, validator leg owner-gated).
 - 2026-07-24 — Phase 9 slice 1 shipped (ADR-0111); its live-sandbox gate run
   stays owner-gated (issue #307).
+- 2026-07-30 — Phase 5 gate met (owner-directed closeout). GUI recipe load now
+  reopens the named monitoring-event and RTK-to-CAD workflows through the
+  existing validated `load_recipe()` / `recipe_to_workflow()` seam; both
+  shipped recipes have offscreen reopen coverage and preserve deterministic
+  load/save behavior.
 - Phase 10 (portfolio digest) has not started — no ADR yet.
