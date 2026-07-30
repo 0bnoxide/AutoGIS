@@ -43,17 +43,10 @@ non-existent npm package and was removed. The persistent index lives at
    not indexed — the indexer scans Python only, so a docs-only change won't move the
    node count.)
 
-Use the `/graph` skill to query the index. Key tools:
-
-| Question type | Tool |
-|---|---|
-| Find a symbol / module / concept | `search_graph` |
-| Find code by keyword or pattern | `search_code` |
-| How does A call / depend on B? | `trace_path` |
-| Layer / module overview | `get_architecture` |
-| Fetch a specific snippet | `get_code_snippet` |
-
-Fall back to Grep / Glob / Read / the Explore subagent when tools are absent
+Use the `/graph` skill to query the index (`search_graph` / `search_code` /
+`trace_path` / `get_architecture` / `get_code_snippet` — the skill maps
+question types to tools). Fall back to Grep / Glob / Read / the Explore
+subagent when tools are absent
 (web/cloud sessions) or when the index hasn't caught a very recent change.
 
 ---
@@ -121,19 +114,14 @@ explicitly re-opening it first:
   `AIDraftFigureSpec`, `AIMapReviewChecklist` — deferred pending LLM seam design
   (`docs/superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md`).
   Binding until the user says otherwise — not a backlog to pick from when idle.
-- **Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED:** the
-  required architecture review landed as **ADR-0085 (Accepted 2026-07-16)** and
-  both slices merged the same day — slice 1 (TIN/IDW pipeline, GW_ModelRun
-  registry, plume clip; PR #240) and slice 2 (EBK, uncertainty raster,
-  concentration surface, nondetect policy; PR #241, **ADR-0086 Accepted
-  2026-07-24** — user sign-off). All 3 tools exist
+- **Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED:**
+  ADR-0085 (Accepted 2026-07-16) + ADR-0086 (Accepted 2026-07-24, user
+  sign-off); all 3 tools shipped via PRs #240/#241
   (RunFieldToGroundwaterModelPipeline, BuildGroundwaterSurfaceModel,
   BuildAnalyticalConcentrationSurface). **Residual: live-Pro EBK/GA acceptance
   run is pending owner QA** — workflow + synthetic data in
-  `docs/qa/geostat-live-pro-qa.md`. Do not re-freeze this group; the
-  2026-07-15 handoff (`docs/HANDOFF-2026-07-15-geostat.md`) describes the
-  pre-acceptance state and is historical. The other 6 tools originally
-  reviewed as conditional shipped earlier — see issue #167 and ADR-0061.
+  `docs/qa/geostat-live-pro-qa.md`. Do not re-freeze this group. The other 6
+  conditional tools shipped earlier — see issue #167 and ADR-0061.
 
 Other roadmap batches have been quietly fast-tracked before without a formal gate
 decision — treat "deferred"/"blocked" as binding until the user says otherwise, and
@@ -151,30 +139,13 @@ capability owns one production phase and must meet its exit gate before the next
 phase starts. Do not reorder or parallel fast-track phases without an explicit
 user decision. This roadmap does not reopen any deferred group above.
 
-Gate changes (record each here):
-
-- 2026-07-19 — Phase 1 gate's "Pro 3.5 + current release" leg amended to
-  "currently installed Pro release" (user decision, ADR-0091); 3.5-floor
-  compliance stays an authoring-time ADR-0077 duty.
-- 2026-07-20 — Phase 2 shipped (ADR-0093, owner sign-off).
-- 2026-07-22 — Phase 3 first slice shipped (ADR-0102); Phase 4 shipped
-  (ADR-0105, owner sign-off). Phase 5 (saved workflow recipes) started in
-  parallel with the still-open Phase 4 under the standing "continue roadmap
-  development" directive rather than the sequential default (ADR-0103;
-  agent-decision log 2026-07-22) and shipped in two slices (ADR-0103/0104).
-  The monitoring-event/RTK-to-CAD example recipes now ship
-  (`autogis/config/recipes/`) and the GUI gained recipe **save**
-  (`app.py:_on_save_recipe`); recipe **load** in the GUI is the one piece
-  still missing (validate/run today only via the headless
-  `envmon validate-recipe`/`run-recipe` CLI), so the Phase 5 gate is **not
-  yet met**.
-- 2026-07-23 — Phase 6 shipped (ADR-0107; `.pyt`/CLI run-history logging
-  deferred, gate items 3 & 6); Phase 7 slice 1 shipped (ADR-0108,
-  historical-events acceptance leg owner-gated — "acceptance pending");
-  Phase 8 slice 1 shipped (ADR-0109, validator leg owner-gated).
-- 2026-07-24 — Phase 9 slice 1 shipped (ADR-0111); its live-sandbox gate run
-  stays owner-gated (issue #307).
-- Phase 10 (portfolio digest) has not started — no ADR yet.
+Gate changes are recorded in the roadmap doc's **Gate-change log** (moved from
+this file 2026-07-29 — record each new one there). Current state: Phases 1-4
+and 6-9 (slice 1) shipped (ADR-0091 through ADR-0111); **Phase 5 gate NOT yet
+met** — GUI recipe *load* is still missing (save shipped; validate/run are
+headless-CLI only); Phase 6 `.pyt`/CLI run-history logging deferred (gate
+items 3 & 6); Phases 7/8/9 have owner-gated acceptance legs (Phase 9 = issue
+#307); Phase 10 not started — no ADR yet.
 
 ## Survey123 optional add-on roadmap
 
@@ -187,20 +158,12 @@ the core production-roadmap phases above. Publishing the plan does not by
 itself start implementation; phase starts and fast-tracking remain explicit
 user decisions.
 
-Gate changes: 2026-07-26 — Phase 0 slice A (lifecycle SampleID contract)
-shipped via ADR-0113 (PR #359, owner-merged); envelope leg deliberately
-deferred to Phase 2 (first consumer). An explicit owner decision, not a
-default fast-track — the remaining Phase 0 scope and Phases 1-7 each get
-their own dated entry here as they ship. 2026-07-25 — Phase 2 (incremental
-submission sync) started by explicit user direction; slice 1 implemented
-(ADR-0116: canonical envelope + `envmon sync-survey123` + `survey123`
-extra), live non-production gate legs owner-gated.
-
-Gate changes: 2026-07-26 — Phase 1 (form validation and schema drift) shipped
-via ADR-0115 (PR #364): `validate-survey-form` and `diff-survey-schema`, both
-headless with no portal I/O. Started on an explicit user instruction, not by
-the roadmap's own momentum. (Phase 2 was separately user-directed and has its
-own entry above.)
+Gate changes are recorded in the roadmap doc's **Gate-change log** (moved from
+this file 2026-07-29 — record each new one there). Current state: Phase 0
+slice A (ADR-0113), Phase 1 (ADR-0115), and Phase 2 slice 1 (ADR-0116)
+shipped — each started by explicit owner decision, not roadmap momentum;
+Phase 0's envelope leg is deliberately deferred to Phase 2; live and
+non-production gate legs remain owner-gated.
 
 ## Decision records
 

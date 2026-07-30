@@ -168,3 +168,30 @@ The accepted [Survey123 optional add-on roadmap](survey123-add-on-roadmap.md)
 defines its own sequential phases and milestones for opt-in live Survey123
 integration (ADR-0112). It does not delay, reorder, or satisfy Phases 1–10
 above, and accepting its planning direction does not start implementation.
+
+## Gate-change log
+
+Moved here from `CLAUDE.md` on 2026-07-29; record each new gate change here.
+
+- 2026-07-19 — Phase 1 gate's "Pro 3.5 + current release" leg amended to
+  "currently installed Pro release" (user decision, ADR-0091); 3.5-floor
+  compliance stays an authoring-time ADR-0077 duty.
+- 2026-07-20 — Phase 2 shipped (ADR-0093, owner sign-off).
+- 2026-07-22 — Phase 3 first slice shipped (ADR-0102); Phase 4 shipped
+  (ADR-0105, owner sign-off). Phase 5 (saved workflow recipes) started in
+  parallel with the still-open Phase 4 under the standing "continue roadmap
+  development" directive rather than the sequential default (ADR-0103;
+  agent-decision log 2026-07-22) and shipped in two slices (ADR-0103/0104).
+  The monitoring-event/RTK-to-CAD example recipes now ship
+  (`autogis/config/recipes/`) and the GUI gained recipe **save**
+  (`app.py:_on_save_recipe`); recipe **load** in the GUI is the one piece
+  still missing (validate/run today only via the headless
+  `envmon validate-recipe`/`run-recipe` CLI), so the Phase 5 gate is **not
+  yet met**.
+- 2026-07-23 — Phase 6 shipped (ADR-0107; `.pyt`/CLI run-history logging
+  deferred, gate items 3 & 6); Phase 7 slice 1 shipped (ADR-0108,
+  historical-events acceptance leg owner-gated — "acceptance pending");
+  Phase 8 slice 1 shipped (ADR-0109, validator leg owner-gated).
+- 2026-07-24 — Phase 9 slice 1 shipped (ADR-0111); its live-sandbox gate run
+  stays owner-gated (issue #307).
+- Phase 10 (portfolio digest) has not started — no ADR yet.

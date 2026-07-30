@@ -241,3 +241,22 @@ work without turning AutoGIS into a hosting, scheduling, or messaging platform.
 - Replacing Survey123 Connect, ArcGIS Online administration, or professional
   field/laboratory review.
 - Starting implementation merely because this planning roadmap is accepted.
+
+## Gate-change log
+
+Moved here from `CLAUDE.md` on 2026-07-29; record each new gate change here.
+
+- 2026-07-26 — Phase 0 slice A (lifecycle SampleID contract) shipped via
+  ADR-0113 (PR #359, owner-merged); envelope leg deliberately deferred to
+  Phase 2 (first consumer). An explicit owner decision, not a default
+  fast-track — the remaining Phase 0 scope and Phases 1-7 each get their own
+  dated entry here as they ship.
+- 2026-07-25 — Phase 2 (incremental submission sync) started by explicit user
+  direction; slice 1 implemented (ADR-0116: canonical envelope +
+  `envmon sync-survey123` + `survey123` extra), live non-production gate legs
+  owner-gated.
+- 2026-07-26 — Phase 1 (form validation and schema drift) shipped via
+  ADR-0115 (PR #364): `validate-survey-form` and `diff-survey-schema`, both
+  headless with no portal I/O. Started on an explicit user instruction, not by
+  the roadmap's own momentum. (Phase 2 was separately user-directed and has
+  its own entry above.)
