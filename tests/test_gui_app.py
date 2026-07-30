@@ -999,6 +999,20 @@ steps:
   - command: [envmon, validate-rtk-survey]
     values: {renamed_path: survey.csv}
 """,
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, validate-rtk-survey]
+""",
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, reconcile-locations]
+    values:
+      site_config: site.yaml
+      workbook: monitoring.xlsx
+      profile_path: parser.yaml
+""",
 ])
 def test_load_recipe_failure_preserves_current_workflow(
         qapp, tmp_path, monkeypatch, body):

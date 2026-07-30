@@ -862,10 +862,16 @@ class MainWindow(QMainWindow):
         from autogis.core.common.workflow_recipe import load_recipe
         try:
             workflow = recipe_to_workflow(load_recipe(Path(path)))
+            forms_by_path = {form.path: form for form in _window_forms()}
             for step in workflow.steps:
                 if step.command:
                     build_argv(step.command, step.values,
                                fail_on=step.fail_on)
+                    if " ".join(step.command) not in UNREACHABLE:
+                        build_step(
+                            forms_by_path[step.command], step.values,
+                            fail_on=step.fail_on,
+                            pause_on_warning=step.pause_on_warning)
         except Exception as exc:  # noqa: BLE001 - surface parse/map error in-UI
             self._status.setText(f"Load failed: {exc}")
             return
