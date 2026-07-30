@@ -104,6 +104,22 @@ subagent when tools are absent
   file it. Otherwise, do **not** leave a discovered bug recorded only in a
   decision log, PR comment, memory, or the collab channel.
 
+## Pull request review gate
+
+- Before a behavioral PR is marked ready, its description must classify each
+  stable failure-mode probe from `docs/pr-review-failure-mode-audit.md` exactly
+  once as `PASS`, `FAIL`, or `N/A`: `BOUNDARY_SHAPE`,
+  `CONTRACT_REACHABILITY`, `IDENTITY_PROVENANCE`, `SIDE_EFFECT_SAFETY`, and
+  `ENVIRONMENT_SEAM`. Each applicable probe needs a minimal adversarial command
+  or regression test at the real call-site seam; `N/A` needs a reason. A green
+  full suite alone is not probe evidence. Draft PRs may leave the table
+  incomplete while work is in progress.
+- Before merge, run the independent `pr-reviewer` against the exact final head.
+  The reviewer must inspect the diff and changed files before comparing its
+  conclusions with the author's preflight, publish its own five-probe evidence
+  matrix and verdict to the PR, and re-review if the head changes. Resolve every
+  `FAIL` before merge.
+
 ## Deferred tool groups — phase-gate status
 
 Deferred groups are **out of scope until a deliberate phase-gate decision reopens

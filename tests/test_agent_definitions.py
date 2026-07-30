@@ -17,6 +17,7 @@ import pytest
 import yaml
 
 AGENTS_DIR = Path(__file__).resolve().parent.parent / ".claude" / "agents"
+REPO_ROOT = AGENTS_DIR.parent.parent
 DELIM = "---\n"
 PR_REVIEW_PROBE_IDS = (
     "BOUNDARY_SHAPE",
@@ -94,3 +95,25 @@ def test_pr_reviewer_requires_recurring_failure_mode_evidence() -> None:
     output_contract = body.split("## Output", 1)[1]
     assert "PASS / FAIL / N/A" in output_contract
     assert "evidence" in output_contract.lower()
+    assert "exact reviewed head SHA" in output_contract
+    assert "form your own probe classifications" in body
+    assert "author-supplied failure-mode preflight" in body
+
+
+def test_author_preflight_and_merge_gate_use_the_same_probes() -> None:
+    """Shift the review probes left without weakening independent review."""
+    ship_text = (REPO_ROOT / ".claude" / "skills" / "ship" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    guide_text = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+
+    assert "## Failure-mode preflight" in ship_text
+    assert "## Pull request review gate" in guide_text
+    for probe_id in PR_REVIEW_PROBE_IDS:
+        assert ship_text.count(f"`{probe_id}`") == 1
+        assert guide_text.count(f"`{probe_id}`") == 1
+
+    assert "PASS / FAIL / N/A" in ship_text
+    assert "real call-site seam" in ship_text
+    assert "exact final head" in guide_text
+    assert "independent `pr-reviewer`" in guide_text
