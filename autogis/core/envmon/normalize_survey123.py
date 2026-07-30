@@ -18,7 +18,11 @@ from .sample_id import build_sample_id, strip_qc
 #: The qa_flags choice (ADR-0021) that marks a submission as a field
 #: duplicate. Survey123 exports select_multiple answers space-delimited;
 #: some feature-service exports comma-delimit instead.
-FIELD_DUP_FLAG = "field_dup"
+FIELD_DUP_CODES = {
+    "field_dup": "FD",  # forms generated before the A/B fix
+    "field_dup_a": "FD-A",
+    "field_dup_b": "FD-B",
+}
 
 
 @dataclass
@@ -103,9 +107,15 @@ def normalize_survey123_submission(
             qa.add(QARecord(SEV_WARNING, "invalid_dtw",
                             f"{well_id}: cannot parse DTW value {dtw_raw!r}"))
 
-    is_dup = FIELD_DUP_FLAG in _qa_flags(payload, fm)
-    sample_id = build_sample_id(well_id, dt, matrix,
-                                qc="FD" if is_dup else None)
+    dup_flags = _qa_flags(payload, fm) & FIELD_DUP_CODES.keys()
+    if len(dup_flags) > 1:
+        qa.add(QARecord(
+            SEV_ERROR, "ambiguous_field_duplicate_code",
+            f"{well_id}: choose exactly one field duplicate code (A or B)."))
+        return water_levels, []
+    qc = FIELD_DUP_CODES[next(iter(dup_flags))] if dup_flags else None
+    is_dup = qc is not None
+    sample_id = build_sample_id(well_id, dt, matrix, qc=qc)
     # Env_Samples has carried IsDuplicate/DuplicateType/ParentSampleID since
     # the EDD importer; evaluate_duplicate_rpd pairs on IsDuplicate == 0 / 1,
     # so leaving them NULL makes a record neither a parent nor a duplicate and

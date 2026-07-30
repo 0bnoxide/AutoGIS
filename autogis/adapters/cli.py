@@ -4577,11 +4577,16 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
     with arcpy.da.InsertCursor(str(gdb / "Env_ImportBatch"), batch_fields) as cur:
         cur.insertRow(batch_row)
 
-    wl_inserted, wl_skipped = append_records_idempotent(gdb, "Env_WaterLevels", wl, qa, bid)
-    samp_inserted, samp_skipped = append_records_idempotent(gdb, "Env_Samples", samp, qa, bid)
+    wl_inserted = samp_inserted = 0
+    if not qa.has_blocking():
+        wl_inserted, _ = append_records_idempotent(
+            gdb, "Env_WaterLevels", wl, qa, bid)
+        samp_inserted, _ = append_records_idempotent(
+            gdb, "Env_Samples", samp, qa, bid)
 
     counts = {"water_levels": wl_inserted, "samples": samp_inserted}
-    finalize_batch(gdb, bid, qa, counts, "COMPLETE")
+    outcome = "BLOCKED_BY_QA" if qa.has_blocking() else "COMPLETE"
+    finalize_batch(gdb, bid, qa, counts, outcome)
     write_qa_to_gdb(gdb, qa, bid)
 
     click.echo(f"Batch {bid}: {wl_inserted} water levels, {samp_inserted} samples imported.")

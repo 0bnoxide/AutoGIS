@@ -284,17 +284,22 @@ class _FakeCursor:
 
 
 def _install_fake_arcpy(monkeypatch, existing_tables):
-    """sys.modules['arcpy'] fake; returns (raw_rows, qa_rows) sinks."""
+    """sys.modules['arcpy'] fake; returns row and cursor-field sinks."""
     import sys
     import types
     raw_rows, qa_rows = [], []
+    cursor_fields = {}
     fake = types.ModuleType("arcpy")
     fake.Exists = lambda path: Path(path).name in existing_tables
-    fake.da = types.SimpleNamespace(
-        InsertCursor=lambda table, fields: _FakeCursor(
-            raw_rows if Path(table).name == "SurveyPoints_Raw" else qa_rows))
+
+    def insert_cursor(table, fields):
+        name = Path(table).name
+        cursor_fields[name] = fields
+        return _FakeCursor(raw_rows if name == "SurveyPoints_Raw" else qa_rows)
+
+    fake.da = types.SimpleNamespace(InsertCursor=insert_cursor)
     monkeypatch.setitem(sys.modules, "arcpy", fake)
-    return raw_rows, qa_rows
+    return raw_rows, qa_rows, cursor_fields
 
 
 def test_import_rtk_survey_raises_when_tables_missing(tmp_path, monkeypatch):
@@ -315,12 +320,15 @@ def test_import_rtk_survey_missing_error_names_both_tables(tmp_path, monkeypatch
 
 def test_import_rtk_survey_writes_raw_and_qa_rows(tmp_path, monkeypatch):
     from autogis.core.envmon.import_rtk_survey import import_rtk_survey
-    raw_rows, qa_rows = _install_fake_arcpy(
+    raw_rows, qa_rows, cursor_fields = _install_fake_arcpy(
         monkeypatch, existing_tables={"SurveyPoints_Raw", "SurveyPoints_QA"})
     points = parse_rtk_csv(_write_csv(tmp_path))
     import_rtk_survey(str(tmp_path / "x.gdb"), "SITE", "B1", points)
     assert len(raw_rows) == 3
     assert len(qa_rows) == 3
-    statuses = {row[0]: row[1] for row in qa_rows}
+    assert cursor_fields["SurveyPoints_Raw"][:2] == ["SiteID", "BatchID"]
+    assert cursor_fields["SurveyPoints_QA"][:2] == ["SiteID", "BatchID"]
+    assert all(row[:2] == ["SITE", "B1"] for row in raw_rows + qa_rows)
+    statuses = {row[2]: row[3] for row in qa_rows}
     assert statuses["MW-01"] == "PASS"       # clean RTK_FIXED point
     assert statuses["INV001"] == "FAIL"      # AUTONOMOUS fix + bad RMS

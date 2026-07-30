@@ -281,7 +281,8 @@ def test_sample_id_contract_match_and_mismatch(tmp_path):
             ("select_multiple qa_flags", "QAFlags", ""),
             ("calculate", "SampleID", "", "", "", xform_sample_id_calc())]
     choices = [("well_list", "MW-1", "MW-1"), ("matrix_list", "GW", "GW"),
-               ("qa_flags", "field_dup", "Field Duplicate")]
+               ("qa_flags", "field_dup_a", "Field Duplicate A"),
+               ("qa_flags", "field_dup_b", "Field Duplicate B")]
     qa = _validate(tmp_path, good, choices)
     assert "sample_id_contract_mismatch" not in _cats(qa)
 
@@ -299,7 +300,7 @@ def test_sample_id_dup_leg_requires_flag_choice(tmp_path):
             ("select_multiple qa_flags", "QAFlags", ""),
             ("calculate", "SampleID", "", "", "", xform_sample_id_calc())]
     choices = [("well_list", "MW-1", "MW-1"), ("matrix_list", "GW", "GW"),
-               ("qa_flags", "resampled", "Resampled")]   # no field_dup
+               ("qa_flags", "field_dup_a", "Field Duplicate A")]
     qa = _validate(tmp_path, rows, choices)
     assert "sample_id_dup_leg" in _cats(qa)
 

@@ -88,11 +88,11 @@ def test_sample_id_format_primary():
 
 
 def test_sample_id_format_field_dup():
-    """Field dup SampleID = {WellID}-{YYYYMMDD}-{Matrix}-FD."""
+    """Planned field dup A has the form's explicit A discriminator."""
     plan = _plan({"dup_frequency": 1})  # every well gets a dup
     row = next(r for r in plan.expected_samples
                if r.location_id == "MW-1" and r.sample_type == "Field Duplicate")
-    assert row.sample_id == "MW-1-20260715-GW-FD"
+    assert row.sample_id == "MW-1-20260715-GW-FD-A"
 
 
 # ── COC numbering ─────────────────────────────────────────────────────────

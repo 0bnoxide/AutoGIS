@@ -212,7 +212,7 @@ def build_sampling_event_plan(
             if is_dup_well:
                 expected_samples.append(ExpectedSampleRow(
                     sample_id=build_sample_id(location_id, date_compact,
-                                              primary_matrix, qc="FD"),
+                                              primary_matrix, qc="FD-A"),
                     location_id=location_id,
                     event_date=event_date,
                     matrix=primary_matrix,

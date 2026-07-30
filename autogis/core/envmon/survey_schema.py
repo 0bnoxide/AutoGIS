@@ -287,8 +287,7 @@ def validate_form(schema: FormSchema, qa: QACollector, *,
             _err(qa, "sample_id_contract_mismatch",
                  f"row {sid.row}: SampleID calculation diverges from the "
                  f"ADR-0113 contract; expected {expected!r}")
-        m = _SELECTED_RE.search(sid.calculation or "")
-        if m:
+        for m in _SELECTED_RE.finditer(sid.calculation or ""):
             flag_q, flag_val = m.group(1), m.group(2)
             src = next((q for q in fields if q.name == flag_q), None)
             if src is not None and src.list_name:

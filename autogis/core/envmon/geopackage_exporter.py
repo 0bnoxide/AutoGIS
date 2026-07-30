@@ -98,7 +98,6 @@ def write_wells_layer(
     *,
     lat_field: str = "Latitude",
     lon_field: str = "Longitude",
-    id_field: str = "LocationID",
 ) -> int:
     # Discover non-geometry columns from first row
     if not well_rows:
