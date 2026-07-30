@@ -51,6 +51,9 @@ from .runner import RunState, Workflow, WorkflowRunner
 
 __all__ = ["MainWindow", "main"]
 
+_LOCAL_PYTHON_REQUIRED = (
+    "LOCAL (arcpy) tool: set the arcgispro-py3 python.exe above to run it.")
+
 
 def _window_forms() -> list[CommandForm]:
     """Every leaf command the window offers. Class-1 redirect-only LOCAL tools
@@ -442,6 +445,7 @@ class MainWindow(QMainWindow):
         self._local_python = text or None
         settings.set_local_python(self._local_python, self._settings)
         self._sync_run_availability(show_reason=True)
+        self._refresh_step_controls()
 
     def _run_blocked_reason(self) -> str | None:
         """Why the current command can't run here, or ``None`` if it can. A
@@ -454,8 +458,7 @@ class MainWindow(QMainWindow):
         if form.unreachable_reason:
             return form.unreachable_reason
         if needs_arcpy_env(form.path) and not self._local_python:
-            return ("LOCAL (arcpy) tool: set the arcgispro-py3 python.exe "
-                   "above to run it.")
+            return _LOCAL_PYTHON_REQUIRED
         return None
 
     def _sync_run_availability(self, *, show_reason: bool) -> None:
@@ -824,12 +827,20 @@ class MainWindow(QMainWindow):
     def _refresh_step_controls(self) -> None:
         """Enable the step-list buttons only when idle and steps exist."""
         active = bool(self._steps) and self._runner is None
-        self._run_wf_button.setEnabled(active)
+        self._run_wf_button.setEnabled(
+            active and self._workflow_blocked_reason() is None)
         self._clear_button.setEnabled(active)
         self._save_button.setEnabled(active)
         self._load_button.setEnabled(self._runner is None)
         for b in (self._remove_button, self._up_button, self._down_button):
             b.setEnabled(active)
+
+    def _workflow_blocked_reason(self) -> str | None:
+        if not self._local_python and any(
+                step.command and needs_arcpy_env(step.command)
+                for step in self._steps):
+            return _LOCAL_PYTHON_REQUIRED
+        return None
 
     def _on_load_recipe(self) -> None:
         """Replace the current step list with a validated workflow recipe."""
@@ -853,8 +864,9 @@ class MainWindow(QMainWindow):
         for step in self._steps:
             self._step_list.addItem(self._step_row_text(step))
         self._refresh_step_controls()
-        self._status.setText(
-            f"Loaded recipe: {workflow.name} ({len(workflow.steps)} steps)")
+        loaded = f"Loaded recipe: {workflow.name} ({len(workflow.steps)} steps)"
+        reason = self._workflow_blocked_reason()
+        self._status.setText(f"{loaded} — {reason}" if reason else loaded)
 
     def _on_save_recipe(self) -> None:
         """Serialize the built or loaded workflow to a reusable recipe YAML."""
@@ -941,6 +953,10 @@ class MainWindow(QMainWindow):
 
     def _on_run_workflow(self) -> None:
         if self._runner is not None or not self._steps:
+            return
+        reason = self._workflow_blocked_reason()
+        if reason:
+            self._status.setText(reason)
             return
         self._run_is_workflow = True
         for i in range(self._step_list.count()):   # clear any prior-run glyphs

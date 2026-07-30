@@ -937,7 +937,7 @@ def test_load_recipe_restores_named_workflow_and_save_round_trips(
     ["monitoring_event_processing.yaml", "rtk_to_cad.yaml"],
 )
 def test_shipped_phase5_recipes_reopen_in_gui(
-        qapp, monkeypatch, filename):
+        qapp, tmp_path, monkeypatch, filename):
     from PySide6.QtWidgets import QFileDialog
 
     import autogis
@@ -952,17 +952,24 @@ def test_shipped_phase5_recipes_reopen_in_gui(
         QFileDialog, "getOpenFileName",
         staticmethod(lambda *a, **k: (str(path), "")))
 
-    win = MainWindow()
+    win, _ = _win_with_store(tmp_path)
     win._on_load_recipe()
 
     assert win._workflow_name == expected["name"]
     assert len(win._steps) == len(expected["steps"])
     assert win._step_list.count() == len(expected["steps"])
-    assert win._run_wf_button.isEnabled()
+    assert any(step.command and needs_arcpy_env(step.command)
+               for step in win._steps)
+    assert not win._run_wf_button.isEnabled()
+    assert "set the arcgispro-py3 python.exe" in win._status.text()
     assert any(
         win._step_list.item(i).text().startswith("Review checkpoint")
         for i in range(win._step_list.count())
     )
+
+    win._local_python_edit.setText("C:/pro/python.exe")
+    win._on_local_python_changed()
+    assert win._run_wf_button.isEnabled()
 
 
 def test_load_recipe_failure_preserves_current_workflow(
