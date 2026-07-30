@@ -9,7 +9,7 @@ from autogis.core.envmon.upgrade_schema import SCHEMA_VERSION
 
 
 def test_schema_version_bumped():
-    assert SCHEMA_VERSION == "2.6"
+    assert SCHEMA_VERSION == "2.7"
 
 
 def test_screening_level_source_field_fits_config_sources():

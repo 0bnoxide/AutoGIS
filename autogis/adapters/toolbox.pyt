@@ -313,6 +313,10 @@ class ImportToGdb(object):
             allow_errors_override=bool(p["allow_errors"].value),
         )
         messages.addMessage(json.dumps(summary, indent=2, default=str))
+        if summary["qa_status"] == "FAIL":
+            messages.addErrorMessage(
+                "Import blocked by QA. Review the QA output before retrying.")
+            raise arcpy.ExecuteError
 
 
 class BuildCurrentEvent(object):

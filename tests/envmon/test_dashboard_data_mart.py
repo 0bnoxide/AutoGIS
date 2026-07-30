@@ -58,6 +58,8 @@ def test_site_status_active_events_counts_wide_rows():
     assert rows[0]["ActiveEvents"] == 3
     assert rows[0]["OpenQAIssues"] == 1
     assert rows[0]["SiteID"] == "H281"
+    assert "EventID" not in rows[0]
+    assert "site grain" in build_dash_site_status.__doc__
 
 
 def test_event_status_partial_lab_results_not_received():

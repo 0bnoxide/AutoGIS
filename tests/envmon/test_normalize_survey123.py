@@ -115,6 +115,31 @@ def test_field_dup_flag_appends_fd_suffix():
     assert samp[0]["SampleID"] == "MW-01-20260615-GW-FD"
 
 
+def test_two_field_duplicates_get_distinct_a_b_ids():
+    ids = []
+    for flag in ("field_dup_a", "field_dup_b"):
+        _, samples = normalize_survey123_submission(
+            {**_PAYLOAD, "QAFlags": flag}, "H281", "B1", QACollector())
+        ids.append(samples[0]["SampleID"])
+
+    assert ids == [
+        "MW-01-20260615-GW-FD-A",
+        "MW-01-20260615-GW-FD-B",
+    ]
+
+
+def test_multiple_field_duplicate_codes_are_rejected():
+    qa = QACollector()
+    _, samples = normalize_survey123_submission(
+        {**_PAYLOAD, "QAFlags": "field_dup_a field_dup_b"},
+        "H281", "B1", qa)
+
+    assert samples == []
+    assert any(r.severity == "ERROR"
+               and r.category == "ambiguous_field_duplicate_code"
+               for r in qa.records)
+
+
 @pytest.mark.parametrize("raw", [
     "field_dup",                      # sole flag
     "turbid field_dup",               # space-delimited (XLSForm export)

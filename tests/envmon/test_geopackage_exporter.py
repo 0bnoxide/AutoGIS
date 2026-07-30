@@ -1,3 +1,4 @@
+import inspect
 import sqlite3
 import struct
 from pathlib import Path
@@ -58,6 +59,10 @@ def test_write_wells_layer(tmp_path):
     conn.close()
     # MW-BAD has no coords → skipped or placeholder
     assert count == 2  # only valid coords inserted
+
+
+def test_write_wells_layer_has_no_silent_id_field_keyword():
+    assert "id_field" not in inspect.signature(write_wells_layer).parameters
 
 
 def test_write_wells_layer_coords_only(tmp_path):

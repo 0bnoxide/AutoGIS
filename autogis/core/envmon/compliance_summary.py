@@ -173,8 +173,6 @@ def build_compliance_summary(
 def write_compliance_workbook(
     result: ComplianceSummaryResult,
     out_path: Path,
-    *,
-    group_map: Optional[dict] = None,
 ) -> None:
     wb = openpyxl.Workbook()
 

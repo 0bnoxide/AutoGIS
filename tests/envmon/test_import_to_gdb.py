@@ -8,8 +8,10 @@ zero rows must not report a clean PASS indistinguishable from a healthy run.
 """
 
 import csv
+from types import SimpleNamespace
 
-from autogis.core.common.config import SiteConfig
+from autogis.core.common.config import ParserProfile, SiteConfig
+from autogis.core.common.qa import QACollector
 import autogis.core.envmon.import_to_gdb as import_to_gdb
 
 SITE = SiteConfig(data={"site_id": "H281_TEST"})
@@ -47,6 +49,17 @@ def test_zero_rows_parsed_emits_qa_warning(
 
     assert sum(summary["counts_parsed"].values()) == 0
     assert "zero_rows_parsed" in _qa_categories(tmp_path)
+
+
+def test_unfiltered_zero_rows_fail_qa_status(
+        tmp_path, workbook, adict, slevels, monkeypatch):
+    empty_profile = ParserProfile(
+        profile_id="EMPTY", data={"sheets": []}, sheets={})
+    summary = _run_import(
+        tmp_path, workbook, empty_profile, adict, slevels, monkeypatch)
+
+    assert sum(summary["counts_parsed"].values()) == 0
+    assert summary["qa_status"] == "FAIL"
 
 
 def test_zero_rows_warning_names_the_matrix_filter(
@@ -103,10 +116,9 @@ def test_replace_with_zero_rows_does_not_delete_existing_data(
         tmp_path, workbook, profile, adict, slevels, monkeypatch):
     """The data-loss guard.
 
-    zero_rows_parsed is non-blocking by design, so has_blocking() is False and
-    control reaches the replace branch. Deleting there would remove the prior
-    event's rows and then insert nothing -- a profile/workbook mismatch would
-    silently erase data rather than replace it.
+    An explicit-filter zero_rows_parsed is non-blocking, so control reaches the
+    replace branch. Deleting there would remove the prior event's rows and
+    then insert nothing.
     """
     summary, deletes = _run_replace(
         tmp_path, workbook, profile, adict, slevels, monkeypatch,
@@ -143,6 +155,69 @@ def test_nonzero_rows_parsed_has_no_zero_rows_warning(
 
     assert sum(summary["counts_parsed"].values()) > 0
     assert "zero_rows_parsed" not in _qa_categories(tmp_path)
+
+
+class _NoInsertCursor:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def insertRow(self, row):
+        raise AssertionError(f"duplicate row was inserted: {row}")
+
+
+def test_duplicate_qc_sample_is_blocking_not_info(monkeypatch, tmp_path):
+    record = {
+        "SiteID": "H281", "Matrix": "GW",
+        "SampleID": "MW-1-20260715-GW-FD-A",
+        "SampleDate": "2026-07-15",
+        "IsDuplicate": 1, "DuplicateType": "FIELD_DUP",
+    }
+    key = import_to_gdb.compute_unique_key(record, "Env_Samples")
+    monkeypatch.setattr(import_to_gdb, "_existing_key_set",
+                        lambda *args: {key})
+    monkeypatch.setattr(
+        import_to_gdb, "_arcpy",
+        lambda: SimpleNamespace(
+            da=SimpleNamespace(
+                InsertCursor=lambda *args: _NoInsertCursor())))
+    qa = QACollector()
+
+    inserted, skipped = import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples", [record], qa, "B1")
+
+    assert (inserted, skipped) == (0, 1)
+    duplicate = next(r for r in qa.records
+                     if r.category == "duplicate_key_skipped")
+    assert duplicate.severity == "ERROR"
+
+
+def test_primary_string_zero_duplicate_flag_stays_idempotent_info(
+        monkeypatch, tmp_path):
+    record = {
+        "SiteID": "H281", "Matrix": "GW",
+        "SampleID": "MW-1-20260715-GW",
+        "SampleDate": "2026-07-15",
+        "IsDuplicate": "0", "DuplicateType": "",
+    }
+    key = import_to_gdb.compute_unique_key(record, "Env_Samples")
+    monkeypatch.setattr(import_to_gdb, "_existing_key_set",
+                        lambda *args: {key})
+    monkeypatch.setattr(
+        import_to_gdb, "_arcpy",
+        lambda: SimpleNamespace(
+            da=SimpleNamespace(
+                InsertCursor=lambda *args: _NoInsertCursor())))
+    qa = QACollector()
+
+    import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples", [record], qa, "B1")
+
+    duplicate = next(r for r in qa.records
+                     if r.category == "duplicate_key_skipped")
+    assert duplicate.severity == "INFO"
 
 
 # --- _delete_for_replace matrix-scoping (issue #369) -----------------------

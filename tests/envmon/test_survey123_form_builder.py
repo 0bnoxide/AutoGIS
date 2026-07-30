@@ -98,7 +98,7 @@ def test_field_duplicate_reuses_the_single_qa_flags_question(wb):
     """One affordance only. A second question (the withdrawn IsFieldDup) let a
     crew tick the ADR-0021 flag, leave the other at its default, and produce a
     SampleID identical to the primary — which append_records_idempotent then
-    drops at SEV_INFO duplicate_key_skipped."""
+    reports as a blocking duplicate-key error."""
     ws = wb["survey"]
     rows = {ws.cell(r, 2).value: ws.cell(r, 1).value
             for r in range(2, ws.max_row + 1)}
@@ -108,7 +108,9 @@ def test_field_duplicate_reuses_the_single_qa_flags_question(wb):
     choices = wb["choices"]
     pairs = {(choices.cell(r, 1).value, choices.cell(r, 2).value)
              for r in range(2, choices.max_row + 1)}
-    assert ("qa_flags", "field_dup") in pairs
+    assert ("qa_flags", "field_dup_a") in pairs
+    assert ("qa_flags", "field_dup_b") in pairs
+    assert ("qa_flags", "field_dup") not in pairs
     # the yes_no list existed only for the withdrawn question
     assert not any(lst == "yes_no" for lst, _ in pairs)
 

@@ -121,8 +121,8 @@ def append_records_idempotent(
 ) -> Tuple[int, int]:
     """Insert records whose unique key is not already present.
 
-    Returns (inserted, skipped). Skipped rows get an INFO QA record so
-    nothing is silently dropped.
+    Returns (inserted, skipped). Idempotent skips are visible in QA; losing a
+    duplicate sample is blocking because it defeats the paired QC check.
     """
     arcpy = _arcpy()
     if not records:
@@ -142,7 +142,17 @@ def append_records_idempotent(
             key = compute_unique_key(d, table_name)
             if not allow_duplicate_records and key in existing:
                 skipped += 1
-                qa.add(SEV_INFO, "duplicate_key_skipped",
+                duplicate_flag = str(
+                    d.get("IsDuplicate") or "").strip().lower()
+                is_qc_sample = (
+                    table_name == "Env_Samples"
+                    and (
+                        duplicate_flag in {"1", "1.0", "true", "yes"}
+                        or bool(str(d.get("DuplicateType") or "").strip())
+                    )
+                )
+                qa.add(SEV_ERROR if is_qc_sample else SEV_INFO,
+                       "duplicate_key_skipped",
                        f"{table_name} key {key} already present; row skipped "
                        "(idempotent append).",
                        recommended_action="Use replace_batch / "
@@ -320,7 +330,8 @@ def run_import(
         # run whose sheet names have drifted is still a real mismatch.
         filter_note = (f" (matrix filter: {matrix_filter})"
                        if matrix_filter else "")
-        qa.add(SEV_WARNING, "zero_rows_parsed",
+        qa.add(SEV_WARNING if matrix_filter else SEV_ERROR,
+               "zero_rows_parsed",
                "No sheet produced any rows -- check parser profile "
                "compatibility with this workbook (wrong sheet names, "
                f"unwired data_type, or a workbook/profile mismatch){filter_note}.",
@@ -348,9 +359,8 @@ def run_import(
                 # Deleting here would remove the existing rows and then
                 # insert nothing, so a profile/workbook mismatch would
                 # silently ERASE the prior event rather than replace it.
-                # zero_rows_parsed is deliberately non-blocking (an empty or
-                # filtered workbook is legitimate), which means has_blocking()
-                # is False and this is the only place that can stop it.
+                # An explicit-filter zero_rows_parsed is deliberately
+                # non-blocking, so this is the last guard before deletion.
                 qa.add(SEV_WARNING, "replace_skipped_zero_rows",
                        f"{mode}: refusing to delete existing rows because "
                        "this run parsed none -- nothing would replace them. "

@@ -190,6 +190,7 @@ TABLE_SCHEMAS = {
     # Survey domain
     # ------------------------------------------------------------------
     "SurveyPoints_Raw": [
+        ("SiteID", T, 32), ("BatchID", T, 64),
         ("PointID", T, 64), ("Northing", D, None), ("Easting", D, None),
         ("Elevation_ft", D, None), ("FeatureCode", T, 32),
         ("Description", T, 256), ("HRMS_ft", D, None), ("VRMS_ft", D, None),
@@ -198,6 +199,7 @@ TABLE_SCHEMAS = {
         ("OccupationTime_s", D, None), ("RodHeight_ft", D, None),
         ("CollectedAt", T, 32), ("Operator", T, 64)],
     "SurveyPoints_QA": [
+        ("SiteID", T, 32), ("BatchID", T, 64),
         ("PointID", T, 64), ("QAStatus", T, 32),
         ("QAFlags", T, 512), ("Approved", SH, None)],
     "LevelLoopRuns": [

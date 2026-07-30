@@ -55,6 +55,12 @@ def test_gw_model_registry_tables():
                          "MeanError", "MAE", "PctWithinTolerance", "Rank"]
 
 
+def test_rtk_tables_carry_site_and_batch_provenance():
+    for table in ("SurveyPoints_Raw", "SurveyPoints_QA"):
+        fields = [f[0] for f in TABLE_SCHEMAS[table]]
+        assert fields[:2] == ["SiteID", "BatchID"]
+
+
 def test_env_schema_version_fields():
     fields = {f[0] for f in TABLE_SCHEMAS["Env_SchemaVersion"]}
     assert fields == {
@@ -75,7 +81,7 @@ from autogis.core.envmon.upgrade_schema import (  # noqa: E402
 
 
 def test_schema_version_constant():
-    assert SCHEMA_VERSION == "2.6"
+    assert SCHEMA_VERSION == "2.7"
 
 
 def test_table_upgrade_status_attributes():

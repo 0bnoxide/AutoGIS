@@ -330,19 +330,23 @@ def import_rtk_survey(
         )
 
     with _ax.da.InsertCursor(raw_table,
-                             ["PointID", "Northing", "Easting", "Elevation_ft",
+                             ["SiteID", "BatchID", "PointID",
+                              "Northing", "Easting", "Elevation_ft",
                               "FeatureCode", "Description", "HRMS_ft", "VRMS_ft",
                               "PDOP", "Satellites",
                               "FixType", "CollectedAt", "Operator"]) as cur:
         for pt in points:
-            cur.insertRow([pt.point_id, pt.northing, pt.easting, pt.elevation_ft,
+            cur.insertRow([site_id, batch_id, pt.point_id,
+                           pt.northing, pt.easting, pt.elevation_ft,
                            pt.feature_code, pt.description, pt.hrms_ft, pt.vrms_ft,
                            pt.pdop, pt.satellites,
                            pt.fix_type, pt.collected_at, pt.operator])
 
     with _ax.da.InsertCursor(qa_table,
-                             ["PointID", "QAStatus", "QAFlags", "Approved"]) as cur:
+                             ["SiteID", "BatchID", "PointID", "QAStatus",
+                              "QAFlags", "Approved"]) as cur:
         for pt in points:
             flags = assign_qa_flags(pt, hrms_threshold_ft, vrms_threshold_ft)
             status = "FAIL" if flags else "PASS"
-            cur.insertRow([pt.point_id, status, json.dumps(flags), 0])
+            cur.insertRow([site_id, batch_id, pt.point_id, status,
+                           json.dumps(flags), 0])

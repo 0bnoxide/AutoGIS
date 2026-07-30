@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 import pytest
 import openpyxl
@@ -101,3 +102,8 @@ def test_write_workbook(tmp_path):
     assert out.exists()
     wb = openpyxl.load_workbook(str(out))
     assert len(wb.sheetnames) >= 2
+
+
+def test_write_workbook_has_no_silent_group_map_keyword():
+    assert "group_map" not in inspect.signature(
+        write_compliance_workbook).parameters

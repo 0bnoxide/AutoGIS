@@ -171,11 +171,12 @@ def xform_sample_id_calc(well_field: str = "WellID",
                          date_field: str = "SamplingDate",
                          matrix_field: str = "Matrix",
                          qa_flags_field: str = "QAFlags",
-                         dup_flag: str = "field_dup") -> str:
+                         dup_a_flag: str = "field_dup_a",
+                         dup_b_flag: str = "field_dup_b") -> str:
     """XForm calculate for the SampleID question — the device-side rendering
     of LIFECYCLE_FORMAT. Defaults are the survey field names the form
-    builder emits today; the duplicate leg reads the QAFlags choice the form
-    has offered since ADR-0021 rather than a second question.
+    builder emits today; the duplicate leg reads choices from the ADR-0021
+    QAFlags question rather than adding a second question.
 
     ponytail: no test can execute a real XForm, so the two renderings are
     coupled by a test that evaluates this one expression shape against
@@ -186,5 +187,6 @@ def xform_sample_id_calc(well_field: str = "WellID",
         f'concat(${{{well_field}}}, "-", '
         f'format-date(${{{date_field}}}, "%Y%m%d"), '
         f'"-", ${{{matrix_field}}}, '
-        f'if(selected(${{{qa_flags_field}}}, "{dup_flag}"), "-FD", ""))'
+        f'if(selected(${{{qa_flags_field}}}, "{dup_a_flag}"), "-FD-A", '
+        f'if(selected(${{{qa_flags_field}}}, "{dup_b_flag}"), "-FD-B", "")))'
     )
