@@ -986,8 +986,22 @@ def test_redirect_only_workflow_stays_blocked_with_local_python(
     assert win._runner is None
 
 
+@pytest.mark.parametrize("body", [
+    "name: broken\nsteps: []\n",
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, renamed-command]
+""",
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, validate-rtk-survey]
+    values: {renamed_path: survey.csv}
+""",
+])
 def test_load_recipe_failure_preserves_current_workflow(
-        qapp, tmp_path, monkeypatch):
+        qapp, tmp_path, monkeypatch, body):
     from PySide6.QtWidgets import QFileDialog
 
     win = MainWindow()
@@ -999,7 +1013,7 @@ def test_load_recipe_failure_preserves_current_workflow(
     before_text = win._step_list.item(0).text()
 
     bad = tmp_path / "bad.yaml"
-    bad.write_text("name: broken\nsteps: []\n", encoding="utf-8")
+    bad.write_text(body, encoding="utf-8")
     monkeypatch.setattr(
         QFileDialog, "getOpenFileName",
         staticmethod(lambda *a, **k: (str(bad), "")))

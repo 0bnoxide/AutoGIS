@@ -42,7 +42,9 @@ from PySide6.QtWidgets import (
 
 from . import settings
 from .config_builder_dialog import ConfigBuilderDialog
-from .executor import Decision, Step, StepResult, _SEV_ORDER, needs_arcpy_env
+from .executor import (
+    Decision, Step, StepResult, _SEV_ORDER, build_argv, needs_arcpy_env,
+)
 from .forms import FormValidationError, build_step
 from .gw_model_approval_dialog import GWModelApprovalDialog
 from .introspect import CommandForm, FormField, introspect_cli
@@ -860,6 +862,10 @@ class MainWindow(QMainWindow):
         from autogis.core.common.workflow_recipe import load_recipe
         try:
             workflow = recipe_to_workflow(load_recipe(Path(path)))
+            for step in workflow.steps:
+                if step.command:
+                    build_argv(step.command, step.values,
+                               fail_on=step.fail_on)
         except Exception as exc:  # noqa: BLE001 - surface parse/map error in-UI
             self._status.setText(f"Load failed: {exc}")
             return
