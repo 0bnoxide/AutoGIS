@@ -1,4 +1,4 @@
-# ADR-XXXX: Groundwater model approval review surfaces
+# ADR-0121: Groundwater model approval review surfaces
 
 **Status:** Proposed
 

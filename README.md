@@ -344,7 +344,7 @@ not by flag.
 | `autogis envmon figure-spec` | CLOUD | `core/common/config.py` (`FigureSpec`) |
 | `autogis envmon validate-config` | CLOUD | `core/envmon/validate_config.py` |
 | `autogis envmon manage-analyte-dict` | CLOUD | `core/envmon/manage_analyte_dict.py` |
-| `autogis envmon manage-screening-levels` | CLOUD | `core/envmon/manage_screening_levels.py` |
+| `autogis envmon manage-screening-levels` | DRAFT | `core/envmon/manage_screening_levels.py` |
 | `autogis envmon reconcile-locations` | HYBRID | `core/envmon/reconcile_locations.py` (`--wells-csv` headless; `--gdb` guards + redirects to the `.pyt` ReconcileSampleLocations) |
 | `autogis envmon validate-units` | CLOUD | `core/envmon/validate_units.py` |
 | `autogis envmon evaluate-rpd-qa` | CLOUD | `core/envmon/evaluate_rpd_qa.py` |
