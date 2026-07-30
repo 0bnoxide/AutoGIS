@@ -220,6 +220,49 @@ def test_primary_string_zero_duplicate_flag_stays_idempotent_info(
     assert duplicate.severity == "INFO"
 
 
+def test_late_duplicate_error_fails_summary_and_batch(
+        tmp_path, workbook, profile, adict, slevels, monkeypatch):
+    outcomes = []
+    monkeypatch.setattr(import_to_gdb, "load_analyte_dictionary",
+                        lambda p: adict)
+    monkeypatch.setattr(import_to_gdb, "load_screening_levels",
+                        lambda p: slevels)
+    monkeypatch.setattr(import_to_gdb, "create_or_update_gdb_schema",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(import_to_gdb, "create_import_batch",
+                        lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(import_to_gdb, "finalize_batch",
+                        lambda *a, **k: outcomes.append(a[-1]))
+    monkeypatch.setattr(import_to_gdb, "write_qa_to_gdb",
+                        lambda *a, **k: 0)
+
+    def append_with_late_duplicate(
+            gdb, table_name, records, qa, batch_id,
+            allow_duplicate_records=False):
+        if table_name == "Env_Samples":
+            qa.add("ERROR", "duplicate_key_skipped",
+                   "duplicate QC sample was skipped")
+            return 0, 1
+        return 0, 0
+
+    monkeypatch.setattr(import_to_gdb, "append_records_idempotent",
+                        append_with_late_duplicate)
+
+    summary = import_to_gdb.run_import(
+        workbook=workbook, gdb=tmp_path / "unused.gdb",
+        site_config=SITE, profile=profile,
+        analyte_dictionary_path=tmp_path / "unused_adict.yaml",
+        screening_levels_path=tmp_path / "unused_slevels.yaml",
+        qa_output_dir=tmp_path / "qa",
+        mode="append", matrix_filter="SOIL",
+    )
+
+    assert summary["written"] == {"inserted": 0, "skipped": 1}
+    assert summary["qa_status"] == "FAIL"
+    assert summary["qa_counts"]["ERROR"] == 1
+    assert outcomes == ["BLOCKED_BY_QA"]
+
+
 # --- _delete_for_replace matrix-scoping (issue #369) -----------------------
 
 def test_matrix_scoped_replace_skips_tables_with_no_matrix_column(monkeypatch):

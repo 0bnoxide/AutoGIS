@@ -379,8 +379,16 @@ def run_import(
                 gdb, table_name, recs, qa, batch_id, allow_duplicate_records)
             ins += i; skp += s
         summary["written"] = {"inserted": ins, "skipped": skp}
-        finalize_batch(gdb, batch_id, qa, counts, "COMPLETE")
+        outcome = ("BLOCKED_BY_QA"
+                   if qa.has_blocking(allow_errors=allow_errors_override)
+                   else "COMPLETE")
+        finalize_batch(gdb, batch_id, qa, counts, outcome)
 
+    # Insertion can add QA records (for example, a duplicate QC sample that
+    # was skipped), so the returned/toolbox status must reflect the final
+    # collector rather than the pre-insert snapshot.
+    summary["qa_counts"] = qa.counts()
+    summary["qa_status"] = qa.status(allow_errors=allow_errors_override)
     qa_output_dir = Path(qa_output_dir)
     qa_output_dir.mkdir(parents=True, exist_ok=True)
     stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
