@@ -1,15 +1,22 @@
 """Headless tests for concentration_surface (Phase-5 slice 2, ADR-0085)."""
 import datetime as dt
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from autogis.core.common.qa import QACollector
+import autogis.core.envmon.concentration_surface as surface_mod
 from autogis.core.envmon.concentration_surface import (
+    EBK_MIN_NEIGHBORS,
     NONDETECT_RULES,
+    build_concentration_surface,
     build_surface_registry_rows,
     collect_concentration_points,
+    minimum_surface_points,
     raster_names,
     resolve_result_value,
+    scratch_tag,
     slug,
     surface_tag,
 )
@@ -226,6 +233,22 @@ def test_surface_tag_bounded_and_stable():
     assert len(t1) <= 49                 # bounded: 40 prefix + '_' + 8 hash
 
 
+def test_scratch_tag_is_per_run_and_bounded():
+    a = scratch_tag(SITE, "Benzene")
+    b = scratch_tag(SITE, "Benzene")
+    assert a != b
+    assert a.startswith(surface_tag(SITE, "Benzene") + "_")
+    assert len(a) <= 62
+
+
+def test_minimum_surface_points_is_method_aware():
+    assert minimum_surface_points("IDW") == 4
+    assert minimum_surface_points("EBK") == EBK_MIN_NEIGHBORS == 10
+    assert minimum_surface_points("EBK", 12) == 12
+    with pytest.raises(ValueError, match="Kriging"):
+        minimum_surface_points("Kriging")
+
+
 def test_raster_names_ebk_adds_se_and_stays_bounded():
     idw = raster_names(SITE, EVENT, "Benzene", "IDW")
     ebk = raster_names(SITE, EVENT, "Benzene", "EBK")
@@ -264,6 +287,158 @@ def test_registry_rows_gwe_kind():
         {"STD_ERROR": "Draft_GWE_x_EBK_SE"}, NOW, units="ft")
     assert len(rows) == 1
     assert rows[0]["AnalyteFilter"] == "" and rows[0]["Units"] == "ft"
+
+
+# ---------------------------------------------------------------------------
+# ArcPy seam regressions with a tiny fake: preflight + scratch lifecycle
+# ---------------------------------------------------------------------------
+
+class _InsertCursor:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def insertRow(self, _row):
+        pass
+
+
+class _FakeManagement:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def CreateFeatureclass(self, workspace, name, *_args, **_kwargs):
+        path = str(Path(workspace) / name)
+        self.owner.objects.add(path)
+        self.owner.created.append(path)
+
+    def AddField(self, *_args, **_kwargs):
+        pass
+
+    def Delete(self, path):
+        if self.owner.cleanup_failure and "conc_pred_" in str(path):
+            raise RuntimeError("schema lock")
+        self.owner.deleted.append(str(path))
+        self.owner.objects.discard(str(path))
+
+    def CopyRaster(self, _source, target):
+        self.owner.objects.add(str(target))
+
+
+class _FakeRaster:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def save(self, path):
+        self.owner.objects.add(str(path))
+        self.owner.created.append(str(path))
+        if self.owner.fail_save:
+            raise RuntimeError("partial raster")
+
+
+class _FakeArcpy:
+    def __init__(self, scratch, *, fail_save=False, cleanup_failure=False):
+        self.env = SimpleNamespace(scratchGDB=str(scratch))
+        self.objects = set()
+        self.created = []
+        self.deleted = []
+        self.checked_out = []
+        self.checked_in = []
+        self.fail_save = fail_save
+        self.cleanup_failure = cleanup_failure
+        self.management = _FakeManagement(self)
+        self.da = SimpleNamespace(InsertCursor=lambda *_a, **_k: _InsertCursor())
+        self.sa = SimpleNamespace(
+            Idw=lambda *_a, **_k: _FakeRaster(self))
+
+    def Exists(self, path):
+        return str(path) in self.objects
+
+    def Describe(self, _path):
+        return SimpleNamespace(spatialReference="fake-sr")
+
+    def CheckExtension(self, _name):
+        return "Available"
+
+    def CheckOutExtension(self, name):
+        self.checked_out.append(name)
+
+    def CheckInExtension(self, name):
+        self.checked_in.append(name)
+
+
+def _points(n=4):
+    return [(f"MW-{i}", float(i % 2), float(i // 2), float(i))
+            for i in range(n)]
+
+
+def _install_fake(monkeypatch, fake):
+    from autogis.runtime import sessions
+    monkeypatch.setattr(sessions, "arcpy_env", lambda: fake)
+    monkeypatch.setattr(
+        surface_mod, "write_surface_registry_rows", lambda *_a, **_k: True)
+
+
+def test_ebk_preflight_stops_before_arcpy_resources(monkeypatch):
+    class _BombArcpy:
+        def __getattr__(self, name):
+            raise AssertionError(f"preflight touched arcpy.{name}")
+
+    from autogis.runtime import sessions
+    monkeypatch.setattr(sessions, "arcpy_env", lambda: _BombArcpy())
+    qa = QACollector()
+    summary = build_concentration_surface(
+        "site.gdb", SITE, EVENT, "Benzene", _points(9), qa, method="EBK")
+    assert summary["skipped"] is True
+    rec = next(r for r in qa.records
+               if r.category == "insufficient_surface_points")
+    assert "10" in rec.message and "9" in rec.message
+    assert "before scratch datasets or extension checkout" in rec.message
+
+
+def test_each_successful_run_uses_and_cleans_unique_scratch(monkeypatch,
+                                                           tmp_path):
+    created_runs = []
+    for _ in range(2):
+        fake = _FakeArcpy(tmp_path)
+        _install_fake(monkeypatch, fake)
+        summary = build_concentration_surface(
+            tmp_path / "site.gdb", SITE, EVENT, "Benzene", _points(),
+            QACollector(), scratch=tmp_path)
+        assert summary["skipped"] is False
+        scratch_created = [p for p in fake.created
+                           if Path(p).parent == tmp_path]
+        created_runs.append(set(scratch_created))
+        assert not (set(scratch_created) & fake.objects)
+        assert fake.checked_out == fake.checked_in == ["Spatial"]
+    assert created_runs[0].isdisjoint(created_runs[1])
+
+
+def test_failed_partial_raster_is_cleaned(monkeypatch, tmp_path):
+    fake = _FakeArcpy(tmp_path, fail_save=True)
+    _install_fake(monkeypatch, fake)
+    qa = QACollector()
+    summary = build_concentration_surface(
+        tmp_path / "site.gdb", SITE, EVENT, "Benzene", _points(), qa,
+        scratch=tmp_path)
+    assert summary["skipped"] is True
+    assert not (set(fake.created) & fake.objects)
+    assert any(r.category == "surface_generation_failed" for r in qa.records)
+
+
+def test_cleanup_lock_warning_names_path_and_recovery(monkeypatch, tmp_path):
+    fake = _FakeArcpy(tmp_path, cleanup_failure=True)
+    _install_fake(monkeypatch, fake)
+    qa = QACollector()
+    summary = build_concentration_surface(
+        tmp_path / "site.gdb", SITE, EVENT, "Benzene", _points(), qa,
+        scratch=tmp_path)
+    assert summary["skipped"] is False
+    rec = next(r for r in qa.records if r.category == "scratch_cleanup_failed")
+    assert "conc_pred_" in rec.message
+    assert "delete this path manually" in rec.message
+    assert "delete it from Catalog" in rec.recommended_action
 
 
 # ---------------------------------------------------------------------------

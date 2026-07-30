@@ -13,7 +13,7 @@ with step 1.
 
 | Batch | Session type | Covers | Issues |
 |---|---|---|---|
-| **A (this doc)** | Pro conda console + Pro UI | geostat pipeline TIN/IDW/**EBK**, concentration surface, approval verb | geostat QA issue |
+| **A (this doc)** | Pro conda console + Pro UI | geostat pipeline TIN/IDW/**EBK**, concentration surface, approval GUI/toolbox action | geostat QA issue |
 | B | ArcGIS Pro UI | `.pyt` run-history recording; CAD export functional QA | #231, #238 |
 | C | Desktop GUI | GUI workflow builder drive-through | #195 |
 | D | AGOL (owner infra) | Phase 9 sandbox hosted service | #307 |
@@ -63,19 +63,30 @@ In Pro, add `autogis/adapters/toolbox.pyt`, open **“5b. Run GW Model Pipeline
 - Site config: `Desktop\AutoGIS-QA\geostat\site_config.yaml`
 - Event date: `2026-07-01`
 - Methods: **TIN, IDW, EBK** (EBK is the leg under test)
+- Contour interval: **0.2 ft** (the usable fixture span is only 0.876 ft)
 - Stats CSV: `Desktop\AutoGIS-QA\geostat\ranked_stats.csv`
 
 PASS (per `expected_truth.md`):
 - [ ] Tool completes; GeoStats license acquired for EBK (no QA ERROR skip).
-- [ ] Draft contours: near-parallel SW–NE lines (flow toward SE, ~117°).
+- [ ] Draft contours: multiple near-parallel NW–SE lines; flow arrow points
+      northeast at ~63.4°.
 - [ ] MW-13's +25 ft outlier is absent (UseForContour=0 honored); MW-16 (dry)
       absent; 14 points used.
-- [ ] All three methods ranked in `ranked_stats.csv`; every RMSE < 0.1 ft
-      (truth is a plane — any competent interpolator nails it).
+- [ ] All three methods ranked in `ranked_stats.csv`; TIN and EBK RMSE are
+      each <0.05 ft, and IDW RMSE is <0.20 ft.
 - [ ] EBK wrote a `Draft_` standard-error raster; `GW_ModelRun` +
       `GW_ModelCrossValidation` rows exist with ReviewStatus=DRAFT.
 
-### 4. Approval verb (~2 min)
+### 4. Approval action (~3 min)
+
+Use **“Approve Groundwater Model”** in either the Python toolbox or desktop
+GUI. Select `QASITE.gdb`, load the DRAFT run from step 3, inspect the executed
+models and ranked cross-validation statistics, choose any executed model,
+enter reviewer initials/name, confirm, and approve.
+
+PASS: the action requires reviewer identity, asks for explicit confirmation,
+and refreshes to `ApprovedModel=<choice>, ReviewStatus=APPROVED` regardless of
+rank. CLI fallback remains available:
 
 ```bat
 python -m autogis envmon approve-gw-model --gdb %USERPROFILE%\Desktop\AutoGIS-QA\geostat\QASITE.gdb ^
@@ -83,24 +94,39 @@ python -m autogis envmon approve-gw-model --gdb %USERPROFILE%\Desktop\AutoGIS-QA
   --site QASITE --event 2026-07-01
 ```
 
-PASS: `ApprovedModel=EBK, ReviewStatus=APPROVED` — hydro judgment recorded
-regardless of rank.
-
 ### 5. Concentration surface, IDW then EBK (~15 min)
 
 In Pro, open **“5c. Build Concentration Surface (DRAFT)”** (or the
 `build-conc-surface` CLI with `--gdb`): results/coords CSVs from step 2,
-analyte `Benzene`, site `QASITE`, event `2026-07-01`; run once with IDW,
-once with **EBK**.
+analyte `Benzene`, matrix `GW`, site `QASITE`, event `2026-07-01`.
+
+First pin the default EBK neighborhood in the Pro interpreter:
+
+```bat
+python -c "import arcpy; n=arcpy.SearchNeighborhoodStandardCircular(); assert n.nbrMin == 10, n; print(n)"
+```
+
+PASS: output includes `NBR_MIN=10`.
 
 PASS:
-- [ ] Raster peak within ~10% of 5000 µg/L at MW-06 (Gaussian truth); if the
-      peak is ~1e6, canonical read failed — file a bug.
-- [ ] EBK run adds a standard-error companion raster.
+- [ ] IDW + `exclude` uses 9 points and peaks within ~10% of 5000 µg/L at
+      MW-06; if the peak is ~1e6, canonical read failed — file a bug.
+- [ ] EBK + `exclude` stops in AutoGIS preflight: 9 available, 10 required.
+      No extension is checked out, no scratch object is created, and existing
+      drafts remain untouched.
+- [ ] EBK + `use_rl` uses 16 points, adds a standard-error companion raster,
+      peaks around 800–1000 µg/L, and reports roughly 750–950 µg/L standard
+      error at MW-06. Do not apply the IDW 5000 µg/L criterion to EBK.
 - [ ] Rasters carry the `Draft_` prefix; `Env_SurfaceRegistry` rows have
       ReviewStatus=DRAFT.
 - [ ] `use_zero` vs `exclude` rule visibly changes the plume edge (nondetect
       ring pulled to 0 vs interpolated outward).
+- [ ] Re-run IDW + `use_zero`, then EBK + `use_rl`, twice in the same Pro
+      session. Every run succeeds without deleting scratch objects manually;
+      no `conc_pts_*`, `conc_pred_*`, `conc_se_*`, or `conc_ebk_lyr_*`
+      artifacts from a completed run remain. If a lock prevents cleanup, the
+      QA warning names the exact scratch path and tells the operator to close
+      layers and delete it before retrying.
 
 ### 6. Record the outcome (~5 min)
 

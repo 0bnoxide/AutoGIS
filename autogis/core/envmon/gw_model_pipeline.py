@@ -149,6 +149,43 @@ def build_run_records(
     return run_row, cv_rows
 
 
+def build_gw_model_review_records(
+    run_rows: Sequence[dict],
+    cv_rows: Sequence[dict],
+) -> List[dict]:
+    """Join run rows to ranked CV rows for GUI/toolbox review (#384)."""
+    stats_by_run: Dict[str, List[dict]] = {}
+    for row in cv_rows:
+        stats_by_run.setdefault(str(row["RunID"]), []).append(dict(row))
+    for rows in stats_by_run.values():
+        rows.sort(key=lambda r: (
+            r.get("Rank") is None,
+            r.get("Rank") if r.get("Rank") is not None else 0,
+            str(r.get("ModelName", "")),
+        ))
+
+    records: List[dict] = []
+    for row in run_rows:
+        record = dict(row)
+        executed = record.get("ExecutedMethods") or ""
+        record["ExecutedMethods"] = [
+            m.strip() for m in str(executed).split(",") if m.strip()]
+        event = record.get("EventDate")
+        if isinstance(event, _dt.datetime):
+            record["EventDate"] = event.date().isoformat()
+        elif event is not None:
+            record["EventDate"] = str(event)[:10]
+        stamp = record.get("RunTimestamp")
+        if isinstance(stamp, _dt.datetime):
+            record["RunTimestamp"] = stamp.isoformat(sep=" ", timespec="seconds")
+        elif stamp is not None:
+            record["RunTimestamp"] = str(stamp)
+        record["Models"] = stats_by_run.get(str(record["RunID"]), [])
+        records.append(record)
+    records.sort(key=lambda r: str(r.get("RunTimestamp", "")), reverse=True)
+    return records
+
+
 def write_observations_csv(rows: Sequence[ObservationRow],
                            output_path: Path) -> None:
     """Audit CSV in the exact wide shape ``evaluate-gw-models`` consumes."""
@@ -350,6 +387,35 @@ def write_model_run_to_gdb(gdb, run_row: dict,
     return True
 
 
+def read_gw_model_reviews(gdb) -> List[dict]:  # pragma: no cover
+    """Read model runs and ranked CV statistics for review surfaces.
+
+    ADR-0077: arcpy.da.SearchCursor signature/current status verified against
+    the Pro 3.6 and 3.5 official references on 2026-07-29.
+    """
+    from autogis.runtime.sessions import arcpy_env as _arcpy
+    arcpy = _arcpy()
+    run_tbl = str(Path(str(gdb)) / "GW_ModelRun")
+    cv_tbl = str(Path(str(gdb)) / "GW_ModelCrossValidation")
+    if not (arcpy.Exists(run_tbl) and arcpy.Exists(cv_tbl)):
+        raise ValueError(
+            "GW_ModelRun/GW_ModelCrossValidation tables are missing; run "
+            "upgrade-schema (v2.4 or later) first.")
+    run_fields = [
+        "RunID", "SiteID", "EventDate", "Methods", "ExecutedMethods",
+        "RunTimestamp", "ApprovedModel", "ReviewStatus", "Notes",
+    ]
+    cv_fields = [
+        "RunID", "ModelName", "NPoints", "RMSE", "MeanError", "MAE",
+        "PctWithinTolerance", "Rank",
+    ]
+    with arcpy.da.SearchCursor(run_tbl, run_fields) as cur:
+        run_rows = [dict(zip(run_fields, row)) for row in cur]
+    with arcpy.da.SearchCursor(cv_tbl, cv_fields) as cur:
+        cv_rows = [dict(zip(cv_fields, row)) for row in cur]
+    return build_gw_model_review_records(run_rows, cv_rows)
+
+
 def run_field_to_groundwater_model_pipeline(  # pragma: no cover
     gdb,
     site_id: str,
@@ -456,7 +522,7 @@ def run_field_to_groundwater_model_pipeline(  # pragma: no cover
 
 
 def approve_gw_model(gdb, run_id: str, model_name: str,
-                     reviewer: str = "") -> bool:  # pragma: no cover
+                     reviewer: str) -> bool:  # pragma: no cover
     """Record the hydrogeologist's model choice on GW_ModelRun.
 
     The chosen model must be in the run's ExecutedMethods — the methods that
@@ -465,6 +531,9 @@ def approve_gw_model(gdb, run_id: str, model_name: str,
     metric (ADR-0085 decision 3; PR #240 review). Returns False when the run
     id is unknown or the model did not execute in that run.
     """
+    reviewer = str(reviewer).strip()
+    if not reviewer:
+        raise ValueError("reviewer name or initials are required")
     from autogis.runtime.sessions import arcpy_env as _arcpy
     arcpy = _arcpy()
     run_tbl = str(Path(str(gdb)) / "GW_ModelRun")
@@ -490,6 +559,6 @@ def approve_gw_model(gdb, run_id: str, model_name: str,
         for _am, _rs, notes in cur:
             cur.updateRow([model_name, "APPROVED",
                            f"{notes or ''} | Approved {model_name} "
-                           f"by {reviewer or 'unspecified'} {stamp}"[:256]])
+                           f"by {reviewer} {stamp}"[:256]])
             updated = True
     return updated

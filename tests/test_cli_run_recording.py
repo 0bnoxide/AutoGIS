@@ -269,7 +269,7 @@ def test_approve_gw_model_site_and_event_tags_reach_record(tmp_path, monkeypatch
 
     result = CliRunner().invoke(autogis, [
         "envmon", "approve-gw-model", "--gdb", str(tmp_path / "x.gdb"),
-        "--run-id", "R1", "--model", "M1",
+        "--run-id", "R1", "--model", "M1", "--reviewer", "QA",
         "--site", "H281", "--event", "2026-Q2",
     ])
 

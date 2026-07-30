@@ -43,6 +43,7 @@ from . import settings
 from .config_builder_dialog import ConfigBuilderDialog
 from .executor import Decision, Step, StepResult, _SEV_ORDER, needs_arcpy_env
 from .forms import FormValidationError, build_step
+from .gw_model_approval_dialog import GWModelApprovalDialog
 from .introspect import CommandForm, FormField, introspect_cli
 from .reachability import UNREACHABLE
 from .runner import RunState, Workflow, WorkflowRunner
@@ -236,8 +237,11 @@ class MainWindow(QMainWindow):
         # .pyt toolbox", so they are hidden from the picker rather than shown
         # disabled. Headless + class-2 (arcpy-executable, runnable once a
         # local_python is set) tools stay listed.
-        self._forms = {f.label: f for f in _window_forms()
-                       if not f.unreachable_reason}
+        self._forms = {
+            f.label: f for f in _window_forms()
+            if not f.unreachable_reason
+            and f.label != "envmon approve-gw-model"
+        }
         self._field_widgets: dict[str, QWidget] = {}
         self._field_browse_buttons: dict[str, QPushButton] = {}
         self._worker: _StepWorker | None = None
@@ -270,6 +274,11 @@ class MainWindow(QMainWindow):
         build_config_btn = QPushButton("Build Site Config…")
         build_config_btn.clicked.connect(self._on_build_config)
         lp_row.addWidget(build_config_btn)
+        self._approval_dialog: GWModelApprovalDialog | None = None
+        approve_model_btn = QPushButton("Approve GW Model…")
+        approve_model_btn.setObjectName("approve-gw-model")
+        approve_model_btn.clicked.connect(self._on_approve_gw_model)
+        lp_row.addWidget(approve_model_btn)
         outer.addLayout(lp_row)
 
         self._command_box = QComboBox()
@@ -399,6 +408,18 @@ class MainWindow(QMainWindow):
         ``open()`` keeps the event loop free, unlike ``exec()``)."""
         self._config_dialog = ConfigBuilderDialog(self)
         self._config_dialog.open()
+
+    def _on_approve_gw_model(self) -> None:
+        """Open the dedicated review UI; the generic CLI form cannot list
+        DRAFT runs or show ranked cross-validation statistics."""
+        if not self._local_python:
+            self._status.setText(
+                "Set the arcgispro-py3 python.exe before approving a "
+                "groundwater model.")
+            return
+        self._approval_dialog = GWModelApprovalDialog(
+            self._local_python, self)
+        self._approval_dialog.open()
 
     def _browse_local_python(self) -> None:
         path = _pick_path("open", self, "Select arcgispro-py3 python.exe",

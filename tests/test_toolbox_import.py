@@ -101,6 +101,7 @@ def test_redirect_only_pyt_tools_use_shared_run_recorder():
         "BuildCallouts": "build-callouts",
         "GroundwaterContours": "gw-contours",
         "RunGWModelPipeline": "run-gw-model-pipeline",
+        "ApproveGWModel": "approve-gw-model",
         "BuildConcentrationSurface": "build-conc-surface",
         "ExportFigures": "export-figures",
         "FullPipeline": "full-pipeline",
@@ -111,6 +112,24 @@ def test_redirect_only_pyt_tools_use_shared_run_recorder():
         "TransformLandXMLSurface": "transform-landxml",
         "BuildCADExportPackage": "build-cad-package",
     }
+
+
+def test_groundwater_approval_tool_is_registered():
+    pyt = pathlib.Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
+    tree = ast.parse(pyt.read_text(encoding="utf-8"), filename=str(pyt))
+    toolbox = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "Toolbox")
+    init = next(
+        node for node in toolbox.body
+        if isinstance(node, ast.FunctionDef) and node.name == "__init__")
+    tools = next(
+        node.value for node in ast.walk(init)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Attribute) and t.attr == "tools"
+                for t in node.targets))
+    assert "ApproveGWModel" in [
+        elt.id for elt in tools.elts if isinstance(elt, ast.Name)]
 
 
 # Deprecated (since Pro 3.2) arcpy conversion tools -> current replacement,

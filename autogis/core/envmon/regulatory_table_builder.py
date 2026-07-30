@@ -11,6 +11,7 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
 
 from ..common.config import ND_QUALIFIERS
+from .report_input import normalize_report_rows
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
 
 _FILL_EXCEED = PatternFill(fill_type="solid", fgColor="FF9999")
@@ -41,6 +42,7 @@ def build_regulatory_table_specs(
 ) -> list:
     gm = group_map or {}
     sl = screening_levels or {}
+    result_rows = normalize_report_rows(result_rows)
     by_group: dict[str, set] = defaultdict(set)
     units_map: dict[str, str] = {}
     for r in result_rows:

@@ -13,10 +13,11 @@ DRAFT.
 
 Headless (unit-tested): nondetect policy, point collection, raster naming,
 registry-row shaping. arcpy work lives in the ``# pragma: no cover`` seams.
-ADR-0077 doc-verification (this session, 2026-07-16): EmpiricalBayesianKriging,
-GALayerToRasters (Geostatistical Analyst), Idw (Spatial Analyst),
-management.Clip / CopyRaster / Raster.save (no extension) — all current,
-none deprecated at Pro 3.x.
+ADR-0077 doc-verification refreshed 2026-07-29:
+EmpiricalBayesianKriging, GALayerToRasters (Geostatistical Analyst), Idw
+(Spatial Analyst), management.CreateFeatureclass / AddField / Delete / Clip /
+GetRasterProperties / CopyRaster, da.InsertCursor, and Raster.save — current
+at Pro 3.6 and present at the Pro 3.5 compliance floor.
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ import csv
 import datetime as _dt
 import hashlib
 import re
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -34,6 +36,7 @@ from autogis.core.envmon.export_geojson import load_well_coords
 
 NONDETECT_RULES = ("exclude", "half_rl", "use_rl", "use_zero")
 SURFACE_METHODS = ("IDW", "EBK")
+EBK_MIN_NEIGHBORS = 10
 
 # (LocationID, x, y, concentration) — mirrors the contour-point shape.
 ConcPoint = Tuple[str, float, float, float]
@@ -177,6 +180,24 @@ def surface_tag(*parts) -> str:
     return f"{prefix[:40]}_{h}"
 
 
+def scratch_tag(site_id: str, analyte: str) -> str:
+    """Collision-resistant per-run scratch identity (#383)."""
+    return f"{surface_tag(site_id, analyte)}_{uuid.uuid4().hex[:12]}"
+
+
+def minimum_surface_points(method: str, configured_minimum: int = 4) -> int:
+    """Method-aware preflight floor.
+
+    ArcGIS Pro 3.6's default EBK standard circular neighborhood reports
+    NBR_MIN=10 (live pin 2026-07-29); IDW keeps the caller-configured floor.
+    """
+    if method not in SURFACE_METHODS:
+        raise ValueError(
+            f"method must be one of {SURFACE_METHODS}, got {method!r}")
+    return max(int(configured_minimum),
+               EBK_MIN_NEIGHBORS if method == "EBK" else 0)
+
+
 def raster_names(site_id: str, event_date: str, analyte: str,
                  method: str) -> Dict[str, str]:
     """Draft_ raster names per spec D3: PREDICTION and (EBK only) STD_ERROR."""
@@ -297,11 +318,16 @@ def build_concentration_surface(  # pragma: no cover
 
     summary = {"points": len(points), "rasters": {}, "skipped": False,
                "registry_written": False}
-    if len(points) < min_valid_points:
+    required_points = minimum_surface_points(method, min_valid_points)
+    if len(points) < required_points:
         qa.add(SEV_ERROR, "insufficient_surface_points",
-               f"Only {len(points)} usable {analyte} point(s) for {site_id} "
-               f"{event_date} (minimum {min_valid_points}). Surface skipped.",
-               recommended_action="Add wells or relax the nondetect rule.",
+               f"{method} requires at least {required_points} usable "
+               f"{analyte} point(s) for {site_id} {event_date}; only "
+               f"{len(points)} available. Surface skipped before scratch "
+               "datasets or extension checkout; existing drafts untouched.",
+               recommended_action=(
+                   "Add wells or choose a nondetect rule that supplies at "
+                   f"least {required_points} usable points."),
                site_id=site_id)
         summary["skipped"] = True
         return summary
@@ -331,122 +357,138 @@ def build_concentration_surface(  # pragma: no cover
     # (partial checkout, missing MonitoringWells, EBK error, bad clip)
     # surfaces as QA without leaking a license.
     scratch_rasters: Dict[str, str] = {}
+    scratch_objects: List[str] = []
     acquired: List[str] = []
-    tag = surface_tag(site_id, analyte)  # scratch names per site/analyte
+    tag = scratch_tag(site_id, analyte)
     try:
-        for e in need:
-            arcpy.CheckOutExtension(e)
-            acquired.append(e)
-        scratch = Path(str(scratch or arcpy.env.scratchGDB))
-        pt_name = f"conc_pts_{tag}"
-        pt_fc = str(scratch / pt_name)
-        sr = arcpy.Describe(str(Path(str(gdb)) / "MonitoringWells")
-                            ).spatialReference
-        if arcpy.Exists(pt_fc):
-            arcpy.management.Delete(pt_fc)
-        arcpy.management.CreateFeatureclass(str(scratch), pt_name, "POINT",
-                                            spatial_reference=sr)
-        arcpy.management.AddField(pt_fc, "CONC", "DOUBLE")
-        with arcpy.da.InsertCursor(pt_fc, ["SHAPE@XY", "CONC"]) as cur:
-            for _loc, x, y, v in points:
-                cur.insertRow([(x, y), v])
+        try:
+            for e in need:
+                arcpy.CheckOutExtension(e)
+                acquired.append(e)
+            scratch = Path(str(scratch or arcpy.env.scratchGDB))
+            pt_name = f"conc_pts_{tag}"
+            pt_fc = str(scratch / pt_name)
+            scratch_objects.append(pt_fc)
+            sr = arcpy.Describe(str(Path(str(gdb)) / "MonitoringWells")
+                                ).spatialReference
+            arcpy.management.CreateFeatureclass(
+                str(scratch), pt_name, "POINT", spatial_reference=sr)
+            arcpy.management.AddField(pt_fc, "CONC", "DOUBLE")
+            with arcpy.da.InsertCursor(pt_fc, ["SHAPE@XY", "CONC"]) as cur:
+                for _loc, x, y, v in points:
+                    cur.insertRow([(x, y), v])
 
-        xs = [p[1] for p in points]; ys = [p[2] for p in points]
-        cs = cell_size or max((max(xs) - min(xs)), (max(ys) - min(ys)),
-                              1.0) / 250.0
+            xs = [p[1] for p in points]; ys = [p[2] for p in points]
+            cs = cell_size or max((max(xs) - min(xs)), (max(ys) - min(ys)),
+                                  1.0) / 250.0
 
-        pred = str(scratch / f"conc_pred_{tag}")
-        if arcpy.Exists(pred):
-            arcpy.management.Delete(pred)
-        if method == "IDW":
-            arcpy.sa.Idw(pt_fc, "CONC", cs).save(pred)
+            pred = str(scratch / f"conc_pred_{tag}")
+            scratch_objects.append(pred)
+            if method == "IDW":
+                arcpy.sa.Idw(pt_fc, "CONC", cs).save(pred)
+            else:
+                lyr = f"conc_ebk_lyr_{tag}"
+                scratch_objects.append(lyr)
+                arcpy.ga.EmpiricalBayesianKriging(
+                    pt_fc, "CONC", lyr, pred, cs)
+                se = str(scratch / f"conc_se_{tag}")
+                scratch_objects.append(se)
+                arcpy.ga.GALayerToRasters(
+                    lyr, se, "PREDICTION_STANDARD_ERROR", cell_size=cs)
+                scratch_rasters["STD_ERROR"] = se
+            scratch_rasters["PREDICTION"] = pred
+
+            if boundary_fc:
+                for rtype, ras in list(scratch_rasters.items()):
+                    clipped = ras + "_clip"
+                    scratch_objects.append(clipped)
+                    arcpy.management.Clip(
+                        ras, "#", clipped, boundary_fc, "",
+                        "ClippingGeometry")
+                    scratch_rasters[rtype] = clipped
+                # A disjoint boundary can clip to all-NoData without raising.
+                # GetRasterProperties(ALLNODATA) is the direct test (#241
+                # review; ADR-0077 doc-verified 2026-07-16): '1' = confirmed
+                # empty. An inspection failure is reported as its own QA
+                # category, distinct from confirmed no-overlap — both skip
+                # before any draft is replaced (spec D5).
+                try:
+                    allnodata = str(arcpy.management.GetRasterProperties(
+                        scratch_rasters["PREDICTION"], "ALLNODATA"
+                    ).getOutput(0)).strip()
+                except Exception as exc:
+                    qa.add(SEV_ERROR, "boundary_clip_inspect_failed",
+                           f"Could not inspect the clipped raster ({exc}). "
+                           "Surface skipped; existing drafts untouched.",
+                           site_id=site_id)
+                    summary["skipped"] = True
+                    return summary
+                if allnodata == "1":
+                    qa.add(SEV_ERROR, "boundary_clip_empty",
+                           f"Boundary clip produced no data (no overlap "
+                           f"between {boundary_fc} and the interpolated "
+                           "extent). Surface skipped; existing drafts "
+                           "untouched.", site_id=site_id)
+                    summary["skipped"] = True
+                    return summary
+        except Exception as exc:
+            qa.add(SEV_ERROR, "surface_generation_failed",
+                   f"{method} concentration surface failed: {exc}. Existing "
+                   "drafts untouched.", site_id=site_id)
+            summary["skipped"] = True
+            return summary
+
+        # Publish stage. Delete-then-copy cannot be atomic in a GDB; guard it
+        # so a mid-loop failure (e.g. the old draft lock-held by an open map)
+        # surfaces as QA with an explicit partial-replace warning, never a raw
+        # traceback after drafts were already touched (#slice-2 review).
+        names = raster_names(site_id, event_date, analyte, method)
+        try:
+            for rtype, name in names.items():
+                final = str(Path(str(gdb)) / name)
+                if arcpy.Exists(final):
+                    arcpy.management.Delete(final)
+                arcpy.management.CopyRaster(scratch_rasters[rtype], final)
+                summary["rasters"][rtype] = name
+        except Exception as exc:
+            qa.add(SEV_ERROR, "surface_publish_failed",
+                   f"Publishing {method} {analyte} raster(s) failed: {exc}. "
+                   f"Written so far: {summary['rasters'] or 'none'} — "
+                   "existing drafts may be partially replaced; close any "
+                   "map layers locking them and re-run.", site_id=site_id)
+            summary["skipped"] = True
+            return summary
+
+        rows = build_surface_registry_rows(
+            site_id, event_date, "CONC", analyte, method, nondetect_rule,
+            names, _dt.datetime.now(), units=surface_unit)
+        summary["registry_written"] = write_surface_registry_rows(gdb, rows)
+        if not summary["registry_written"]:
+            qa.add(SEV_ERROR, "surface_registry_missing",
+                   "Env_SurfaceRegistry missing — run upgrade-schema (v2.5) "
+                   "first. Raster written but NOT registered.",
+                   site_id=site_id)
         else:
-            lyr = f"conc_ebk_lyr_{tag}"
-            if arcpy.Exists(lyr):
-                arcpy.management.Delete(lyr)
-            arcpy.ga.EmpiricalBayesianKriging(pt_fc, "CONC", lyr, pred, cs)
-            se = str(scratch / f"conc_se_{tag}")
-            if arcpy.Exists(se):
-                arcpy.management.Delete(se)
-            arcpy.ga.GALayerToRasters(lyr, se, "PREDICTION_STANDARD_ERROR",
-                                      cell_size=cs)
-            scratch_rasters["STD_ERROR"] = se
-        scratch_rasters["PREDICTION"] = pred
-
-        if boundary_fc:
-            for rtype, ras in list(scratch_rasters.items()):
-                clipped = ras + "_clip"
-                if arcpy.Exists(clipped):
-                    arcpy.management.Delete(clipped)
-                arcpy.management.Clip(ras, "#", clipped, boundary_fc, "",
-                                      "ClippingGeometry")
-                scratch_rasters[rtype] = clipped
-            # A disjoint boundary can clip to all-NoData without raising.
-            # GetRasterProperties(ALLNODATA) is the direct test (#241
-            # review; ADR-0077 doc-verified 2026-07-16): '1' = confirmed
-            # empty. An inspection failure is reported as its own QA
-            # category, distinct from confirmed no-overlap — both skip
-            # before any draft is replaced (spec D5).
-            try:
-                allnodata = str(arcpy.management.GetRasterProperties(
-                    scratch_rasters["PREDICTION"], "ALLNODATA"
-                ).getOutput(0)).strip()
-            except Exception as exc:
-                qa.add(SEV_ERROR, "boundary_clip_inspect_failed",
-                       f"Could not inspect the clipped raster ({exc}). "
-                       "Surface skipped; existing drafts untouched.",
-                       site_id=site_id)
-                summary["skipped"] = True
-                return summary
-            if allnodata == "1":
-                qa.add(SEV_ERROR, "boundary_clip_empty",
-                       f"Boundary clip produced no data (no overlap between "
-                       f"{boundary_fc} and the interpolated extent). Surface "
-                       "skipped; existing drafts untouched.", site_id=site_id)
-                summary["skipped"] = True
-                return summary
-    except Exception as exc:
-        qa.add(SEV_ERROR, "surface_generation_failed",
-               f"{method} concentration surface failed: {exc}. Existing "
-               "drafts untouched.", site_id=site_id)
-        summary["skipped"] = True
+            qa.add(SEV_INFO, "concentration_surface_generated",
+                   f"DRAFT {method} {analyte} surface ({surface_unit}) from "
+                   f"{len(points)} well(s), "
+                   f"nondetect_rule={nondetect_rule}. {_DRAFT_WARNING}",
+                   site_id=site_id)
         return summary
     finally:
+        for obj in reversed(scratch_objects):
+            try:
+                if arcpy.Exists(obj):
+                    arcpy.management.Delete(obj)
+            except Exception as exc:
+                qa.add(
+                    SEV_WARNING, "scratch_cleanup_failed",
+                    f"Could not delete scratch object {obj}: {exc}. Close "
+                    "ArcGIS Pro layers or release locks, then delete this "
+                    "path manually before retrying.",
+                    recommended_action=(
+                        f"Close layers using {obj}, delete it from Catalog, "
+                        "then rerun Build Concentration Surface."),
+                    site_id=site_id)
         for e in acquired:
             arcpy.CheckInExtension(e)
-
-    # Publish stage. Delete-then-copy cannot be atomic in a GDB; guard it
-    # so a mid-loop failure (e.g. the old draft lock-held by an open map)
-    # surfaces as QA with an explicit partial-replace warning, never a raw
-    # traceback after drafts were already touched (#slice-2 review).
-    names = raster_names(site_id, event_date, analyte, method)
-    try:
-        for rtype, name in names.items():
-            final = str(Path(str(gdb)) / name)
-            if arcpy.Exists(final):
-                arcpy.management.Delete(final)
-            arcpy.management.CopyRaster(scratch_rasters[rtype], final)
-            summary["rasters"][rtype] = name
-    except Exception as exc:
-        qa.add(SEV_ERROR, "surface_publish_failed",
-               f"Publishing {method} {analyte} raster(s) failed: {exc}. "
-               f"Written so far: {summary['rasters'] or 'none'} — existing "
-               "drafts may be partially replaced; close any map layers "
-               "locking them and re-run.", site_id=site_id)
-        summary["skipped"] = True
-        return summary
-
-    rows = build_surface_registry_rows(
-        site_id, event_date, "CONC", analyte, method, nondetect_rule,
-        names, _dt.datetime.now(), units=surface_unit)
-    summary["registry_written"] = write_surface_registry_rows(gdb, rows)
-    if not summary["registry_written"]:
-        qa.add(SEV_ERROR, "surface_registry_missing",
-               "Env_SurfaceRegistry missing — run upgrade-schema (v2.5) "
-               "first. Raster written but NOT registered.", site_id=site_id)
-    else:
-        qa.add(SEV_INFO, "concentration_surface_generated",
-               f"DRAFT {method} {analyte} surface ({surface_unit}) from "
-               f"{len(points)} well(s), nondetect_rule={nondetect_rule}. "
-               f"{_DRAFT_WARNING}", site_id=site_id)
-    return summary

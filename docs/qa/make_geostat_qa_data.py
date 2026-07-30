@@ -4,7 +4,7 @@ Generates a deterministic (seeded) synthetic site with KNOWN ground truth so
 the human QA session can verify tool output against math, not vibes:
 
 - 16 monitoring wells on a jittered 4x4 grid (UTM-like meters).
-- Groundwater elevations on a known plane (gradient toward the SE) with tiny
+- Groundwater elevations on a known plane (flow toward the NE) with tiny
   noise -> TIN/IDW/EBK draft contours + LOO ranking have a known right answer.
 - A benzene plume as a Gaussian mound centered on MW-06 -> the concentration
   surface has a known peak, spread, and nondetect ring.
@@ -36,8 +36,10 @@ ANALYTE = "Benzene"
 BASE_X, BASE_Y = 500_000.0, 4_650_000.0   # UTM-like origin, meters
 SPACING = 60.0                            # grid spacing
 GWE_BASE = 100.0                          # ft at the origin well
-GWE_DX, GWE_DY = -0.004, -0.002           # ft/m -> flow toward SE (~117 deg)
+GWE_DX, GWE_DY = -0.004, -0.002           # ft/m -> flow NE (~63.4 deg)
 GWE_NOISE_FT = 0.02
+QA_CONTOUR_INTERVAL_FT = 0.2
+EXPECTED_GWE_SPAN_FT = 0.876
 PLUME_SOURCE = "MW-06"                    # grid position (1,1)
 PLUME_PEAK_UGL = 5000.0
 PLUME_SIGMA_M = 25.0   # small vs the 60 m grid -> outer ring is nondetect
@@ -102,7 +104,7 @@ def build_rows():
         res = {
             "SiteID": SITE_ID, "LocationID": loc,
             "SampleID": f"{loc}-{EVENT_DATE}",
-            "SampleDate": EVENT_DATE, "Matrix": "WG",
+            "SampleDate": EVENT_DATE, "Matrix": "GW",
             "AnalyteName": ANALYTE, "AnalyteCanonicalName": ANALYTE,
             "ResultRawText": (f"{c_ugl:.1f}" if detected else f"<{RL_UGL}"),
             "ResultNumeric": (round(c_ugl, 1) if detected else ""),
@@ -171,20 +173,29 @@ Site {SITE_ID}, event {EVENT_DATE}, analyte {ANALYTE}. Regenerate any time:
 ## Groundwater surface (Env_WaterLevels)
 - TRUE surface: plane, GWE = {GWE_BASE} + ({GWE_DX})(x-{BASE_X:.0f}) +
   ({GWE_DY})(y-{BASE_Y:.0f}) ft, noise sigma = {GWE_NOISE_FT} ft.
-- Flow direction: toward the SE (azimuth ~117 deg from north).
+- Flow direction: toward the NE (azimuth ~63.4 deg clockwise from north).
 - Contourable wells: 14 (MW-13 excluded UseForContour=0 outlier; MW-16 dry).
-- PASS: draft contours are near-parallel lines trending SW-NE; LOO RMSE for
-  every method well under 0.1 ft; MW-13's +25 ft spike absent from contours.
+- Contourable GWE span: {EXPECTED_GWE_SPAN_FT:.3f} ft. Use a
+  {QA_CONTOUR_INTERVAL_FT:.1f} ft contour interval so the surface produces
+  multiple near-parallel NW-SE lines.
+- PASS: flow arrow is ~63.4 deg; TIN and EBK LOO RMSE are each <0.05 ft;
+  IDW LOO RMSE is <0.20 ft; MW-13's +25 ft spike is absent.
 
 ## Benzene plume (results.csv)
 - TRUE surface: Gaussian, peak {PLUME_PEAK_UGL:.0f} ug/L at {PLUME_SOURCE},
   sigma {PLUME_SIGMA_M:.0f} m. Wells below {RL_UGL} ug/L are nondetects (U).
+- Matrix is canonical `GW` (the shipped lab profiles map source `WG` to `GW`).
 - MW-02 is reported in mg/L — the surface must unit-convert it, not drop it.
 - One QCType=FD row (999999 ug/L at {PLUME_SOURCE}) MUST be excluded by
   canonical read: if the interpolated peak is ~1e6, canonical read failed.
-- PASS: surface peak within ~10% of {PLUME_PEAK_UGL:.0f} ug/L at
-  {PLUME_SOURCE}; nondetect ring behaves per rule (exclude/half_rl/use_rl/
-  use_zero -> point counts differ exactly as the rule implies).
+- PASS, IDW/exclude: surface peak within ~10% of
+  {PLUME_PEAK_UGL:.0f} ug/L at {PLUME_SOURCE}.
+- PASS, EBK/use_rl: all 16 points run; the prediction peak is expected around
+  891 ug/L with standard error around 861 ug/L at {PLUME_SOURCE}. EBK smooths
+  this narrow plume and is not expected to reproduce the sampled 5000 ug/L
+  peak.
+- Nondetect ring behaves per rule (exclude/half_rl/use_rl/use_zero -> point
+  counts differ exactly as the rule implies).
 """
 
 
@@ -193,6 +204,12 @@ def check() -> None:
     assert len(wells) == 16 and len(coords) == 16
     contourable = [r for r in waterlevels if r["UseForContour"] == 1]
     assert len(contourable) == 14, len(contourable)
+    values = [r["GroundwaterElevation_ft"] for r in contourable]
+    span = max(values) - min(values)
+    assert abs(span - EXPECTED_GWE_SPAN_FT) < 1e-9, span
+    assert span / QA_CONTOUR_INTERVAL_FT >= 4
+    flow_azimuth = math.degrees(math.atan2(-GWE_DX, -GWE_DY)) % 360
+    assert abs(flow_azimuth - 63.43494882292201) < 1e-9, flow_azimuth
     dry = [r for r in waterlevels if r["IsDry"] == 1]
     assert len(dry) == 1 and dry[0]["GroundwaterElevation_ft"] == ""
     # plane recoverable: residual of contourable GWEs vs truth < 4*sigma
@@ -202,6 +219,7 @@ def check() -> None:
         assert abs(r["GroundwaterElevation_ft"] - truth_gwe(x, y)) < 4 * GWE_NOISE_FT
     qc = [r for r in results if r["QCType"]]
     assert len(qc) == 1 and qc[0]["ResultNumeric"] == 999999
+    assert {r["Matrix"] for r in results} == {"GW"}
     nd = [r for r in results if r["IsNonDetect"] == 1]
     # outer ring (row 3 / col 3) must be nondetect, inner 3x3 detected
     assert 5 <= len(nd) <= 8, len(nd)
