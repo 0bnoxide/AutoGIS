@@ -6,6 +6,8 @@ import pytest
 
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.gw_model_pipeline import (
+    approve_gw_model,
+    build_gw_model_review_records,
     build_run_records,
     cross_validate_and_rank,
     loo_observation_rows,
@@ -127,6 +129,30 @@ def test_run_records_without_cv():
     assert "insufficient points" in run_row["Notes"]
 
 
+def test_review_records_join_ranked_stats_and_keep_unranked_methods():
+    runs = [{
+        "RunID": "GWM_X", "SiteID": "X",
+        "EventDate": dt.datetime(2026, 7, 1),
+        "Methods": "TIN,IDW,EBK", "ExecutedMethods": "TIN,IDW,EBK",
+        "RunTimestamp": NOW, "ApprovedModel": "", "ReviewStatus": "DRAFT",
+        "Notes": "",
+    }]
+    cv = [
+        {"RunID": "GWM_X", "ModelName": "IDW", "Rank": 2, "RMSE": 0.14},
+        {"RunID": "GWM_X", "ModelName": "TIN", "Rank": 1, "RMSE": 0.02},
+    ]
+    records = build_gw_model_review_records(runs, cv)
+    assert records[0]["EventDate"] == "2026-07-01"
+    assert records[0]["ExecutedMethods"] == ["TIN", "IDW", "EBK"]
+    assert [m["ModelName"] for m in records[0]["Models"]] == ["TIN", "IDW"]
+    assert "EBK" in records[0]["ExecutedMethods"]  # approvable without CV
+
+
+def test_approve_requires_reviewer_before_arcpy_import():
+    with pytest.raises(ValueError, match="reviewer"):
+        approve_gw_model("fake.gdb", "GWM_X", "TIN", reviewer="  ")
+
+
 def test_write_observations_csv_round_trips(tmp_path):
     """Audit CSV must be readable by evaluate-gw-models' own reader."""
     from autogis.core.envmon.evaluate_gw_models import read_gw_model_csv
@@ -204,9 +230,17 @@ def test_run_gw_model_pipeline_guard_without_arcpy(tmp_path):
 def test_approve_gw_model_guard_without_arcpy():
     result = CliRunner().invoke(autogis, [
         "envmon", "approve-gw-model", "--gdb", "fake.gdb",
-        "--run-id", "GWM_X", "--model", "TIN"])
+        "--run-id", "GWM_X", "--model", "TIN", "--reviewer", "QA"])
     assert result.exit_code != 0
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_approve_gw_model_cli_requires_reviewer():
+    result = CliRunner().invoke(autogis, [
+        "envmon", "approve-gw-model", "--gdb", "fake.gdb",
+        "--run-id", "GWM_X", "--model", "TIN"])
+    assert result.exit_code == 2
+    assert "Missing option '--reviewer'" in result.output
 
 
 # ---------------------------------------------------------------------------

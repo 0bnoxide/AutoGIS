@@ -66,6 +66,7 @@ class Toolbox(object):
             BuildCallouts,           # tool 4
             GroundwaterContours,     # tool 5
             RunGWModelPipeline,      # Phase-5 slice 1 (ADR-0085)
+            ApproveGWModel,          # Phase-5 hydrogeologist review (#384)
             BuildConcentrationSurface,  # Phase-5 slice 2 (ADR-0085)
             ExportFigures,           # tool 6
             FullPipeline,            # tool 7
@@ -461,7 +462,7 @@ class RunGWModelPipeline(object):
 
     RunFieldToGroundwaterModelPipeline per ADR-0085; select a single method
     for the BuildGroundwaterSurfaceModel mode. Approval is recorded
-    afterwards with the `approve-gw-model` CLI verb.
+    afterwards with the adjacent ApproveGWModel tool.
     """
 
     def __init__(self):
@@ -473,7 +474,7 @@ class RunGWModelPipeline(object):
                             "EBK (slice 2) also writes a Draft_ standard-"
                             "error raster and needs Geostatistical Analyst. "
                             "Rank 1 is a suggestion only — a hydrogeologist "
-                            "approves a model with approve-gw-model.")
+                            "approves a model with Approve Groundwater Model.")
         self.canRunInBackground = False
 
     def getParameterInfo(self):
@@ -526,6 +527,140 @@ class RunGWModelPipeline(object):
         )
         messages.addMessage(json.dumps(summary, indent=2))
         _msg(messages, qa)
+
+
+class ApproveGWModel(object):
+    """Hydrogeologist review action for a DRAFT GW_ModelRun (#384)."""
+
+    def __init__(self):
+        self.label = "5b. Approve Groundwater Model"
+        self.description = (
+            "List DRAFT groundwater-model runs, review executed models and "
+            "ranked cross-validation statistics, then record the reviewer’s "
+            "chosen model. Rank 1 is a suggestion only.")
+        self.canRunInBackground = False
+        self._last_selection = None
+
+    def getParameterInfo(self):
+        run_id = _param("run_id", "DRAFT model run", "GPString")
+        run_id.filter.type = "ValueList"
+        model = _param("model", "Executed model to approve", "GPString")
+        model.filter.type = "ValueList"
+        summary = _param(
+            "model_summary", "Executed models and ranked CV statistics",
+            "GPString", required=False)
+        summary.enabled = False
+        status = _param(
+            "approval_status", "Approved model / review status",
+            "GPString", required=False)
+        status.enabled = False
+        return [
+            _param("gdb", "File geodatabase", "DEWorkspace"),
+            run_id,
+            summary,
+            model,
+            _param("reviewer", "Reviewer name or initials", "GPString"),
+            _param("confirm", "I confirm this model approval", "GPBoolean",
+                   default=False),
+            status,
+        ]
+
+    def updateParameters(self, parameters):
+        p = {q.name: q for q in parameters}
+        # Qualification's arcpy canary supplies the same Parameter properties
+        # getParameterInfo sets, but no valueAsText until a user supplies a
+        # value. Real Pro exposes both.
+        gdb = (getattr(p["gdb"], "valueAsText", None)
+               or getattr(p["gdb"], "value", None) or "")
+        if not gdb or not arcpy.Exists(gdb):
+            p["confirm"].value = False
+            self._last_selection = None
+            p["run_id"].filter.list = []
+            p["model"].filter.list = []
+            return
+        try:
+            from autogis.core.envmon.gw_model_pipeline import (
+                read_gw_model_reviews,
+            )
+            drafts = [
+                r for r in read_gw_model_reviews(gdb)
+                if r["ReviewStatus"] == "DRAFT"
+            ]
+        except Exception as exc:
+            p["run_id"].filter.list = []
+            p["model"].filter.list = []
+            p["model_summary"].value = f"Could not load model runs: {exc}"
+            return
+        run_ids = [r["RunID"] for r in drafts]
+        p["run_id"].filter.list = run_ids
+        selected = p["run_id"].valueAsText
+        if selected not in run_ids:
+            selected = run_ids[0] if len(run_ids) == 1 else ""
+            p["run_id"].value = selected or None
+        run = next((r for r in drafts if r["RunID"] == selected), None)
+        if run is None:
+            p["confirm"].value = False
+            self._last_selection = None
+            p["model"].filter.list = []
+            p["model_summary"].value = (
+                "Select a DRAFT run to review its executed models.")
+            p["approval_status"].value = ""
+            return
+        executed = list(run["ExecutedMethods"])
+        p["model"].filter.list = executed
+        if p["model"].valueAsText not in executed:
+            ranked = [m["ModelName"] for m in run["Models"]
+                      if m["ModelName"] in executed]
+            p["model"].value = (ranked or executed or [None])[0]
+        selection = (str(gdb), selected, p["model"].valueAsText)
+        if selection != self._last_selection:
+            p["confirm"].value = False
+            self._last_selection = selection
+        ranked_by_name = {m["ModelName"]: m for m in run["Models"]}
+        lines = []
+        for name in executed:
+            stat = ranked_by_name.get(name)
+            if stat is None:
+                lines.append(f"{name}: executed; no CV statistics")
+            else:
+                lines.append(
+                    f"Rank {stat['Rank']} {name}: N={stat['NPoints']}, "
+                    f"RMSE={stat['RMSE']:.5g}, ME={stat['MeanError']:.5g}, "
+                    f"MAE={stat['MAE']:.5g}, "
+                    f"within tolerance={stat['PctWithinTolerance']:.1f}%")
+        p["model_summary"].value = "\n".join(lines)
+        p["approval_status"].value = (
+            f"ApprovedModel={run['ApprovedModel'] or '(none)'}; "
+            f"ReviewStatus={run['ReviewStatus']}")
+
+    @toolbox_core.record_pyt_run("approve-gw-model")
+    def execute(self, parameters, messages):
+        from autogis.adapters.guard import require_runtime
+        require_runtime("approve-gw-model")
+        from autogis.core.envmon.gw_model_pipeline import (
+            approve_gw_model, read_gw_model_reviews,
+        )
+        p = {q.name: q for q in parameters}
+        reviewer = (p["reviewer"].valueAsText or "").strip()
+        if not reviewer:
+            raise ValueError("Reviewer name or initials are required.")
+        if not bool(p["confirm"].value):
+            raise ValueError(
+                "Check 'I confirm this model approval' before running.")
+        gdb = p["gdb"].valueAsText
+        run_id = p["run_id"].valueAsText
+        model = p["model"].valueAsText
+        if not approve_gw_model(gdb, run_id, model, reviewer):
+            raise ValueError(
+                f"Run {run_id!r} was not found or {model!r} did not execute.")
+        refreshed = next(
+            r for r in read_gw_model_reviews(gdb) if r["RunID"] == run_id)
+        p["approval_status"].value = (
+            f"ApprovedModel={refreshed['ApprovedModel']}; "
+            f"ReviewStatus={refreshed['ReviewStatus']}")
+        messages.addMessage(
+            f"Run {run_id}: {p['approval_status'].valueAsText} "
+            f"(reviewer {reviewer}).")
 
 
 class BuildConcentrationSurface(object):
