@@ -2,8 +2,8 @@
 
 **Date:** 2026-07-22
 **Phase:** Production roadmap Phase 5 (saved workflow recipes) — first slice
-**Status:** Proposed (built autonomously under the standing "continue roadmap
-development" goal; owner unavailable)
+**Status:** Implemented in three slices; owner-directed Phase 5 closeout
+2026-07-30
 
 ## Purpose
 
@@ -89,16 +89,36 @@ name / step count, or the `ConfigError` and exit non-zero. Registered in
 
 ## Scope / deferred
 
-- **Deferred:** GUI save/load wiring (`Workflow ⇄ recipe`), running a recipe
-  headlessly, and the RTK-to-CAD / monitoring-event example recipes — all land in
-  the GUI-wiring slice that coordinates with the GUI workstream.
+- **Resolved in later slices:** headless execution, both example recipes, and
+  GUI save/load now reuse this schema plus the adapter-layer
+  `Workflow ⇄ recipe` mapping.
 - **YAGNI:** branching, expression languages, an output-binding DSL, internal
   scheduling (roadmap Phase 5 defers these explicitly).
 
+## Phase closeout — GUI load (slice 3)
+
+The owner directed Phase 5 closure on 2026-07-30. The GUI's **Load recipe**
+action uses the already-shipped `load_recipe()` and `recipe_to_workflow()`
+seams, then replaces the builder's step list only after both validation and
+mapping succeed.
+
+- The recipe name survives load, run, and save.
+- Command steps render from their command tuple; review checkpoints render
+  from their message. Reverse-mapping a loaded step into a command form is not
+  required because the builder does not edit any step in place; loaded steps
+  retain the existing run, reorder, remove, and append behavior.
+- A failed load leaves the current workflow untouched.
+- Offscreen GUI tests reopen both shipped monitoring-event and RTK-to-CAD
+  recipes and pin a complete load/save round trip.
+
+No schema, dependency, CLI, runtime-classification, or ArcPy change is needed.
+This completes the saved/reopened GUI leg that remained in the Phase 5 gate.
+
 ## Decision record
 
-New headless tool + a new core schema → an ADR at merge time (next free number
-against `origin/main` **and** all open PRs), referencing this spec and ADR-0087.
+The headless tool + core schema became ADR-0103; headless execution and the
+shared adapter mapping became ADR-0104. Slice 3 applies those accepted decisions
+without introducing a new architecture.
 Phase 5 is started in parallel with Phase 4 (#280 open) under the owner's
 standing "continue roadmap development" directive; the core-only, non-colliding
 scope keeps that parallelism safe.

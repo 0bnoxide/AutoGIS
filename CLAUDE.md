@@ -156,12 +156,12 @@ phase starts. Do not reorder or parallel fast-track phases without an explicit
 user decision. This roadmap does not reopen any deferred group above.
 
 Gate changes are recorded in the roadmap doc's **Gate-change log** (moved from
-this file 2026-07-29 — record each new one there). Current state: Phases 1-4
-and 6-9 (slice 1) shipped (ADR-0091 through ADR-0111); **Phase 5 gate NOT yet
-met** — GUI recipe *load* is still missing (save shipped; validate/run are
-headless-CLI only); Phase 6 `.pyt`/CLI run-history logging deferred (gate
-items 3 & 6); Phases 7/8/9 have owner-gated acceptance legs (Phase 9 = issue
-#307); Phase 10 not started — no ADR yet.
+this file 2026-07-29 — record each new one there). Current state: Phases 1-5
+and 6-9 (slice 1) shipped (ADR-0091 through ADR-0111); the Phase 5 gate was
+met 2026-07-30 when GUI recipe load completed the existing save/validate/run
+path. Phase 6 `.pyt`/CLI run-history logging remains deferred (gate items 3 &
+6); Phases 7/8/9 have owner-gated acceptance legs (Phase 9 = issue #307);
+Phase 10 has not started — no ADR yet.
 
 ## Survey123 optional add-on roadmap
 

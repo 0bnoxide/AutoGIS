@@ -47,9 +47,17 @@ small mapping module — **without editing the GUI files** the GUI workstream ow
 - Registered `run-recipe` in `capabilities._REGISTRY_SEED` (CLOUD — the
   orchestrator is arcpy-free; individual steps carry their own arcpy needs via
   `--local-python`).
-- **Deferred:** the GUI save/load wiring (would reuse `recipe_to_workflow` and a
-  future `workflow_to_recipe`), and the example monitoring-event / RTK-to-CAD
-  recipes.
+- **Deferred from this slice:** GUI save/load wiring and the example
+  monitoring-event / RTK-to-CAD recipes. Those later shipped on the same
+  schema and mapping seams.
+
+## Phase 5 closeout addendum
+
+On 2026-07-30 the owner directed Phase 5 closure. GUI recipe load now calls the
+accepted `load_recipe()` → `recipe_to_workflow()` path, restores the recipe name
+and both command/checkpoint steps, and mutates the current builder only after a
+successful load. GUI save already uses the inverse `workflow_to_recipe()` path.
+No new architectural decision or recipe-format change was introduced.
 
 ## Notes
 
