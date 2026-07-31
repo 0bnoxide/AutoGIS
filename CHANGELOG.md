@@ -7,12 +7,13 @@ Folded the Environmental Monitoring toolbox (formerly a standalone ArcGIS Pro
 
 ### Architecture
 
-- **One core, three adapters.** The envmon toolbox is now `autogis.core.envmon`
-  (23 modules, relative imports — the `sys.path` hack is gone), sitting on the
-  shared `autogis.core.common` substrate alongside `autogis.core.harvest`.
-  Three adapters marshal over the same core: the `click` CLI
+- **One core, four adapters.** The envmon toolbox is now `autogis.core.envmon`
+  (relative imports — the `sys.path` hack is gone), sitting on the shared
+  `autogis.core.common` substrate alongside `autogis.core.harvest`. Four
+  adapters marshal over the same core: the `click` CLI
   (`autogis.adapters.cli`), the ArcGIS Pro GUI
-  (`autogis.adapters.toolbox.pyt`), and the importable core itself. Adapters
+  (`autogis.adapters.toolbox.pyt`), the unified PySide6 desktop GUI
+  (`autogis.adapters.gui`, ADR-0050), and the importable core itself. Adapters
   carry no business logic.
 - **Lazy `arcgis` / `arcpy`.** Importing any `core` module succeeds with neither
   installed. `arcgis` is the `cloud` extra; `arcpy` is detected at runtime
