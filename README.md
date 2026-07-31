@@ -28,10 +28,13 @@ Work has continued past the catalog: the geostatistical group shipped
 (ADR-0085/0086) and the post-catalog [production roadmap](docs/production-roadmap.md)
 has shipped code for **Phases 1–9**, though the gate isn't fully closed on every
 phase — see [CLAUDE.md](CLAUDE.md#post-catalog-production-roadmap) for the
-authoritative per-phase gate log. Notably: **Phase 5's gate is not yet met**
-(recipe save/validate/run ship, but GUI recipe *load* is still CLI-only via
-`envmon validate-recipe`/`run-recipe`), and Phases 7–9 each have one owner-gated
-acceptance leg still open (issue #307 tracks Phase 9's). Still unimplemented:
+authoritative per-phase gate log. Notably: **Phase 5's gate was met 2026-07-30**
+(GUI recipe *load* joined the shipped save/validate/run path, reopening a saved
+recipe through the same validated `load_recipe()` / `recipe_to_workflow()` seam
+the headless `envmon validate-recipe`/`run-recipe` commands use), **Phase 6's
+`.pyt`/CLI run-history logging is still deferred** (gate items 3 & 6), and
+Phases 7–9 each have one owner-gated acceptance leg still open (issue #307
+tracks Phase 9's). Still unimplemented:
 **Phase 10 (portfolio monitoring digest)**, gated behind Phase 9's live-AGOL exit
 criteria (ADR-0111), and the four deferred §11 AI tools.
 
