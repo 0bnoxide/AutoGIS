@@ -932,6 +932,65 @@ def test_load_recipe_restores_named_workflow_and_save_round_trips(
     assert load_recipe(saved) == recipe
 
 
+def test_load_recipe_normalizes_nargs_value_written_as_one_string(
+        qapp, tmp_path, monkeypatch):
+    """#398: the load path used to call build_step() only for its validation
+    side effects and discard the returned Step, so an nargs>1 value written
+    as a single YAML string stayed one token and the child command rejected
+    it -- a loaded step diverging from the identical step built in the form."""
+    from PySide6.QtWidgets import QFileDialog
+
+    from autogis.core.common.workflow_recipe import save_recipe
+
+    recipe = {
+        "version": 1,
+        "name": "dem",
+        "steps": [{
+            "command": ["envmon", "download-dem"],
+            "values": {"dataset": "USGS10m", "bbox": "-105 39 -104 40",
+                       "out_path": "dem.tif"},
+        }],
+    }
+    source = save_recipe(recipe, tmp_path / "dem.yaml")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(source), "")))
+
+    win, _ = _win_with_store(tmp_path)
+    win._on_load_recipe()
+
+    assert win._steps[0].values["bbox"] == ("-105", "39", "-104", "40")
+
+
+def test_load_recipe_rejects_string_flag_value(qapp, tmp_path, monkeypatch):
+    """#400: a quoted ``"false"`` flag must fail at load-time preflight
+    rather than silently emitting the flag at run time."""
+    from PySide6.QtWidgets import QFileDialog
+
+    from autogis.core.common.workflow_recipe import save_recipe
+
+    recipe = {
+        "version": 1,
+        "name": "civil3d",
+        "steps": [{
+            "command": ["envmon", "export-civil3d"],
+            "values": {"points_csv": "pts.csv", "crs": "EPSG:2232",
+                       "landxml": "false"},
+        }],
+    }
+    source = save_recipe(recipe, tmp_path / "c3d.yaml")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(source), "")))
+
+    win, _ = _win_with_store(tmp_path)
+    win._on_load_recipe()
+
+    assert "Load failed" in win._status.text()
+    assert "landxml must be true or false" in win._status.text()
+    assert win._steps == []
+
+
 @pytest.mark.parametrize(
     "filename",
     ["monitoring_event_processing.yaml", "rtk_to_cad.yaml"],

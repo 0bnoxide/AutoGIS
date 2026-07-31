@@ -98,6 +98,37 @@ def test_field_duplicate_never_fuzzy_matches_its_primary():
     assert [s.sample_id for s in r.lab_only] == ["MW-1-20260715-GW"]
 
 
+def test_exact_match_wins_over_an_earlier_fuzzy_claim():
+    """#395: matching is two-pass, so a later field sample's *exact* identity
+    can never lose its lab record to an earlier sample's fuzzy guess. Both
+    field IDs here are PRIMARY class, so ADR-0113's QC-class guard does not
+    apply -- only input order used to decide the winner."""
+    fuzzy_first = Survey123Sample("MW-1-20260715-GV", "MW-1", "2026-07-15", "GW")
+    exact_later = Survey123Sample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")
+    lab = [LabSample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")]
+
+    r = reconcile_field_lab([fuzzy_first, exact_later], lab)
+
+    assert [(f.sample_id, l.sample_id) for f, l in r.matched] == [
+        ("MW-1-20260715-GW", "MW-1-20260715-GW")]
+    assert [s.sample_id for s in r.field_only] == ["MW-1-20260715-GV"]
+    assert not any("sample_id_mismatch" in f for f in r.flags)
+
+
+def test_two_pass_matching_preserves_field_sample_order():
+    """Exact matches resolve first, but results still report in input order:
+    the fuzzy-matched sample listed first must stay first in ``matched``."""
+    fuzzy = Survey123Sample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")
+    exact = Survey123Sample("MW-2-20260715-GW", "MW-2", "2026-07-15", "GW")
+    lab = [LabSample("MW-2-20260715-GW", "MW-2", "2026-07-15", "GW"),
+           LabSample("MW-1-20260715GW", "MW-1", "2026-07-15", "GW")]
+
+    r = reconcile_field_lab([fuzzy, exact], lab)
+
+    assert [f.sample_id for f, _ in r.matched] == [
+        "MW-1-20260715-GW", "MW-2-20260715-GW"]
+
+
 def test_primary_never_consumes_lab_duplicate():
     fs = [Survey123Sample("MW-1-20260715-GW", "MW-1", "2026-07-15", "GW")]
     lab = [LabSample("MW-1-20260715-GW-FD", "MW-1", "2026-07-15", "GW")]

@@ -153,6 +153,17 @@ def test_build_argv_flags_and_boolean_pairs():
     assert "--incremental" in argv2
 
 
+def test_build_argv_rejects_non_bool_flag_value():
+    """#400: a recipe writing ``landxml: "false"`` (a quoted string) used to
+    be truthiness-coerced and emit --landxml -- a silent inversion of the
+    author's intent, because a flag never reaches the child's Click parser
+    where the usual "child refuses -> clean HALT" backstop would catch it."""
+    with pytest.raises(ValueError, match="landxml must be true or false"):
+        build_argv(("envmon", "export-civil3d"),
+                   {"points_csv": "pts.csv", "crs": "EPSG:2232",
+                    "landxml": "false"})
+
+
 def test_build_argv_nargs_option_emits_separate_tokens():
     """#351: a nargs>1 option (download-dem's --bbox) must reach argv as
     the option flag followed by N separate value tokens, not one repr'd

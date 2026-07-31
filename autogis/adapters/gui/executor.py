@@ -168,6 +168,16 @@ def build_argv(path: Sequence[str], values: Mapping[str, object], *,
             else:
                 positional.append(str(v))
         elif getattr(p, "is_flag", False):
+            # Truthiness would read a recipe's ``landxml: "false"`` string as
+            # True and emit --landxml (#400). A flag never reaches the child's
+            # Click parser, so the usual "child refuses -> clean HALT" backstop
+            # cannot catch it -- the run would succeed with the opposite of the
+            # author's intent. Reject here instead: this is the one gate both
+            # ``run-recipe`` and the GUI load path route through.
+            if not isinstance(v, bool):
+                raise ValueError(
+                    f"{' '.join(path)}: {p.name} must be true or false, "
+                    f"got {v!r}")
             if v:
                 options.append(_opt_string(p.opts))
             elif p.secondary_opts:  # --flag/--no-flag pair
