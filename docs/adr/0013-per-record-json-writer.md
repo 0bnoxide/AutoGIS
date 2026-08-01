@@ -1,4 +1,4 @@
-# ADR-013: Per-record JSON writer for manifest
+# ADR-0013: Per-record JSON writer for manifest
 
 **Status:** Accepted
 

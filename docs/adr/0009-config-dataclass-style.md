@@ -1,4 +1,4 @@
-# ADR-009: Config dataclass style (field-typed vs dict-backed)
+# ADR-0009: Config dataclass style (field-typed vs dict-backed)
 
 **Status:** Accepted
 

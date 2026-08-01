@@ -1,4 +1,4 @@
-# ADR-020: Callout placement optimization — extend assemble_callouts, add manage_callout_overrides module
+# ADR-0020: Callout placement optimization — extend assemble_callouts, add manage_callout_overrides module
 
 **Status:** Accepted
 

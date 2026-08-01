@@ -1,4 +1,4 @@
-# ADR-002: Arcpy-free core invariant
+# ADR-0002: Arcpy-free core invariant
 
 **Status:** Accepted
 

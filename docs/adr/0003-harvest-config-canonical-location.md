@@ -1,4 +1,4 @@
-# ADR-003: HarvestConfig canonical location
+# ADR-0003: HarvestConfig canonical location
 
 **Status:** Accepted
 

@@ -1,4 +1,4 @@
-# ADR-010: Explicit disposition field for result records
+# ADR-0010: Explicit disposition field for result records
 
 **Status:** Accepted
 
