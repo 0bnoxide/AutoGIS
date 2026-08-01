@@ -129,7 +129,10 @@ explicitly re-opening it first:
 - **AI-assisted (§11) — DEFERRED:** `AIDraftParserProfile`, `AIExplainQAReport`,
   `AIDraftFigureSpec`, `AIMapReviewChecklist` — deferred pending LLM seam design
   (`docs/superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md`).
-  Binding until the user says otherwise — not a backlog to pick from when idle.
+  The owner reviewed the repository-backed Codex/Claude findings on 2026-08-01
+  and chose **not** to reopen the gate. Reconsider only for a demonstrated
+  deterministic-tool gap or unmet user need. Binding until the user says
+  otherwise — the design addendum is not a backlog to pick from when idle.
 - **Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED:**
   ADR-0085 (Accepted 2026-07-16) + ADR-0086 (Accepted 2026-07-24, user
   sign-off); all 3 tools shipped via PRs #240/#241

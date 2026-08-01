@@ -1952,7 +1952,23 @@ You can test parser hardening without exposing project data.
 
 ---
 
-## 11. AI-Assisted Tools to Add
+## 11. AI-Assisted Tools — Deferred
+
+**Gate status (reviewed 2026-08-01): DEFERRED — not reopened.** The owner
+accepted the joint Codex/Claude recommendation to retain the gate after a
+repository-backed readiness review. This section is future reference, not a
+backlog. Reconsider it only when a real workbook defeats the deterministic
+parser-profile drafter or users demonstrate that the existing deterministic QA
+Markdown is insufficient.
+
+If reopened later, retain one `autogis` distribution with an optional `ai`
+extra and an SDK-free core protocol. First prove the seam by refining the
+existing deterministic parser-profile draft; then consider QA narration and
+figure-spec drafting. Build a deterministic, base-install `MapReviewFacts`
+artifact before deciding whether the map-review checklist needs an LLM at all.
+The detailed readiness, data-egress, provenance, validation, and test conditions
+are recorded in
+[`2026-06-28-ai-assisted-tools-llm-seam-design.md`](superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md).
 
 ### 11.1 AI Parser Profile Draft Assistant
 
