@@ -5,17 +5,17 @@
 **Status:** DEFERRED — gate reviewed; owner chose not to reopen implementation
 **Tools:** AIDraftParserProfile (11.1), AIExplainQAReport (11.2), AIDraftFigureSpec (11.3),
 AIMapReviewChecklist (11.4)
-**Priority:** LOW — deferred per `ROADMAP_STATUS_2026-06-27`; all four need the shared seam first
+**Priority:** LOW — deferred per `ROADMAP_STATUS_2026-06-27`; the original sketch assumed a shared seam
 
 ---
 
 ## Why one spec
 
-The four §11 tools are deferred for the same reason: none can be built until the
-repo has an **LLM client seam**. They also share the same guardrail (the LLM only
+The original 2026 sketch grouped the four §11 tools because it assumed they all
+needed an **LLM client seam**. It also gave them the same guardrail (the LLM only
 *drafts*; deterministic core code does the real work) and the same arcpy-free,
-dependency-injected shape. Specced together so the seam is designed once; each tool
-gets its own module + CLI command when the seam lands.
+dependency-injected shape. The group was specced together so the seam would be
+designed once.
 
 ---
 
@@ -86,7 +86,12 @@ No answer below is approved while the gate remains closed:
 
 ---
 
-## The blocking dependency: the LLM seam
+The remainder of this document is the original 2026-06-28 design sketch,
+retained as historical context only. Its “Chosen,” “Rejected,” “NEW,” protocol,
+packaging, CLI, and sequencing language is not current approval; only a future
+reopening ADR can adopt or replace those decisions.
+
+## Original 2026 design: the blocking dependency
 
 **Chosen:** A single injected `LLMClient` protocol in `core/common/llm.py`. Core
 tools depend on the protocol, never on a concrete SDK — exactly the
@@ -178,8 +183,8 @@ Given map-export metadata + QA results, generates a review checklist (missing
 title/date, empty layers, too many callout collisions, unresolved QA, contour review
 status, missing analytical key, unmatched wells). `build_review_checklist(*,
 export_meta, qa_rows, llm) -> list[str]`. The required unified export metadata
-does not exist yet; build deterministic map-review facts before revisiting this
-LLM wrapper.
+does not exist yet. A reopening ADR must decide whether such a deterministic
+facts contract should exist and whether an LLM adds value over a template.
 
 ---
 

@@ -270,10 +270,12 @@ ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 `ValidateRTKSurvey` (8.4) — see
 [`docs/superpowers/specs/2026-06-28-roadmap-duplicate-tools-fold-decision.md`](docs/superpowers/specs/2026-06-28-roadmap-duplicate-tools-fold-decision.md).
 
-**AI-assisted (§11) — DEFERRED:** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec,
-AIMapReviewChecklist — deferred pending LLM seam design. This is a separate future
-development phase, **not a backlog to pick from**: do not start implementation on any of
-these without an explicit phase-gate decision. See `CLAUDE.md` for the standing policy.
+**AI-assisted (§11) — DEFERRED, GATE CLOSED:** AIDraftParserProfile,
+AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist — the owner reviewed
+current readiness findings on 2026-08-01 and chose not to reopen the gate. This
+is a separate future development phase, **not a backlog to pick from**: reconsider
+it only through an explicit phase-gate decision for a demonstrated deterministic-
+tool gap or unmet user need. See `CLAUDE.md` for the standing policy.
 
 **Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED.** The required
 architecture review landed as **ADR-0085** (Accepted 2026-07-16) and both slices merged:
