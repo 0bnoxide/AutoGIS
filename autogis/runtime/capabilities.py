@@ -423,7 +423,7 @@ _REGISTRY_SEED = [
      "Longitudinal lab-QA trends across events: out-of-limit percent-recovery "
      "and blank-detection frequencies per method/matrix/analyte, with the "
      "configurable, cited threshold applied (Phase 7 slice 1)"),
-    ("export-wqx", "OutboundWQXExport", "", "CLOUD", "DRAFT", "reporting",
+    ("export-wqx", "OutboundWQXExport", "", "CLOUD", "draft", "reporting",
      "Map canonical results to WQX submission columns with identifier/coordinate/"
      "unit/method/qualifier validation; valid rows -> submission CSV, invalid -> "
      "rejections CSV, plus source/config provenance (Phase 8 slice 1, DRAFT)"),

@@ -137,6 +137,22 @@ def test_runtime_class_agrees_between_tools_and_seed():
         + "\n".join(conflicts))
 
 
+def test_seed_status_values_match_the_documented_vocabulary():
+    """`ToolCapability.status` documents 'stable | draft | planned | deprecated'
+    and `list-tools --status` offers exactly those four. The seed is plain
+    tuples, so nothing enforced it: export-wqx shipped 'DRAFT' (uppercase),
+    the only row of 130 off-vocabulary. `filter_tools` lowercases both sides,
+    so the row was still findable -- but it rendered a status no other row
+    used, and the runtime column's separate, *deliberate* 'DRAFT' spelling
+    (see the test above) is what makes that easy to mistake for intent."""
+    allowed = {"stable", "draft", "planned", "deprecated"}
+    off_vocab = sorted(f"{c}: {st!r}"
+                       for (c, _n, _rid, _rt, st, *_rest) in _REGISTRY_SEED
+                       if st not in allowed)
+    assert not off_vocab, (
+        f"_REGISTRY_SEED status values outside {sorted(allowed)}: {off_vocab}")
+
+
 def test_unreachable_tools_are_local():
     """UNREACHABLE greys out LOCAL tools that never execute via the CLI; an
     entry for a CLOUD/HYBRID tool would contradict the guard registry."""
