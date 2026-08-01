@@ -1,4 +1,4 @@
-# ADR-011: H281 profile draft status and pre-production gate
+# ADR-0011: H281 profile draft status and pre-production gate
 
 **Status:** Accepted
 

@@ -1,4 +1,4 @@
-# ADR-042: GenerateBoringLogPDFs (8.0c) — headless Markdown assembly; report module owns the read side 8.0a never shipped
+# ADR-0042: GenerateBoringLogPDFs (8.0c) — headless Markdown assembly; report module owns the read side 8.0a never shipped
 
 **Status:** Accepted
 

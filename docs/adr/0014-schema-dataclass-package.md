@@ -1,4 +1,4 @@
-# ADR-014: Domain-split dataclass schema package for envmon tables
+# ADR-0014: Domain-split dataclass schema package for envmon tables
 
 **Status:** Accepted (dashboard.py removed — see below)
 

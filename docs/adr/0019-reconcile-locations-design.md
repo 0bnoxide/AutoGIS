@@ -1,4 +1,4 @@
-# ADR-019: ReconcileSampleLocations — stdlib difflib, two-path headless/GDB design
+# ADR-0019: ReconcileSampleLocations — stdlib difflib, two-path headless/GDB design
 
 **Status:** Accepted
 

@@ -1,4 +1,4 @@
-# ADR-007: Migrate project logs to ADR format
+# ADR-0007: Migrate project logs to ADR format
 
 **Status:** Accepted
 

@@ -1,4 +1,4 @@
-# ADR-006: .pyt toolbox as primary UI for LOCAL tools
+# ADR-0006: .pyt toolbox as primary UI for LOCAL tools
 
 **Status:** Accepted
 

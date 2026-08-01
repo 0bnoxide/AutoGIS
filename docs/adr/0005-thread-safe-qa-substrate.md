@@ -1,4 +1,4 @@
-# ADR-005: Thread-safe QA and reporting substrate
+# ADR-0005: Thread-safe QA and reporting substrate
 
 **Status:** Accepted
 

@@ -1,4 +1,4 @@
-# ADR-001: Core-plus-adapters architecture
+# ADR-0001: Core-plus-adapters architecture
 
 **Status:** Accepted
 

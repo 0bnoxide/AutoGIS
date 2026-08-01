@@ -1,4 +1,4 @@
-# ADR-018: UpgradeEnvMonitoringGDBSchema tool design
+# ADR-0018: UpgradeEnvMonitoringGDBSchema tool design
 
 **Status:** Accepted
 

@@ -1,4 +1,4 @@
-# ADR-012: Reserved provenance columns for future use
+# ADR-0012: Reserved provenance columns for future use
 
 **Status:** Accepted
 

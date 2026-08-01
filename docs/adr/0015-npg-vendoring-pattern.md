@@ -1,4 +1,4 @@
-# ADR-015: Absorbed-in-place vendoring for Dan Patterson numpy_geometry
+# ADR-0015: Absorbed-in-place vendoring for Dan Patterson numpy_geometry
 
 **Status:** Accepted
 

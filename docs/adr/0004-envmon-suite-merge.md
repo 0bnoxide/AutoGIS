@@ -1,4 +1,4 @@
-# ADR-004: Merge envmon suite into AutoGIS
+# ADR-0004: Merge envmon suite into AutoGIS
 
 **Status:** Accepted
 
