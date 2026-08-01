@@ -1,4 +1,4 @@
-# 0090: EDD Step-3 slice 2b — mining/epar4/NYSDEC dialect support
+# ADR-0090: EDD Step-3 slice 2b — mining/epar4/NYSDEC dialect support
 
 **Status:** Accepted
 

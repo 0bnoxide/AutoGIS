@@ -1,4 +1,4 @@
-# 120. Report-family input guards: accept both result vocabularies, reject malformed date filters
+# ADR-0120: Report-family input guards: accept both result vocabularies, reject malformed date filters
 
 **Status:** Accepted
 **Date:** 2026-07-29
