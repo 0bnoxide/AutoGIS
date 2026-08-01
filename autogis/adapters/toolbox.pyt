@@ -932,6 +932,7 @@ class ValidateDatabase(object):
             _param("qa_output_dir", "QA output folder", "DEFolder"),
         ]
 
+    @toolbox_core.record_pyt_run("validate-db", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.adapters.guard import require_runtime
         require_runtime("validate-db")

@@ -143,6 +143,7 @@ def test_redirect_only_pyt_tools_use_shared_run_recorder():
         "RunGWModelPipeline": "run-gw-model-pipeline",
         "ApproveGWModel": "approve-gw-model",
         "BuildConcentrationSurface": "build-conc-surface",
+        "ValidateDatabase": "validate-db",
         "ExportFigures": "export-figures",
         "FullPipeline": "full-pipeline",
         "ReconcileSampleLocations": "reconcile-locations",
