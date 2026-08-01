@@ -35,7 +35,8 @@ def _command_labels(tree: ast.Module) -> list[tuple[str, ast.FunctionDef]]:
             parent = dec.func.value.id
             if parent == "click":  # @click.group() defines a root; its name
                 prefixes[node.name] = ()  # is dropped from GUI labels
-                continue
+                continue  # ponytail: a standalone @click.command() def would
+                # also be dropped from detection -- only autogis roots here.
             name = (dec.args[0].value
                     if dec.args and isinstance(dec.args[0], ast.Constant)
                     else node.name)  # @autogis.group() -> Click's default name
@@ -61,7 +62,8 @@ def _unconditional_pyt_redirects(tree: ast.Module | None = None) -> dict[str, in
     found: dict[str, int] = {}
     for label, node in _command_labels(tree):
         # ponytail: any `return` counts as a headless leg; a dead return
-        # after an unconditional raise would false-pass -- no such shape
+        # after an unconditional raise -- or a return inside a nested def
+        # (ast.walk descends into them) -- would false-pass. No such shape
         # exists in cli.py, revisit if one appears.
         if any(isinstance(s, ast.Return) for s in ast.walk(node)):
             continue
