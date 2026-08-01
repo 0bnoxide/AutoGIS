@@ -28,6 +28,7 @@ import html
 import shutil
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QLocale, Qt, QThread, Signal
@@ -863,20 +864,29 @@ class MainWindow(QMainWindow):
         try:
             workflow = recipe_to_workflow(load_recipe(Path(path)))
             forms_by_path = {form.path: form for form in _window_forms()}
+            steps: list[Step] = []
             for step in workflow.steps:
                 if step.command:
                     build_argv(step.command, step.values,
                                fail_on=step.fail_on)
                     if " ".join(step.command) not in UNREACHABLE:
-                        build_step(
+                        # Keep the normalized values, don't just validate and
+                        # drop them (#398): forms._normalize is where an
+                        # nargs>1 value written as one YAML string ("W S E N")
+                        # is split into its tuple, so discarding the result
+                        # left a loaded step diverging from the identical step
+                        # built through the GUI form.
+                        normalized = build_step(
                             forms_by_path[step.command], step.values,
                             fail_on=step.fail_on,
                             pause_on_warning=step.pause_on_warning)
+                        step = replace(step, values=normalized.values)
+                steps.append(step)
         except Exception as exc:  # noqa: BLE001 - surface parse/map error in-UI
             self._status.setText(f"Load failed: {exc}")
             return
         self._workflow_name = workflow.name
-        self._steps[:] = workflow.steps
+        self._steps[:] = steps
         self._step_list.clear()
         for step in self._steps:
             self._step_list.addItem(self._step_row_text(step))
