@@ -188,8 +188,12 @@ def build_argv(path: Sequence[str], values: Mapping[str, object], *,
         elif getattr(p, "nargs", 1) > 1:
             # nargs>1 (e.g. --bbox W S E N, #351): one flag then N separate
             # value tokens -- Click's own nargs parser expects that shape,
-            # not a single repr'd tuple.
-            parts = v if isinstance(v, (list, tuple)) else (v,)
+            # not a single repr'd tuple. A hand-authored recipe's
+            # ``bbox: "-105 39 -104 40"`` string is whitespace-split exactly
+            # like ``forms._normalize`` does for GUI-typed text (#406), so
+            # both consumers accept the same recipe; count/type enforcement
+            # stays with the child's own Click parser.
+            parts = v if isinstance(v, (list, tuple)) else str(v).split()
             options += [_opt_string(p.opts), *(str(x) for x in parts)]
         else:
             options += [_opt_string(p.opts), str(v)]

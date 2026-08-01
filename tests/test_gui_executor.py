@@ -174,6 +174,18 @@ def test_build_argv_nargs_option_emits_separate_tokens():
     assert argv[i + 1:i + 5] == ["-105", "39", "-104", "40"]
 
 
+def test_build_argv_nargs_string_value_is_whitespace_split():
+    """#406: a hand-authored recipe writing ``bbox: "-105 39 -104 40"`` (one
+    YAML string) loaded and ran in the GUI (``forms._normalize`` splits it)
+    but halted headless ``run-recipe`` mid-workflow -- build_argv emitted it
+    as a single argv token the child's Click nargs parser rejects. Split it
+    here, the one place both consumers route through."""
+    argv = build_argv(("envmon", "download-dem"),
+                      {"bbox": "-105 39 -104 40"})
+    i = argv.index("--bbox")
+    assert argv[i + 1:i + 5] == ["-105", "39", "-104", "40"]
+
+
 def test_build_argv_nargs_option_on_argument_style_list_also_works():
     """--start/--end (generate-subsurface-profile) is the other nargs>1
     shape (nargs=2 float); same separate-tokens contract."""
