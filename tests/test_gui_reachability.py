@@ -12,28 +12,60 @@ from autogis.adapters.gui.introspect import introspect_cli
 from autogis.adapters.gui.reachability import UNREACHABLE
 
 
-def _unconditional_pyt_redirects() -> dict[str, int]:
+def _command_labels(tree: ast.Module) -> list[tuple[str, ast.FunctionDef]]:
+    """(GUI label, body) for every module-level Click command/group def.
+
+    Labels are built from the full group path so nested leaves match
+    introspect/UNREACHABLE labels: a command decorated `@coc_group.command`
+    yields "envmon coc <name>", not "coc_group <name>". Groups are always
+    defined before the commands that reference them, so one source-order
+    pass resolves every prefix.
+    """
+    prefixes: dict[str, tuple[str, ...]] = {"autogis": ()}  # root name dropped
+    out: list[tuple[str, ast.FunctionDef]] = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for dec in node.decorator_list:
+            if not (isinstance(dec, ast.Call)
+                    and isinstance(dec.func, ast.Attribute)
+                    and isinstance(dec.func.value, ast.Name)
+                    and dec.func.attr in ("command", "group")):
+                continue
+            parent = dec.func.value.id
+            if parent == "click":  # @click.group() defines a root; its name
+                prefixes[node.name] = ()  # is dropped from GUI labels
+                continue  # ponytail: a standalone @click.command() def would
+                # also be dropped from detection -- only autogis roots here.
+            name = (dec.args[0].value
+                    if dec.args and isinstance(dec.args[0], ast.Constant)
+                    else node.name)  # @autogis.group() -> Click's default name
+            path = prefixes.get(parent, (parent,)) + (name,)
+            if dec.func.attr == "group":
+                prefixes[node.name] = path
+            out.append((" ".join(path), node))
+    return out
+
+
+def _unconditional_pyt_redirects(tree: ast.Module | None = None) -> dict[str, int]:
     """Command label -> line, for every cli.py body that *always* redirects.
 
     A class-1 body guards, then raises "use the .pyt" with nothing gating the
     raise. A raise nested under an `if` is a hybrid leg (reconcile-locations'
-    `--gdb`), and a `.pyt` mention in a docstring is just a pointer at a
-    sibling tool (export-civil3d) -- neither makes the command unreachable.
+    `--gdb`), a `.pyt` mention in a docstring is just a pointer at a sibling
+    tool (export-civil3d), and a body containing a `return` has a completing
+    headless leg (`if dry_run: ...; return` then redirect) -- none of these
+    makes the command unreachable.
     """
-    tree = ast.parse(Path(cli_module.__file__).read_text(encoding="utf-8"))
+    if tree is None:
+        tree = ast.parse(Path(cli_module.__file__).read_text(encoding="utf-8"))
     found: dict[str, int] = {}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        label = None
-        for dec in node.decorator_list:
-            if (isinstance(dec, ast.Call)
-                    and isinstance(dec.func, ast.Attribute)
-                    and dec.func.attr in ("command", "group")
-                    and dec.args and isinstance(dec.args[0], ast.Constant)
-                    and isinstance(dec.func.value, ast.Name)):
-                label = f"{dec.func.value.id} {dec.args[0].value}"
-        if label is None:
+    for label, node in _command_labels(tree):
+        # ponytail: any `return` counts as a headless leg; a dead return
+        # after an unconditional raise -- or a return inside a nested def
+        # (ast.walk descends into them) -- would false-pass. No such shape
+        # exists in cli.py, revisit if one appears.
+        if any(isinstance(s, ast.Return) for s in ast.walk(node)):
             continue
         gated = {id(r) for branch in ast.walk(node)
                  if isinstance(branch, ast.If)
@@ -68,6 +100,31 @@ def test_redirect_detector_separates_conditional_and_docstring_mentions():
     assert "envmon import-gdb" in detected          # class-1, top-level raise
     assert "envmon reconcile-locations" not in detected  # raise gated by --gdb
     assert "envmon export-civil3d" not in detected      # docstring mention only
+
+
+def test_detector_handles_nested_groups_and_early_return_hybrids():
+    # Pins the two shapes cli.py doesn't have yet (codex P2s on PR #404): a
+    # redirect-only leaf under a nested group must derive the GUI label
+    # ("envmon coc x", not "coc_group x"), and an early-return hybrid
+    # (`if dry_run: ...; return` then a top-level redirect) must not be
+    # classified as redirect-only.
+    detected = _unconditional_pyt_redirects(ast.parse(
+        'import click\n'
+        '@click.group()\n'
+        'def autogis(): pass\n'
+        '@autogis.group("envmon")\n'
+        'def envmon(): pass\n'
+        '@envmon.group("coc")\n'
+        'def coc_group(): pass\n'
+        '@coc_group.command("fake-redirect")\n'
+        'def fake_redirect():\n'
+        '    raise click.UsageError("use the .pyt tool")\n'
+        '@envmon.command("fake-hybrid")\n'
+        'def fake_hybrid(dry_run):\n'
+        '    if dry_run:\n'
+        '        return\n'
+        '    raise click.UsageError("use the .pyt tool")\n'))
+    assert detected == {"envmon coc fake-redirect": 10}
 
 
 def test_unreachable_labels_resolve_to_real_commands():
