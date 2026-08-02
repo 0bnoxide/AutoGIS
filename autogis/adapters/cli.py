@@ -4597,6 +4597,7 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
     reconcile cleanly (residual imbalance or a needs_review row) --
     distinct from exit 1, which is a QA --fail-on breach.
     """
+    import csv as _csv_mod
     from ..core.common.qa import QACollector, SEV_INFO, SEV_WARNING
     from ..core.common.records_csv import read_records_csv
     from ..core.envmon import custody as custody_mod
@@ -4631,7 +4632,12 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
         unresolved_groups: set = set()
         by_id = {}
         for row in plan.expected_samples:      # dedupe rows, union analyte groups
-            attrs = by_id.setdefault(row.sample_id, {
+            # Planner output is canonical uppercase already, but normalize the
+            # aggregation key anyway -- grouping by raw id here (like the lab
+            # leg below) would silently drop a case-variant row's analytes
+            # instead of union-ing them (F1).
+            key = engine.normalize_key(row.sample_id)
+            attrs = by_id.setdefault(key, {
                 "location_id": row.location_id, "event_date": row.event_date,
                 "matrix": row.matrix, "coc_number": row.coc_number,
                 "analytes": set()})
@@ -4665,15 +4671,22 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
         if not site_id:
             raise click.UsageError("--site-id (or the plan leg) is required "
                                    "with --submissions-csv.")
-        water_levels, samples = load_survey123_csv_submissions(
-            Path(submissions_csv), site_id, "reconcile", qa)
+        try:
+            water_levels, samples = load_survey123_csv_submissions(
+                Path(submissions_csv), site_id, "reconcile", qa)
+        except (UnicodeDecodeError, OSError, _csv_mod.Error) as exc:
+            raise click.ClickException(
+                f"--submissions-csv: could not read {submissions_csv}: {exc}")
         observations["water_levels"] = len(water_levels)
         rows = []
         for s in samples:
             if not (s.get("SampleID") or "").strip():
                 garbled.append(str(s))         # sample-form row, id-less: needs_review
             else:
-                rows.append(engine.SourceRow(s["SampleID"], s))
+                # build_sample_id output is canonical uppercase already;
+                # normalize anyway (F1 audit) -- idempotent, engine normalizes
+                # again in build_grid.
+                rows.append(engine.SourceRow(engine.normalize_key(s["SampleID"]), s))
         legs["field"] = rows
 
     if custody_store:
@@ -4683,7 +4696,10 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
             raise click.ClickException(f"custody store unreadable: {exc}")
         rows = []
         for rec in store.values():
-            for sid in dict.fromkeys(rec.sample_ids):   # dedupe within a COC
+            # Normalize before dedup (F1 audit): a case-variant sample_id
+            # within the same COC record must collapse to one row too.
+            for sid in dict.fromkeys(
+                    engine.normalize_key(s) for s in rec.sample_ids):
                 rows.append(engine.SourceRow(sid, {
                     "coc_number": rec.coc_number, "event_date": rec.event_date,
                     "state": rec.state}))
@@ -4691,9 +4707,28 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
 
     if lab_results_csv:
         records = read_records_csv(Path(lab_results_csv), AnalyticalResultRecord)
+        n_empty = sum(1 for r in records if not (r.SampleID or "").strip())
+        if records and n_empty == len(records):
+            # Every row yielded a blank SampleID -- read_records_csv fills an
+            # unmatched column with "", so this is a wrong-header file, not a
+            # legitimately empty leg (F2b): fail loudly instead of silently
+            # reconciling zero lab rows.
+            raise click.ClickException(
+                "--lab-results-csv: no usable SampleID column -- wrong header?")
+        if n_empty:
+            qa.add(SEV_WARNING, "lab_results_empty_sample_id",
+                   f"--lab-results-csv: {n_empty} record(s) have an empty "
+                   "SampleID and were skipped")
         by_id = {}
         for r in records:                       # QC rows included: presence needs them
-            attrs = by_id.setdefault(r.SampleID, {
+            if not (r.SampleID or "").strip():
+                continue
+            # Group by the normalized key (F1), not the raw id -- otherwise a
+            # case-variant SampleID across rows opens a second dict entry and
+            # build_grid's first-observation-wins silently drops that row's
+            # analytes instead of union-ing them.
+            key = engine.normalize_key(r.SampleID)
+            attrs = by_id.setdefault(key, {
                 "location_id": r.LocationID, "sample_date": str(r.SampleDate or ""),
                 "matrix": r.Matrix, "analytes": set()})
             if r.AnalyteCanonicalName:
@@ -4702,9 +4737,18 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
 
     if gdb_samples_csv:
         records = read_records_csv(Path(gdb_samples_csv), SampleRecord)
-        legs["gdb"] = [engine.SourceRow(r.SampleID, {
+        n_empty = sum(1 for r in records if not (r.SampleID or "").strip())
+        if records and n_empty == len(records):
+            raise click.ClickException(
+                "--gdb-samples-csv: no usable SampleID column -- wrong header?")
+        if n_empty:
+            qa.add(SEV_WARNING, "gdb_samples_empty_sample_id",
+                   f"--gdb-samples-csv: {n_empty} record(s) have an empty "
+                   "SampleID and were skipped")
+        legs["gdb"] = [engine.SourceRow(engine.normalize_key(r.SampleID), {
             "location_id": r.LocationID, "sample_date": str(r.SampleDate or ""),
-            "matrix": r.Matrix}) for r in records]
+            "matrix": r.Matrix})
+            for r in records if (r.SampleID or "").strip()]
 
     if not legs:
         raise click.UsageError("Provide at least one source leg.")

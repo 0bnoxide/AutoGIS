@@ -187,6 +187,21 @@ def judge_row(row: GridRow, *, dry_wells: Optional[dict] = None) -> None:
         loc = _get(row.attrs.get("plan", {}), _LOC_KEYS)
         if loc in dry_wells:
             row.codes.append(f"dry:{dry_wells[loc]}")
+            # Spec §4.1: a documented dry well is informational, not an
+            # error -- relax the (all-absent, since not_collected requires
+            # it) downstream REQUIRED masks to OPTIONAL so this row
+            # contributes 0 residual instead of counting every required
+            # downstream leg as missing. Outcome stays not_collected.
+            # ponytail: this runs after build_grid already applied
+            # --presence-overrides, so it silently wins over an operator
+            # override that forced one of this row's downstream sources
+            # REQUIRED. No test exercises that combination and the CLI has
+            # no way to express "dry AND still required" today -- if that
+            # need shows up, judge_row needs the row's override set passed
+            # in so it can skip relaxing an explicitly-overridden source.
+            for s in SOURCES[1:]:
+                if row.mask[s] == REQUIRED:
+                    row.mask[s] = OPTIONAL
 
     # Attribute checks: anchor vs each downstream present source (D3).
     base = row.attrs.get(anchor, {})

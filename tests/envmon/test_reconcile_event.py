@@ -138,6 +138,31 @@ def test_not_collected_with_dry_reason():
     assert any(c.startswith("dry:") for c in row.codes)
 
 
+def test_not_collected_without_dry_reason_still_counts_residual():
+    # Sanity companion to the dry-well relaxation test below: an undocumented
+    # not_collected sample must keep its full residual (F4 only relaxes
+    # masks for a *documented* dry well, never a bare gap).
+    legs = _legs(plan=[("MW-3-20260715-GW", {"location_id": "MW-3"})])
+    legs["field"] = legs["coc"] = legs["lab"] = legs["gdb"] = []
+    result = re_mod.reconcile_event(legs)
+    assert result.residual == 4
+    assert not result.clean
+
+
+def test_documented_dry_well_contributes_zero_residual_and_clean():
+    # F4 / spec §4.1: a dry-annotated not_collected row is informational, not
+    # an error -- its downstream REQUIRED masks relax to OPTIONAL so an
+    # otherwise-clean event with a documented dry well is still `clean`.
+    legs = _legs(plan=[("MW-3-20260715-GW", {"location_id": "MW-3"})])
+    legs["field"] = legs["coc"] = legs["lab"] = legs["gdb"] = []
+    result = re_mod.reconcile_event(legs, dry_wells={"MW-3": "well dry"})
+    row = result.rows[0]
+    assert row.outcome == re_mod.OUTCOME_NOT_COLLECTED
+    assert any(c.startswith("dry:") for c in row.codes)
+    assert result.residual == 0
+    assert result.clean
+
+
 def test_orphan_lab_only_primary():
     legs = _legs(lab=[("MW-4-20260715-GW", {})])
     legs["field"] = legs["coc"] = legs["gdb"] = []
@@ -355,14 +380,15 @@ def test_golden_event_every_outcome_and_balance_explains_residual():
     #   MW-9: field/coc/lab/gdb present (plan optional)   -> 0
     #   MW-1-...-MB: lab present, others forbidden-absent -> 0
     #   MW-2: field,coc present; lab,gdb absent           -> 2
-    #   MW-3: only plan present; field,coc,lab,gdb absent -> 4
+    #   MW-3: dry well (F4/spec §4.1) -- documented, so its downstream
+    #         REQUIRED masks relax to OPTIONAL: 0 residual, not 4
     #   MW-4: only lab present; field,coc,gdb absent      -> 3
     #   MW-5: field,gdb present; coc,lab absent           -> 2
     #   MW-6: all 5 present                               -> 0
     #   MW-8: coc,lab,gdb present; field absent           -> 1
     #   UNPARSEABLE: all-optional mask, nothing required  -> 0
-    # total = 2+4+3+2+1 = 12
-    assert result.residual == 12
+    # total = 2+0+3+2+1 = 8
+    assert result.residual == 8
     # Every point of residual is explained by a named row (recomputed sum
     # matches the hand-derived total above):
     explained = sum(
@@ -678,4 +704,111 @@ def test_reconcile_event_malformed_dry_wells_json(tmp_path):
         "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
     assert res.exit_code != 0
     assert "--dry-wells" in res.output
+
+
+# ── PR-review fix wave: F1 key normalization, F2 loud leg failures, F3 ────
+
+def test_reconcile_event_lab_case_variant_ids_union_not_split(tmp_path):
+    """F1 (blocker): the lab leg used to group by raw SampleID -- a
+    case-variant id across two lab rows for the same sample opened a
+    second dict entry, and build_grid's first-observation-wins silently
+    dropped that row's analytes instead of union-ing them. Grouping by
+    engine.normalize_key fixes it: no analyte_missing/detail_conflict."""
+    site, event, analytes = _plan_configs(
+        tmp_path, groups={"VOCs": ["Benzene", "Toluene"]})
+    lab = _lab_csv(tmp_path, [
+        ("mw-1-20260715-gw", "MW-1", "Benzene"),   # lowercase variant
+        ("MW-1-20260715-GW", "MW-1", "Toluene"),   # canonical variant
+        ("MW-2-20260715-GW", "MW-2", "Benzene"),
+        ("MW-2-20260715-GW", "MW-2", "Toluene"),
+    ])
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event",
+        "--site", str(site), "--event", str(event), "--analytes", str(analytes),
+        "--lab-results-csv", str(lab),
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
+    text = out_csv.read_text(encoding="utf-8")
+    assert "analyte_missing" not in text
+    assert "detail_conflict" not in text
+    summary = json.loads(out_json.read_text(encoding="utf-8"))
+    assert summary["clean"] is True
+
+
+def test_reconcile_event_submissions_csv_bad_encoding_is_loud(tmp_path):
+    """F2a: a non-UTF8 --submissions-csv must not escape as a raw
+    UnicodeDecodeError traceback -- ClickException naming the option and
+    file instead."""
+    subs = tmp_path / "subs_cp1252.csv"
+    hdr = "WellID,SamplingDate,Matrix,SampledBy,COCNumber,DepthToWater_ft,QAFlags"
+    row = "MW-1,2026-07-15,GW,André,COC-001,,"   # non-ASCII (cp1252 'é')
+    subs.write_bytes((hdr + "\n" + row + "\n").encode("cp1252"))
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "--submissions-csv" in res.output
+    assert "Traceback" not in res.output
+
+
+def test_reconcile_event_lab_results_wrong_headers_is_loud(tmp_path):
+    """F2b: a --lab-results-csv whose headers don't match SampleID/etc.
+    used to silently yield all-empty-SampleID records the engine skips,
+    reconciling clean with zero signal. Now a hard ClickException."""
+    lab = tmp_path / "lab_bad.csv"
+    lab.write_text("Foo,Bar\n1,2\n2,3\n", encoding="utf-8")
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event",
+        "--lab-results-csv", str(lab),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "SampleID" in res.output
+
+
+def test_reconcile_event_lab_results_partial_empty_sample_id_warns(tmp_path):
+    """F2b: one good row + one empty-SampleID row must still run (the
+    empty row is skipped, not fatal), with a QA WARNING naming the count."""
+    lab = _lab_csv(tmp_path, [
+        ("MW-1-20260715-GW", "MW-1", "Benzene"),
+        ("", "MW-2", "Benzene"),
+    ])
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event",
+        "--lab-results-csv", str(lab),
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
+    assert res.exit_code == 0, res.output
+    assert "lab_results_empty_sample_id" in res.output
+    assert "1 record" in res.output
+
+
+def test_reconcile_event_gdb_samples_wrong_headers_is_loud(tmp_path):
+    """F2b's same guard on the GDB leg (--gdb-samples-csv), mirroring the
+    lab-leg test above -- untested by the reviewer's named list but built
+    from the identical wrong-header/empty-SampleID code path."""
+    gdb = tmp_path / "gdb_bad.csv"
+    gdb.write_text("Foo,Bar\n1,2\n2,3\n", encoding="utf-8")
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event",
+        "--gdb-samples-csv", str(gdb),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "SampleID" in res.output
+
+
+def test_reconcile_event_blank_well_id_is_loud_not_silent(tmp_path):
+    """F3: the CLI's garbled/needs_review branch for a blank SampleID is
+    dead code at this seam -- normalize_survey123 already rejects a blank
+    WellID with a QA ERROR (and drops the row) before that branch could
+    ever fire. Pin the loud behavior: QA ERROR in output, non-zero exit,
+    no silent drop."""
+    subs = _field_csv(tmp_path, [",2026-07-15,GW,AB,COC-001,,"])   # blank WellID
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "missing_required_field" in res.output
+    assert "WellID" in res.output
     assert "Traceback" not in res.output

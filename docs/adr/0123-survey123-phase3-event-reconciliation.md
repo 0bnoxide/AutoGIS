@@ -76,12 +76,29 @@ loading pre-built files (spec §6, synced 2026-08-01, commit `832dd3a`).
   A sample-form row with a blank SampleID is routed to `garbled` (not
   silently dropped, not silently keyed by index) and always becomes a
   `needs_review` row (`UNPARSEABLE:<raw>` key) rather than colliding with a
-  real sample's key.
+  real sample's key — this is the engine/API-level contract
+  (`reconcile_event(garbled=...)`, directly unit-tested) for any caller
+  that already has a normalized sample dict with a blank `SampleID`.
+  **Corrected 2026-08-02 (pr-reviewer F3):** at the `--submissions-csv` CLI
+  seam specifically, that branch is defense-in-depth, not the live path —
+  `load_survey123_csv_submissions`/`normalize_survey123_submission` reject
+  an id-less sample-form row (a blank `WellID`) *before* the CLI ever sees
+  it: they emit a `SEV_ERROR` `missing_required_field` QA record and drop
+  the row (`return [], []`), which trips `_render_qa`'s default
+  `--fail-on error` to a loud `SystemExit(1)` — not a silent demotion to
+  `needs_review`. The garbled/`UNPARSEABLE`/`needs_review` channel is real
+  and tested, just not reachable through this CLI's normal blank-`WellID`
+  path; a CLI test pins the loud rejection instead.
 - **Optional dry-wells input:** `--dry-wells` JSON
   (`{LocationID: reason}`), same pattern as `identify-data-gaps`'s
   data-gaps input; a `not_collected` row at a dry/inactive location gets a
   `dry:<reason>` code so an expected non-sample doesn't read as a gap
-  needing follow-up.
+  needing follow-up. **Amended 2026-08-02 (pr-reviewer F4):** per spec
+  §4.1, a documented dry well is informational, not an error — `judge_row`
+  relaxes that row's downstream `REQUIRED` masks to `OPTIONAL` (the
+  outcome stays `not_collected` with its `dry:<reason>` code), so it
+  contributes 0 residual instead of counting every absent downstream leg
+  as missing.
 - **Inputs are a documented CSV contract, not persisted artifacts** (spec
   §6, verified 2026-08-01 — no plan file or GDB row exporter exists):
   - **Plan leg** (optional): `--site`/`--event`/`--analytes` config paths,
@@ -146,8 +163,9 @@ loading pre-built files (spec §6, synced 2026-08-01, commit `832dd3a`).
 - Every reachable outcome, the D5 mask (including plan override and
   field-origin), cascade anchoring, precedence, and balance arithmetic have
   direct unit tests (Tasks 1-4); a golden fixture event (Task 6) exercises
-  every outcome at least once and pins the hand-derived residual (12) plus a
-  recomputed-sum identity over the same fixture — the separate zero-residual
+  every outcome at least once and pins the hand-derived residual (8, after
+  the F4 dry-well mask relaxation) plus a recomputed-sum identity over the
+  same fixture — the separate zero-residual
   clean case is pinned by its own test
   (`test_reconcile_event_residual_zero_when_all_masks_met`). Real-console
   smoke (2026-08-02, PowerShell, exit 0, no `UnicodeEncodeError`) confirms

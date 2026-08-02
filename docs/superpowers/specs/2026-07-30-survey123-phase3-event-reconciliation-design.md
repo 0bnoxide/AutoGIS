@@ -163,7 +163,16 @@ levels emit as a separate stream with no SampleID —
 - a **sample-form record whose ID is garbled stays in the grid as
   `needs_review`** — partition is by record type, never by whether the ID
   parses, because demoting a real sample to "observation" is exactly the
-  silent loss this tool exists to catch.
+  silent loss this tool exists to catch. This is the engine/API-level
+  contract (`reconcile_event(garbled=...)`); **corrected 2026-08-02,
+  ADR-0123 (pr-reviewer F3)** — at the CLI's `--submissions-csv` seam
+  specifically, a sample-form row with a blank `WellID` never reaches this
+  branch: the normalizer rejects it first with a loud `SEV_ERROR` QA record
+  (`missing_required_field`) and drops the row, which exits `1` under the
+  default `--fail-on error` rather than silently demoting to
+  `needs_review`. The CLI's own blank-`SampleID` check is defense-in-depth
+  for any other caller of the same code path, not the live route for this
+  case.
 
 ## 5. Per-source readers — verified surface (2026-08-01, file-checked)
 
@@ -230,6 +239,16 @@ suggestions section (never applied).
 - **Suggestions:** never cross QC classes (`qc_class` guard); computed from
   leftovers only.
 - **Unreadable provided input** = hard error (§3 step 1). Omitted ≠ unreadable.
+- **Blank `WellID` at the `--submissions-csv` seam** (**added 2026-08-02,
+  ADR-0123, pr-reviewer F3**): rejected loudly by the normalizer (`SEV_ERROR`
+  `missing_required_field`, row dropped, exit `1` under default
+  `--fail-on error`) *before* the CLI's own blank-`SampleID`/`garbled`
+  routing can fire — that routing is the engine/API-level
+  `needs_review`/`UNPARSEABLE` contract (§4.4) and remains defense-in-depth
+  at this CLI seam, not the live path for a real Survey123 export.
+- **Dry-annotated `not_collected`** (**added 2026-08-02, ADR-0123,
+  pr-reviewer F4**): per §4.1, informational, not an error — the row's
+  downstream `REQUIRED` masks relax to `OPTIONAL`, contributing 0 residual.
 
 ## 8. Testing
 
