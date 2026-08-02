@@ -120,3 +120,112 @@ def build_grid(legs: Dict[str, List[SourceRow]], *,
             if s in provided:
                 row.mask[s] = v
     return grid
+
+
+_DATE_KEYS = ("event_date", "SampleDate", "sample_date", "SamplingDate")
+_LOC_KEYS = ("location_id", "LocationID")
+_MATRIX_KEYS = ("matrix", "Matrix")
+
+
+def _norm(v) -> str:
+    return str(v or "").strip().upper()
+
+
+def _get(attrs: dict, keys) -> str:
+    for k in keys:
+        if attrs.get(k) not in (None, ""):
+            return str(attrs[k])
+    return ""
+
+
+def _dates_match(a: str, b: str) -> bool:
+    def datepart(s: str) -> str:
+        s = s.strip()[:10].replace("-", "").replace("/", "")
+        return s[:8]
+    if not a or not b:
+        return True                       # absent attribute is never a conflict
+    return datepart(a) == datepart(b)
+
+
+def judge_row(row: GridRow, *, dry_wells: Optional[dict] = None) -> None:
+    dry_wells = dry_wells or {}
+    anchor = next((s for s in SOURCES if row.present[s]), None)
+    if anchor is None:
+        row.outcome = OUTCOME_NEEDS_REVIEW
+        row.codes.append("no_presence")
+        return
+    row.origin = {"plan": "planned", "field": "field-added"}.get(
+        anchor, f"{anchor}-origin")
+    row.last_stage = [s for s in SOURCES if row.present[s]][-1]
+
+    for s in SOURCES:
+        if row.present[s] and row.mask[s] == FORBIDDEN:
+            row.codes.append(f"unexpected_in_{s}")
+
+    chain = [s for s in SOURCES if SOURCES.index(s) >= SOURCES.index(anchor)
+             and row.mask[s] == REQUIRED]
+    pattern = [row.present[s] for s in chain]
+    stalled = gap = False
+    if pattern and not all(pattern):
+        seen_absent = False
+        for p in pattern:
+            if p and seen_absent:
+                gap = True
+                break
+            if not p:
+                seen_absent = True
+        stalled = not gap
+    if gap:
+        row.codes.append("presence_gap")
+
+    orphan = (anchor not in ("plan", "field") and row.mask["field"] == REQUIRED)
+    not_collected = (anchor == "plan"
+                     and not any(row.present[s] for s in SOURCES[1:]))
+    if not_collected:
+        loc = _get(row.attrs.get("plan", {}), _LOC_KEYS)
+        if loc in dry_wells:
+            row.codes.append(f"dry:{dry_wells[loc]}")
+
+    # Attribute checks: anchor vs each downstream present source (D3).
+    base = row.attrs.get(anchor, {})
+    for s in SOURCES[SOURCES.index(anchor) + 1:]:
+        if not row.present[s]:
+            continue
+        other = row.attrs[s]
+        if not _dates_match(_get(base, _DATE_KEYS), _get(other, _DATE_KEYS)):
+            row.codes.append(f"date_mismatch:{s}")
+        for keys, name in ((_LOC_KEYS, "location"), (_MATRIX_KEYS, "matrix")):
+            a, b = _get(base, keys), _get(other, keys)
+            if a and b and _norm(a) != _norm(b):
+                row.codes.append(f"{name}_mismatch:{s}")
+    if row.present["field"] and row.present["coc"]:
+        a = _norm(_get(row.attrs["field"], ("COCNumber", "coc_number")))
+        b = _norm(_get(row.attrs["coc"], ("coc_number", "COCNumber")))
+        if a and b and a != b:
+            row.codes.append("coc_number_mismatch")
+    plan_analytes = row.attrs.get("plan", {}).get("analytes")
+    lab_analytes = row.attrs.get("lab", {}).get("analytes")
+    if plan_analytes and row.present["lab"] and lab_analytes is not None:
+        missing = sorted(set(plan_analytes) - set(lab_analytes))
+        extra = sorted(set(lab_analytes) - set(plan_analytes))
+        if missing:
+            row.codes.append("analyte_missing:" + ",".join(missing))
+        if extra:
+            row.codes.append("analyte_unexpected:" + ",".join(extra))
+
+    review = gap or "multi_coc" in row.codes or "unparseable_sample_id" in row.codes
+    conflict = any(c.split(":")[0].endswith("_mismatch")
+                   or c.startswith(("analyte_", "unexpected_in_"))
+                   for c in row.codes)
+    if review:
+        row.outcome = OUTCOME_NEEDS_REVIEW
+    elif orphan:
+        row.outcome = OUTCOME_ORPHAN
+    elif not_collected:
+        row.outcome = OUTCOME_NOT_COLLECTED
+    elif stalled:
+        row.outcome = OUTCOME_STALLED
+    elif conflict:
+        row.outcome = OUTCOME_DETAIL_CONFLICT
+    else:
+        row.outcome = OUTCOME_RECONCILED

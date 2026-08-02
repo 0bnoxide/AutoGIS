@@ -91,3 +91,89 @@ def test_build_grid_duplicate_same_coc_not_flagged():
     legs = _legs(coc=[("MW-1-20260715-GW", {"coc_number": "COC-001"}),
                       ("MW-1-20260715-GW", {"coc_number": "COC-001"})])
     assert re_mod.build_grid(legs)["MW-1-20260715-GW"].codes == []
+
+
+def _judged(legs, **kw):
+    grid = re_mod.build_grid(legs)
+    for row in grid.values():
+        re_mod.judge_row(row, **kw)
+    return grid
+
+
+def test_planned_clean_sample_reconciled():
+    a = {"location_id": "MW-1", "event_date": "2026-07-15", "matrix": "GW"}
+    legs = _legs(plan=[("MW-1-20260715-GW", a)], field=[("MW-1-20260715-GW", a)],
+                 coc=[("MW-1-20260715-GW", {"coc_number": "COC-001"})],
+                 lab=[("MW-1-20260715-GW", a)], gdb=[("MW-1-20260715-GW", a)])
+    row = _judged(legs)["MW-1-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_RECONCILED
+    assert row.origin == "planned"
+
+
+def test_field_added_sample_reconciled_not_flagged():
+    a = {"LocationID": "MW-9", "SampleDate": "2026-07-15", "Matrix": "GW"}
+    legs = _legs(field=[("MW-9-20260715-GW", a)],
+                 coc=[("MW-9-20260715-GW", {"coc_number": "COC-001"})],
+                 lab=[("MW-9-20260715-GW", a)], gdb=[("MW-9-20260715-GW", a)])
+    row = _judged(legs)["MW-9-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_RECONCILED
+    assert row.origin == "field-added"      # D3: unplanned is legitimate
+
+
+def test_stalled_after_coc_names_last_stage():
+    legs = _legs(field=[("MW-2-20260715-GW", {})],
+                 coc=[("MW-2-20260715-GW", {"coc_number": "COC-001"})])
+    # lab and gdb legs ARE provided (empty) so their absence is judged
+    legs["lab"], legs["gdb"] = [], []
+    row = _judged(legs)["MW-2-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_STALLED
+    assert row.last_stage == "coc"
+
+
+def test_not_collected_with_dry_reason():
+    legs = _legs(plan=[("MW-3-20260715-GW", {"location_id": "MW-3"})])
+    legs["field"] = legs["coc"] = legs["lab"] = legs["gdb"] = []
+    row = _judged(legs, dry_wells={"MW-3": "well dry"})["MW-3-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_NOT_COLLECTED
+    assert any(c.startswith("dry:") for c in row.codes)
+
+
+def test_orphan_lab_only_primary():
+    legs = _legs(lab=[("MW-4-20260715-GW", {})])
+    legs["field"] = legs["coc"] = legs["gdb"] = []
+    row = _judged(legs)["MW-4-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_ORPHAN
+
+
+def test_lab_only_method_blank_is_reconciled():
+    legs = _legs(lab=[("MW-4-20260715-GW-MB", {})])
+    legs["field"] = legs["coc"] = legs["gdb"] = []
+    row = _judged(legs)["MW-4-20260715-GW-MB"]
+    assert row.outcome == re_mod.OUTCOME_RECONCILED   # matches its mask
+
+
+def test_presence_gap_needs_review():
+    legs = _legs(field=[("MW-5-20260715-GW", {})], gdb=[("MW-5-20260715-GW", {})])
+    legs["coc"], legs["lab"] = [], []
+    row = _judged(legs)["MW-5-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_NEEDS_REVIEW
+    assert "presence_gap" in row.codes
+
+
+def test_matrix_mismatch_detail_conflict():
+    legs = _legs(field=[("MW-6-20260715-GW", {"Matrix": "GW"})],
+                 lab=[("MW-6-20260715-GW", {"matrix": "SO"})],
+                 coc=[("MW-6-20260715-GW", {"coc_number": "C1"})],
+                 gdb=[("MW-6-20260715-GW", {"Matrix": "GW"})])
+    row = _judged(legs)["MW-6-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_DETAIL_CONFLICT
+    assert any(c.startswith("matrix_mismatch") for c in row.codes)
+
+
+def test_stalled_beats_detail_conflict_in_headline():
+    legs = _legs(field=[("MW-7-20260715-GW", {"Matrix": "GW"})],
+                 coc=[("MW-7-20260715-GW", {"coc_number": "C1", "matrix": "SO"})])
+    legs["lab"], legs["gdb"] = [], []
+    row = _judged(legs)["MW-7-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_STALLED
+    assert any(c.startswith("matrix_mismatch") for c in row.codes)
