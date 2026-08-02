@@ -323,8 +323,8 @@ def test_save_cancel_writes_nothing(qapp, monkeypatch, tmp_path):
 def test_main_window_button_opens_dialog(qapp, tmp_path):
     store = QSettings(str(tmp_path / "s.ini"), QSettings.Format.IniFormat)
     win = MainWindow(settings_store=store)
-    btn = next(b for b in win.findChildren(QPushButton)
-               if b.text() == "Build Site Config…")
+    btn = win.findChild(QPushButton, "build-harvest-config")
+    assert btn.text() == "Harvest Config…"
     btn.click()
     assert isinstance(win._config_dialog, ConfigBuilderDialog)
     assert win._config_dialog.isVisible()
