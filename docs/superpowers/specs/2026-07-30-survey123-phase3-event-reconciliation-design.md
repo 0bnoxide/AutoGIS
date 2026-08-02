@@ -238,9 +238,8 @@ suggestions section (never applied).
   precedence, and balance arithmetic. Arcpy-free.
 - **Golden fixture event** exercising every outcome at least once: clean
   planned sample, field-added, stalled, orphan, detail conflict, garbled
-  sample-form ID, QC blanks per mask, multi-COC sample, out-of-window rows,
-  observations to partition, dry well via mapping. Must balance to zero
-  residual.
+  sample-form ID, QC blanks per mask, multi-COC sample, observations to
+  partition, dry well via mapping. Must balance to zero residual.
 - CLI-level test + **real Windows console smoke** (CliRunner masks cp1252
   console crashes — Phase 6 lesson, PR #296).
 - Owner-gated exit-gate leg: sanitized real event end-to-end (Proposed
