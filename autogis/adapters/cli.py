@@ -4543,6 +4543,24 @@ def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
     _render_qa(qa, report, fail_on)
 
 
+def _load_json_option(path, option_name: str):
+    """Load a JSON object option. Malformed JSON / an unreadable file / a
+    non-object top-level value are usage mistakes at the CLI trust boundary,
+    not crashes -- wrap them as ClickException instead of letting json.loads
+    raise a raw traceback or a later TypeError."""
+    if not path:
+        return None
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise click.ClickException(f"{option_name}: could not read/parse {path}: {exc}")
+    if not isinstance(data, dict):
+        raise click.ClickException(
+            f"{option_name}: {path} must be a JSON object (got "
+            f"{type(data).__name__}).")
+    return data
+
+
 @envmon.command("reconcile-event")
 @click.option("--site", "site_path", type=click.Path(exists=True),
               help="Site config (plan leg, with --event and --analytes).")
@@ -4609,13 +4627,38 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
                 site_cfg.data, event_cfg, analyte_dict, run_id=str(uuid.uuid4()))
         except (ValueError, KeyError) as exc:
             raise click.ClickException(f"plan leg failed: {exc}")
+        analyte_groups_cfg = event_cfg.get("analyte_groups", {})
+        unresolved_groups: set = set()
         by_id = {}
         for row in plan.expected_samples:      # dedupe rows, union analyte groups
             attrs = by_id.setdefault(row.sample_id, {
                 "location_id": row.location_id, "event_date": row.event_date,
                 "matrix": row.matrix, "coc_number": row.coc_number,
                 "analytes": set()})
-            attrs["analytes"].add(row.analyte_group)
+            # Plan analytes must be canonical names (same vocabulary the lab
+            # leg stores as AnalyteCanonicalName), not the group label --
+            # expand via the same event_config["analyte_groups"] mapping
+            # build_sampling_event_plan itself resolves groups from. A group
+            # value that isn't a list (e.g. a YAML scalar) mirrors
+            # build_sampling_event_plan's own `isinstance(names, list)` guard
+            # on the validation side -- treat it the same as "no members".
+            members = analyte_groups_cfg.get(row.analyte_group)
+            if isinstance(members, list) and members:
+                attrs["analytes"].update(members)
+            else:
+                # No member list for this group: fall back to the group name
+                # so the set compare has something, but say so loudly --
+                # silent group-vs-canonical mismatch is the bug this fixes.
+                # One warning per group (not per row) keeps a 30-well event
+                # from drowning --fail-on warning in duplicate records.
+                attrs["analytes"].add(row.analyte_group)
+                if row.analyte_group not in unresolved_groups:
+                    unresolved_groups.add(row.analyte_group)
+                    qa.add(SEV_WARNING, "analyte_group_unresolved",
+                           f"analyte group '{row.analyte_group}' has no "
+                           "member list in analyte_groups; using the group "
+                           "name as a stand-in analyte (will not match lab "
+                           "canonical names)")
         legs["plan"] = [engine.SourceRow(sid, attrs) for sid, attrs in by_id.items()]
 
     if submissions_csv:
@@ -4666,9 +4709,31 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
     if not legs:
         raise click.UsageError("Provide at least one source leg.")
 
-    dry = json.loads(Path(dry_wells).read_text(encoding="utf-8")) if dry_wells else None
-    overrides = (json.loads(Path(presence_overrides).read_text(encoding="utf-8"))
-                if presence_overrides else None)
+    dry = _load_json_option(dry_wells, "--dry-wells")
+    overrides = _load_json_option(presence_overrides, "--presence-overrides")
+    if overrides is not None:
+        normalized_overrides = {}
+        for sid, per_source in overrides.items():
+            if not isinstance(per_source, dict):
+                raise click.UsageError(
+                    f"--presence-overrides: value for {sid!r} must be an "
+                    "object mapping source to required|optional|forbidden.")
+            key = engine.normalize_key(str(sid))
+            norm_source = {}
+            for source, value in per_source.items():
+                if source not in engine.SOURCES:
+                    raise click.UsageError(
+                        f"--presence-overrides: unknown source {source!r} for "
+                        f"{sid!r} (expected one of {engine.SOURCES}).")
+                v = str(value).strip().lower()
+                if v not in (engine.REQUIRED, engine.OPTIONAL, engine.FORBIDDEN):
+                    raise click.UsageError(
+                        f"--presence-overrides: unknown value {value!r} for "
+                        f"{sid!r}/{source!r} (expected required|optional|"
+                        "forbidden).")
+                norm_source[source] = v
+            normalized_overrides[key] = norm_source
+        overrides = normalized_overrides
     result = engine.reconcile_event(legs, overrides=overrides, dry_wells=dry,
                                     garbled=garbled, observations=observations)
 

@@ -392,6 +392,43 @@ def _field_csv(tmp_path, rows):
     return p
 
 
+def _plan_configs(tmp_path, *, groups):
+    """Minimal site/event/analytes fixture -- same shape as
+    tests/envmon/test_custody.py's _reference_event helper. ``groups`` is the
+    event config's analyte_groups: {group_name: [canonical analyte names]}."""
+    site = tmp_path / "site.json"
+    site.write_text(json.dumps({
+        "site_id": "SITE1", "site_name": "Site One", "project_number": "P-001",
+        "address": "1 Test St", "city": "Anytown", "state": "MT",
+        "coordinate_system": "NAD83 / UTM Zone 12N", "default_gdb": "SITE1.gdb",
+        "default_aprx_template": "template.aprx",
+        "monitoring_wells_fc": "MonitoringWells", "soil_borings_fc": "SoilBorings",
+        "site_boundary_fc": "SiteBoundary"}), encoding="utf-8")
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({
+        "event_name": "2026-Q2", "event_date": "2026-07-15",
+        "coc_prefix": "COC", "lab_name": "TestLab",
+        "matrices": ["GW"], "location_ids": ["MW-1", "MW-2"],
+        "crew_list": ["Alice"], "dup_frequency": 0,
+        "analyte_groups": groups,
+    }), encoding="utf-8")
+    analytes = tmp_path / "analytes.json"
+    names = {n for members in groups.values() for n in members}
+    analytes.write_text(
+        json.dumps({"analytes": {n: {} for n in names}}), encoding="utf-8")
+    return site, event, analytes
+
+
+def _lab_csv(tmp_path, rows):
+    """rows: iterable of (SampleID, LocationID, AnalyteCanonicalName)."""
+    p = tmp_path / "lab.csv"
+    hdr = "SampleID,LocationID,SampleDate,Matrix,AnalyteCanonicalName"
+    lines = [hdr] + [f"{sid},{loc},2026-07-15,GW,{analyte}"
+                     for sid, loc, analyte in rows]
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return p
+
+
 def test_reconcile_event_in_help():
     res = CliRunner().invoke(autogis, ["envmon", "--help"])
     assert "reconcile-event" in res.output
@@ -464,3 +501,181 @@ def test_reconcile_event_semantic_exit_logs_run_history_success(tmp_path, monkey
         rows = [row for row in csv_mod.DictReader(fh)
                 if row["tool_name"] == "reconcile-event"]
     assert rows and rows[-1]["status"] == "success"
+
+
+# ── Final-review fix wave: analyte vocabulary, override validation, JSON errors ──
+
+def test_reconcile_event_plan_lab_analyte_vocabulary_matches(tmp_path):
+    """Finding 1: the plan leg must expand analyte GROUP names to member
+    analytes (same vocabulary as the lab leg's AnalyteCanonicalName), or
+    judge_row's set compare mismatches on every plan+lab run."""
+    site, event, analytes = _plan_configs(
+        tmp_path, groups={"VOCs": ["Benzene", "Toluene"]})
+    lab = _lab_csv(tmp_path, [
+        ("MW-1-20260715-GW", "MW-1", "Benzene"),
+        ("MW-1-20260715-GW", "MW-1", "Toluene"),
+        ("MW-2-20260715-GW", "MW-2", "Benzene"),
+        ("MW-2-20260715-GW", "MW-2", "Toluene"),
+    ])
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event",
+        "--site", str(site), "--event", str(event), "--analytes", str(analytes),
+        "--lab-results-csv", str(lab),
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
+    assert res.exit_code == 0, res.output
+    text = out_csv.read_text(encoding="utf-8")
+    assert "analyte_missing" not in text
+    assert "analyte_unexpected" not in text
+    summary = json.loads(out_json.read_text(encoding="utf-8"))
+    assert summary["clean"] is True
+
+
+def test_reconcile_event_plan_lab_analyte_missing_member(tmp_path):
+    """Same fixture, lab leg missing one group member for MW-1 ->
+    analyte_missing:<that member> (not a blanket group-name mismatch)."""
+    site, event, analytes = _plan_configs(
+        tmp_path, groups={"VOCs": ["Benzene", "Toluene"]})
+    lab = _lab_csv(tmp_path, [
+        ("MW-1-20260715-GW", "MW-1", "Benzene"),      # Toluene missing
+        ("MW-2-20260715-GW", "MW-2", "Benzene"),
+        ("MW-2-20260715-GW", "MW-2", "Toluene"),
+    ])
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event",
+        "--site", str(site), "--event", str(event), "--analytes", str(analytes),
+        "--lab-results-csv", str(lab),
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
+    # detail_conflict alone doesn't flip result.clean (residual/needs_review
+    # only, pre-existing engine semantics) -- exit 0 is expected here; what
+    # this test pins is the specific code, not the exit path.
+    assert res.exit_code == 0, res.output
+    text = out_csv.read_text(encoding="utf-8")
+    assert "analyte_missing:Toluene" in text
+
+
+def test_reconcile_event_plan_analyte_group_scalar_is_unresolved_not_chars(tmp_path):
+    """A YAML/JSON scalar under a group key (not a list) mirrors
+    build_sampling_event_plan's own `isinstance(names, list)` validation
+    guard -- it must fall to the "unresolved group" branch, not get iterated
+    character-by-character (["B","e","n",...]) into attrs["analytes"]."""
+    site, event, analytes = _plan_configs(tmp_path, groups={"VOCs": ["Benzene"]})
+    # Overwrite with a scalar group value after _plan_configs built the
+    # analyte dict from the (list-shaped) groups it was given.
+    event.write_text(json.dumps({
+        "event_name": "2026-Q2", "event_date": "2026-07-15",
+        "coc_prefix": "COC", "lab_name": "TestLab",
+        "matrices": ["GW"], "location_ids": ["MW-1", "MW-2"],
+        "crew_list": ["Alice"], "dup_frequency": 0,
+        "analyte_groups": {"VOCs": "Benzene"},        # scalar, not a list
+    }), encoding="utf-8")
+    lab = _lab_csv(tmp_path, [("MW-1-20260715-GW", "MW-1", "Benzene")])
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event",
+        "--site", str(site), "--event", str(event), "--analytes", str(analytes),
+        "--lab-results-csv", str(lab),
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
+    text = out_csv.read_text(encoding="utf-8")
+    # Fallback keeps the group NAME ("VOCs") as the plan's stand-in analyte,
+    # so MW-1 legitimately mismatches vs the lab's real canonical name
+    # ("Benzene") -- a normal analyte_* code, never a per-character one
+    # (["B","e","n",...]) that a bare `.update("Benzene")` would produce.
+    assert "analyte_missing:VOCs" in text
+    assert "analyte_missing:B" not in text and "analyte_missing:e" not in text
+    # Two wells share the one unresolved group -- exactly one QA record, not
+    # one per row.
+    assert res.output.count("analyte_group_unresolved") == 1
+
+
+def test_reconcile_event_presence_override_normalizes_key_and_value(tmp_path):
+    """Finding 2: override keys must normalize through engine.normalize_key
+    and values must case-fold, or the override is a silent no-op. Forbid the
+    (present) field leg via a lowercase key + uppercase value -- without
+    normalization this run would stay clean."""
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    overrides = tmp_path / "overrides.json"
+    overrides.write_text(
+        json.dumps({"mw-1-20260715-gw": {"field": "FORBIDDEN"}}),
+        encoding="utf-8")
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs), "--presence-overrides", str(overrides),
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
+    assert res.exit_code == 2, res.output
+    assert "unexpected_in_field" in out_csv.read_text(encoding="utf-8")
+    summary = json.loads(out_json.read_text(encoding="utf-8"))
+    assert summary["clean"] is False
+
+
+def test_reconcile_event_presence_override_bad_source_is_usage_error(tmp_path):
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    overrides = tmp_path / "overrides.json"
+    overrides.write_text(
+        json.dumps({"MW-1-20260715-GW": {"labb": "required"}}),
+        encoding="utf-8")
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs), "--presence-overrides", str(overrides),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "labb" in res.output
+
+
+def test_reconcile_event_presence_override_bad_value_is_usage_error(tmp_path):
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    overrides = tmp_path / "overrides.json"
+    overrides.write_text(
+        json.dumps({"MW-1-20260715-GW": {"lab": "FORBIDEN"}}),  # typo
+        encoding="utf-8")
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs), "--presence-overrides", str(overrides),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "FORBIDEN" in res.output
+
+
+def test_reconcile_event_malformed_presence_overrides_json(tmp_path):
+    """Finding 3: malformed JSON -> ClickException with the option name, not
+    a raw traceback."""
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    bad = tmp_path / "overrides.json"
+    bad.write_text("{not json", encoding="utf-8")
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs), "--presence-overrides", str(bad),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "--presence-overrides" in res.output
+    assert "Traceback" not in res.output
+
+
+def test_reconcile_event_presence_overrides_json_array_rejected(tmp_path):
+    """A JSON array top-level currently TypeErrors deep inside build_grid;
+    reject it at the CLI boundary instead."""
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    bad = tmp_path / "overrides.json"
+    bad.write_text("[]", encoding="utf-8")
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs), "--presence-overrides", str(bad),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "--presence-overrides" in res.output
+    assert "Traceback" not in res.output
+
+
+def test_reconcile_event_malformed_dry_wells_json(tmp_path):
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    bad = tmp_path / "dry.json"
+    bad.write_text("not json at all", encoding="utf-8")
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs), "--dry-wells", str(bad),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "--dry-wells" in res.output
+    assert "Traceback" not in res.output

@@ -146,9 +146,12 @@ loading pre-built files (spec §6, synced 2026-08-01, commit `832dd3a`).
 - Every reachable outcome, the D5 mask (including plan override and
   field-origin), cascade anchoring, precedence, and balance arithmetic have
   direct unit tests (Tasks 1-4); a golden fixture event (Task 6) exercises
-  every outcome at least once and pins zero residual. Real-console smoke
-  (2026-08-02, PowerShell, exit 0, no `UnicodeEncodeError`) confirms the
-  Phase 6 cp1252 lesson (PR #296) doesn't recur here.
+  every outcome at least once and pins the hand-derived residual (12) plus a
+  recomputed-sum identity over the same fixture — the separate zero-residual
+  clean case is pinned by its own test
+  (`test_reconcile_event_residual_zero_when_all_masks_met`). Real-console
+  smoke (2026-08-02, PowerShell, exit 0, no `UnicodeEncodeError`) confirms
+  the Phase 6 cp1252 lesson (PR #296) doesn't recur here.
 - Multi-COC and unparseable-ID rows always resolve to `needs_review`
   rather than a silently-picked winner, keeping the residual honest.
 - Rollback = revert the commits; no persisted state, config, or GDB schema
