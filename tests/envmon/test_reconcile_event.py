@@ -339,7 +339,32 @@ def test_golden_event_every_outcome_and_balance_explains_residual():
     assert by["MW-8-20260715-GW"] == re_mod.OUTCOME_NEEDS_REVIEW   # multi-coc
     assert by["UNPARSEABLE:??bad-row??"] == re_mod.OUTCOME_NEEDS_REVIEW
     assert not result.clean
-    # Every point of residual is explained by a named row:
+    # Grid membership pinned exactly: the 9 sample keys + 1 UNPARSEABLE row,
+    # nothing more (observations must never leak into the grid as rows).
+    assert len(result.rows) == 10
+    assert set(by) == {
+        "MW-1-20260715-GW", "MW-9-20260715-GW", "MW-1-20260715-GW-MB",
+        "MW-2-20260715-GW", "MW-3-20260715-GW", "MW-4-20260715-GW",
+        "MW-5-20260715-GW", "MW-6-20260715-GW", "MW-8-20260715-GW",
+        "UNPARSEABLE:??bad-row??",
+    }
+    # Residual derived by hand from the fixture's masks (all primary rows are
+    # plan=optional, field/coc/lab/gdb=required; MB is lab=required, rest
+    # forbidden; UNPARSEABLE is all-optional) -- required-absent count per row:
+    #   MW-1: all 5 present                              -> 0
+    #   MW-9: field/coc/lab/gdb present (plan optional)   -> 0
+    #   MW-1-...-MB: lab present, others forbidden-absent -> 0
+    #   MW-2: field,coc present; lab,gdb absent           -> 2
+    #   MW-3: only plan present; field,coc,lab,gdb absent -> 4
+    #   MW-4: only lab present; field,coc,gdb absent      -> 3
+    #   MW-5: field,gdb present; coc,lab absent           -> 2
+    #   MW-6: all 5 present                               -> 0
+    #   MW-8: coc,lab,gdb present; field absent           -> 1
+    #   UNPARSEABLE: all-optional mask, nothing required  -> 0
+    # total = 2+4+3+2+1 = 12
+    assert result.residual == 12
+    # Every point of residual is explained by a named row (recomputed sum
+    # matches the hand-derived total above):
     explained = sum(
         sum(1 for s in re_mod.SOURCES
             if r.mask[s] == re_mod.REQUIRED and not r.present[s])
@@ -350,7 +375,6 @@ def test_golden_event_every_outcome_and_balance_explains_residual():
     # Observations stayed out of the grid but in the summary:
     s = re_mod.summary_dict(result)
     assert s["observations"] == {"water_levels": 4, "site_conditions": 2}
-    assert all(not k.startswith("WL") for k in by)
 
 
 # ── CLI end-to-end ───────────────────────────────────────────────
