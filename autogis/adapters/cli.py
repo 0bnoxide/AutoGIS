@@ -85,7 +85,11 @@ _SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
 # Semantic nonzero exits that are findings, not failures (ADR-0115):
 # diff-survey-schema exits 2 (review-required) / 3 (destructive drift).
 # Without this, every drift finding would be mislogged as a tool error.
-_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}}
+# reconcile-event exits 2 for a non-clean (residual/needs_review) event --
+# also a finding, not a failure (not self-logging like `coc`, so it needs
+# an explicit entry here or every discrepancy run-history record would be
+# mislogged as status='error').
+_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}, "reconcile-event": {2}}
 
 
 def _record_tool_name(ctx) -> str:
@@ -2440,6 +2444,10 @@ def create_sampling_event_cmd(site_path, event_path, analytes_path, out_dir):
 # 2 = reconciliation found discrepancies (stable code for automation).
 _COC_DISCREPANCY_EXIT = 2
 
+# reconcile-event: exit 2 = event does not reconcile (residual/needs_review),
+# distinct from exit 1 (QA fail-on breach) — same convention as _COC_DISCREPANCY_EXIT.
+_RECONCILE_EVENT_DISCREPANCY_EXIT = 2
+
 # Targets reachable via `advance`. `reconciled` is deliberately excluded — it
 # is only reachable through `reconcile`, so a COC cannot be marked reconciled
 # without a recorded planned-vs-received comparison (the Phase 6 gate).
@@ -4533,6 +4541,152 @@ def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
                                  duplicate_markers=markers)
     qa = reconcile_to_qa(result)
     _render_qa(qa, report, fail_on)
+
+
+@envmon.command("reconcile-event")
+@click.option("--site", "site_path", type=click.Path(exists=True),
+              help="Site config (plan leg, with --event and --analytes).")
+@click.option("--event", "event_path", type=click.Path(exists=True),
+              help="Event config (plan leg).")
+@click.option("--analytes", "analytes_path", type=click.Path(exists=True),
+              help="Analyte dictionary (plan leg).")
+@click.option("--site-id", "site_id", default="",
+              help="Site id for field/lab/gdb legs when --site is not given.")
+@click.option("--submissions-csv", type=click.Path(exists=True),
+              help="Raw Survey123 submissions CSV (field leg; normalized in-process).")
+@click.option("--custody-store", type=click.Path(exists=True),
+              help="Custody store JSON (COC leg).")
+@click.option("--lab-results-csv", type=click.Path(exists=True),
+              help="Canonical AnalyticalResultRecord CSV (lab leg).")
+@click.option("--gdb-samples-csv", type=click.Path(exists=True),
+              help="CSV export of Env_Samples (GDB leg).")
+@click.option("--dry-wells", type=click.Path(exists=True),
+              help="Optional JSON {LocationID: reason} for dry/inactive wells.")
+@click.option("--presence-overrides", type=click.Path(exists=True),
+              help="Optional JSON {SampleID: {source: required|optional|forbidden}}.")
+@click.option("--out-csv", required=True, type=click.Path())
+@click.option("--out-json", required=True, type=click.Path())
+@qa_report_options
+def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
+                        submissions_csv, custody_store, lab_results_csv,
+                        gdb_samples_csv, dry_wells, presence_overrides,
+                        out_csv, out_json, report, fail_on):
+    """Reconcile one event's samples across plan/field/COC/lab/GDB.
+
+    At least one of the five source legs (--site+--event+--analytes,
+    --submissions-csv, --custody-store, --lab-results-csv,
+    --gdb-samples-csv) must be given. Exit 2 signals the event does not
+    reconcile cleanly (residual imbalance or a needs_review row) --
+    distinct from exit 1, which is a QA --fail-on breach.
+    """
+    from ..core.common.qa import QACollector, SEV_INFO, SEV_WARNING
+    from ..core.common.records_csv import read_records_csv
+    from ..core.envmon import custody as custody_mod
+    from ..core.envmon import reconcile_event as engine
+    from ..core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
+    from ..core.envmon.normalize_survey123 import load_survey123_csv_submissions
+
+    plan_given = [p for p in (site_path, event_path, analytes_path) if p]
+    if plan_given and len(plan_given) != 3:
+        raise click.UsageError("--site, --event and --analytes go together.")
+    legs, garbled, observations = {}, [], {}
+    qa = QACollector()
+
+    if plan_given:
+        from ..core.common.config import (
+            SiteConfig, load_analyte_dictionary, ConfigError)
+        from ..core.envmon.create_sampling_event import (
+            build_sampling_event_plan, load_event_config)
+        try:
+            site_cfg = SiteConfig.load(Path(site_path))
+            event_cfg = load_event_config(Path(event_path))
+            analyte_dict = load_analyte_dictionary(Path(analytes_path))
+        except ConfigError as exc:
+            raise click.ClickException(str(exc))
+        site_id = site_id or site_cfg.data.get("site_id", "")
+        try:
+            plan = build_sampling_event_plan(
+                site_cfg.data, event_cfg, analyte_dict, run_id=str(uuid.uuid4()))
+        except (ValueError, KeyError) as exc:
+            raise click.ClickException(f"plan leg failed: {exc}")
+        by_id = {}
+        for row in plan.expected_samples:      # dedupe rows, union analyte groups
+            attrs = by_id.setdefault(row.sample_id, {
+                "location_id": row.location_id, "event_date": row.event_date,
+                "matrix": row.matrix, "coc_number": row.coc_number,
+                "analytes": set()})
+            attrs["analytes"].add(row.analyte_group)
+        legs["plan"] = [engine.SourceRow(sid, attrs) for sid, attrs in by_id.items()]
+
+    if submissions_csv:
+        if not site_id:
+            raise click.UsageError("--site-id (or the plan leg) is required "
+                                   "with --submissions-csv.")
+        water_levels, samples = load_survey123_csv_submissions(
+            Path(submissions_csv), site_id, "reconcile", qa)
+        observations["water_levels"] = len(water_levels)
+        rows = []
+        for s in samples:
+            if not (s.get("SampleID") or "").strip():
+                garbled.append(str(s))         # sample-form row, id-less: needs_review
+            else:
+                rows.append(engine.SourceRow(s["SampleID"], s))
+        legs["field"] = rows
+
+    if custody_store:
+        try:
+            store = custody_mod.load_store(Path(custody_store))
+        except custody_mod.CustodyError as exc:
+            raise click.ClickException(f"custody store unreadable: {exc}")
+        rows = []
+        for rec in store.values():
+            for sid in dict.fromkeys(rec.sample_ids):   # dedupe within a COC
+                rows.append(engine.SourceRow(sid, {
+                    "coc_number": rec.coc_number, "event_date": rec.event_date,
+                    "state": rec.state}))
+        legs["coc"] = rows
+
+    if lab_results_csv:
+        records = read_records_csv(Path(lab_results_csv), AnalyticalResultRecord)
+        by_id = {}
+        for r in records:                       # QC rows included: presence needs them
+            attrs = by_id.setdefault(r.SampleID, {
+                "location_id": r.LocationID, "sample_date": str(r.SampleDate or ""),
+                "matrix": r.Matrix, "analytes": set()})
+            if r.AnalyteCanonicalName:
+                attrs["analytes"].add(r.AnalyteCanonicalName)
+        legs["lab"] = [engine.SourceRow(sid, attrs) for sid, attrs in by_id.items()]
+
+    if gdb_samples_csv:
+        records = read_records_csv(Path(gdb_samples_csv), SampleRecord)
+        legs["gdb"] = [engine.SourceRow(r.SampleID, {
+            "location_id": r.LocationID, "sample_date": str(r.SampleDate or ""),
+            "matrix": r.Matrix}) for r in records]
+
+    if not legs:
+        raise click.UsageError("Provide at least one source leg.")
+
+    dry = json.loads(Path(dry_wells).read_text(encoding="utf-8")) if dry_wells else None
+    overrides = (json.loads(Path(presence_overrides).read_text(encoding="utf-8"))
+                if presence_overrides else None)
+    result = engine.reconcile_event(legs, overrides=overrides, dry_wells=dry,
+                                    garbled=garbled, observations=observations)
+
+    engine.rows_to_csv(result, Path(out_csv))
+    Path(out_json).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_json).write_text(
+        json.dumps(engine.summary_dict(result), indent=2, sort_keys=True,
+                   default=str) + "\n", encoding="utf-8")
+    for row in result.rows:
+        if row.outcome != engine.OUTCOME_RECONCILED:
+            qa.add(SEV_WARNING, f"outcome_{row.outcome}",
+                   f"{row.key}: {row.outcome} ({';'.join(row.codes)})")
+    qa.add(SEV_INFO, "reconcile_summary",
+           f"residual={result.residual} clean={result.clean} "
+           f"legs={','.join(result.legs_run)}")
+    _render_qa(qa, report, fail_on)
+    if not result.clean:
+        raise SystemExit(_RECONCILE_EVENT_DISCREPANCY_EXIT)
 
 
 @envmon.command("route-survey123")

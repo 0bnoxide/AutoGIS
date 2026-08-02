@@ -290,3 +290,84 @@ def test_csv_and_summary_roundtrip(tmp_path):
     assert summary["observations"] == {"water_levels": 3}
     assert summary["residual"] == result.residual
     assert "field" in summary["legs_run"]
+
+
+# ── CLI end-to-end ───────────────────────────────────────────────
+import json
+from click.testing import CliRunner
+
+from autogis.adapters.cli import autogis
+
+
+def _field_csv(tmp_path, rows):
+    # Columns per Survey123Field defaults (normalize_survey123.py:28-36)
+    p = tmp_path / "subs.csv"
+    hdr = "WellID,SamplingDate,Matrix,SampledBy,COCNumber,DepthToWater_ft,QAFlags"
+    p.write_text(hdr + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
+    return p
+
+
+def test_reconcile_event_in_help():
+    res = CliRunner().invoke(autogis, ["envmon", "--help"])
+    assert "reconcile-event" in res.output
+
+
+def test_reconcile_event_field_only_clean_exit_zero(tmp_path):
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs),
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
+    assert res.exit_code == 0, res.output
+    summary = json.loads(out_json.read_text(encoding="utf-8"))
+    assert summary["clean"] is True
+    assert summary["legs_run"] == ["field"]
+    assert summary["observations"]                      # water-level block exists
+
+
+def test_reconcile_event_stalled_exits_2(tmp_path):
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    store = tmp_path / "custody.json"
+    store.write_text("{}", encoding="utf-8")            # provided but empty COC leg
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs), "--custody-store", str(store),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code == 2, res.output
+
+
+def test_reconcile_event_no_legs_is_usage_error(tmp_path):
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code != 0
+    assert "at least one" in res.output.lower()
+
+
+def test_reconcile_event_registered_in_capabilities():
+    from autogis.runtime.capabilities import TOOLS, requires_arcpy
+    assert "reconcile-event" in TOOLS
+    assert requires_arcpy("reconcile-event") is False
+
+
+def test_reconcile_event_semantic_exit_logs_run_history_success(tmp_path, monkeypatch):
+    """A non-clean reconciliation (exit 2) records status=success in run
+    history, not error -- a discrepancy finding is not a tool failure (same
+    fix class as diff-survey-schema's exit 3, ADR-0115)."""
+    import csv as csv_mod
+
+    subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
+    store = tmp_path / "custody.json"
+    store.write_text("{}", encoding="utf-8")
+    hist = tmp_path / "run_history.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(hist))
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event", "--site-id", "SITE1",
+        "--submissions-csv", str(subs), "--custody-store", str(store),
+        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+    assert res.exit_code == 2
+    with hist.open(newline="", encoding="utf-8") as fh:
+        rows = [row for row in csv_mod.DictReader(fh)
+                if row["tool_name"] == "reconcile-event"]
+    assert rows and rows[-1]["status"] == "success"
