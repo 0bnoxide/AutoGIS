@@ -98,6 +98,8 @@ def test_directory_options_open_a_folder_picker():
         ("envmon gen-map-series", "out_dir"),
         ("envmon merge-event-results", "results_dir"),
         ("envmon build-report-package", "out_dir"),
+        ("envmon verify-report-package", "package_dir"),
+        ("envmon build-dashboard-data-mart", "export_dir"),
         ("envmon batch-import-workbooks", "output_dir"),
         ("envmon export-civil3d", "out_dir"),
     )

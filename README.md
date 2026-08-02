@@ -154,6 +154,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 
 | Tool | CLI command | What it does |
 |------|-------------|--------------|
+| [VerifyReportPackage](autogis/core/envmon/report_package_verifier.py) | `envmon verify-report-package` | Verify package paths and SHA-256 manifest hashes; detect missing, modified, extra, duplicate, non-portable, named-stream, hard-link, traversal, and reparse-link entries (headless) |
 | [GWLevelSummary](autogis/core/envmon/gw_level_summary.py) | `envmon gw-level-summary` | Tool 5.1: per-well GW level/DTW/trend summary from elevation history |
 | [BuildComplianceSummaryTable](autogis/core/envmon/compliance_summary.py) | `envmon build-compliance-table` | Build cross-event compliance summary matrix + detail workbook (headless) |
 | [ExportEnvDataToGeoPackage](autogis/core/envmon/geopackage_exporter.py) | `envmon export-geopackage` | Export envmon data to OGC GeoPackage (stdlib sqlite3, headless) |
@@ -208,7 +209,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [RouteSurvey123Submission](autogis/core/envmon/normalize_survey123.py) | 7.1b | `envmon route-survey123` | Route Survey123 field submissions into the GDB (ArcGIS Pro) |
 | [ImportDroneProducts](autogis/core/envmon/import_drone_products.py) | 8.8 | `envmon import-drone-products` (GDB-writing half; see `validate-drone-products` above) | Tool 8.8: import drone deliverables to raster catalog + GCP table (ArcGIS Pro) |
 | [ImportFieldBoringLogs](autogis/core/envmon/import_boring_logs.py) | 8.0b | `envmon import-boring-logs` (GDB-writing half; see `validate-boring-logs` above) | Tool 8.0b: import a boring-log CSV package into the GDB (ArcGIS Pro) |
-| [BuildDashboardDataMart](autogis/core/envmon/dashboard_data_mart.py) | 6.7 | `envmon build-dashboard-data-mart` | Tool 6.7: truncate + repopulate the Dash_* mart tables (ArcGIS Pro) |
+| [BuildDashboardDataMart](autogis/core/envmon/dashboard_data_mart.py) | 6.7 | `envmon build-dashboard-data-mart` | Tool 6.7: truncate + repopulate the Dash_* mart tables and optionally emit `--export-dir` JSON for `agol refresh-dashboard` (ArcGIS Pro) |
 | [BuildCADExportPackage](autogis/core/envmon/cad_layer_map.py) | 8.9 | `envmon build-cad-package` (guards + redirects to the `.pyt` toolbox) | Tool 8.9: export GIS layers to DWG/DXF with mapped CAD layer name/color/linetype on scratch copies, plus a projection note and mapping report (ADRs 0088–0089) |
 | [DEMConditioningPipeline](autogis/core/envmon/dem_conditioning.py) | — | `envmon condition-dem` (config validated headless; guards + redirects to the `.pyt` toolbox) | Void-fill/smooth a drone flight's DEM and derive hillshade/slope/contours (ArcGIS Pro) |
 | [CompareDroneSurfaces](autogis/core/envmon/compare_drone_surfaces.py) | — | `envmon compare-drone-surfaces` (args validated headless; guards + redirects to the `.pyt` toolbox) | Raster-diff a drone DEM against a prior flight or a LandXML design surface (ArcGIS Pro) |
@@ -392,6 +393,7 @@ not by flag.
 | `autogis envmon generate-python-labels` | CLOUD | `core/envmon/python_label_generator.py` |
 | `autogis envmon build-analytical-key` | CLOUD | `core/envmon/build_analytical_key.py` |
 | `autogis envmon build-report-package` | CLOUD | `core/envmon/report_figure_package.py` |
+| `autogis envmon verify-report-package` | CLOUD | `core/envmon/report_package_verifier.py` |
 | `autogis envmon register-source-doc` | CLOUD | `core/envmon/source_registry.py` |
 | `autogis envmon batch-import-workbooks` | CLOUD | `core/envmon/batch_workbook_importer.py` |
 | `autogis envmon migrate-legacy-data` | CLOUD | `core/envmon/legacy_migrator.py` |
@@ -647,6 +649,8 @@ autogis envmon migrate-legacy-data --input-csv <legacy.csv> --output <out.csv>
 autogis envmon register-source-doc --file <doc.pdf> --site <id> --event <id> --tool <name>
 autogis envmon create-sampling-plan --wells-csv <wells.csv> --analyte-groups <groups.yaml> --event-date <YYYY-MM-DD> --samples-output <samples.csv> --bottles-output <bottles.csv>
 autogis envmon reconcile-field-lab --field-csv <field.csv> --lab-csv <lab.csv> --output <out.csv>
+autogis envmon build-report-package --spec <package.yaml> --out-dir <package-dir>
+autogis envmon verify-report-package <package-dir> --report <verification.json> --fail-on error
 
 # Analysis & cartography extras
 autogis envmon build-gwe-event --water-levels <levels.csv> --event-date <YYYY-MM-DD> --out <out.csv>
@@ -654,6 +658,8 @@ autogis envmon gw-level-summary --elevations-csv <history.csv> --event-date <YYY
 autogis envmon estimate-gw-flow-direction --wells-csv <wells.csv> --site-id <id> --event-date <YYYY-MM-DD> --run-id <id> --output <out.csv>
 autogis envmon build-exceedance-event --results <results.csv> --screening-levels <levels.yaml> --out <out.csv>
 autogis envmon generate-trend-charts --history-csv <history.csv> --out <charts.xlsx>
+autogis envmon build-dashboard-data-mart <site.gdb> --site <id> --event <id> --export-dir <mart-json>
+autogis agol refresh-dashboard --mart-dir <mart-json> --layer-map <layers.yaml> --dry-run
 autogis envmon select-soil-intervals --results-csv <soil.csv> --out <out.csv>
 autogis envmon build-analytical-key --analyte-dict <analytes.yaml> --screening-levels <levels.yaml> --matrix GW
 autogis envmon generate-arcade-labels --analytes "Benzene,PCE" --out <labels.json>
