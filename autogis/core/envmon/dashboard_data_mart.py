@@ -13,8 +13,11 @@ Output dict keys follow the ``Dash_*`` schemas in ``gdb_schema.py``.
 from __future__ import annotations
 
 import datetime as _dt
+import json
+import os
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..common.logging import get_logger
@@ -37,6 +40,49 @@ class MartSummary:
     built_at: str
     tables_updated: List[str] = field(default_factory=list)
     row_counts: Dict[str, int] = field(default_factory=dict)
+
+
+def export_dashboard_json(
+    tables: Dict[str, List[dict]],
+    export_dir: str | Path,
+) -> List[Path]:
+    """Write refresh-dashboard JSON with atomic per-file replacement."""
+    output_dir = Path(export_dir)
+    payloads = []
+    for table in sorted(tables):
+        if not table.startswith("Dash_") or not table.isidentifier():
+            raise ValueError(f"Invalid dashboard table name: {table!r}")
+        target = output_dir / f"{table}.json"
+        text = json.dumps(
+            tables[table], indent=2, sort_keys=True, ensure_ascii=False,
+            allow_nan=False,
+        ) + "\n"
+        payloads.append((target, text.encode("utf-8")))
+
+    expected_names = {target.name for target, _payload in payloads}
+    stale = sorted(
+        path.name for path in output_dir.glob("Dash_*.json")
+        if path.name not in expected_names
+    ) if output_dir.exists() else []
+    if stale:
+        raise ValueError(
+            "Unexpected dashboard JSON file(s) in export directory: "
+            + ", ".join(stale))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    staged = []
+    try:
+        for target, payload in payloads:
+            tmp = target.with_name(target.name + ".tmp")
+            staged.append((tmp, target))
+            tmp.write_bytes(payload)
+        for tmp, target in staged:
+            os.replace(tmp, target)
+    except BaseException:
+        for tmp, _target in staged:
+            tmp.unlink(missing_ok=True)
+        raise
+    return [target for target, _payload in payloads]
 
 
 def _num(v) -> Optional[float]:
@@ -290,10 +336,12 @@ def build_dashboard_data_mart(  # pragma: no cover - requires arcpy
     site_id: str,
     event_id: str,
     prior_event_id: Optional[str] = None,
+    *,
+    export_dir: Optional[str | Path] = None,
 ) -> MartSummary:
-    """Read source tables, transform in Python, truncate + repopulate Dash_*."""
-    import arcpy
-    from ...runtime.sessions import arcpy_env  # noqa: F401
+    """Read source tables, repopulate Dash_*, and optionally export their JSON."""
+    from ...runtime.sessions import arcpy_env as _arcpy
+    arcpy = _arcpy()
 
     def _read(table: str) -> List[dict]:
         fields = [f.name for f in arcpy.ListFields(f"{gdb_path}/{table}")]
@@ -350,4 +398,6 @@ def build_dashboard_data_mart(  # pragma: no cover - requires arcpy
         summary.tables_updated.append(table)
         summary.row_counts[table] = len(rows)
         LOG.info("dashboard mart: %s <- %s rows", table, len(rows))
+    if export_dir is not None:
+        export_dashboard_json(builders, export_dir)
     return summary

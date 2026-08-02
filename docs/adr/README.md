@@ -140,6 +140,7 @@ Each ADR follows this structure:
 | [119](0119-pin-ci-runner-windows-2022.md) | Pin the arcpy-free GitHub Actions job to `windows-2022` so hosted-image migrations are explicit and reviewable; retains Windows fidelity from ADR-0110, rejects the failed Ubuntu render split, and leaves the remaining hosted-Windows Matplotlib bottleneck tracked by #388 | Accepted | 2026-07-28 |
 | [120](0120-report-family-input-guards.md) | Report-family input guards: `report_input.py` widens the eight report builders to accept the canonical `ResultNumeric`/`Qualifier`/`Units` vocabulary alongside the report `ResultValue`/`ResultQualifier`/`ReportedUnits` one (issue #339 — a canonical CSV silently read detections as nondetects and dropped rows), and rejects malformed `--date-from`/`--date-to`/`--event-date` values by round-trip ISO check instead of silently filtering every row at exit 0 (issue #376) | Accepted | 2026-07-29 |
 | [121](0121-groundwater-model-approval-review-surfaces.md) | Expose groundwater-model approval in the desktop GUI and Python toolbox through one review-data seam and the existing approval backend; require reviewer identity at the backend boundary | Proposed | 2026-07-29 |
+| [122](0122-report-package-integrity-and-dashboard-json-bridge.md) | Report-package integrity and dashboard JSON bridge | Proposed | 2026-08-01 |
 
 ## File naming
 
