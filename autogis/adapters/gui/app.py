@@ -62,7 +62,7 @@ _LOCAL_PYTHON_REQUIRED = (
 # theme in QSS makes it scale with Qt and avoids shipping a second raster copy
 # of the 1.8 MB README banner just to decorate a resizable desktop window.
 _APP_STYLE = """
-QMainWindow, QWidget#appRoot {
+QMainWindow, QDialog, QWidget#appRoot {
     background-color: #000714;
     color: #f7faff;
 }

@@ -22,9 +22,10 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QLineEdit, QPushButton, QWidget,
+    QApplication, QComboBox, QDialog, QLineEdit, QPushButton, QWidget,
 )
 
 import autogis.adapters.gui.app as app_mod
@@ -193,6 +194,14 @@ def test_readme_inspired_shell_is_applied(qapp):
     assert "#35cfff" in win.styleSheet().lower()
     assert win._run_button.objectName() == "primaryButton"
     assert win._cancel_button.objectName() == "dangerButton"
+
+
+def test_child_dialogs_share_dark_surface(qapp):
+    win = MainWindow()
+    dialog = QDialog(win)
+    dialog.ensurePolished()
+    assert dialog.palette().color(QPalette.Window).name() == "#000714"
+    assert dialog.palette().color(QPalette.WindowText).name() == "#f7faff"
 
 
 def test_semantic_colors_meet_aa_on_dark_output_surface():
