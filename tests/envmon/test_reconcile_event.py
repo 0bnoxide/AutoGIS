@@ -32,12 +32,21 @@ def test_every_qc_class_has_a_mask():
     # The table must stay exhaustive as sample_id.QC_SUFFIXES evolves.
     classes = set(QC_SUFFIXES.values()) | {PRIMARY}
     for cls in classes:
-        assert cls in re_mod.QC_MASKS or re_mod.UNKNOWN_QC_MASK, cls
-        # default_mask must never KeyError on any real suffix:
-    for suffix in QC_SUFFIXES:
-        re_mod.default_mask(f"MW-1-20260715-GW-{suffix}")
+        assert cls in re_mod.QC_MASKS, cls
+    # Each suffix must produce a well-formed ID and match its QC_MASKS entry
+    for suffix, cls in QC_SUFFIXES.items():
+        # suffix is already dash-prefixed (e.g., "-mb"), uppercase it for the ID
+        sample_id = f"MW-1-20260715-GW{suffix.upper()}"
+        assert re_mod.default_mask(sample_id) == re_mod.QC_MASKS[cls]
 
 
 def test_unknown_or_unparseable_id_gets_all_optional_mask():
     m = re_mod.default_mask("GARBAGE!!")
+    assert set(m.values()) == {re_mod.OPTIONAL}
+
+
+def test_duplicate_marker_without_lifecycle_structure_is_all_optional():
+    # Non-lifecycle ID with a duplicate marker (e.g., "MW-1-DUP") should get
+    # all-optional, not wrongly demand full downstream presence.
+    m = re_mod.default_mask("MW-1-DUP")
     assert set(m.values()) == {re_mod.OPTIONAL}

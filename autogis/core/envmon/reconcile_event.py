@@ -39,7 +39,7 @@ QC_MASKS: Dict[str, Dict[str, str]] = {
     "trip_blank": {"plan": OPTIONAL, "field": FORBIDDEN, "coc": REQUIRED,
            "lab": REQUIRED, "gdb": OPTIONAL},      # trip blank: never a field entry
     "field_blank": {"plan": OPTIONAL, "field": OPTIONAL, "coc": REQUIRED,
-           "lab": REQUIRED, "gdb": OPTIONAL},      # equipment blank
+           "lab": REQUIRED, "gdb": OPTIONAL},      # field blank
     "method_blank": {"plan": FORBIDDEN, "field": FORBIDDEN, "coc": FORBIDDEN,
            "lab": REQUIRED, "gdb": OPTIONAL},      # lab method blank
     "matrix_spike": {"plan": FORBIDDEN, "field": FORBIDDEN, "coc": FORBIDDEN,
@@ -58,9 +58,11 @@ def normalize_key(sample_id: str) -> str:
 
 
 def default_mask(sample_id: str) -> Dict[str, str]:
-    cls = qc_class(normalize_key(sample_id))
-    if cls is None and parse_sample_id(normalize_key(sample_id)) is None:
-        return dict(UNKNOWN_QC_MASK)   # not a lifecycle identity at all
+    normalized = normalize_key(sample_id)
+    # Non-lifecycle IDs (even with duplicate markers) get all-optional.
+    if parse_sample_id(normalized) is None:
+        return dict(UNKNOWN_QC_MASK)
+    cls = qc_class(normalized)
     return dict(QC_MASKS.get(cls or PRIMARY, UNKNOWN_QC_MASK))
 
 
