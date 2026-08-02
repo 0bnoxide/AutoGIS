@@ -105,11 +105,19 @@ def build_grid(legs: Dict[str, List[SourceRow]], *,
                               mask=default_mask(key))
                 grid[key] = row
             if row.present[source]:
-                if (source == "coc"
-                        and obs.attrs.get("coc_number")
-                        and obs.attrs["coc_number"] != row.attrs["coc"].get("coc_number")
-                        and "multi_coc" not in row.codes):
-                    row.codes.append("multi_coc")
+                if source == "coc":
+                    if (obs.attrs.get("coc_number")
+                            and obs.attrs["coc_number"] != row.attrs["coc"].get("coc_number")
+                            and "multi_coc" not in row.codes):
+                        row.codes.append("multi_coc")
+                elif dict(obs.attrs) != row.attrs[source]:
+                    # Same sample seen again in the same source with different
+                    # attributes: a conflicting duplicate, never silently
+                    # dropped (§1 contract). An identical repeat (sync retry)
+                    # stays ignored.
+                    code = f"duplicate_in_{source}"
+                    if code not in row.codes:
+                        row.codes.append(code)
                 continue    # first observation's attrs win
             row.present[source] = True
             row.raw_ids[source] = obs.sample_id
@@ -220,6 +228,16 @@ def judge_row(row: GridRow, *, dry_wells: Optional[dict] = None) -> None:
         b = _norm(_get(row.attrs["coc"], ("coc_number", "COCNumber")))
         if a and b and a != b:
             row.codes.append("coc_number_mismatch")
+    # Custody lifecycle state (§7): an `exception` form is a red flag the
+    # custody tool already raised -- humans decide. A form still pre-release
+    # (draft/generated) while the lab or GDB already has the sample means the
+    # sources disagree about the chain -- a detail conflict.
+    coc_state = _norm(row.attrs.get("coc", {}).get("state"))
+    if coc_state == "EXCEPTION":
+        row.codes.append("coc_exception")
+    elif (coc_state in ("DRAFT", "GENERATED")
+          and (row.present["lab"] or row.present["gdb"])):
+        row.codes.append(f"coc_state_mismatch:{coc_state.lower()}")
     plan_analytes = row.attrs.get("plan", {}).get("analytes")
     lab_analytes = row.attrs.get("lab", {}).get("analytes")
     if plan_analytes and row.present["lab"] and lab_analytes is not None:
@@ -230,9 +248,11 @@ def judge_row(row: GridRow, *, dry_wells: Optional[dict] = None) -> None:
         if extra:
             row.codes.append("analyte_unexpected:" + ",".join(extra))
 
-    review = gap or "multi_coc" in row.codes or "unparseable_sample_id" in row.codes
+    review = (gap or "multi_coc" in row.codes
+              or "unparseable_sample_id" in row.codes
+              or "coc_exception" in row.codes)
     conflict = any(c.split(":")[0].endswith("_mismatch")
-                   or c.startswith(("analyte_", "unexpected_in_"))
+                   or c.startswith(("analyte_", "unexpected_in_", "duplicate_in_"))
                    for c in row.codes)
     if review:
         row.outcome = OUTCOME_NEEDS_REVIEW
@@ -264,6 +284,10 @@ class ReconcileEventResult:
             r.outcome == OUTCOME_NEEDS_REVIEW for r in self.rows)
 
 
+def _alnum(s: str) -> str:
+    return "".join(ch for ch in s if ch.isalnum())
+
+
 def suggest(rows: List[GridRow]) -> List[dict]:
     def eligible(row):
         parts = parse_sample_id(row.key)
@@ -281,8 +305,15 @@ def suggest(rows: List[GridRow]) -> List[dict]:
                 continue        # never cross QC classes (#360 guard)
             ratio = difflib.SequenceMatcher(None, m.key, e.key).ratio()
             if ratio >= 0.85:
+                # separator_variant: the two IDs are the same alphanumerics
+                # (differ only in separators/case) -- an identity-confusable
+                # pair, promoted to needs_review by reconcile_event (§4.1).
+                # A plain high ratio (e.g. MW-2 vs MW-4, one digit apart)
+                # stays an informational suggestion: structured IDs from one
+                # event are always near each other by edit distance.
                 out.append({"missing": m.key, "candidate": e.key,
-                            "ratio": round(ratio, 3)})
+                            "ratio": round(ratio, 3),
+                            "separator_variant": _alnum(m.key) == _alnum(e.key)})
     return out
 
 
@@ -301,6 +332,20 @@ def reconcile_event(legs, *, overrides=None, dry_wells=None, garbled=None,
     for row in grid.values():
         judge_row(row, dry_wells=dry_wells)
     rows = sorted(grid.values(), key=lambda r: r.key)
+    suggestions = suggest(rows)
+    by_key = {r.key: r for r in rows}
+    for sug in suggestions:
+        if not sug["separator_variant"]:
+            continue
+        # Identity-confusable pair (spec §4.1 "near-miss"): the tool never
+        # auto-resolves identity, so both sides go to needs_review.
+        for mine, other in ((sug["missing"], sug["candidate"]),
+                            (sug["candidate"], sug["missing"])):
+            row = by_key[mine]
+            code = f"near_miss:{other}"
+            if code not in row.codes:
+                row.codes.append(code)
+            row.outcome = OUTCOME_NEEDS_REVIEW
     counts, residual = {}, 0
     for s in SOURCES:
         present = sum(1 for r in rows if r.present[s])
@@ -313,7 +358,7 @@ def reconcile_event(legs, *, overrides=None, dry_wells=None, garbled=None,
         residual += req_missing + forb_present
     return ReconcileEventResult(
         rows=rows, observations=dict(observations or {}),
-        excluded=dict(excluded or {}), suggestions=suggest(rows),
+        excluded=dict(excluded or {}), suggestions=suggestions,
         legs_run=sorted(legs), counts=counts, residual=residual)
 
 

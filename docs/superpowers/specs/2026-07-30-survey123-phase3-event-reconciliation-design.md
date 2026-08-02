@@ -134,8 +134,8 @@ extraction stays in existing seams. Five steps:
 | `stalled` | Present in a contiguous prefix of the chain, absent after some stage. Report names the last stage that has it. (The submitted-but-held-in-client-QA/QC case that motivated the taxonomy.) |
 | `not_collected` | Planned, appears nowhere else. Dry-wells mapping (D8) annotates the reason; with an annotation it is informational, not an error. |
 | `orphan` | Appears downstream with no upstream trail (e.g. non-QC sample only in lab or only in GDB). |
-| `detail_conflict` | Present as expected but sources disagree on date, location, matrix, or lab analyte coverage vs requested. |
-| `needs_review` | Tool refuses to guess: hole in the middle of the presence pattern, sample on >1 COC form, near-miss suggestion exists, or a sample-form record with a garbled ID (§4.4). Humans decide; the tool never auto-resolves identity. |
+| `detail_conflict` | Present as expected but sources disagree on date, location, matrix, or lab analyte coverage vs requested. Also covers a conflicting in-source duplicate record and a custody form still pre-release while the lab/GDB already has the sample (**amended 2026-08-02, ADR-0123, Codex review**). |
+| `needs_review` | Tool refuses to guess: hole in the middle of the presence pattern, sample on >1 COC form, an identity-confusable near-miss exists (separator/case ID variant — §7; **clarified 2026-08-02, ADR-0123, Codex review**: plain edit-distance proximity between structured IDs stays an unapplied suggestion), a custody form in `exception` state, or a sample-form record with a garbled ID (§4.4). Humans decide; the tool never auto-resolves identity. |
 
 ### 4.2 Precedence
 
@@ -237,7 +237,25 @@ suggestions section (never applied).
 - **NODATE IDs** (`sample_id.py:62`, uuid-disambiguated; `date_compact=""`
   on parse): exact match only; never in suggestions.
 - **Suggestions:** never cross QC classes (`qc_class` guard); computed from
-  leftovers only.
+  leftovers only. A pair whose IDs are the same alphanumerics (differ only in
+  separators/case, e.g. `MW03-…` vs `MW-03-…`) is identity-confusable: both
+  sides promote to `needs_review` with a `near_miss:<other>` code. A pair
+  that merely scores ≥0.85 (e.g. `MW-2-…` vs `MW-4-…` — different wells) stays
+  informational, never changes an outcome (**added 2026-08-02, ADR-0123,
+  Codex review** — promoting all high-ratio pairs would flip most stalled
+  rows in any real event, breaking the §4.3 billing mapping).
+- **In-source duplicates** (**added 2026-08-02, ADR-0123, Codex review**): a
+  repeated record for the same sample in one source with *identical*
+  attributes is ignored (sync retry); with *conflicting* attributes it gets
+  `duplicate_in_<source>` → `detail_conflict`. First observation's
+  attributes win either way. Same-COC repeats stay the deliberate #422
+  dedupe; differing COC numbers stay `multi_coc` → `needs_review`.
+- **Custody lifecycle state** (**added 2026-08-02, ADR-0123, Codex review**):
+  a form in `exception` → `coc_exception` code, `needs_review` (the custody
+  tool already flagged it; this tool must not report it clean). A form still
+  `draft`/`generated` while the lab or GDB has the sample →
+  `coc_state_mismatch:<state>` → `detail_conflict`. `released` or later with
+  downstream presence is normal lag, not a conflict.
 - **Unreadable provided input** = hard error (§3 step 1). Omitted ≠ unreadable.
 - **Blank `WellID` at the `--submissions-csv` seam** (**added 2026-08-02,
   ADR-0123, pr-reviewer F3**): rejected loudly by the normalizer (`SEV_ERROR`

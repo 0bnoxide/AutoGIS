@@ -93,6 +93,19 @@ def test_build_grid_duplicate_same_coc_not_flagged():
     assert re_mod.build_grid(legs)["MW-1-20260715-GW"].codes == []
 
 
+def test_build_grid_conflicting_duplicate_flagged_identical_ignored():
+    # Identical repeat (sync retry) stays silent:
+    legs = _legs(field=[("MW-1-20260715-GW", {"SampleDate": "2026-07-15"}),
+                        ("MW-1-20260715-GW", {"SampleDate": "2026-07-15"})])
+    assert re_mod.build_grid(legs)["MW-1-20260715-GW"].codes == []
+    # Conflicting repeat is reported, first observation's attrs still win:
+    legs = _legs(field=[("MW-1-20260715-GW", {"SampleDate": "2026-07-15"}),
+                        ("MW-1-20260715-GW", {"SampleDate": "2026-07-16"})])
+    row = re_mod.build_grid(legs)["MW-1-20260715-GW"]
+    assert row.codes == ["duplicate_in_field"]
+    assert row.attrs["field"]["SampleDate"] == "2026-07-15"
+
+
 def _judged(legs, **kw):
     grid = re_mod.build_grid(legs)
     for row in grid.values():
@@ -236,6 +249,44 @@ def test_coc_number_mismatch_detected():
     assert "coc_number_mismatch" in row.codes
 
 
+def test_conflicting_duplicate_is_detail_conflict():
+    a = {"LocationID": "MW-9", "SampleDate": "2026-07-15", "Matrix": "GW"}
+    b = dict(a, SampleDate="2026-07-16")
+    legs = _legs(field=[("MW-9-20260715-GW", a), ("MW-9-20260715-GW", b)],
+                 coc=[("MW-9-20260715-GW", {"coc_number": "COC-001"})],
+                 lab=[("MW-9-20260715-GW", a)], gdb=[("MW-9-20260715-GW", a)])
+    row = _judged(legs)["MW-9-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_DETAIL_CONFLICT
+    assert "duplicate_in_field" in row.codes
+
+
+def test_coc_exception_state_needs_review():
+    a = {"LocationID": "MW-9", "SampleDate": "2026-07-15", "Matrix": "GW"}
+    legs = _legs(field=[("MW-9-20260715-GW", a)],
+                 coc=[("MW-9-20260715-GW",
+                       {"coc_number": "COC-001", "state": "exception"})],
+                 lab=[("MW-9-20260715-GW", a)], gdb=[("MW-9-20260715-GW", a)])
+    row = _judged(legs)["MW-9-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_NEEDS_REVIEW
+    assert "coc_exception" in row.codes
+
+
+def test_coc_pre_release_state_with_lab_is_detail_conflict():
+    a = {"LocationID": "MW-9", "SampleDate": "2026-07-15", "Matrix": "GW"}
+    coc = lambda state: [("MW-9-20260715-GW",
+                          {"coc_number": "COC-001", "state": state})]
+    legs = _legs(field=[("MW-9-20260715-GW", a)], coc=coc("draft"),
+                 lab=[("MW-9-20260715-GW", a)], gdb=[("MW-9-20260715-GW", a)])
+    row = _judged(legs)["MW-9-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_DETAIL_CONFLICT
+    assert "coc_state_mismatch:draft" in row.codes
+    # A released form whose custody record simply lags the lab is not a
+    # conflict -- only pre-release states contradict downstream presence.
+    legs = _legs(field=[("MW-9-20260715-GW", a)], coc=coc("released"),
+                 lab=[("MW-9-20260715-GW", a)], gdb=[("MW-9-20260715-GW", a)])
+    assert _judged(legs)["MW-9-20260715-GW"].outcome == re_mod.OUTCOME_RECONCILED
+
+
 def test_analyte_missing_and_unexpected():
     # Plan analytes {"VOC", "METALS"} vs lab analytes {"VOC", "PFAS"}
     # → codes for analyte_missing:METALS and analyte_unexpected:PFAS.
@@ -293,6 +344,32 @@ def test_suggest_pairs_near_miss_same_class_only():
     result = re_mod.reconcile_event(legs)
     pairs = {(s["missing"], s["candidate"]) for s in result.suggestions}
     assert any("MW-03-20260801-GW" in p and "MW03-20260801-GW" in p for p in pairs)
+
+
+def test_separator_variant_near_miss_promotes_both_to_needs_review():
+    legs = _legs(field=[("MW-03-20260801-GW", {})], lab=[("MW03-20260801-GW", {})])
+    legs["coc"], legs["gdb"] = [], []
+    result = re_mod.reconcile_event(legs)
+    by = {r.key: r for r in result.rows}
+    assert by["MW-03-20260801-GW"].outcome == re_mod.OUTCOME_NEEDS_REVIEW
+    assert by["MW03-20260801-GW"].outcome == re_mod.OUTCOME_NEEDS_REVIEW
+    assert "near_miss:MW03-20260801-GW" in by["MW-03-20260801-GW"].codes
+    assert "near_miss:MW-03-20260801-GW" in by["MW03-20260801-GW"].codes
+    assert not result.clean
+
+
+def test_plain_near_miss_stays_informational():
+    # MW-2 vs MW-4: high edit-similarity but different alphanumerics -- a
+    # genuinely different well, not a typo. The stalled side keeps its outcome
+    # (billing: work performed); the pair remains an unapplied suggestion.
+    legs = _legs(field=[("MW-2-20260801-GW", {})], lab=[("MW-4-20260801-GW", {})])
+    legs["coc"], legs["gdb"] = [], []
+    result = re_mod.reconcile_event(legs)
+    by = {r.key: r for r in result.rows}
+    assert by["MW-2-20260801-GW"].outcome == re_mod.OUTCOME_STALLED
+    assert by["MW-4-20260801-GW"].outcome == re_mod.OUTCOME_ORPHAN
+    assert result.suggestions and not any(
+        s["separator_variant"] for s in result.suggestions)
 
 
 def test_suggest_never_offers_nodate():

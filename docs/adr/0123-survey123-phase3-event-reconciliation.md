@@ -132,6 +132,26 @@ loading pre-built files (spec §6, synced 2026-08-01, commit `832dd3a`).
   raised, so a caller polling exit codes never has to guess whether a
   non-clean run also lost its output.
 
+### Amendments from the Codex review (2026-08-02)
+
+The Codex PR review of #438 (against `8c810bb`) surfaced three engine gaps,
+fixed in the same PR; the spec's §4.1/§7 carry the matching amendments:
+
+- **Conflicting in-source duplicates** are reported (`duplicate_in_<source>`
+  → `detail_conflict`) instead of silently first-wins; identical repeats
+  (sync retries) and the deliberate same-COC #422 dedupe stay silent.
+- **Custody lifecycle state is judged**: `exception` → `coc_exception` →
+  `needs_review`; `draft`/`generated` while lab or GDB has the sample →
+  `coc_state_mismatch:<state>` → `detail_conflict`. `released`+downstream is
+  normal lag.
+- **Near-miss promotion is separator/case-variant only**: a suggestion pair
+  with identical alphanumerics promotes both rows to `needs_review`
+  (`near_miss:<other>`), per §4.1. Codex asked for *all* suggestions to
+  promote; that literal reading was rejected — structured IDs from one event
+  score ≥0.85 against genuinely different wells (`MW-2` vs `MW-4` ≈ 0.94),
+  so wholesale promotion would flip most `stalled` rows and break the §4.3
+  billing mapping. Ratio-only pairs stay informational suggestions.
+
 ## Deferred / limitations
 
 - **Event-window date filtering** (design spec §7 as originally drafted)
