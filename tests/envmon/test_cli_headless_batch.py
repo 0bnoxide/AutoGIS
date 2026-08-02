@@ -19,6 +19,8 @@ Constraints:
     a wrong kwarg name throws before any QA check.
 """
 import csv
+import sqlite3
+import struct
 from pathlib import Path
 
 import pytest
@@ -362,6 +364,27 @@ def test_export_geopackage(tmp_path):
         f"export-geopackage exited {result.exit_code}:\n{result.output}"
     )
     assert out.exists(), "Expected GeoPackage file was not created"
+    with sqlite3.connect(str(out)) as conn:
+        geom = conn.execute(
+            "SELECT geom FROM wells WHERE LocationID = 'MW-01'"
+        ).fetchone()[0]
+        geom_metadata = conn.execute(
+            "SELECT geometry_type_name, srs_id FROM gpkg_geometry_columns "
+            "WHERE table_name = 'wells'"
+        ).fetchone()
+        geom_type = next(
+            row[2] for row in conn.execute("PRAGMA table_info(wells)")
+            if row[1] == "geom"
+        )
+    assert geom == struct.pack(
+        "<2sBBibIdd", b"GP", 0, 0x01, 4326,
+        1, 1, -118.4567, 34.1234,
+    )
+    assert struct.unpack_from("<dd", geom, 13) == pytest.approx(
+        (-118.4567, 34.1234)
+    )
+    assert geom_metadata == ("POINT", 4326)
+    assert geom_type == "POINT"
 
 
 # ===========================================================================

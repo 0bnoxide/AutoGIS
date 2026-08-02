@@ -1,10 +1,4 @@
-"""geopackage_exporter.py — minimal GeoPackage-style SQLite writer (stdlib sqlite3 only).
-
-Note: point geometries are stored as raw ISO WKB, not the full GeoPackageBinary
-(GPB) blob (no magic header/envelope). Some strict GIS clients may not read the
-``wells.geom`` column as a spatial column. Wrapping WKB in a GPB header is a
-deferred follow-up.
-"""
+"""geopackage_exporter.py — minimal GeoPackage-style SQLite writer (stdlib only)."""
 from __future__ import annotations
 
 import csv
@@ -16,6 +10,7 @@ from typing import Optional
 
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
 
+_GPKG_SRS_ID = 4326
 _GPKG_SRS_WKT = (
     'GEOGCS["WGS 84",DATUM["WGS_1984",'
     'SPHEROID["WGS 84",6378137,298.257223563]],'
@@ -37,6 +32,12 @@ def encode_wkb_point(lon: float, lat: float) -> bytes:
     return struct.pack("<bIdd", 1, 1, lon, lat)
 
 
+def _encode_geopackage_binary_point(lon: float, lat: float) -> bytes:
+    """GeoPackageBinary header followed by an ISO WKB point."""
+    header = struct.pack("<2sBBi", b"GP", 0, 0x01, _GPKG_SRS_ID)
+    return header + encode_wkb_point(lon, lat)
+
+
 def _parse_float(v) -> Optional[float]:
     try:
         return float(v)
@@ -44,7 +45,7 @@ def _parse_float(v) -> Optional[float]:
         return None
 
 
-def create_geopackage(gpkg_path: Path, *, srs_id: int = 4326,
+def create_geopackage(gpkg_path: Path, *, srs_id: int = _GPKG_SRS_ID,
                       overwrite: bool = True) -> None:
     p = Path(gpkg_path)
     if p.exists():
@@ -108,17 +109,18 @@ def write_wells_layer(
     # Build the column list without a trailing comma when there are no extra
     # columns (a wells CSV with only Latitude/Longitude) — otherwise the SQL
     # is invalid and the export crashes on minimal input.
-    cols_sql = "fid INTEGER PRIMARY KEY AUTOINCREMENT, geom BLOB"
+    cols_sql = "fid INTEGER PRIMARY KEY AUTOINCREMENT, geom POINT"
     if extra_cols:
         cols_sql += ", " + ", ".join(f'"{c}" TEXT' for c in extra_cols)
     conn.execute(f"CREATE TABLE IF NOT EXISTS wells ({cols_sql})")
     conn.execute(
         "INSERT OR IGNORE INTO gpkg_geometry_columns VALUES (?,?,?,?,?,?)",
-        ("wells", "geom", "POINT", 4326, 0, 0),
+        ("wells", "geom", "POINT", _GPKG_SRS_ID, 0, 0),
     )
     conn.execute(
         "INSERT OR IGNORE INTO gpkg_contents(table_name,data_type,identifier,srs_id) "
-        "VALUES (?,?,?,?)", ("wells", "features", "wells", 4326),
+        "VALUES (?,?,?,?)",
+        ("wells", "features", "wells", _GPKG_SRS_ID),
     )
     count = 0
     for r in well_rows:
@@ -126,8 +128,8 @@ def write_wells_layer(
         lon = _parse_float(r.get(lon_field, ""))
         if lat is None or lon is None:
             continue
-        wkb = encode_wkb_point(lon, lat)
-        vals = [wkb] + [r.get(c, "") for c in extra_cols]
+        geom = _encode_geopackage_binary_point(lon, lat)
+        vals = [geom] + [r.get(c, "") for c in extra_cols]
         col_names = "geom"
         if extra_cols:
             col_names += ", " + ", ".join(f'"{c}"' for c in extra_cols)
