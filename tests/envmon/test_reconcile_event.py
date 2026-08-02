@@ -177,3 +177,60 @@ def test_stalled_beats_detail_conflict_in_headline():
     row = _judged(legs)["MW-7-20260715-GW"]
     assert row.outcome == re_mod.OUTCOME_STALLED
     assert any(c.startswith("matrix_mismatch") for c in row.codes)
+
+
+def test_date_mismatch_detected():
+    # Different dates between field and lab → detail_conflict with date_mismatch code.
+    legs = _legs(field=[("MW-8-20260715-GW", {"SampleDate": "2026-07-15"})],
+                 lab=[("MW-8-20260715-GW", {"sample_date": "2026-07-16"})],
+                 coc=[("MW-8-20260715-GW", {"coc_number": "C1"})],
+                 gdb=[("MW-8-20260715-GW", {})])
+    row = _judged(legs)["MW-8-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_DETAIL_CONFLICT
+    assert any(c.startswith("date_mismatch") for c in row.codes)
+
+
+def test_date_mismatch_tolerant_format():
+    # Tolerant format: "2026-07-15" vs "20260715" should NOT flag date_mismatch.
+    legs = _legs(field=[("MW-13-20260715-GW", {"SampleDate": "2026-07-15"})],
+                 gdb=[("MW-13-20260715-GW", {"sample_date": "20260715"})],
+                 coc=[("MW-13-20260715-GW", {"coc_number": "C1"})],
+                 lab=[("MW-13-20260715-GW", {})])
+    row = _judged(legs)["MW-13-20260715-GW"]
+    assert not any(c.startswith("date_mismatch") for c in row.codes)
+
+
+def test_coc_number_mismatch_detected():
+    # Field COCNumber vs coc coc_number mismatch → detail_conflict.
+    legs = _legs(field=[("MW-10-20260715-GW", {"COCNumber": "COC-001"})],
+                 coc=[("MW-10-20260715-GW", {"coc_number": "COC-999"})],
+                 lab=[("MW-10-20260715-GW", {})],
+                 gdb=[("MW-10-20260715-GW", {})])
+    row = _judged(legs)["MW-10-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_DETAIL_CONFLICT
+    assert "coc_number_mismatch" in row.codes
+
+
+def test_analyte_missing_and_unexpected():
+    # Plan analytes {"VOC", "METALS"} vs lab analytes {"VOC", "PFAS"}
+    # → codes for analyte_missing:METALS and analyte_unexpected:PFAS.
+    legs = _legs(plan=[("MW-11-20260715-GW", {"analytes": {"VOC", "METALS"}})],
+                 field=[("MW-11-20260715-GW", {})],
+                 coc=[("MW-11-20260715-GW", {"coc_number": "C1"})],
+                 lab=[("MW-11-20260715-GW", {"analytes": {"VOC", "PFAS"}})],
+                 gdb=[("MW-11-20260715-GW", {})])
+    row = _judged(legs)["MW-11-20260715-GW"]
+    assert row.outcome == re_mod.OUTCOME_DETAIL_CONFLICT
+    assert "analyte_missing:METALS" in row.codes
+    assert "analyte_unexpected:PFAS" in row.codes
+
+
+def test_unexpected_in_forbidden_source():
+    # Trip blank in field (forbidden) → code "unexpected_in_field" and detail_conflict.
+    legs = _legs(field=[("MW-12-20260715-GW-TB", {})],
+                 coc=[("MW-12-20260715-GW-TB", {"coc_number": "C1"})],
+                 lab=[("MW-12-20260715-GW-TB", {})])
+    legs["gdb"] = []
+    row = _judged(legs)["MW-12-20260715-GW-TB"]
+    assert row.outcome == re_mod.OUTCOME_DETAIL_CONFLICT
+    assert "unexpected_in_field" in row.codes
