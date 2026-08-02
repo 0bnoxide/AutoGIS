@@ -56,9 +56,45 @@ def test_write_wells_layer(tmp_path):
     conn = sqlite3.connect(str(gpkg))
     count = write_wells_layer(conn, _WELLS)
     conn.commit()
+    geoms = [row[0] for row in conn.execute(
+        "SELECT geom FROM wells ORDER BY fid"
+    ).fetchall()]
+    geom_metadata = conn.execute(
+        "SELECT geometry_type_name, srs_id, z, m "
+        "FROM gpkg_geometry_columns WHERE table_name = 'wells'"
+    ).fetchone()
+    contents_metadata = conn.execute(
+        "SELECT data_type, srs_id FROM gpkg_contents WHERE table_name = 'wells'"
+    ).fetchone()
+    srs_metadata = conn.execute(
+        "SELECT srs_name, srs_id, organization, organization_coordsys_id "
+        "FROM gpkg_spatial_ref_sys WHERE srs_id = 4326"
+    ).fetchone()
+    geom_type = next(
+        row[2] for row in conn.execute("PRAGMA table_info(wells)")
+        if row[1] == "geom"
+    )
+    integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
     conn.close()
-    # MW-BAD has no coords → skipped or placeholder
-    assert count == 2  # only valid coords inserted
+    assert count == 2
+    assert geoms == [
+        struct.pack(
+            "<2sBBibIdd", b"GP", 0, 0x01, 4326,
+            1, 1, -118.4567, 34.1234,
+        ),
+        struct.pack(
+            "<2sBBibIdd", b"GP", 0, 0x01, 4326,
+            1, 1, -118.5678, 34.2345,
+        ),
+    ]
+    coords = [struct.unpack_from("<dd", geom, 13) for geom in geoms]
+    assert coords[0] == pytest.approx((-118.4567, 34.1234))
+    assert coords[1] == pytest.approx((-118.5678, 34.2345))
+    assert integrity == "ok"
+    assert geom_type == "POINT"
+    assert geom_metadata == ("POINT", 4326, 0, 0)
+    assert contents_metadata == ("features", 4326)
+    assert srs_metadata == ("WGS 84", 4326, "EPSG", 4326)
 
 
 def test_write_wells_layer_has_no_silent_id_field_keyword():
