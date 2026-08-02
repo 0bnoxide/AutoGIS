@@ -127,9 +127,12 @@ them.** Do not implement, spec, or fast-track a deferred group without the user
 explicitly re-opening it first:
 
 - **AI-assisted (§11) — DEFERRED:** `AIDraftParserProfile`, `AIExplainQAReport`,
-  `AIDraftFigureSpec`, `AIMapReviewChecklist` — deferred pending LLM seam design
+  `AIDraftFigureSpec`, `AIMapReviewChecklist` — the owner reviewed the linked
+  readiness findings on 2026-08-01 and chose **not** to reopen the gate
   (`docs/superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md`).
-  Binding until the user says otherwise — not a backlog to pick from when idle.
+  Reconsider only for any demonstrated deterministic-tool gap or unmet user
+  need. Binding until the user says otherwise — the research addendum is not a
+  backlog to pick from when idle.
 - **Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED:**
   ADR-0085 (Accepted 2026-07-16) + ADR-0086 (Accepted 2026-07-24, user
   sign-off); all 3 tools shipped via PRs #240/#241

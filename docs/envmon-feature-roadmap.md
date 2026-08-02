@@ -1952,7 +1952,20 @@ You can test parser hardening without exposing project data.
 
 ---
 
-## 11. AI-Assisted Tools to Add
+## 11. AI-Assisted Tools — Deferred
+
+**Gate status (reviewed 2026-08-01): DEFERRED — not reopened.** The owner
+accepted the joint Codex/Claude recommendation to retain the gate after a
+repository-backed readiness review. This section is future reference, not a
+backlog. Reconsider it only for a demonstrated deterministic-tool gap or unmet
+user need; a poorly handled workbook or an inadequate deterministic QA report
+are examples, not the only triggers.
+
+The review verified useful deterministic foundations and identified packaging,
+protocol, data-egress, provenance, validation, testing, scope, and sequencing
+questions. It made no new design or plan decision while the gate is closed. The
+non-binding findings are recorded in
+[`2026-06-28-ai-assisted-tools-llm-seam-design.md`](superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md).
 
 ### 11.1 AI Parser Profile Draft Assistant
 
