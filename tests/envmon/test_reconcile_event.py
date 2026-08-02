@@ -234,3 +234,59 @@ def test_unexpected_in_forbidden_source():
     row = _judged(legs)["MW-12-20260715-GW-TB"]
     assert row.outcome == re_mod.OUTCOME_DETAIL_CONFLICT
     assert "unexpected_in_field" in row.codes
+
+
+def test_reconcile_event_residual_zero_when_all_masks_met():
+    a = {"location_id": "MW-1", "event_date": "2026-07-15", "matrix": "GW"}
+    legs = _legs(plan=[("MW-1-20260715-GW", a)], field=[("MW-1-20260715-GW", a)],
+                 coc=[("MW-1-20260715-GW", {"coc_number": "C1"})],
+                 lab=[("MW-1-20260715-GW", a)], gdb=[("MW-1-20260715-GW", a)])
+    result = re_mod.reconcile_event(legs)
+    assert result.residual == 0
+    assert result.clean
+
+
+def test_reconcile_event_stalled_sample_breaks_balance():
+    legs = _legs(field=[("MW-2-20260715-GW", {})])
+    legs["coc"] = legs["lab"] = legs["gdb"] = []
+    result = re_mod.reconcile_event(legs)
+    assert result.residual == 3          # coc, lab, gdb required-missing
+    assert not result.clean
+
+
+def test_garbled_sample_form_row_is_needs_review_not_observation():
+    result = re_mod.reconcile_event({"field": []}, garbled=["???"])
+    assert len(result.rows) == 1
+    assert result.rows[0].outcome == re_mod.OUTCOME_NEEDS_REVIEW
+    assert "unparseable_sample_id" in result.rows[0].codes
+    assert not result.clean
+
+
+def test_suggest_pairs_near_miss_same_class_only():
+    legs = _legs(field=[("MW-03-20260801-GW", {})], lab=[("MW03-20260801-GW", {})])
+    legs["coc"], legs["gdb"] = [], []
+    result = re_mod.reconcile_event(legs)
+    pairs = {(s["missing"], s["candidate"]) for s in result.suggestions}
+    assert any("MW-03-20260801-GW" in p and "MW03-20260801-GW" in p for p in pairs)
+
+
+def test_suggest_never_offers_nodate():
+    legs = _legs(field=[("MW-03-NODATE-ABC123-GW", {})],
+                 lab=[("MW03-NODATE-ABC123-GW", {})])
+    legs["coc"], legs["gdb"] = [], []
+    result = re_mod.reconcile_event(legs)
+    assert result.suggestions == []
+
+
+def test_csv_and_summary_roundtrip(tmp_path):
+    legs = _legs(field=[("MW-1-20260715-GW", {})])
+    legs["coc"] = legs["lab"] = legs["gdb"] = []
+    result = re_mod.reconcile_event(legs, observations={"water_levels": 3})
+    out = tmp_path / "recon.csv"
+    re_mod.rows_to_csv(result, out)
+    text = out.read_text(encoding="utf-8")
+    assert "SampleID" in text and "MW-1-20260715-GW" in text
+    summary = re_mod.summary_dict(result)
+    assert summary["observations"] == {"water_levels": 3}
+    assert summary["residual"] == result.residual
+    assert "field" in summary["legs_run"]

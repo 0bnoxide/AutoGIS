@@ -7,8 +7,10 @@ Exact-only matching (D7); one ID policy (D9): sample_id module + uppercase.
 """
 from __future__ import annotations
 
+import csv as _csv
 import difflib
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from .sample_id import PRIMARY, QC_SUFFIXES, parse_sample_id, qc_class
@@ -229,3 +231,114 @@ def judge_row(row: GridRow, *, dry_wells: Optional[dict] = None) -> None:
         row.outcome = OUTCOME_DETAIL_CONFLICT
     else:
         row.outcome = OUTCOME_RECONCILED
+
+
+@dataclass
+class ReconcileEventResult:
+    rows: List[GridRow]
+    observations: Dict[str, int]
+    excluded: Dict[str, int]
+    suggestions: List[dict]
+    legs_run: List[str]
+    counts: Dict[str, dict]
+    residual: int
+
+    @property
+    def clean(self) -> bool:
+        return self.residual == 0 and not any(
+            r.outcome == OUTCOME_NEEDS_REVIEW for r in self.rows)
+
+
+def suggest(rows: List[GridRow]) -> List[dict]:
+    def eligible(row):
+        parts = parse_sample_id(row.key)
+        return parts is not None and parts.date_compact != ""
+    missing = [r for r in rows
+               if r.outcome in (OUTCOME_STALLED, OUTCOME_NOT_COLLECTED)
+               and eligible(r)]
+    extras = [r for r in rows
+              if r.outcome in (OUTCOME_ORPHAN, OUTCOME_NEEDS_REVIEW)
+              and eligible(r)]
+    out = []
+    for m in missing:
+        for e in extras:
+            if qc_class(m.key) != qc_class(e.key):
+                continue        # never cross QC classes (#360 guard)
+            ratio = difflib.SequenceMatcher(None, m.key, e.key).ratio()
+            if ratio >= 0.85:
+                out.append({"missing": m.key, "candidate": e.key,
+                            "ratio": round(ratio, 3)})
+    return out
+
+
+def reconcile_event(legs, *, overrides=None, dry_wells=None, garbled=None,
+                    observations=None, excluded=None) -> ReconcileEventResult:
+    grid = build_grid(legs, overrides=overrides)
+    for raw in garbled or []:
+        key = f"UNPARSEABLE:{raw}"
+        row = GridRow(key=key, present={s: False for s in SOURCES},
+                      mask={s: OPTIONAL for s in SOURCES})
+        row.present["field"] = True
+        row.raw_ids["field"] = raw
+        row.attrs["field"] = {}
+        row.codes.append("unparseable_sample_id")
+        grid[key] = row
+    for row in grid.values():
+        judge_row(row, dry_wells=dry_wells)
+    rows = sorted(grid.values(), key=lambda r: r.key)
+    counts, residual = {}, 0
+    for s in SOURCES:
+        present = sum(1 for r in rows if r.present[s])
+        req_missing = sum(1 for r in rows
+                          if r.mask[s] == REQUIRED and not r.present[s])
+        forb_present = sum(1 for r in rows
+                           if r.mask[s] == FORBIDDEN and r.present[s])
+        counts[s] = {"present": present, "required_missing": req_missing,
+                     "forbidden_present": forb_present}
+        residual += req_missing + forb_present
+    return ReconcileEventResult(
+        rows=rows, observations=dict(observations or {}),
+        excluded=dict(excluded or {}), suggestions=suggest(rows),
+        legs_run=sorted(legs), counts=counts, residual=residual)
+
+
+_CSV_COLS = ["SampleID", "Outcome", "Origin", "LastStage",
+             "In_Plan", "In_Field", "In_COC", "In_Lab", "In_GDB", "Codes"]
+
+
+def rows_to_csv(result: ReconcileEventResult, path) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = _csv.writer(fh)
+        w.writerow(_CSV_COLS)
+        for r in result.rows:
+            w.writerow([r.key, r.outcome, r.origin, r.last_stage,
+                        *(int(r.present[s]) for s in SOURCES),
+                        ";".join(r.codes)])
+
+
+def summary_dict(result: ReconcileEventResult) -> dict:
+    totals: Dict[str, int] = {}
+    for r in result.rows:
+        totals[r.outcome] = totals.get(r.outcome, 0) + 1
+    return {"legs_run": result.legs_run, "counts": result.counts,
+            "outcome_totals": totals, "observations": result.observations,
+            "excluded": result.excluded, "residual": result.residual,
+            "clean": result.clean, "suggestions": result.suggestions}
+
+
+def _demo() -> None:   # pragma: no cover - manual self-check
+    a = {"location_id": "MW-1", "event_date": "2026-07-15", "matrix": "GW"}
+    legs = {"plan": [SourceRow("MW-1-20260715-GW", a)],
+            "field": [SourceRow("MW-1-20260715-GW", a)],
+            "coc": [SourceRow("MW-1-20260715-GW", {"coc_number": "C1"})],
+            "lab": [SourceRow("MW-1-20260715-GW", a)],
+            "gdb": [SourceRow("MW-1-20260715-GW", a)]}
+    result = reconcile_event(legs)
+    assert result.clean and result.rows[0].outcome == OUTCOME_RECONCILED
+    print("reconcile_event demo OK")
+
+
+if __name__ == "__main__":   # pragma: no cover
+    _demo()
