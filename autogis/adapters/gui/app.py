@@ -57,6 +57,140 @@ __all__ = ["MainWindow", "main"]
 _LOCAL_PYTHON_REQUIRED = (
     "LOCAL (arcpy) tool: set the arcgispro-py3 python.exe above to run it.")
 
+# Code-native echo of the README's neon cartography graphics: dark navy
+# surfaces, cyan/violet accents, and restrained glow-like borders. Keeping the
+# theme in QSS makes it scale with Qt and avoids shipping a second raster copy
+# of the 1.8 MB README banner just to decorate a resizable desktop window.
+_APP_STYLE = """
+QMainWindow, QWidget#appRoot {
+    background-color: #000714;
+    color: #f7faff;
+}
+QWidget {
+    color: #f7faff;
+    font-family: "Segoe UI";
+    font-size: 10pt;
+}
+QWidget#brandHeader {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 #061d38, stop:0.48 #071326, stop:1 #250b3b);
+    border: 1px solid #35cfff;
+    border-radius: 12px;
+}
+QLabel#brandTitle {
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 700;
+}
+QLabel#brandSubtitle {
+    color: #9eeaff;
+    font-size: 10px;
+    font-weight: 600;
+}
+QWidget#panel, QScrollArea#formPanel {
+    background-color: #061427;
+    border: 1px solid #164a6b;
+    border-radius: 9px;
+}
+QScrollArea#formPanel > QWidget > QWidget {
+    background-color: #061427;
+}
+QLabel#sectionTitle {
+    color: #35cfff;
+    font-size: 10px;
+    font-weight: 700;
+}
+QLabel#statusLabel {
+    color: #d9f6ff;
+    font-weight: 600;
+    padding: 3px 0;
+}
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit,
+QListWidget, QTextEdit, QTableWidget {
+    background-color: #020d1c;
+    color: #f7faff;
+    border: 1px solid #245575;
+    border-radius: 5px;
+    padding: 5px;
+    selection-background-color: #147da0;
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus,
+QDoubleSpinBox:focus, QDateEdit:focus, QListWidget:focus,
+QTextEdit:focus, QTableWidget:focus {
+    border: 1px solid #35cfff;
+}
+QComboBox::drop-down {
+    border: 0;
+    width: 22px;
+}
+QComboBox QAbstractItemView {
+    background-color: #061427;
+    color: #f7faff;
+    border: 1px solid #35cfff;
+    selection-background-color: #15375b;
+}
+QPushButton {
+    background-color: #102740;
+    color: #f7faff;
+    border: 1px solid #35658b;
+    border-radius: 6px;
+    padding: 6px 11px;
+    font-weight: 600;
+}
+QPushButton:hover {
+    background-color: #15375b;
+    border-color: #35cfff;
+}
+QPushButton:pressed {
+    background-color: #0a1b30;
+}
+QPushButton:disabled {
+    background-color: #091321;
+    color: #60768b;
+    border-color: #1b3043;
+}
+QPushButton#primaryButton {
+    background-color: #0b6584;
+    border-color: #35cfff;
+}
+QPushButton#primaryButton:hover {
+    background-color: #147fa2;
+}
+QPushButton[role="quick-action"] {
+    background-color: #251440;
+    border-color: #a968ff;
+}
+QPushButton[role="quick-action"]:hover {
+    background-color: #38205c;
+    border-color: #e957ff;
+}
+QPushButton#dangerButton {
+    background-color: #401827;
+    border-color: #b34b69;
+}
+QCheckBox {
+    spacing: 6px;
+}
+QHeaderView::section {
+    background-color: #0d2742;
+    color: #9eeaff;
+    border: 0;
+    border-right: 1px solid #245575;
+    padding: 5px;
+    font-weight: 600;
+}
+QSplitter::handle {
+    background-color: #164a6b;
+    height: 2px;
+}
+QToolTip {
+    background-color: #061427;
+    color: #f7faff;
+    border: 1px solid #35cfff;
+    padding: 4px;
+}
+"""
+
 
 def _window_forms() -> list[CommandForm]:
     """Every leaf command the window offers. Class-1 redirect-only LOCAL tools
@@ -199,10 +333,10 @@ _DECISION_LABEL = {
     Decision.PAUSE_FOR_REVIEW: "PAUSE FOR REVIEW",
 }
 
-# QA severity -> cell-text color, chosen to read on both light and dark Qt
-# themes (a saturated red/orange, a muted gray for INFO).
-_SEV_COLOR = {"CRITICAL": "#d32f2f", "ERROR": "#d32f2f",
-              "WARNING": "#ed6c02", "INFO": "#9e9e9e"}
+# QA severity -> cell-text color. These stay above WCAG AA's 4.5:1 normal-text
+# contrast floor on the themed output surface (#020d1c).
+_SEV_COLOR = {"CRITICAL": "#ff6b6b", "ERROR": "#ff6b6b",
+              "WARNING": "#ffb74d", "INFO": "#b0bec5"}
 
 # Line-level coloring for the raw output/decision pane (#205 comment).
 # Distinct from _SEV_COLOR (the QA *table*, INFO=gray): here INFO is blue and
@@ -210,10 +344,10 @@ _SEV_COLOR = {"CRITICAL": "#d32f2f", "ERROR": "#d32f2f",
 # the precedence -- a red signal beats a warning, and INFO stays blue even on
 # an "...QA pass." line where "pass" would otherwise read as green.
 _LINE_COLORS = (
-    ("#d32f2f", ("CRITICAL", "ERROR", "FAIL", "HALT")),   # red
-    ("#ed6c02", ("WARNING", "PAUSE")),                     # orange
-    ("#1976d2", ("INFO",)),                                # blue
-    ("#2e7d32", ("CONTINUE", "PASS")),                     # green
+    ("#ff6b6b", ("CRITICAL", "ERROR", "FAIL", "HALT")),   # red
+    ("#ffb74d", ("WARNING", "PAUSE")),                      # orange
+    ("#7db8ff", ("INFO",)),                                 # blue
+    ("#73d17c", ("CONTINUE", "PASS")),                      # green
 )
 
 
@@ -236,7 +370,8 @@ def _colorize_output(text: str) -> str:
 class MainWindow(QMainWindow):
     def __init__(self, settings_store=None):
         super().__init__()
-        self.setWindowTitle("AutoGIS -- GUI adapter (walking skeleton)")
+        self.setWindowTitle("AutoGIS - Geospatial Automation for ArcGIS")
+        self.setStyleSheet(_APP_STYLE)
         self._settings = settings_store  # None -> real per-user QSettings
         self._local_python = settings.get_local_python(settings_store)
         # Only offer commands that can actually run here: class-1 redirect-only
@@ -259,14 +394,35 @@ class MainWindow(QMainWindow):
         self._run_is_workflow = False  # True during Run workflow; marks list rows
 
         central = QWidget()
+        central.setObjectName("appRoot")
         self.setCentralWidget(central)
         outer = QVBoxLayout(central)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(5)
+
+        brand = QWidget()
+        brand.setObjectName("brandHeader")
+        brand.setMaximumHeight(82)
+        brand_row = QHBoxLayout(brand)
+        brand_row.setContentsMargins(14, 7, 14, 7)
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(0)
+        brand_title = QLabel("AutoGIS")
+        brand_title.setObjectName("brandTitle")
+        brand_subtitle = QLabel("GEOSPATIAL AUTOMATION FOR ARCGIS")
+        brand_subtitle.setObjectName("brandSubtitle")
+        brand_text.addWidget(brand_title)
+        brand_text.addWidget(brand_subtitle)
+        brand_row.addLayout(brand_text)
+        brand_row.addSpacing(18)
 
         # local_python: the arcgispro-py3 python.exe LOCAL (arcpy) tools run
         # under. Persisted (settings.py) so it survives launches; editing or
         # browsing re-gates the Run button for the current command.
+        runtime_layout = QVBoxLayout()
+        runtime_layout.setSpacing(4)
         lp_row = QHBoxLayout()
-        lp_row.addWidget(QLabel("local_python:"))
+        lp_row.addWidget(QLabel("LOCAL PYTHON"))
         self._local_python_edit = QLineEdit(self._local_python or "")
         self._local_python_edit.setPlaceholderText(
             "arcgispro-py3 python.exe -- needed to run LOCAL (arcpy) tools")
@@ -276,19 +432,38 @@ class MainWindow(QMainWindow):
         lp_browse = QPushButton("Browse…")
         lp_browse.clicked.connect(self._browse_local_python)
         lp_row.addWidget(lp_browse)
-        # Site Config Builder (ADR-0065): author a harvest config.yaml via a
+        runtime_layout.addLayout(lp_row)
+
+        action_row = QHBoxLayout()
+        create_site_btn = QPushButton("New Site YAMLs…")
+        create_site_btn.setObjectName("create-envmon-site")
+        create_site_btn.setToolTip(
+            "Open the envmon init-site form to generate site, event, parser, "
+            "and figure-spec YAMLs from the versioned templates.")
+        create_site_btn.clicked.connect(self._on_create_envmon_site)
+        action_row.addWidget(create_site_btn)
+        # Site Config Builder (ADR-0065): author a HARVEST config.yaml via a
         # guided form instead of hand-writing YAML / inspecting item.layers.
         self._config_dialog: ConfigBuilderDialog | None = None
-        build_config_btn = QPushButton("Build Site Config…")
+        build_config_btn = QPushButton("Harvest Config…")
+        build_config_btn.setObjectName("build-harvest-config")
         build_config_btn.clicked.connect(self._on_build_config)
-        lp_row.addWidget(build_config_btn)
+        action_row.addWidget(build_config_btn)
         self._approval_dialog: GWModelApprovalDialog | None = None
-        approve_model_btn = QPushButton("Approve GW Model…")
+        approve_model_btn = QPushButton("Approve GW…")
         approve_model_btn.setObjectName("approve-gw-model")
         approve_model_btn.clicked.connect(self._on_approve_gw_model)
-        lp_row.addWidget(approve_model_btn)
-        outer.addLayout(lp_row)
+        action_row.addWidget(approve_model_btn)
+        action_row.addStretch()
+        for button in (create_site_btn, build_config_btn, approve_model_btn):
+            button.setProperty("role", "quick-action")
+        runtime_layout.addLayout(action_row)
+        brand_row.addLayout(runtime_layout, 1)
+        outer.addWidget(brand)
 
+        command_title = QLabel("COMMAND")
+        command_title.setObjectName("sectionTitle")
+        outer.addWidget(command_title)
         self._command_box = QComboBox()
         self._command_box.addItems(sorted(self._forms))
         # Editable + a substring-matching completer so typing "sync" finds
@@ -317,12 +492,14 @@ class MainWindow(QMainWindow):
         # for a 15-field command, pushing Run and the output pane off a 768p
         # screen with no way to shrink (#357).
         form_scroll = QScrollArea()
+        form_scroll.setObjectName("formPanel")
         form_scroll.setWidgetResizable(True)
         form_scroll.setWidget(form_container)
         outer.addWidget(form_scroll)
 
         row = QHBoxLayout()
         self._run_button = QPushButton("Run")
+        self._run_button.setObjectName("primaryButton")
         self._run_button.clicked.connect(self._on_run)
         row.addWidget(self._run_button)
         outer.addLayout(row)
@@ -339,9 +516,12 @@ class MainWindow(QMainWindow):
         outer.addLayout(add_row)
 
         steps_container = QWidget()
+        steps_container.setObjectName("panel")
         steps_layout = QVBoxLayout(steps_container)
-        steps_layout.setContentsMargins(0, 0, 0, 0)
-        steps_layout.addWidget(QLabel("Steps:"))
+        steps_layout.setContentsMargins(5, 4, 5, 5)
+        steps_title = QLabel("WORKFLOW")
+        steps_title.setObjectName("sectionTitle")
+        steps_layout.addWidget(steps_title)
         self._step_list = QListWidget()
         steps_layout.addWidget(self._step_list)
 
@@ -353,6 +533,7 @@ class MainWindow(QMainWindow):
         self._down_button = QPushButton("↓")
         self._down_button.clicked.connect(lambda: self._move_step(1))
         self._run_wf_button = QPushButton("Run workflow")
+        self._run_wf_button.setObjectName("primaryButton")
         self._run_wf_button.clicked.connect(self._on_run_workflow)
         self._clear_button = QPushButton("Clear")
         self._clear_button.clicked.connect(self._on_clear_steps)
@@ -361,8 +542,10 @@ class MainWindow(QMainWindow):
         self._save_button = QPushButton("Save recipe…")
         self._save_button.clicked.connect(self._on_save_recipe)
         self._cancel_button = QPushButton("Cancel")
+        self._cancel_button.setObjectName("dangerButton")
         self._cancel_button.clicked.connect(self._on_cancel)
         self._resume_button = QPushButton("Resume")
+        self._resume_button.setObjectName("primaryButton")
         self._resume_button.clicked.connect(self._on_resume)
         for _b in (self._remove_button, self._up_button, self._down_button,
                    self._run_wf_button, self._clear_button,
@@ -377,10 +560,16 @@ class MainWindow(QMainWindow):
         # -----------------------------------------------------------------
 
         results_container = QWidget()
+        results_container.setObjectName("panel")
         results_layout = QVBoxLayout(results_container)
-        results_layout.setContentsMargins(0, 0, 0, 0)
+        results_layout.setContentsMargins(5, 4, 5, 5)
+
+        results_title = QLabel("RESULTS & QA")
+        results_title.setObjectName("sectionTitle")
+        results_layout.addWidget(results_title)
 
         self._status = QLabel("")
+        self._status.setObjectName("statusLabel")
         results_layout.addWidget(self._status)
 
         # Structured QA view: the executor already parses the injected
@@ -418,8 +607,25 @@ class MainWindow(QMainWindow):
     def _current_form(self) -> CommandForm | None:
         return self._forms.get(self._command_box.currentText())
 
+    def _on_create_envmon_site(self) -> None:
+        """Expose the existing safe ``envmon init-site`` path as a visible
+        quick action. The generic form/runner remains the only execution seam;
+        this shortcut adds discoverability without a second YAML writer or a
+        divergent wizard schema."""
+        label = "envmon init-site"
+        if label not in self._forms:
+            self._status.setText("envmon init-site is unavailable in this build.")
+            return
+        self._command_box.setCurrentText(label)
+        site_id = self._field_widgets.get("site_id")
+        if site_id is not None:
+            site_id.setFocus()
+        self._status.setText(
+            "Enter Site Id and Site Name, choose a config root, optionally "
+            "enable Dry Run, then Run to generate the four EnvMon YAMLs.")
+
     def _on_build_config(self) -> None:
-        """Open the Site Config Builder (window-modal, non-blocking --
+        """Open the harvest Config Builder (window-modal, non-blocking --
         ``open()`` keeps the event loop free, unlike ``exec()``)."""
         self._config_dialog = ConfigBuilderDialog(self)
         self._config_dialog.open()

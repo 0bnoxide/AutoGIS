@@ -549,6 +549,19 @@ python -m pytest -q           # count is extras-dependent: python -m pytest --co
 | `survey123` | arcgis, setuptools | live Survey123/AGOL submission pull for `envmon sync-survey123` (optional add-on track, ADR-0116) |
 | `notebook` | nbclient, ipykernel | real-kernel restart-run-all test for the Phase 4 monitoring-event review notebook (ADR-0105); opt-in, not needed to use the notebook itself |
 
+### Desktop GUI
+
+```bash
+pip install -e ".[gui]"
+autogis-gui
+```
+
+Use **New Site YAMLs…** to open the existing `envmon init-site` form,
+choose a config root, and generate the versioned site, event, parser-profile,
+and figure-spec skeletons. **Harvest Config…** is the separate attachment-
+harvester configuration builder. Use **Dry Run** before writing when previewing a
+new site bundle; existing files are never overwritten unless **Force** is selected.
+
 ---
 
 ## CLI Reference

@@ -23,7 +23,9 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
+from PySide6.QtWidgets import (
+    QApplication, QComboBox, QLineEdit, QPushButton, QWidget,
+)
 
 import autogis.adapters.gui.app as app_mod
 import autogis.adapters.gui.runner as runner_mod
@@ -157,6 +159,59 @@ def test_command_help_text_is_shown_and_updates_on_switch(qapp):
     assert win._help_label.text() == a.help_text
     win._command_box.setCurrentText(b.label)
     assert win._help_label.text() == b.help_text
+
+
+def test_envmon_site_quick_action_reuses_init_site_form(qapp, tmp_path):
+    """The dedicated action is discoverability only: it must select the one
+    existing init-site command/form so generation still crosses the tested
+    CLI/core overwrite and validation boundaries."""
+    win = MainWindow()
+    win._command_box.setCurrentText("harvest")
+
+    button = win.findChild(QPushButton, "create-envmon-site")
+    assert button is not None
+    button.click()
+
+    assert win._command_box.currentText() == "envmon init-site"
+    assert {"site_id", "site_name", "dest", "force", "dry_run"} <= set(
+        win._field_widgets)
+    win._field_widgets["site_id"].setText("T99")
+    win._field_widgets["site_name"].setText("Test Site 99")
+    win._field_widgets["dest"].setText(str(tmp_path))
+    step = build_step(win._forms["envmon init-site"], win._raw_values())
+    argv = build_argv(step.command, step.values)
+    command_index = argv.index("envmon")
+    assert argv[command_index:command_index + 2] == ["envmon", "init-site"]
+    assert argv[argv.index("--dest") + 1] == str(tmp_path)
+    assert "four EnvMon YAMLs" in win._status.text()
+
+
+def test_readme_inspired_shell_is_applied(qapp):
+    win = MainWindow()
+    assert win.windowTitle() == "AutoGIS - Geospatial Automation for ArcGIS"
+    assert win.findChild(QWidget, "brandHeader") is not None
+    assert "#35cfff" in win.styleSheet().lower()
+    assert win._run_button.objectName() == "primaryButton"
+    assert win._cancel_button.objectName() == "dangerButton"
+
+
+def test_semantic_colors_meet_aa_on_dark_output_surface():
+    """The old light-theme status colors became too dim on the neon shell."""
+    def luminance(color):
+        channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        channels = [c / 12.92 if c <= 0.04045
+                    else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return sum(weight * channel for weight, channel in zip(
+            (0.2126, 0.7152, 0.0722), channels))
+
+    background = luminance("#020d1c")
+    colors = set(app_mod._SEV_COLOR.values())
+    colors.update(color for color, _ in app_mod._LINE_COLORS)
+    for color in colors:
+        foreground = luminance(color)
+        ratio = (max(foreground, background) + 0.05) / (
+            min(foreground, background) + 0.05)
+        assert ratio >= 4.5, (color, ratio)
 
 
 def test_help_label_clears_when_switching_to_command_without_help(qapp):
@@ -384,10 +439,10 @@ def test_colorize_output_colors_lines_by_keyword():
         "[WARNING] vrms: high\n"
         "[INFO] done: 1/6 QA pass.\n"   # 'pass' must NOT override the INFO tag
         "Status: PASS")
-    assert '#d32f2f">Decision: HALT' in out       # red for HALT/FAIL/ERROR
-    assert '#ed6c02">[WARNING]' in out            # orange for WARNING/PAUSE
-    assert '#1976d2">[INFO]' in out               # blue for INFO (not green)
-    assert '#2e7d32">Status: PASS' in out         # green for CONTINUE/PASS
+    assert '#ff6b6b">Decision: HALT' in out       # red for HALT/FAIL/ERROR
+    assert '#ffb74d">[WARNING]' in out            # orange for WARNING/PAUSE
+    assert '#7db8ff">[INFO]' in out               # blue for INFO (not green)
+    assert '#73d17c">Status: PASS' in out         # green for CONTINUE/PASS
 
 
 def test_colorize_output_escapes_html():
@@ -406,7 +461,7 @@ def test_output_pane_is_rich_text_and_colored(qapp, monkeypatch):
     _fill_required_fields(win, _first_runnable(win))
     win._on_run()
     _pump_until(lambda: win._run_button.isEnabled())
-    assert "#d32f2f" in win._output.toHtml()       # HALT/FAIL/ERROR rendered red
+    assert "#ff6b6b" in win._output.toHtml()       # HALT/FAIL/ERROR rendered red
     assert "QA FAIL" in win._output.toPlainText()  # plain text still readable
 
 
@@ -420,7 +475,7 @@ def test_failure_message_is_colorized_and_escaped(qapp, monkeypatch):
     _fill_required_fields(win, _first_runnable(win))
     win._on_run()
     _pump_until(lambda: win._run_button.isEnabled())
-    assert "#d32f2f" in win._output.toHtml()         # "ValueError" -> red
+    assert "#ff6b6b" in win._output.toHtml()         # "ValueError" -> red
     assert "boom <x>" in win._output.toPlainText()   # escaped, then round-trips
     assert win._status.text() == "Failed to run"
 
