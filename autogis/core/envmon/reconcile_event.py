@@ -84,3 +84,39 @@ class GridRow:
     outcome: str = ""
     codes: List[str] = field(default_factory=list)
     last_stage: str = ""
+
+
+def build_grid(legs: Dict[str, List[SourceRow]], *,
+               overrides: Optional[dict] = None) -> Dict[str, GridRow]:
+    overrides = overrides or {}
+    provided = set(legs)
+    grid: Dict[str, GridRow] = {}
+    for source in SOURCES:
+        for obs in legs.get(source, []):
+            key = normalize_key(obs.sample_id)
+            if not key:
+                continue    # CLI routes id-less sample-form rows separately (§4.4)
+            row = grid.get(key)
+            if row is None:
+                row = GridRow(key=key,
+                              present={s: False for s in SOURCES},
+                              mask=default_mask(key))
+                grid[key] = row
+            if row.present[source]:
+                if (source == "coc"
+                        and obs.attrs.get("coc_number")
+                        and obs.attrs["coc_number"] != row.attrs["coc"].get("coc_number")
+                        and "multi_coc" not in row.codes):
+                    row.codes.append("multi_coc")
+                continue    # first observation's attrs win
+            row.present[source] = True
+            row.raw_ids[source] = obs.sample_id
+            row.attrs[source] = dict(obs.attrs)
+    for row in grid.values():
+        for s in SOURCES:
+            if s not in provided:
+                row.mask[s] = OPTIONAL          # omitted leg is never judged
+        for s, v in overrides.get(row.key, {}).items():
+            if s in provided:
+                row.mask[s] = v
+    return grid

@@ -50,3 +50,44 @@ def test_duplicate_marker_without_lifecycle_structure_is_all_optional():
     # all-optional, not wrongly demand full downstream presence.
     m = re_mod.default_mask("MW-1-DUP")
     assert set(m.values()) == {re_mod.OPTIONAL}
+
+
+def _legs(**kw):
+    return {k: [re_mod.SourceRow(s, a) for s, a in v] for k, v in kw.items()}
+
+
+def test_build_grid_one_row_per_normalized_id():
+    legs = _legs(field=[("mw-1-20260715-gw", {})], lab=[("MW-1-20260715-GW", {})])
+    grid = re_mod.build_grid(legs)
+    assert list(grid) == ["MW-1-20260715-GW"]
+    row = grid["MW-1-20260715-GW"]
+    assert row.present["field"] and row.present["lab"]
+    assert not row.present["plan"]
+
+
+def test_build_grid_omitted_leg_mask_forced_optional():
+    grid = re_mod.build_grid(_legs(field=[("MW-1-20260715-GW", {})]))
+    row = grid["MW-1-20260715-GW"]
+    assert row.mask["lab"] == re_mod.OPTIONAL      # lab leg not provided
+    assert row.mask["coc"] == re_mod.OPTIONAL
+
+
+def test_build_grid_override_beats_default():
+    ov = {"MW-1-20260715-GW": {"gdb": re_mod.FORBIDDEN}}
+    grid = re_mod.build_grid(_legs(field=[("MW-1-20260715-GW", {})],
+                                   gdb=[("MW-1-20260715-GW", {})]), overrides=ov)
+    assert grid["MW-1-20260715-GW"].mask["gdb"] == re_mod.FORBIDDEN
+
+
+def test_build_grid_multi_coc_flagged():
+    legs = _legs(coc=[("MW-1-20260715-GW", {"coc_number": "COC-001"}),
+                      ("MW-1-20260715-GW", {"coc_number": "COC-002"})])
+    row = re_mod.build_grid(legs)["MW-1-20260715-GW"]
+    assert "multi_coc" in row.codes
+
+
+def test_build_grid_duplicate_same_coc_not_flagged():
+    # 422 shape: planner repeats the same id on the same COC — dedupe silently.
+    legs = _legs(coc=[("MW-1-20260715-GW", {"coc_number": "COC-001"}),
+                      ("MW-1-20260715-GW", {"coc_number": "COC-001"})])
+    assert re_mod.build_grid(legs)["MW-1-20260715-GW"].codes == []
