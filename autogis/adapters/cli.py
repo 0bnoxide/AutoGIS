@@ -5114,7 +5114,7 @@ def verify_report_package_cmd(package_dir, report, fail_on):
     """Verify a report package against its manifest and SHA-256 hashes."""
     from autogis.core.envmon.report_package_verifier import verify_report_package
 
-    package_path = Path(package_dir).resolve()
+    package_path = Path(package_dir)
     _reject_report_path_in_artifact(report, package_path)
     result = verify_report_package(package_path)
     click.echo(

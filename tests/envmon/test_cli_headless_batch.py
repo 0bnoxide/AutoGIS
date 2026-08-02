@@ -22,6 +22,7 @@ import csv
 import os
 import sqlite3
 import struct
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -621,6 +622,32 @@ def test_verify_report_package_cli_detects_tampering(tmp_path):
     assert changed.exit_code == 1
     assert "package_file_modified" in changed.output
     assert report.exists()
+
+
+def test_verify_report_package_rejects_redirected_package_root(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    package = tmp_path / "package"
+    from autogis.core.envmon.report_figure_package import assemble_figure_package
+    assemble_figure_package(
+        [{"path": str(src), "role": "data_csv"}], package)
+    alias = tmp_path / "package-alias"
+    if os.name == "nt":
+        linked = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(alias), str(package)],
+            capture_output=True).returncode == 0
+        if not linked:
+            pytest.skip("junctions unavailable")
+    else:
+        try:
+            alias.symlink_to(package, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = _run("envmon", "verify-report-package", str(alias))
+
+    assert result.exit_code == 1
+    assert "package_reparse_point" in result.output
 
 
 def test_verify_report_package_rejects_report_inside_package(tmp_path):

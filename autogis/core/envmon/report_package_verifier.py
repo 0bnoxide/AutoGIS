@@ -76,7 +76,7 @@ def verify_report_package(
     if qa is None:
         qa = QACollector()
     raw_root = Path(package_dir)
-    root = raw_root.resolve(strict=False)
+    root = raw_root.absolute()
     manifest = root / "manifest.csv"
 
     def result(manifest_count=0, expected_count=0, verified_count=0,
@@ -86,6 +86,18 @@ def verify_report_package(
             manifest_count=manifest_count, expected_count=expected_count,
             verified_count=verified_count, extra_count=extra_count, qa=qa)
 
+    try:
+        root_redirects = _is_link_or_reparse(raw_root)
+    except ValueError as exc:
+        qa.add(SEV_ERROR, "package_path_unreadable", str(exc))
+        return result()
+    if root_redirects:
+        qa.add(SEV_ERROR, "package_reparse_point",
+               f"Package root is a symlink or reparse point: {raw_root}")
+        return result()
+
+    root = raw_root.resolve(strict=False)
+    manifest = root / "manifest.csv"
     if not raw_root.is_dir():
         qa.add(SEV_ERROR, "package_missing",
                f"Package directory not found: {raw_root}")
