@@ -217,9 +217,13 @@ suggestions section (never applied).
 
 ## 7. Edge rules
 
-- **Event membership:** plan and custody are event-tagged; field/lab/GDB
-  rows selected by site + event date window. Out-of-window rows excluded
-  *and counted*, never silently dropped.
+- **Event membership** (**amended 2026-08-02, ADR-0123** — as-shipped, not
+  as originally drafted): plan and custody are event-tagged by
+  construction, and the field/lab/GDB CSVs are event exports in practice,
+  so no `--date-from`/`--date-to` window filter is implemented — the
+  operator scopes each CSV at export time. `ReconcileEventResult.excluded`
+  is plumbed end-to-end (always `{}` today) so a real date-window filter
+  is additive later without a breaking change.
 - **Multi-COC sample** → `needs_review` + code (no winner picked).
 - **NODATE IDs** (`sample_id.py:62`, uuid-disambiguated; `date_compact=""`
   on parse): exact match only; never in suggestions.
