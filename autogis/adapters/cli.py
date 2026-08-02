@@ -42,6 +42,43 @@ def qa_report_options(func):
     return func
 
 
+def _reject_report_path_in_artifact(report, artifact_dir) -> None:
+    """Reject QA report paths that alias files inside an artifact directory."""
+    if not report:
+        return
+    from autogis.core.envmon.report_figure_package import _is_link_or_reparse
+
+    artifact_path = Path(artifact_dir).resolve(strict=False)
+    report_path = Path(report).resolve(strict=False)
+    if ":" in report_path.name:
+        raise click.ClickException(
+            "--report must not name an alternate data stream")
+    conflicts = report_path.is_relative_to(artifact_path)
+    if report_path.exists() and artifact_path.is_dir() and not conflicts:
+        for current, dirnames, filenames in os.walk(
+                artifact_path, followlinks=False):
+            current_path = Path(current)
+            for name in list(dirnames):
+                try:
+                    redirects = _is_link_or_reparse(current_path / name)
+                except ValueError:
+                    redirects = True
+                if redirects:
+                    dirnames.remove(name)
+            for name in filenames:
+                try:
+                    conflicts = report_path.samefile(current_path / name)
+                except OSError:
+                    continue
+                if conflicts:
+                    break
+            if conflicts:
+                break
+    if conflicts:
+        raise click.ClickException(
+            "--report must be outside the package directory")
+
+
 def run(config_path, where, out, incremental, *, harvest_fn=None):
     if harvest_fn is None:
         from autogis.core.harvest.harvester import harvest as harvest_fn
@@ -3160,10 +3197,8 @@ def audit_dependencies_cmd(item_id, profile, max_depth, output, fmt):
 def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
     """Tool 6.4: push local Dash_* data-mart tables to hosted AGOL layers (HYBRID).
 
-    NOTE: --mart-dir expects one <TableName>.json (list of row dicts) per Dash_*
-    table. Tool 6.7 (BuildDashboardDataMart) currently writes straight into a
-    GDB via arcpy — a JSON-dump step between 6.7 and this command does not
-    exist yet, so --mart-dir must be populated by hand or a future export tool.
+    ``envmon build-dashboard-data-mart --export-dir`` writes the per-table JSON
+    files consumed by ``--mart-dir``.
     """
     import json
     from autogis.core.agol.dashboard_refresh import refresh_dashboard_data
@@ -5058,13 +5093,34 @@ def build_report_package_cmd(spec_path, out_dir, site_id, event_label, report):
         load_deliverable_spec, assemble_figure_package)
     from autogis.core.common.qa import QACollector
 
+    _reject_report_path_in_artifact(report, out_dir)
     entries = load_deliverable_spec(Path(spec_path))
     qa = QACollector()
-    result = assemble_figure_package(entries, Path(out_dir),
-                                      site_id=site_id, event_label=event_label, qa=qa)
+    try:
+        result = assemble_figure_package(
+            entries, Path(out_dir), site_id=site_id,
+            event_label=event_label, qa=qa)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
     click.echo(f"Copied: {result.copied_count}  Missing: {result.missing_count}  "
                f"Out: {out_dir}")
     _render_qa(qa, report, "warning")
+
+
+@envmon.command("verify-report-package")
+@click.argument("package_dir", type=click.Path(exists=True, file_okay=False))
+@qa_report_options
+def verify_report_package_cmd(package_dir, report, fail_on):
+    """Verify a report package against its manifest and SHA-256 hashes."""
+    from autogis.core.envmon.report_package_verifier import verify_report_package
+
+    package_path = Path(package_dir).resolve()
+    _reject_report_path_in_artifact(report, package_path)
+    result = verify_report_package(package_path)
+    click.echo(
+        f"Manifest: {result.manifest_count}  Expected: {result.expected_count}  "
+        f"Verified: {result.verified_count}  Extra: {result.extra_count}")
+    _render_qa(result.qa, report, fail_on)
 
 
 @envmon.command("export-lab-request")
@@ -5139,16 +5195,24 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
 @click.option("--site", "site_id", required=True)
 @click.option("--event", "event_id", required=True)
 @click.option("--prior-event", "prior_event_id", default=None)
-def build_dashboard_data_mart_cmd(gdb, site_id, event_id, prior_event_id):
-    """Tool 6.7: truncate + repopulate the Dash_* mart tables (ArcGIS Pro)."""
+@click.option("--export-dir", default=None, type=click.Path(file_okay=False),
+              help="Also write one <TableName>.json file per Dash_* table for "
+                   "'agol refresh-dashboard --mart-dir'.")
+def build_dashboard_data_mart_cmd(gdb, site_id, event_id, prior_event_id,
+                                  export_dir):
+    """Tool 6.7: rebuild Dash_* tables and optionally export refresh JSON."""
     _guard("build-dashboard-data-mart")
     from autogis.core.envmon.dashboard_data_mart import build_dashboard_data_mart
     summary = build_dashboard_data_mart(gdb, site_id, event_id,
-                                        prior_event_id=prior_event_id)
+                                        prior_event_id=prior_event_id,
+                                        export_dir=export_dir)
     for table, n in summary.row_counts.items():
         click.echo(f"{table}: {n} row(s)")
     click.echo(f"Updated {len(summary.tables_updated)} table(s) "
                f"for {site_id}/{event_id}.")
+    if export_dir:
+        click.echo(f"Exported {len(summary.tables_updated)} JSON file(s) "
+                   f"to {export_dir}.")
 
 
 @envmon.command("build-exceedance-event")

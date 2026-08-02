@@ -19,6 +19,7 @@ Constraints:
     a wrong kwarg name throws before any QA check.
 """
 import csv
+import os
 import sqlite3
 import struct
 from pathlib import Path
@@ -473,6 +474,265 @@ def test_build_report_package(tmp_path):
     )
 
 
+def test_build_report_package_collision_is_a_clean_cli_error(tmp_path):
+    first = tmp_path / "a" / "result.csv"
+    second = tmp_path / "b" / "RESULT.csv"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text("first", encoding="utf-8")
+    second.write_text("second", encoding="utf-8")
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(yaml.dump({"files": [
+        {"path": str(first), "role": "data_csv"},
+        {"path": str(second), "role": "compliance_table"},
+    ]}), encoding="utf-8")
+    out_dir = tmp_path / "deliverable"
+
+    result = _run(
+        "envmon", "build-report-package", "--spec", str(spec_path),
+        "--out-dir", str(out_dir))
+
+    assert result.exit_code != 0
+    assert "destination collision" in result.output
+    assert not out_dir.exists()
+
+
+def test_build_report_package_rejects_report_inside_output(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(yaml.dump({"files": [
+        {"path": str(src), "role": "data_csv"},
+    ]}), encoding="utf-8")
+    package = tmp_path / "package"
+
+    result = _run(
+        "envmon", "build-report-package", "--spec", str(spec_path),
+        "--out-dir", str(package),
+        "--report", str(package / "manifest.csv"))
+
+    assert result.exit_code != 0
+    assert "must be outside the package directory" in result.output
+    assert not package.exists()
+
+
+def test_build_report_package_rejects_report_through_output_alias(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(yaml.dump({"files": [
+        {"path": str(src), "role": "data_csv"},
+    ]}), encoding="utf-8")
+    package = tmp_path / "package"
+    package.mkdir()
+    alias = tmp_path / "package-alias"
+    try:
+        alias.symlink_to(package, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = _run(
+        "envmon", "build-report-package", "--spec", str(spec_path),
+        "--out-dir", str(package),
+        "--report", str(alias / "manifest.csv"))
+
+    assert result.exit_code != 0
+    assert "must be outside the package directory" in result.output
+    assert not (package / "manifest.csv").exists()
+
+
+def test_build_report_package_rejects_report_hardlink_alias(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(yaml.dump({"files": [
+        {"path": str(src), "role": "data_csv"},
+    ]}), encoding="utf-8")
+    package = tmp_path / "package"
+    package.mkdir()
+    package_note = package / "operator-note.txt"
+    package_note.write_text("keep", encoding="utf-8")
+    report = tmp_path / "report.json"
+    try:
+        os.link(package_note, report)
+    except OSError as exc:
+        pytest.skip(f"hard links unavailable: {exc}")
+
+    result = _run(
+        "envmon", "build-report-package", "--spec", str(spec_path),
+        "--out-dir", str(package), "--report", str(report))
+
+    assert result.exit_code != 0
+    assert "must be outside the package directory" in result.output
+    assert package_note.read_text(encoding="utf-8") == "keep"
+    assert not (package / "manifest.csv").exists()
+
+
+def test_build_report_package_rejects_report_alternate_stream(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(yaml.dump({"files": [
+        {"path": str(src), "role": "data_csv"},
+    ]}), encoding="utf-8")
+    package = tmp_path / "package"
+
+    result = _run(
+        "envmon", "build-report-package", "--spec", str(spec_path),
+        "--out-dir", str(package),
+        "--report", str(tmp_path / "report.json:hidden"))
+
+    assert result.exit_code != 0
+    assert "must not name an alternate data stream" in result.output
+    assert not package.exists()
+
+
+def test_verify_report_package_cli_detects_tampering(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(yaml.dump({"files": [
+        {"path": str(src), "role": "data_csv"},
+    ]}), encoding="utf-8")
+    package = tmp_path / "package"
+    built = _run(
+        "envmon", "build-report-package", "--spec", str(spec_path),
+        "--out-dir", str(package))
+    assert built.exit_code == 0, built.output
+
+    clean = _run("envmon", "verify-report-package", str(package))
+    assert clean.exit_code == 0, clean.output
+    assert "Verified: 1" in clean.output
+
+    (package / "extra.txt").write_text("unmanifested", encoding="utf-8")
+    extra_default = _run("envmon", "verify-report-package", str(package))
+    assert extra_default.exit_code == 0, extra_default.output
+    extra_strict = _run(
+        "envmon", "verify-report-package", str(package),
+        "--fail-on", "warning")
+    assert extra_strict.exit_code == 1
+    (package / "extra.txt").unlink()
+
+    (package / "data" / "result.csv").write_text("tampered", encoding="utf-8")
+    report = tmp_path / "verification.json"
+    changed = _run(
+        "envmon", "verify-report-package", str(package),
+        "--report", str(report), "--fail-on", "error")
+    assert changed.exit_code == 1
+    assert "package_file_modified" in changed.output
+    assert report.exists()
+
+
+def test_verify_report_package_rejects_report_inside_package(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(yaml.dump({"files": [
+        {"path": str(src), "role": "data_csv"},
+    ]}), encoding="utf-8")
+    package = tmp_path / "package"
+    built = _run(
+        "envmon", "build-report-package", "--spec", str(spec_path),
+        "--out-dir", str(package))
+    assert built.exit_code == 0, built.output
+    manifest = package / "manifest.csv"
+    delivered = package / "data" / "result.csv"
+    original_manifest = manifest.read_bytes()
+    original_delivered = delivered.read_bytes()
+
+    for report_path in (manifest, delivered, package / "verification.json"):
+        result = _run(
+            "envmon", "verify-report-package", str(package),
+            "--report", str(report_path))
+        assert result.exit_code != 0
+        assert "must be outside the package directory" in result.output
+
+    assert manifest.read_bytes() == original_manifest
+    assert delivered.read_bytes() == original_delivered
+    assert not (package / "verification.json").exists()
+
+
+def test_verify_report_package_rejects_report_through_package_alias(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    package = tmp_path / "package"
+    from autogis.core.envmon.report_figure_package import assemble_figure_package
+    assemble_figure_package(
+        [{"path": str(src), "role": "data_csv"}], package)
+    alias = tmp_path / "package-alias"
+    try:
+        alias.symlink_to(package, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = _run(
+        "envmon", "verify-report-package", str(package),
+        "--report", str(alias / "verification.json"))
+
+    assert result.exit_code != 0
+    assert "must be outside the package directory" in result.output
+    assert not (package / "verification.json").exists()
+
+
+def test_verify_report_package_rejects_report_hardlinked_to_package(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    package = tmp_path / "package"
+    from autogis.core.envmon.report_figure_package import assemble_figure_package
+    assemble_figure_package(
+        [{"path": str(src), "role": "data_csv"}], package)
+    manifest = package / "manifest.csv"
+    original = manifest.read_bytes()
+    report = tmp_path / "verification.json"
+    try:
+        os.link(manifest, report)
+    except OSError as exc:
+        pytest.skip(f"hard links unavailable: {exc}")
+
+    result = _run(
+        "envmon", "verify-report-package", str(package),
+        "--report", str(report))
+
+    assert result.exit_code != 0
+    assert "must be outside the package directory" in result.output
+    assert manifest.read_bytes() == original
+    assert report.read_bytes() == original
+
+
+def test_verify_report_package_rejects_report_alternate_stream(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    package = tmp_path / "package"
+    from autogis.core.envmon.report_figure_package import assemble_figure_package
+    assemble_figure_package(
+        [{"path": str(src), "role": "data_csv"}], package)
+
+    result = _run(
+        "envmon", "verify-report-package", str(package),
+        "--report", str(tmp_path / "verification.json:hidden"))
+
+    assert result.exit_code != 0
+    assert "must not name an alternate data stream" in result.output
+
+
+def test_verify_report_package_can_replace_unrelated_external_report(tmp_path):
+    src = tmp_path / "result.csv"
+    src.write_text("sample,value\nA,1\n", encoding="utf-8")
+    package = tmp_path / "package"
+    from autogis.core.envmon.report_figure_package import assemble_figure_package
+    assemble_figure_package(
+        [{"path": str(src), "role": "data_csv"}], package)
+    report = tmp_path / "verification.json"
+    report.write_text("old", encoding="utf-8")
+
+    result = _run(
+        "envmon", "verify-report-package", str(package),
+        "--report", str(report))
+
+    assert result.exit_code == 0, result.output
+    assert '"status": "PASS"' in report.read_text(encoding="utf-8")
+
+
 # ===========================================================================
 # 11. build-report-appendix (Tool 9.2)
 # ===========================================================================
@@ -568,7 +828,40 @@ def test_build_dashboard_data_mart_guards_without_arcpy(tmp_path):
     result = _run(
         "envmon", "build-dashboard-data-mart", str(tmp_path / "x.gdb"),
         "--site", "H281", "--event", "2026Q2",
+        "--export-dir", str(tmp_path / "mart-json"),
     )
     # require_runtime raises RuntimeUnavailable -> ClickException -> exit 1.
     assert result.exit_code != 0
     assert "not registered" not in result.output  # registry KeyError would say this
+    assert "No such option" not in result.output
+
+
+def test_build_dashboard_data_mart_passes_export_dir(tmp_path, monkeypatch):
+    from autogis.core.envmon.dashboard_data_mart import MartSummary
+
+    calls = []
+
+    def fake_builder(gdb, site_id, event_id, prior_event_id=None, *,
+                     export_dir=None):
+        calls.append(export_dir)
+        return MartSummary(
+            site_id=site_id, event_id=event_id, built_at="2026-08-01",
+            tables_updated=["Dash_SiteStatus"],
+            row_counts={"Dash_SiteStatus": 1})
+
+    monkeypatch.setattr("autogis.adapters.cli._guard", lambda _name: None)
+    monkeypatch.setattr(
+        "autogis.core.envmon.dashboard_data_mart.build_dashboard_data_mart",
+        fake_builder)
+    base = [
+        "envmon", "build-dashboard-data-mart", str(tmp_path / "x.gdb"),
+        "--site", "H281", "--event", "2026Q2",
+    ]
+
+    without_export = _run(*base)
+    assert without_export.exit_code == 0, without_export.output
+    export_dir = tmp_path / "mart-json"
+    with_export = _run(*base, "--export-dir", str(export_dir))
+    assert with_export.exit_code == 0, with_export.output
+    assert calls == [None, str(export_dir)]
+    assert "Exported 1 JSON file(s)" in with_export.output

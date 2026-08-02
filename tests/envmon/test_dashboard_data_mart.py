@@ -7,6 +7,9 @@ is marked ``# pragma: no cover``). Output dict keys follow the Dash_* schemas in
 gdb_schema.py.
 """
 import dataclasses
+import json
+
+import pytest
 
 from autogis.core.envmon.dashboard_data_mart import (
     MartSummary,
@@ -20,6 +23,7 @@ from autogis.core.envmon.dashboard_data_mart import (
     build_dash_field_qa,
     build_dash_lab_qa,
     build_dash_open_issues,
+    export_dashboard_json,
 )
 
 
@@ -161,3 +165,79 @@ def test_mart_summary_is_json_serializable():
                     row_counts={"Dash_SiteStatus": 1})
     d = dataclasses.asdict(s)
     assert d["row_counts"]["Dash_SiteStatus"] == 1
+
+
+def test_export_dashboard_json_matches_refresh_dashboard_input(tmp_path):
+    tables = {
+        "Dash_WellStatus": [{"SiteName": "Café", "SiteID": "S1"}],
+        "Dash_SiteStatus": [],
+    }
+
+    paths = export_dashboard_json(tables, tmp_path)
+
+    assert paths == [
+        tmp_path / "Dash_SiteStatus.json",
+        tmp_path / "Dash_WellStatus.json",
+    ]
+    loaded = {
+        p.stem: json.loads(p.read_text(encoding="utf-8"))
+        for p in tmp_path.glob("Dash_*.json")
+    }
+    assert loaded == tables
+    well_path = tmp_path / "Dash_WellStatus.json"
+    first_bytes = well_path.read_bytes()
+    assert "Café".encode() in first_bytes
+
+    # Re-exporting equivalent data with different insertion order overwrites
+    # the prior artifact without changing its deterministic bytes.
+    export_dashboard_json({
+        "Dash_SiteStatus": [],
+        "Dash_WellStatus": [{"SiteID": "S1", "SiteName": "Café"}],
+    }, tmp_path)
+    assert well_path.read_bytes() == first_bytes
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_export_dashboard_json_preserves_existing_file_on_replace_failure(
+    tmp_path, monkeypatch,
+):
+    target = tmp_path / "Dash_SiteStatus.json"
+    target.write_text("old", encoding="utf-8")
+
+    def fail_replace(_source, _target):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(
+        "autogis.core.envmon.dashboard_data_mart.os.replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        export_dashboard_json({"Dash_SiteStatus": [{"SiteID": "S1"}]}, tmp_path)
+
+    assert target.read_text(encoding="utf-8") == "old"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_export_dashboard_json_rejects_unsafe_table_name(tmp_path):
+    with pytest.raises(ValueError, match="Invalid dashboard table name"):
+        export_dashboard_json({"../Dash_Bad": []}, tmp_path)
+
+    assert not list(tmp_path.iterdir())
+
+
+def test_export_dashboard_json_serializes_before_writing(tmp_path):
+    with pytest.raises(ValueError, match="Out of range float values"):
+        export_dashboard_json({"Dash_BadValue": [{"Result": float("nan")}]},
+                              tmp_path)
+
+    assert not list(tmp_path.iterdir())
+
+
+def test_export_dashboard_json_rejects_stale_dash_file(tmp_path):
+    stale = tmp_path / "Dash_FormerTable.json"
+    stale.write_text("[]\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Dash_FormerTable.json"):
+        export_dashboard_json({"Dash_SiteStatus": []}, tmp_path)
+
+    assert stale.read_text(encoding="utf-8") == "[]\n"
+    assert not (tmp_path / "Dash_SiteStatus.json").exists()

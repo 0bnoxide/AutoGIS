@@ -162,15 +162,17 @@ FOLDER_PARAMS = [
     ("envmon gen-map-series", "out_dir"),
     ("envmon merge-event-results", "results_dir"),
     ("envmon build-report-package", "out_dir"),
+    ("envmon verify-report-package", "package_dir"),
+    ("envmon build-dashboard-data-mart", "export_dir"),
     ("envmon batch-import-workbooks", "output_dir"),
     ("envmon export-civil3d", "out_dir"),
     ("envmon sync-survey123", "out_dir"),
 ]
 
 
-def test_the_thirteen_folder_params_are_declared_dir_only():
+def test_the_fifteen_folder_params_are_declared_dir_only():
     from autogis.adapters.gui.introspect import introspect_cli
-    assert len(FOLDER_PARAMS) == 13, "derive the real list; do not guess"
+    assert len(FOLDER_PARAMS) == 15, "derive the real list; do not guess"
     forms = {f.label: f for f in introspect_cli()}
     for label, dest in FOLDER_PARAMS:
         field = next(x for x in forms[label].fields if x.name == dest)
