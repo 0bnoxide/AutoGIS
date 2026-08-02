@@ -41,15 +41,18 @@ criteria (ADR-0111), and the four deferred §11 AI tools.
 A separate [Survey123 optional add-on roadmap](docs/survey123-add-on-roadmap.md)
 defines an opt-in install boundary plus eight phases and four milestones
 (ADR-0112). It does not block or reorder the core production sequence above.
-This track is no longer pure planning — three phases have shipped code, each
+This track is no longer pure planning — four phases have shipped code, each
 on an explicit user decision rather than the roadmap's own momentum:
 **Phase 0 slice A** (lifecycle SampleID contract, ADR-0113, PR #359; the
 envelope leg was deliberately deferred to Phase 2), **Phase 1** in full
 (`validate-survey-form` + `diff-survey-schema`, both headless with no portal
-I/O, ADR-0115, PR #364), and **Phase 2 slice 1** (canonical envelope +
+I/O, ADR-0115, PR #364), **Phase 2 slice 1** (canonical envelope +
 `envmon sync-survey123` + the `survey123` extra, ADR-0116 — its live
-non-production gate legs are owner-gated). The rest of Phase 0/2 and Phases
-3–7 remain to be started. See
+non-production gate legs are owner-gated), and **Phase 3** (five-source
+presence-matrix event reconciliation, `envmon reconcile-event`, ADR-0123 —
+its owner-gated exit-gate leg, a sanitized real event reconciling
+end-to-end, is a Proposed sign-off item). The rest of Phase 0/2 and Phases
+4–7 remain to be started. See
 [CLAUDE.md](CLAUDE.md#survey123-optional-add-on-roadmap) for the dated
 per-phase gate log.
 
@@ -95,6 +98,7 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [ValidateSurveyForm](autogis/core/envmon/survey_schema.py) | S123-1.1 | `envmon validate-survey-form` | S123 Phase 1: static XLSForm validation — structure, choices, references, the ADR-0113 SampleID contract, and site/event config cross-checks (headless, no portal, ADR-0115) |
 | [DiffSurveySchema](autogis/core/envmon/survey_schema.py) | S123-1.2 | `envmon diff-survey-schema` | S123 Phase 1: classify XLSForm changes vs a baseline form and/or a saved feature-layer spec as safe / review-required / destructive; exits 0/2/3 (headless, no portal, ADR-0115) |
 | [SyncSurvey123Submissions](autogis/core/envmon/survey_sync.py) | — | `envmon sync-survey123` | S123 Phase 2: incremental read-only pull of new/changed/deleted submissions into staging envelopes + submissions CSV (live AGOL, `survey123` extra, ADR-0116) |
+| [ReconcileMonitoringEvent](autogis/core/envmon/reconcile_event.py) | — | `envmon reconcile-event` | S123 Phase 3: five-source presence-matrix reconciliation (plan/field/COC/lab/GDB); six-outcome taxonomy, exit 2 on residual/needs_review (headless, ADR-0123) |
 | [EvaluateReportReadiness](autogis/core/envmon/evaluate_readiness.py) | 9.0b | `envmon evaluate-readiness` | Tool: report-readiness gate — checks required tools ran successfully |
 | [ExportAnalyticalSummaryTables](autogis/core/envmon/export_summary_tables.py) | 9.1 | `envmon export-report-format-summary-tables` / `envmon export-summary` | Tool: export Env_AnalyticalResults to formatted report-appendix tables |
 | [GenerateMonitoringEventReport](autogis/core/envmon/generate_event_report.py) | — | `envmon generate-event-report` | Assemble a monitoring event report (Markdown or `--format html`, ADR-0083) from CSV tool outputs (post-roadmap extra) |
@@ -368,6 +372,7 @@ not by flag.
 | `autogis envmon validate-survey-form` | CLOUD | `core/envmon/survey_schema.py` |
 | `autogis envmon diff-survey-schema` | CLOUD | `core/envmon/survey_schema.py` |
 | `autogis envmon sync-survey123` | CLOUD (AGOL auth; `survey123` extra) | `core/envmon/survey_sync.py` |
+| `autogis envmon reconcile-event` | CLOUD | `core/envmon/reconcile_event.py` |
 | `autogis envmon evaluate-readiness` | CLOUD | `core/envmon/evaluate_readiness.py` |
 | `autogis envmon export-summary` | CLOUD | `core/envmon/export_summary.py` |
 | `autogis envmon export-report-format-summary-tables` | CLOUD | `core/envmon/export_summary_tables.py` |

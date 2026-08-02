@@ -122,7 +122,11 @@ _SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
 # Semantic nonzero exits that are findings, not failures (ADR-0115):
 # diff-survey-schema exits 2 (review-required) / 3 (destructive drift).
 # Without this, every drift finding would be mislogged as a tool error.
-_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}}
+# reconcile-event exits 2 for a non-clean (residual/needs_review) event --
+# also a finding, not a failure (not self-logging like `coc`, so it needs
+# an explicit entry here or every discrepancy run-history record would be
+# mislogged as status='error').
+_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}, "reconcile-event": {2}}
 
 
 def _record_tool_name(ctx) -> str:
@@ -2477,6 +2481,10 @@ def create_sampling_event_cmd(site_path, event_path, analytes_path, out_dir):
 # 2 = reconciliation found discrepancies (stable code for automation).
 _COC_DISCREPANCY_EXIT = 2
 
+# reconcile-event: exit 2 = event does not reconcile (residual/needs_review),
+# distinct from exit 1 (QA fail-on breach) — same convention as _COC_DISCREPANCY_EXIT.
+_RECONCILE_EVENT_DISCREPANCY_EXIT = 2
+
 # Targets reachable via `advance`. `reconciled` is deliberately excluded — it
 # is only reachable through `reconcile`, so a COC cannot be marked reconciled
 # without a recorded planned-vs-received comparison (the Phase 6 gate).
@@ -4568,6 +4576,261 @@ def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
                                  duplicate_markers=markers)
     qa = reconcile_to_qa(result)
     _render_qa(qa, report, fail_on)
+
+
+def _load_json_option(path, option_name: str):
+    """Load a JSON object option. Malformed JSON / an unreadable file / a
+    non-object top-level value are usage mistakes at the CLI trust boundary,
+    not crashes -- wrap them as ClickException instead of letting json.loads
+    raise a raw traceback or a later TypeError."""
+    if not path:
+        return None
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise click.ClickException(f"{option_name}: could not read/parse {path}: {exc}")
+    if not isinstance(data, dict):
+        raise click.ClickException(
+            f"{option_name}: {path} must be a JSON object (got "
+            f"{type(data).__name__}).")
+    return data
+
+
+@envmon.command("reconcile-event")
+@click.option("--site", "site_path", type=click.Path(exists=True),
+              help="Site config (plan leg, with --event and --analytes).")
+@click.option("--event", "event_path", type=click.Path(exists=True),
+              help="Event config (plan leg).")
+@click.option("--analytes", "analytes_path", type=click.Path(exists=True),
+              help="Analyte dictionary (plan leg).")
+@click.option("--site-id", "site_id", default="",
+              help="Site id for field/lab/gdb legs when --site is not given.")
+@click.option("--submissions-csv", type=click.Path(exists=True),
+              help="Raw Survey123 submissions CSV (field leg; normalized in-process).")
+@click.option("--custody-store", type=click.Path(exists=True),
+              help="Custody store JSON (COC leg).")
+@click.option("--lab-results-csv", type=click.Path(exists=True),
+              help="Canonical AnalyticalResultRecord CSV (lab leg).")
+@click.option("--gdb-samples-csv", type=click.Path(exists=True),
+              help="CSV export of Env_Samples (GDB leg).")
+@click.option("--dry-wells", type=click.Path(exists=True),
+              help="Optional JSON {LocationID: reason} for dry/inactive wells.")
+@click.option("--presence-overrides", type=click.Path(exists=True),
+              help="Optional JSON {SampleID: {source: required|optional|forbidden}}.")
+@click.option("--out-csv", required=True, type=click.Path())
+@click.option("--out-json", required=True, type=click.Path())
+@qa_report_options
+def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
+                        submissions_csv, custody_store, lab_results_csv,
+                        gdb_samples_csv, dry_wells, presence_overrides,
+                        out_csv, out_json, report, fail_on):
+    """Reconcile one event's samples across plan/field/COC/lab/GDB.
+
+    At least one of the five source legs (--site+--event+--analytes,
+    --submissions-csv, --custody-store, --lab-results-csv,
+    --gdb-samples-csv) must be given. Exit 2 signals the event does not
+    reconcile cleanly (residual imbalance or a needs_review row) --
+    distinct from exit 1, which is a QA --fail-on breach.
+    """
+    import csv as _csv_mod
+    from ..core.common.qa import QACollector, SEV_INFO, SEV_WARNING
+    from ..core.common.records_csv import read_records_csv
+    from ..core.envmon import custody as custody_mod
+    from ..core.envmon import reconcile_event as engine
+    from ..core.envmon.gdb_schema import AnalyticalResultRecord, SampleRecord
+    from ..core.envmon.normalize_survey123 import load_survey123_csv_submissions
+
+    plan_given = [p for p in (site_path, event_path, analytes_path) if p]
+    if plan_given and len(plan_given) != 3:
+        raise click.UsageError("--site, --event and --analytes go together.")
+    legs, garbled, observations = {}, [], {}
+    qa = QACollector()
+
+    if plan_given:
+        from ..core.common.config import (
+            SiteConfig, load_analyte_dictionary, ConfigError)
+        from ..core.envmon.create_sampling_event import (
+            build_sampling_event_plan, load_event_config)
+        try:
+            site_cfg = SiteConfig.load(Path(site_path))
+            event_cfg = load_event_config(Path(event_path))
+            analyte_dict = load_analyte_dictionary(Path(analytes_path))
+        except ConfigError as exc:
+            raise click.ClickException(str(exc))
+        site_id = site_id or site_cfg.data.get("site_id", "")
+        try:
+            plan = build_sampling_event_plan(
+                site_cfg.data, event_cfg, analyte_dict, run_id=str(uuid.uuid4()))
+        except (ValueError, KeyError) as exc:
+            raise click.ClickException(f"plan leg failed: {exc}")
+        analyte_groups_cfg = event_cfg.get("analyte_groups", {})
+        unresolved_groups: set = set()
+        by_id = {}
+        for row in plan.expected_samples:      # dedupe rows, union analyte groups
+            # Planner output is canonical uppercase already, but normalize the
+            # aggregation key anyway -- grouping by raw id here (like the lab
+            # leg below) would silently drop a case-variant row's analytes
+            # instead of union-ing them (F1).
+            key = engine.normalize_key(row.sample_id)
+            attrs = by_id.setdefault(key, {
+                "location_id": row.location_id, "event_date": row.event_date,
+                "matrix": row.matrix, "coc_number": row.coc_number,
+                "analytes": set()})
+            # Plan analytes must be canonical names (same vocabulary the lab
+            # leg stores as AnalyteCanonicalName), not the group label --
+            # expand via the same event_config["analyte_groups"] mapping
+            # build_sampling_event_plan itself resolves groups from. A group
+            # value that isn't a list (e.g. a YAML scalar) mirrors
+            # build_sampling_event_plan's own `isinstance(names, list)` guard
+            # on the validation side -- treat it the same as "no members".
+            members = analyte_groups_cfg.get(row.analyte_group)
+            if isinstance(members, list) and members:
+                attrs["analytes"].update(members)
+            else:
+                # No member list for this group: fall back to the group name
+                # so the set compare has something, but say so loudly --
+                # silent group-vs-canonical mismatch is the bug this fixes.
+                # One warning per group (not per row) keeps a 30-well event
+                # from drowning --fail-on warning in duplicate records.
+                attrs["analytes"].add(row.analyte_group)
+                if row.analyte_group not in unresolved_groups:
+                    unresolved_groups.add(row.analyte_group)
+                    qa.add(SEV_WARNING, "analyte_group_unresolved",
+                           f"analyte group '{row.analyte_group}' has no "
+                           "member list in analyte_groups; using the group "
+                           "name as a stand-in analyte (will not match lab "
+                           "canonical names)")
+        legs["plan"] = [engine.SourceRow(sid, attrs) for sid, attrs in by_id.items()]
+
+    if submissions_csv:
+        if not site_id:
+            raise click.UsageError("--site-id (or the plan leg) is required "
+                                   "with --submissions-csv.")
+        try:
+            water_levels, samples = load_survey123_csv_submissions(
+                Path(submissions_csv), site_id, "reconcile", qa)
+        except (UnicodeDecodeError, OSError, _csv_mod.Error) as exc:
+            raise click.ClickException(
+                f"--submissions-csv: could not read {submissions_csv}: {exc}")
+        observations["water_levels"] = len(water_levels)
+        rows = []
+        for s in samples:
+            if not (s.get("SampleID") or "").strip():
+                garbled.append(str(s))         # sample-form row, id-less: needs_review
+            else:
+                # build_sample_id output is canonical uppercase already;
+                # normalize anyway (F1 audit) -- idempotent, engine normalizes
+                # again in build_grid.
+                rows.append(engine.SourceRow(engine.normalize_key(s["SampleID"]), s))
+        legs["field"] = rows
+
+    if custody_store:
+        try:
+            store = custody_mod.load_store(Path(custody_store))
+        except custody_mod.CustodyError as exc:
+            raise click.ClickException(f"custody store unreadable: {exc}")
+        rows = []
+        for rec in store.values():
+            # Normalize before dedup (F1 audit): a case-variant sample_id
+            # within the same COC record must collapse to one row too.
+            for sid in dict.fromkeys(
+                    engine.normalize_key(s) for s in rec.sample_ids):
+                rows.append(engine.SourceRow(sid, {
+                    "coc_number": rec.coc_number, "event_date": rec.event_date,
+                    "state": rec.state}))
+        legs["coc"] = rows
+
+    if lab_results_csv:
+        records = read_records_csv(Path(lab_results_csv), AnalyticalResultRecord)
+        n_empty = sum(1 for r in records if not (r.SampleID or "").strip())
+        if records and n_empty == len(records):
+            # Every row yielded a blank SampleID -- read_records_csv fills an
+            # unmatched column with "", so this is a wrong-header file, not a
+            # legitimately empty leg (F2b): fail loudly instead of silently
+            # reconciling zero lab rows.
+            raise click.ClickException(
+                "--lab-results-csv: no usable SampleID column -- wrong header?")
+        if n_empty:
+            qa.add(SEV_WARNING, "lab_results_empty_sample_id",
+                   f"--lab-results-csv: {n_empty} record(s) have an empty "
+                   "SampleID and were skipped")
+        by_id = {}
+        for r in records:                       # QC rows included: presence needs them
+            if not (r.SampleID or "").strip():
+                continue
+            # Group by the normalized key (F1), not the raw id -- otherwise a
+            # case-variant SampleID across rows opens a second dict entry and
+            # build_grid's first-observation-wins silently drops that row's
+            # analytes instead of union-ing them.
+            key = engine.normalize_key(r.SampleID)
+            attrs = by_id.setdefault(key, {
+                "location_id": r.LocationID, "sample_date": str(r.SampleDate or ""),
+                "matrix": r.Matrix, "analytes": set()})
+            if r.AnalyteCanonicalName:
+                attrs["analytes"].add(r.AnalyteCanonicalName)
+        legs["lab"] = [engine.SourceRow(sid, attrs) for sid, attrs in by_id.items()]
+
+    if gdb_samples_csv:
+        records = read_records_csv(Path(gdb_samples_csv), SampleRecord)
+        n_empty = sum(1 for r in records if not (r.SampleID or "").strip())
+        if records and n_empty == len(records):
+            raise click.ClickException(
+                "--gdb-samples-csv: no usable SampleID column -- wrong header?")
+        if n_empty:
+            qa.add(SEV_WARNING, "gdb_samples_empty_sample_id",
+                   f"--gdb-samples-csv: {n_empty} record(s) have an empty "
+                   "SampleID and were skipped")
+        legs["gdb"] = [engine.SourceRow(engine.normalize_key(r.SampleID), {
+            "location_id": r.LocationID, "sample_date": str(r.SampleDate or ""),
+            "matrix": r.Matrix})
+            for r in records if (r.SampleID or "").strip()]
+
+    if not legs:
+        raise click.UsageError("Provide at least one source leg.")
+
+    dry = _load_json_option(dry_wells, "--dry-wells")
+    overrides = _load_json_option(presence_overrides, "--presence-overrides")
+    if overrides is not None:
+        normalized_overrides = {}
+        for sid, per_source in overrides.items():
+            if not isinstance(per_source, dict):
+                raise click.UsageError(
+                    f"--presence-overrides: value for {sid!r} must be an "
+                    "object mapping source to required|optional|forbidden.")
+            key = engine.normalize_key(str(sid))
+            norm_source = {}
+            for source, value in per_source.items():
+                if source not in engine.SOURCES:
+                    raise click.UsageError(
+                        f"--presence-overrides: unknown source {source!r} for "
+                        f"{sid!r} (expected one of {engine.SOURCES}).")
+                v = str(value).strip().lower()
+                if v not in (engine.REQUIRED, engine.OPTIONAL, engine.FORBIDDEN):
+                    raise click.UsageError(
+                        f"--presence-overrides: unknown value {value!r} for "
+                        f"{sid!r}/{source!r} (expected required|optional|"
+                        "forbidden).")
+                norm_source[source] = v
+            normalized_overrides[key] = norm_source
+        overrides = normalized_overrides
+    result = engine.reconcile_event(legs, overrides=overrides, dry_wells=dry,
+                                    garbled=garbled, observations=observations)
+
+    engine.rows_to_csv(result, Path(out_csv))
+    Path(out_json).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_json).write_text(
+        json.dumps(engine.summary_dict(result), indent=2, sort_keys=True,
+                   default=str) + "\n", encoding="utf-8")
+    for row in result.rows:
+        if row.outcome != engine.OUTCOME_RECONCILED:
+            qa.add(SEV_WARNING, f"outcome_{row.outcome}",
+                   f"{row.key}: {row.outcome} ({';'.join(row.codes)})")
+    qa.add(SEV_INFO, "reconcile_summary",
+           f"residual={result.residual} clean={result.clean} "
+           f"legs={','.join(result.legs_run)}")
+    _render_qa(qa, report, fail_on)
+    if not result.clean:
+        raise SystemExit(_RECONCILE_EVENT_DISCREPANCY_EXIT)
 
 
 @envmon.command("route-survey123")

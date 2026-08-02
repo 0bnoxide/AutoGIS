@@ -95,6 +95,7 @@ TOOLS: dict[str, Runtime] = {
     "run-gw-model-pipeline": Runtime.LOCAL,  # Phase-5 slice 1 — TIN/IDW LOO CV, needs arcpy
     "approve-gw-model": Runtime.LOCAL,  # Phase-5 slice 1 — GW_ModelRun field edit, needs arcpy
     "build-conc-surface": Runtime.LOCAL,  # Phase-5 slice 2 — raster interpolation, needs arcpy
+    "reconcile-event": Runtime.CLOUD,  # Survey123 Phase 3 five-source event reconciliation (headless)
 }
 
 
@@ -281,6 +282,9 @@ _REGISTRY_SEED = [
      "field", "Pull new/changed Survey123 submissions into staging (live, read-only)"),
     ("reconcile-survey123-lab", "ReconcileSurvey123Lab", "", "CLOUD", "stable",
      "qa", "Reconcile Survey123 field data against lab results"),
+    ("reconcile-event", "ReconcileMonitoringEvent", "", "CLOUD", "stable", "qa",
+     "Five-source event reconciliation: plan/Survey123/COC/lab/GDB presence "
+     "matrix with per-sample outcomes and zero-residual balance"),
     ("process-level-loop", "ProcessLevelLoop", "8.1", "CLOUD", "stable",
      "field", "Process a differential level loop"),
     ("drone-checkpoint-qa", "DroneGCPCheckpointQA", "11.1", "CLOUD", "stable",
