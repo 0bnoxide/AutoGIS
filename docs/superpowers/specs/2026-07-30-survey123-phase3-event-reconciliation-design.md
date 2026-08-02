@@ -183,10 +183,31 @@ once the columns exist.
 
 ## 6. Command surface
 
-`envmon reconcile-event` (register in `runtime/capabilities.py`). Inputs are
-files the pipeline already produces: plan JSON, normalized submissions CSV,
-custody store JSON, lab CSV (EDD canonical), GDB snapshot/canonical rows;
-plus optional dry-wells mapping (D8). Any of the five omissible (§3 step 1).
+`envmon reconcile-event` (register in `runtime/capabilities.py`). Inputs
+(**amended 2026-08-01 after format verification** — no plan file or GDB row
+export exists as an artifact today):
+
+- **Plan leg:** rebuilt in-process from `--site/--event/--analytes` config
+  paths via `build_sampling_event_plan` — the exact `envmon coc generate`
+  pattern (`cli.py:2519-2536`). There is no persisted SamplingEventPlan.
+- **Field leg:** raw Survey123 submissions CSV, normalized in-process via
+  `load_survey123_csv_submissions` (`normalize_survey123.py:140-156`) — no
+  tool writes normalized rows to a file. Its two-stream return (water
+  levels, samples) *is* the observation partition (§4.4).
+- **COC leg:** custody store JSON via `custody.load_store`.
+- **Lab leg:** canonical `AnalyticalResultRecord` CSV via `read_records_csv`
+  (same contract as `export-wqx`, `cli.py:2740-2743`); QC-typed rows kept
+  for presence.
+- **GDB leg:** CSV export of `Env_Samples` via
+  `read_records_csv(path, SampleRecord)` (same documented-CSV convention as
+  `evaluate-rpd-qa --samples-csv`, `cli.py:625-628`) — nothing exports GDB
+  rows headlessly today, so the operator supplies the table export.
+
+Plus optional dry-wells mapping (D8) and optional presence-overrides JSON
+(D5). Any of the five legs omissible (§3 step 1). Event-window filtering
+(§7) is thinned to a deferral: plan/custody are event-scoped by
+construction and the three CSV legs are event exports in practice; a date
+filter is additive later (record in the ADR).
 
 Outputs: per-sample CSV (outcome, origin, five presence flags, last stage
 reached, detail codes) — the progress-billing artifact; JSON summary
