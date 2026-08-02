@@ -1,4 +1,4 @@
-# ADR-016: Lab EDD Importer — per-lab YAML profile + gdb_schema output types
+# ADR-0016: Lab EDD Importer — per-lab YAML profile + gdb_schema output types
 
 **Status:** Accepted
 

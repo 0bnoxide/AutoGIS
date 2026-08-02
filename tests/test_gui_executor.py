@@ -153,12 +153,35 @@ def test_build_argv_flags_and_boolean_pairs():
     assert "--incremental" in argv2
 
 
+def test_build_argv_rejects_non_bool_flag_value():
+    """#400: a recipe writing ``landxml: "false"`` (a quoted string) used to
+    be truthiness-coerced and emit --landxml -- a silent inversion of the
+    author's intent, because a flag never reaches the child's Click parser
+    where the usual "child refuses -> clean HALT" backstop would catch it."""
+    with pytest.raises(ValueError, match="landxml must be true or false"):
+        build_argv(("envmon", "export-civil3d"),
+                   {"points_csv": "pts.csv", "crs": "EPSG:2232",
+                    "landxml": "false"})
+
+
 def test_build_argv_nargs_option_emits_separate_tokens():
     """#351: a nargs>1 option (download-dem's --bbox) must reach argv as
     the option flag followed by N separate value tokens, not one repr'd
     tuple -- Click's own nargs parser expects exactly that shape."""
     argv = build_argv(("envmon", "download-dem"),
                       {"bbox": ("-105", "39", "-104", "40")})
+    i = argv.index("--bbox")
+    assert argv[i + 1:i + 5] == ["-105", "39", "-104", "40"]
+
+
+def test_build_argv_nargs_string_value_is_whitespace_split():
+    """#406: a hand-authored recipe writing ``bbox: "-105 39 -104 40"`` (one
+    YAML string) loaded and ran in the GUI (``forms._normalize`` splits it)
+    but halted headless ``run-recipe`` mid-workflow -- build_argv emitted it
+    as a single argv token the child's Click nargs parser rejects. Split it
+    here, the one place both consumers route through."""
+    argv = build_argv(("envmon", "download-dem"),
+                      {"bbox": "-105 39 -104 40"})
     i = argv.index("--bbox")
     assert argv[i + 1:i + 5] == ["-105", "39", "-104", "40"]
 

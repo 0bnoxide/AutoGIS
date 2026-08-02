@@ -14,6 +14,10 @@ A PR number or a branch. Get the diff:
 - PR: `gh pr diff <n>`
 - branch: `git diff main...HEAD`
 Also read the full new/changed files (a diff alone hides context) with Read.
+Record the exact reviewed head with `git rev-parse HEAD` or the PR head SHA.
+Inspect the diff and files and form your own probe classifications before
+comparing them with any author-supplied failure-mode preflight. If the head
+changes afterward, the verdict is stale and must be rerun.
 
 ## What to review
 
@@ -73,6 +77,7 @@ Also read the full new/changed files (a diff alone hides context) with Read.
 - A **Failure-mode probes** table with every probe ID exactly once, a
   `PASS / FAIL / N/A` result, and concrete evidence (command/test or N/A reason).
   Tie each FAIL to a finding. A bare pytest summary is not probe evidence.
+- The exact reviewed head SHA.
 - The pytest result (pass/fail with the summary line).
 - A final verdict line: `VERDICT: APPROVE` or `VERDICT: REQUEST CHANGES`.
 Be brief and specific. Flag substantive issues, not style preferences.

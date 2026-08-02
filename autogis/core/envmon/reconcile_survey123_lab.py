@@ -83,11 +83,23 @@ def reconcile_field_lab(
     result = ReconcileS123LabResult()
     unmatched_lab = list(lab_samples)
 
-    for fs in field_samples:
-        # exact match first
+    # Two passes, not one interleaved pass (#395): every exact match is
+    # resolved across *all* field samples before any fuzzy match consumes a
+    # lab record. Single-pass matching let an earlier typo'd ID fuzzy-claim
+    # the lab record that a later field sample matched exactly, silently
+    # pairing the wrong two and reporting the true owner as field_only.
+    exact_by_index: dict[int, LabSample] = {}
+    for i, fs in enumerate(field_samples):
         exact = next((ls for ls in unmatched_lab if ls.sample_id == fs.sample_id), None)
         if exact:
             unmatched_lab.remove(exact)
+            exact_by_index[i] = exact
+
+    # Pass 2 walks field samples in input order so matched/field_only keep
+    # their original ordering.
+    for i, fs in enumerate(field_samples):
+        exact = exact_by_index.get(i)
+        if exact:
             _check_pair(result, fs, exact)
             continue
         # fuzzy match - consider all unmatched lab samples, except that a

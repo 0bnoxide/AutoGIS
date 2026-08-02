@@ -1,8 +1,9 @@
 import ast
-import importlib.util, pathlib
+import importlib.util, json, pathlib
 from types import SimpleNamespace
 
 import autogis
+import pytest
 
 
 def _load_pyt_class(name):
@@ -13,14 +14,53 @@ def _load_pyt_class(name):
                if isinstance(node, ast.ClassDef) and node.name == name)
     module = ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[]))
     namespace = {
+        "json": json,
         "Path": pathlib.Path,
         "arcpy": SimpleNamespace(
-            env=SimpleNamespace(workspace=r"C:\data\site.gdb")),
+            env=SimpleNamespace(workspace=r"C:\data\site.gdb"),
+            ExecuteError=RuntimeError),
+        "SiteConfig": SimpleNamespace(load=lambda path: object()),
+        "ParserProfile": SimpleNamespace(load=lambda path: object()),
         "toolbox_core": SimpleNamespace(
             record_pyt_run=lambda *args, **kwargs: lambda func: func),
     }
     exec(compile(module, str(pyt), "exec"), namespace)
     return namespace[name]
+
+
+def test_import_to_gdb_raises_when_summary_fails(monkeypatch):
+    from autogis.adapters import guard
+    from autogis.core.envmon import import_to_gdb
+
+    monkeypatch.setattr(guard, "require_runtime", lambda tool: None)
+    monkeypatch.setattr(
+        import_to_gdb, "run_import",
+        lambda **kwargs: {"qa_status": "FAIL", "counts_parsed": {}})
+    params = [
+        SimpleNamespace(name=name, valueAsText="x", value=False)
+        for name in (
+            "workbook", "gdb", "site_config", "parser_profile",
+            "analyte_dictionary", "screening_levels", "qa_output_dir", "mode",
+            "matrix_filter", "batch_id_to_replace", "event_date",
+            "allow_duplicates", "allow_errors",
+        )
+    ]
+
+    class Messages:
+        def __init__(self):
+            self.errors = []
+
+        def addMessage(self, message):
+            pass
+
+        def addErrorMessage(self, message):
+            self.errors.append(message)
+
+    messages = Messages()
+    with pytest.raises(RuntimeError):
+        _load_pyt_class("ImportToGdb")().execute(params, messages)
+
+    assert messages.errors
 
 
 class _FakeParameter:
@@ -103,6 +143,7 @@ def test_redirect_only_pyt_tools_use_shared_run_recorder():
         "RunGWModelPipeline": "run-gw-model-pipeline",
         "ApproveGWModel": "approve-gw-model",
         "BuildConcentrationSurface": "build-conc-surface",
+        "ValidateDatabase": "validate-db",
         "ExportFigures": "export-figures",
         "FullPipeline": "full-pipeline",
         "ReconcileSampleLocations": "reconcile-locations",

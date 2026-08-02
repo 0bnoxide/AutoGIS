@@ -1,4 +1,4 @@
-# ADR-021: BuildSurvey123XLSFormFromConfig — headless openpyxl tool with event_config.yaml
+# ADR-0021: BuildSurvey123XLSFormFromConfig — headless openpyxl tool with event_config.yaml
 
 **Status:** Accepted
 
@@ -60,12 +60,15 @@ DepthToWater_ft (decimal, GW hint), QAFlags (select_multiple), Notes (text).
 SampleID calculate expression: `concat(${WellID}, "-", format-date(${SamplingDate},
 "%Y%m%d"), "-", ${Matrix})`.
 
-> **Amended by ADR-0113 (2026-07-25):** the calculate now appends a field-duplicate
-> suffix — `concat(${WellID}, "-", format-date(${SamplingDate}, "%Y%m%d"), "-",
-> ${Matrix}, if(selected(${QAFlags}, "field_dup"), "-FD", ""))` — and is emitted by
-> `core/envmon/sample_id.xform_sample_id_calc()` rather than written inline here.
-> The question list above is unchanged: the duplicate leg reads the existing
-> `QAFlags` choice `field_dup` instead of adding a question.
+> **Amended by ADR-0113 (2026-07-25) and issue #361 (2026-07-30):** the
+> calculate appends one of two distinct field-duplicate suffixes:
+> `if(selected(${QAFlags}, "field_dup_a"), "-FD-A",
+> if(selected(${QAFlags}, "field_dup_b"), "-FD-B", ""))`. It is emitted by
+> `core/envmon/sample_id.xform_sample_id_calc()` rather than written inline
+> here. The question list above is unchanged: both choices live in the existing
+> `QAFlags` question. Selecting both is rejected during normalization. The
+> normalizer retains the former `field_dup` → `-FD` mapping only for submissions
+> from forms generated before this amendment.
 
 ### CLI
 

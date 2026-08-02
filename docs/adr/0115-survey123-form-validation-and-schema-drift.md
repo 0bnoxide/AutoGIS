@@ -28,8 +28,9 @@ will eventually publish to, with no detection until field data arrived wrong.
   settings shape, and config cross-references (planned locations, matrices,
   crew slugs, analyte decimal coverage via the form builder's own
   `_field_name`). **SampleID contract divergence is an ERROR** (owner
-  decision 2026-07-25), and the choice list read by the calculate's
-  `selected(...)` duplicate leg must contain the `field_dup` choice.
+  decision 2026-07-25), and every choice named by the calculate's
+  `selected(...)` duplicate legs must exist in that question's choice list
+  (`field_dup_a` and `field_dup_b` after issue #361).
 - **`envmon diff-survey-schema FORM.xlsx [--baseline-form OLD]
   [--layer-spec SPEC] [--report]`** — classifies changes
   safe / review-required / destructive per a fixed taxonomy (removals,

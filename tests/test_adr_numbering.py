@@ -17,6 +17,25 @@ ADR_DIR = Path(__file__).resolve().parent.parent / "docs" / "adr"
 NUMBERED = re.compile(r"^(\d{4})-.+\.md$")
 
 
+def test_h1_number_matches_filename_prefix():
+    """H1 must be `# ADR-NNNN ...` with the padded number from the filename.
+
+    Guards against legacy three-digit headers (`# ADR-042:`) regressing
+    (issue #405). Separator after the number is not constrained: both
+    `# ADR-0042: Title` and `# ADR-0024 — Title` exist in the corpus.
+    """
+    bad = []
+    for path in sorted(ADR_DIR.glob("*.md")):
+        match = NUMBERED.match(path.name)
+        if not match:
+            continue
+        with path.open(encoding="utf-8") as fh:
+            h1 = fh.readline().rstrip("\r\n")
+        if not re.match(rf"^# ADR-{match.group(1)}(?!\d)", h1):
+            bad.append(f"{path.name}: {h1!r}")
+    assert not bad, "ADR H1 does not match filename prefix:\n" + "\n".join(bad)
+
+
 def test_no_duplicate_adr_numbers():
     by_number = defaultdict(list)
     for path in ADR_DIR.glob("*.md"):

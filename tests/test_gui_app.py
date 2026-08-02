@@ -13,6 +13,7 @@ that the layout looks right.
 """
 import os
 import threading
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -21,15 +22,18 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
+from PySide6.QtWidgets import (
+    QApplication, QComboBox, QDialog, QLineEdit, QPushButton, QWidget,
+)
 
 import autogis.adapters.gui.app as app_mod
 import autogis.adapters.gui.runner as runner_mod
 from autogis.adapters.gui import settings as settings_mod
 from autogis.adapters.gui.app import MainWindow, _dialog_kind, _window_forms
 from autogis.adapters.gui.executor import (
-    Decision, StepResult, build_argv, needs_arcpy_env,
+    Decision, Step, StepResult, build_argv, needs_arcpy_env,
 )
 from autogis.adapters.gui.forms import build_step
 from autogis.adapters.gui.introspect import FormField
@@ -156,6 +160,67 @@ def test_command_help_text_is_shown_and_updates_on_switch(qapp):
     assert win._help_label.text() == a.help_text
     win._command_box.setCurrentText(b.label)
     assert win._help_label.text() == b.help_text
+
+
+def test_envmon_site_quick_action_reuses_init_site_form(qapp, tmp_path):
+    """The dedicated action is discoverability only: it must select the one
+    existing init-site command/form so generation still crosses the tested
+    CLI/core overwrite and validation boundaries."""
+    win = MainWindow()
+    win._command_box.setCurrentText("harvest")
+
+    button = win.findChild(QPushButton, "create-envmon-site")
+    assert button is not None
+    button.click()
+
+    assert win._command_box.currentText() == "envmon init-site"
+    assert {"site_id", "site_name", "dest", "force", "dry_run"} <= set(
+        win._field_widgets)
+    win._field_widgets["site_id"].setText("T99")
+    win._field_widgets["site_name"].setText("Test Site 99")
+    win._field_widgets["dest"].setText(str(tmp_path))
+    step = build_step(win._forms["envmon init-site"], win._raw_values())
+    argv = build_argv(step.command, step.values)
+    command_index = argv.index("envmon")
+    assert argv[command_index:command_index + 2] == ["envmon", "init-site"]
+    assert argv[argv.index("--dest") + 1] == str(tmp_path)
+    assert "four EnvMon YAMLs" in win._status.text()
+
+
+def test_readme_inspired_shell_is_applied(qapp):
+    win = MainWindow()
+    assert win.windowTitle() == "AutoGIS - Geospatial Automation for ArcGIS"
+    assert win.findChild(QWidget, "brandHeader") is not None
+    assert "#35cfff" in win.styleSheet().lower()
+    assert win._run_button.objectName() == "primaryButton"
+    assert win._cancel_button.objectName() == "dangerButton"
+
+
+def test_child_dialogs_share_dark_surface(qapp):
+    win = MainWindow()
+    dialog = QDialog(win)
+    dialog.ensurePolished()
+    assert dialog.palette().color(QPalette.Window).name() == "#000714"
+    assert dialog.palette().color(QPalette.WindowText).name() == "#f7faff"
+
+
+def test_semantic_colors_meet_aa_on_dark_output_surface():
+    """The old light-theme status colors became too dim on the neon shell."""
+    def luminance(color):
+        channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        channels = [c / 12.92 if c <= 0.04045
+                    else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return sum(weight * channel for weight, channel in zip(
+            (0.2126, 0.7152, 0.0722), channels))
+
+    background = luminance("#020d1c")
+    colors = set(app_mod._SEV_COLOR.values())
+    colors.update(color for color, _ in app_mod._LINE_COLORS)
+    for color in colors:
+        foreground = luminance(color)
+        ratio = (max(foreground, background) + 0.05) / (
+            min(foreground, background) + 0.05)
+        assert ratio >= 4.5, (color, ratio)
 
 
 def test_help_label_clears_when_switching_to_command_without_help(qapp):
@@ -383,10 +448,10 @@ def test_colorize_output_colors_lines_by_keyword():
         "[WARNING] vrms: high\n"
         "[INFO] done: 1/6 QA pass.\n"   # 'pass' must NOT override the INFO tag
         "Status: PASS")
-    assert '#d32f2f">Decision: HALT' in out       # red for HALT/FAIL/ERROR
-    assert '#ed6c02">[WARNING]' in out            # orange for WARNING/PAUSE
-    assert '#1976d2">[INFO]' in out               # blue for INFO (not green)
-    assert '#2e7d32">Status: PASS' in out         # green for CONTINUE/PASS
+    assert '#ff6b6b">Decision: HALT' in out       # red for HALT/FAIL/ERROR
+    assert '#ffb74d">[WARNING]' in out            # orange for WARNING/PAUSE
+    assert '#7db8ff">[INFO]' in out               # blue for INFO (not green)
+    assert '#73d17c">Status: PASS' in out         # green for CONTINUE/PASS
 
 
 def test_colorize_output_escapes_html():
@@ -405,7 +470,7 @@ def test_output_pane_is_rich_text_and_colored(qapp, monkeypatch):
     _fill_required_fields(win, _first_runnable(win))
     win._on_run()
     _pump_until(lambda: win._run_button.isEnabled())
-    assert "#d32f2f" in win._output.toHtml()       # HALT/FAIL/ERROR rendered red
+    assert "#ff6b6b" in win._output.toHtml()       # HALT/FAIL/ERROR rendered red
     assert "QA FAIL" in win._output.toPlainText()  # plain text still readable
 
 
@@ -419,7 +484,7 @@ def test_failure_message_is_colorized_and_escaped(qapp, monkeypatch):
     _fill_required_fields(win, _first_runnable(win))
     win._on_run()
     _pump_until(lambda: win._run_button.isEnabled())
-    assert "#d32f2f" in win._output.toHtml()         # "ValueError" -> red
+    assert "#ff6b6b" in win._output.toHtml()         # "ValueError" -> red
     assert "boom <x>" in win._output.toPlainText()   # escaped, then round-trips
     assert win._status.text() == "Failed to run"
 
@@ -889,6 +954,214 @@ def test_save_recipe_writes_valid_reloadable_recipe(qapp, tmp_path, monkeypatch)
     assert recipe_to_workflow(data).steps == tuple(win._steps)   # round-trips to the built steps
 
 
+def test_load_recipe_restores_named_workflow_and_save_round_trips(
+        qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    from autogis.adapters.recipe_workflow import recipe_to_workflow
+    from autogis.core.common.workflow_recipe import load_recipe, save_recipe
+
+    recipe = {
+        "version": 1,
+        "name": "Monitoring event",
+        "steps": [
+            {
+                "command": ["envmon", "validate-rtk-survey"],
+                "values": {"csv_path": "rtk.csv"},
+                "pause_on_warning": True,
+            },
+            {"command": None, "message": "Review the generated layers."},
+        ],
+    }
+    source = save_recipe(recipe, tmp_path / "source.yaml")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(source), "")))
+
+    win = MainWindow()
+    win._on_load_recipe()
+
+    assert win._workflow_name == recipe["name"]
+    assert tuple(win._steps) == recipe_to_workflow(recipe).steps
+    assert win._step_list.count() == 2
+    assert "validate-rtk-survey" in win._step_list.item(0).text()
+    assert "Review the generated layers." in win._step_list.item(1).text()
+    assert win._run_wf_button.isEnabled()
+
+    saved = tmp_path / "saved.yaml"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName",
+        staticmethod(lambda *a, **k: (str(saved), "")))
+    win._on_save_recipe()
+    assert load_recipe(saved) == recipe
+
+
+def test_load_recipe_normalizes_nargs_value_written_as_one_string(
+        qapp, tmp_path, monkeypatch):
+    """#398: the load path used to call build_step() only for its validation
+    side effects and discard the returned Step, so an nargs>1 value written
+    as a single YAML string stayed one token and the child command rejected
+    it -- a loaded step diverging from the identical step built in the form."""
+    from PySide6.QtWidgets import QFileDialog
+
+    from autogis.core.common.workflow_recipe import save_recipe
+
+    recipe = {
+        "version": 1,
+        "name": "dem",
+        "steps": [{
+            "command": ["envmon", "download-dem"],
+            "values": {"dataset": "USGS10m", "bbox": "-105 39 -104 40",
+                       "out_path": "dem.tif"},
+        }],
+    }
+    source = save_recipe(recipe, tmp_path / "dem.yaml")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(source), "")))
+
+    win, _ = _win_with_store(tmp_path)
+    win._on_load_recipe()
+
+    assert win._steps[0].values["bbox"] == ("-105", "39", "-104", "40")
+
+
+def test_load_recipe_rejects_string_flag_value(qapp, tmp_path, monkeypatch):
+    """#400: a quoted ``"false"`` flag must fail at load-time preflight
+    rather than silently emitting the flag at run time."""
+    from PySide6.QtWidgets import QFileDialog
+
+    from autogis.core.common.workflow_recipe import save_recipe
+
+    recipe = {
+        "version": 1,
+        "name": "civil3d",
+        "steps": [{
+            "command": ["envmon", "export-civil3d"],
+            "values": {"points_csv": "pts.csv", "crs": "EPSG:2232",
+                       "landxml": "false"},
+        }],
+    }
+    source = save_recipe(recipe, tmp_path / "c3d.yaml")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(source), "")))
+
+    win, _ = _win_with_store(tmp_path)
+    win._on_load_recipe()
+
+    assert "Load failed" in win._status.text()
+    assert "landxml must be true or false" in win._status.text()
+    assert win._steps == []
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["monitoring_event_processing.yaml", "rtk_to_cad.yaml"],
+)
+def test_shipped_phase5_recipes_reopen_in_gui(
+        qapp, tmp_path, monkeypatch, filename):
+    from PySide6.QtWidgets import QFileDialog
+
+    import autogis
+    from autogis.core.common.workflow_recipe import load_recipe
+
+    path = (
+        Path(autogis.__file__).resolve().parent
+        / "config" / "recipes" / filename
+    )
+    expected = load_recipe(path)
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(path), "")))
+
+    win, _ = _win_with_store(tmp_path)
+    win._on_load_recipe()
+
+    assert win._workflow_name == expected["name"]
+    assert len(win._steps) == len(expected["steps"])
+    assert win._step_list.count() == len(expected["steps"])
+    assert any(step.command and needs_arcpy_env(step.command)
+               for step in win._steps)
+    assert not win._run_wf_button.isEnabled()
+    assert "set the arcgispro-py3 python.exe" in win._status.text()
+    assert any(
+        win._step_list.item(i).text().startswith("Review checkpoint")
+        for i in range(win._step_list.count())
+    )
+
+    win._local_python_edit.setText("C:/pro/python.exe")
+    win._on_local_python_changed()
+    assert win._run_wf_button.isEnabled()
+
+
+def test_redirect_only_workflow_stays_blocked_with_local_python(
+        qapp, tmp_path):
+    win, _ = _win_with_store(
+        tmp_path, local_python="C:/pro/python.exe")
+    win._steps[:] = [Step(command=("envmon", "import-gdb"))]
+
+    win._refresh_step_controls()
+    assert not win._run_wf_button.isEnabled()
+
+    win._on_run_workflow()
+    assert win._status.text() == app_mod.UNREACHABLE["envmon import-gdb"]
+    assert win._runner is None
+
+
+@pytest.mark.parametrize("body", [
+    "name: broken\nsteps: []\n",
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, renamed-command]
+""",
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, validate-rtk-survey]
+    values: {renamed_path: survey.csv}
+""",
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, validate-rtk-survey]
+""",
+    """version: 1
+name: broken
+steps:
+  - command: [envmon, reconcile-locations]
+    values:
+      site_config: site.yaml
+      workbook: monitoring.xlsx
+      profile_path: parser.yaml
+""",
+])
+def test_load_recipe_failure_preserves_current_workflow(
+        qapp, tmp_path, monkeypatch, body):
+    from PySide6.QtWidgets import QFileDialog
+
+    win = MainWindow()
+    win._command_box.setCurrentText(
+        win._forms["envmon validate-rtk-survey"].label)
+    win._field_widgets["csv_path"].setText("existing.csv")
+    win._on_add_step()
+    before_steps = list(win._steps)
+    before_text = win._step_list.item(0).text()
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName",
+        staticmethod(lambda *a, **k: (str(bad), "")))
+    win._on_load_recipe()
+
+    assert win._steps == before_steps
+    assert win._step_list.item(0).text() == before_text
+    assert win._workflow_name == "gui-workflow"
+    assert "Load failed:" in win._status.text()
+
+
 def test_save_recipe_disabled_during_active_run(qapp):
     """Save must be disabled while a run is active/paused (like the other step
     controls), not merely no-op when clicked. Codex P2."""
@@ -897,10 +1170,13 @@ def test_save_recipe_disabled_during_active_run(qapp):
     win._field_widgets["csv_path"].setText("rtk.csv")
     win._on_add_step()
     assert win._save_button.isEnabled()
+    assert win._load_button.isEnabled()
     win._set_authoring_enabled(False)          # a run starts
     assert not win._save_button.isEnabled()
+    assert not win._load_button.isEnabled()
     win._set_authoring_enabled(True)           # run finished, steps remain
     assert win._save_button.isEnabled()
+    assert win._load_button.isEnabled()
 
 
 def test_save_recipe_noop_when_dialog_cancelled(qapp, tmp_path, monkeypatch):

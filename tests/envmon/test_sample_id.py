@@ -106,13 +106,13 @@ def test_planner_and_normalizer_agree_including_field_duplicate():
     primary = norm({"WellID": "MW-1", "SamplingDate": "2026-07-15",
                     "Matrix": "GW"})
     dup = norm({"WellID": "MW-1", "SamplingDate": "2026-07-15",
-                "Matrix": "GW", "QAFlags": "field_dup"})
+                "Matrix": "GW", "QAFlags": "field_dup_a"})
     assert planned == {primary, dup}
-    assert dup == primary + "-FD"
+    assert dup == primary + "-FD-A"
 
 
 def _eval_xform_calc(calc: str, well: str, date_compact: str, matrix: str,
-                     is_dup: bool) -> str:
+                     qc: str | None) -> str:
     """Evaluate the one XForm expression shape xform_sample_id_calc emits.
 
     Not a general evaluator — it understands exactly concat/format-date/
@@ -125,20 +125,19 @@ def _eval_xform_calc(calc: str, well: str, date_compact: str, matrix: str,
                         f'"{date_compact}"')
     expr = expr.replace("${WellID}", f'"{well}"')
     expr = expr.replace("${Matrix}", f'"{matrix}"')
-    dup_leg = re.search(
-        r'if\(selected\(\$\{QAFlags\}, "field_dup"\), "([^"]*)", "([^"]*)"\)',
-        expr)
-    assert dup_leg, f"unrecognized duplicate leg in {calc!r}"
-    expr = expr[:dup_leg.start()] + \
-        f'"{dup_leg.group(1) if is_dup else dup_leg.group(2)}"' + \
-        expr[dup_leg.end():]
+    dup_leg = (
+        'if(selected(${QAFlags}, "field_dup_a"), "-FD-A", '
+        'if(selected(${QAFlags}, "field_dup_b"), "-FD-B", ""))'
+    )
+    assert dup_leg in expr, f"unrecognized duplicate leg in {calc!r}"
+    expr = expr.replace(dup_leg, f'"-{qc}"' if qc else '""')
     body = re.fullmatch(r"concat\((.*)\)", expr)
     assert body, f"unrecognized calc shape in {calc!r}"
     return "".join(re.findall(r'"([^"]*)"', body.group(1)))
 
 
-@pytest.mark.parametrize("is_dup", [False, True])
-def test_xform_calc_renders_what_build_sample_id_renders(is_dup):
+@pytest.mark.parametrize("qc", [None, "FD-A", "FD-B"])
+def test_xform_calc_renders_what_build_sample_id_renders(qc):
     """The Python and XForm renderings of LIFECYCLE_FORMAT agree.
 
     Couples the two for real: change build_sample_id's separator, field order
@@ -146,9 +145,9 @@ def test_xform_calc_renders_what_build_sample_id_renders(is_dup):
     verbatim copy of its own return literal, which could not detect drift.
     """
     rendered = _eval_xform_calc(xform_sample_id_calc(), "MW-1", "20260715",
-                                "GW", is_dup)
+                                "GW", qc)
     assert rendered == build_sample_id("MW-1", "20260715", "GW",
-                                       qc="FD" if is_dup else None)
+                                       qc=qc)
 
 
 def test_strip_qc_returns_the_primary_identity():
@@ -220,8 +219,9 @@ def test_every_qc_suffix_classes_as_its_declared_type():
         assert qc_class(sample_id) == qc_type, suffix
 
 
-def test_xform_calc_reads_the_adr_0021_qa_flag():
-    """The duplicate leg reuses the qa_flags choice, not a second question."""
+def test_xform_calc_reads_the_a_b_qa_flags():
+    """The duplicate leg reuses QAFlags and gives each duplicate an identity."""
     calc = xform_sample_id_calc()
-    assert 'selected(${QAFlags}, "field_dup")' in calc
+    assert 'selected(${QAFlags}, "field_dup_a")' in calc
+    assert 'selected(${QAFlags}, "field_dup_b")' in calc
     assert "IsFieldDup" not in calc

@@ -75,7 +75,11 @@ def _normalize(field: FormField, value: object) -> object:
                 f"{len(parts)}.", field=field.name)
         return tuple(parts)
     if field.kind == "flag":
-        return bool(value)
+        # Passed through, never ``bool(value)``: the GUI's own checkbox
+        # already yields a real bool, and coercing would turn a recipe's
+        # ``"false"`` string into True before ``build_argv`` -- the single
+        # gate that rejects a non-bool flag (#400) -- ever sees it.
+        return value
     if field.repeatable and not isinstance(value, (list, tuple)):
         return (value,)
     return value

@@ -16,7 +16,8 @@ from .sample_id import xform_sample_id_calc
 
 _QA_FLAGS = [
     ("resampled", "Resampled"),
-    ("field_dup", "Field Duplicate"),
+    ("field_dup_a", "Field Duplicate A"),
+    ("field_dup_b", "Field Duplicate B"),
     ("equipment_blank", "Equipment Blank"),
     ("turbid", "Turbid / High Turbidity"),
     ("other", "Other"),
@@ -125,8 +126,8 @@ def build_xlsform(
     # calculates by dependency rather than row order, but a backward
     # reference needs no such guarantee and costs nothing — the question is
     # a calculate, so it renders nothing wherever it sits. The leg reuses the
-    # qa_flags choice "field_dup" that has existed since ADR-0021; a second
-    # question would let a crew tick one affordance and miss the other.
+    # QAFlags question; its A/B choices give two same-day duplicates distinct
+    # identities without adding a second field-duplicate affordance.
     row("calculate", "SampleID", "", "", "", sample_id_calc)
     row("text", "Notes", "Notes")
 

@@ -55,12 +55,16 @@ Salvage items 1 and 2 only, as a minimal diff onto current `main`:
   with a message naming the offending field and character. Call it on `site_id` and `event_id`
   before either is interpolated into the output name. Add a pre-check that raises
   `FileExistsError` when the target snapshot GDB already exists.
-- Emit a `zero_rows_parsed` QA `WARNING` from `run_import()` when `counts` is all-zero, naming
-  the likely causes (wrong sheet names, unwired `data_type`, workbook/profile mismatch).
+- Emit `zero_rows_parsed` from `run_import()` when `counts` is all-zero, naming
+  the likely causes (wrong sheet names, unwired `data_type`, workbook/profile
+  mismatch). It is an `ERROR` for an unfiltered import and a `WARNING` when an
+  explicit matrix filter legitimately selects no matching sheet.
+- In the Python-toolbox adapter, surface a failed summary with
+  `addErrorMessage` and raise `arcpy.ExecuteError`, following Esri's
+  [Python-toolbox message guidance](https://pro.arcgis.com/en/pro-app/3.3/arcpy/geoprocessing_and_python/writing-messages-in-a-python-toolbox.htm),
+  so ArcGIS Pro marks the tool Failed rather than Succeeded.
 
-Do not salvage items 3 and 4. Leave #221 closed. #220 is reopened and **stays open**: this
-closes the "indistinguishable from a healthy run" half, not the "reports PASS/Succeeded" half
-(see Consequences).
+Do not salvage items 3 and 4. Leave #221 closed.
 
 ## Consequences
 
@@ -69,20 +73,17 @@ closes the "indistinguishable from a healthy run" half, not the "reports PASS/Su
   so the Pro tool dialog shows the message rather than a traceback. The manifest is named after
   its GDB (`<gdb-name>.manifest.json`), so exports sharing an `--out` folder no longer overwrite
   each other's manifest — the `FileExistsError` guard only ever covered the GDB itself.
-- A workbook/profile mismatch surfaces as a `zero_rows_parsed` QA WARNING. **`qa_status` remains
-  `PASS`** — `QACollector.status` defaults `allow_warnings=True`, so a WARNING never flips it, and
-  the `.pyt` still reports Succeeded. The run becomes *distinguishable* (a row lands in the QA
-  CSV/JSON/MD) but is not rejected: non-blocking is deliberate, because a genuinely empty workbook
-  and a matrix filter that matches no sheet are both legitimate inputs. Issue #220's headline
-  ("zero rows parsed reports PASS/Succeeded") is therefore only **partially** closed; making it
-  blocking would break `--matrix-filter SOIL`, which no shipped profile can satisfy yet the `.pyt`
-  offers in its dropdown. The warning names the active matrix filter so the operator can tell the
-  two causes apart.
+- An unfiltered workbook/profile mismatch surfaces as a blocking
+  `zero_rows_parsed` ERROR, yields `qa_status: FAIL`, and makes the `.pyt`
+  report Failed. An explicit matrix filter that matches no sheet remains a
+  non-blocking WARNING and names the active filter; this preserves the
+  legitimate `--matrix-filter SOIL` case while closing issue #220's silent
+  success path.
 - **A `replace_batch` / `replace_site_event` run that parses zero rows no longer deletes.** Because
-  the warning is non-blocking, control previously reached `_delete_for_replace`, which removed the
-  prior event's rows before inserting nothing — a profile/workbook mismatch silently *erased* data
-  instead of replacing it. The replace is now skipped with a `replace_skipped_zero_rows` WARNING and
-  existing data is left untouched.
+  the explicit-filter warning is non-blocking, control can still reach the
+  replace branch. The replace is skipped with a
+  `replace_skipped_zero_rows` WARNING and existing data is left untouched;
+  unfiltered zero-row runs stop earlier on the blocking error.
 - `validate_snapshot_id` is importable and unit-tested; `export_event_snapshot` itself stays
   `pragma: no cover` (arcpy seam), so the validation lives outside the untestable boundary.
 - Coverage for `run_import()` in `validate_only` mode is new

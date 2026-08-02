@@ -77,6 +77,11 @@ Write to two GDB tables in a single call:
 - **`SurveyPoints_QA`** — one row per point: `QAStatus` (PASS/FAIL), `QAFlags`
   (JSON array stored as TEXT), `Approved` (SHORT, default 0).
 
+Both tables persist the caller-supplied `SiteID` and `BatchID`. This provenance
+must travel in the same `arcpy.da.InsertCursor` field list and row order as the
+survey values; accepting the values only at the Python boundary is not
+sufficient.
+
 `Approved=0` requires an explicit human sign-off before the data are used
 downstream.  The two-table split preserves the original measurements even for
 failing points.
@@ -89,6 +94,13 @@ Python without a lookup table.
 The write function is marked `# pragma: no cover` and imports arcpy lazily
 (ADR-0002 compliant).  The tables must pre-exist (created by the schema
 provisioner); the function does not create them.
+
+> **Amended 2026-07-30 for issue #344:** `SiteID` and `BatchID` were added
+> additively to both table definitions and the schema version advanced from
+> 2.6 to 2.7, so `upgrade-schema` provisions them in existing GDBs. The cursor
+> ordering was verified against Esri's
+> [InsertCursor documentation](https://pro.arcgis.com/en/pro-app/3.6/arcpy/data-access/insertcursor-class.htm):
+> row values must follow the order of the supplied field-name sequence.
 
 ### 6. CLI command `import-rtk-survey` (LOCAL)
 
@@ -103,6 +115,7 @@ summary (total points, QA pass count, QA fail count) to stdout.
 - Parsing and QA are arcpy-free → fully unit-tested without Pro.
 - `RTKColumnMap` handles vendor variation without per-site YAML overhead.
 - Two-table design preserves raw data while separating QA state.
+- Site and import-batch provenance remains queryable on both raw and QA rows.
 - Thresholds are explicit and overridable, not hard-coded magic numbers.
 - Pattern consistent with `edd_importer.py` (parse → domain objects → GDB write).
 

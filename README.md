@@ -28,10 +28,13 @@ Work has continued past the catalog: the geostatistical group shipped
 (ADR-0085/0086) and the post-catalog [production roadmap](docs/production-roadmap.md)
 has shipped code for **Phases 1–9**, though the gate isn't fully closed on every
 phase — see [CLAUDE.md](CLAUDE.md#post-catalog-production-roadmap) for the
-authoritative per-phase gate log. Notably: **Phase 5's gate is not yet met**
-(recipe save/validate/run ship, but GUI recipe *load* is still CLI-only via
-`envmon validate-recipe`/`run-recipe`), and Phases 7–9 each have one owner-gated
-acceptance leg still open (issue #307 tracks Phase 9's). Still unimplemented:
+authoritative per-phase gate log. Notably: **Phase 5's gate was met 2026-07-30**
+(GUI recipe *load* joined the shipped save/validate/run path, reopening a saved
+recipe through the same validated `load_recipe()` / `recipe_to_workflow()` seam
+the headless `envmon validate-recipe`/`run-recipe` commands use), **Phase 6's
+`.pyt`/CLI run-history logging is still deferred** (gate items 3 & 6), and
+Phases 7–9 each have one owner-gated acceptance leg still open (issue #307
+tracks Phase 9's). Still unimplemented:
 **Phase 10 (portfolio monitoring digest)**, gated behind Phase 9's live-AGOL exit
 criteria (ADR-0111), and the four deferred §11 AI tools.
 
@@ -271,10 +274,12 @@ ValidateSurveyDeliverable needs no new code: it was folded into the shipped
 `ValidateRTKSurvey` (8.4) — see
 [`docs/superpowers/specs/2026-06-28-roadmap-duplicate-tools-fold-decision.md`](docs/superpowers/specs/2026-06-28-roadmap-duplicate-tools-fold-decision.md).
 
-**AI-assisted (§11) — DEFERRED:** AIDraftParserProfile, AIExplainQAReport, AIDraftFigureSpec,
-AIMapReviewChecklist — deferred pending LLM seam design. This is a separate future
-development phase, **not a backlog to pick from**: do not start implementation on any of
-these without an explicit phase-gate decision. See `CLAUDE.md` for the standing policy.
+**AI-assisted (§11) — DEFERRED, GATE CLOSED:** AIDraftParserProfile,
+AIExplainQAReport, AIDraftFigureSpec, AIMapReviewChecklist — the owner reviewed
+current readiness findings on 2026-08-01 and chose not to reopen the gate. This
+is a separate future development phase, **not a backlog to pick from**: reconsider
+it only through an explicit phase-gate decision for a demonstrated deterministic-
+tool gap or unmet user need. See `CLAUDE.md` for the standing policy.
 
 **Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED.** The required
 architecture review landed as **ADR-0085** (Accepted 2026-07-16) and both slices merged:
@@ -348,7 +353,7 @@ not by flag.
 | `autogis envmon figure-spec` | CLOUD | `core/common/config.py` (`FigureSpec`) |
 | `autogis envmon validate-config` | CLOUD | `core/envmon/validate_config.py` |
 | `autogis envmon manage-analyte-dict` | CLOUD | `core/envmon/manage_analyte_dict.py` |
-| `autogis envmon manage-screening-levels` | CLOUD | `core/envmon/manage_screening_levels.py` |
+| `autogis envmon manage-screening-levels` | DRAFT | `core/envmon/manage_screening_levels.py` |
 | `autogis envmon reconcile-locations` | HYBRID | `core/envmon/reconcile_locations.py` (`--wells-csv` headless; `--gdb` guards + redirects to the `.pyt` ReconcileSampleLocations) |
 | `autogis envmon validate-units` | CLOUD | `core/envmon/validate_units.py` |
 | `autogis envmon evaluate-rpd-qa` | CLOUD | `core/envmon/evaluate_rpd_qa.py` |
@@ -548,6 +553,19 @@ python -m pytest -q           # count is extras-dependent: python -m pytest --co
 | `ocr` | torch, transformers, pillow, pymupdf | boring-log OCR digitization (`draft-lithology-from-scan`, DRAFT tool) |
 | `survey123` | arcgis, setuptools | live Survey123/AGOL submission pull for `envmon sync-survey123` (optional add-on track, ADR-0116) |
 | `notebook` | nbclient, ipykernel | real-kernel restart-run-all test for the Phase 4 monitoring-event review notebook (ADR-0105); opt-in, not needed to use the notebook itself |
+
+### Desktop GUI
+
+```bash
+pip install -e ".[gui]"
+autogis-gui
+```
+
+Use **New Site YAMLs…** to open the existing `envmon init-site` form,
+choose a config root, and generate the versioned site, event, parser-profile,
+and figure-spec skeletons. **Harvest Config…** is the separate attachment-
+harvester configuration builder. Use **Dry Run** before writing when previewing a
+new site bundle; existing files are never overwritten unless **Force** is selected.
 
 ---
 

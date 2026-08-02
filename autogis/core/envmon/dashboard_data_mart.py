@@ -94,7 +94,8 @@ def select_prior_water_levels(
 def build_dash_site_status(wide_rows: List[dict], qa_errors: List[dict],
                            site_id: str, event_id: str,
                            site_name: str = "") -> List[dict]:
-    """Dash_SiteStatus ← Env_CurrentEventWide + Env_ImportQA (one row)."""
+    """Dash_SiteStatus at site grain; ``event_id`` is intentionally unstamped."""
+    _ = event_id  # Dash_SiteStatus has no EventID column.
     return [{
         "SiteID": site_id, "SiteName": site_name,
         "ActiveEvents": len(wide_rows),

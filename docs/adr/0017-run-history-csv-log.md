@@ -1,4 +1,4 @@
-# ADR-017: CSV-based append-only run history log
+# ADR-0017: CSV-based append-only run history log
 
 **Status:** Accepted (write side deferred — see below)
 

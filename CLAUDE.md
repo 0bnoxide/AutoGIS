@@ -104,6 +104,22 @@ subagent when tools are absent
   file it. Otherwise, do **not** leave a discovered bug recorded only in a
   decision log, PR comment, memory, or the collab channel.
 
+## Pull request review gate
+
+- Before a behavioral PR is marked ready, its description must classify each
+  stable failure-mode probe from `docs/pr-review-failure-mode-audit.md` exactly
+  once as `PASS`, `FAIL`, or `N/A`: `BOUNDARY_SHAPE`,
+  `CONTRACT_REACHABILITY`, `IDENTITY_PROVENANCE`, `SIDE_EFFECT_SAFETY`, and
+  `ENVIRONMENT_SEAM`. Each applicable probe needs a minimal adversarial command
+  or regression test at the real call-site seam; `N/A` needs a reason. A green
+  full suite alone is not probe evidence. Draft PRs may leave the table
+  incomplete while work is in progress.
+- Before merge, run the independent `pr-reviewer` against the exact final head.
+  The reviewer must inspect the diff and changed files before comparing its
+  conclusions with the author's preflight, publish its own five-probe evidence
+  matrix and verdict to the PR, and re-review if the head changes. Resolve every
+  `FAIL` before merge.
+
 ## Deferred tool groups — phase-gate status
 
 Deferred groups are **out of scope until a deliberate phase-gate decision reopens
@@ -111,9 +127,12 @@ them.** Do not implement, spec, or fast-track a deferred group without the user
 explicitly re-opening it first:
 
 - **AI-assisted (§11) — DEFERRED:** `AIDraftParserProfile`, `AIExplainQAReport`,
-  `AIDraftFigureSpec`, `AIMapReviewChecklist` — deferred pending LLM seam design
+  `AIDraftFigureSpec`, `AIMapReviewChecklist` — the owner reviewed the linked
+  readiness findings on 2026-08-01 and chose **not** to reopen the gate
   (`docs/superpowers/specs/2026-06-28-ai-assisted-tools-llm-seam-design.md`).
-  Binding until the user says otherwise — not a backlog to pick from when idle.
+  Reconsider only for any demonstrated deterministic-tool gap or unmet user
+  need. Binding until the user says otherwise — the research addendum is not a
+  backlog to pick from when idle.
 - **Conditional / geostatistical (Phase 5) — GATE CLOSED, SHIPPED:**
   ADR-0085 (Accepted 2026-07-16) + ADR-0086 (Accepted 2026-07-24, user
   sign-off); all 3 tools shipped via PRs #240/#241
@@ -140,12 +159,12 @@ phase starts. Do not reorder or parallel fast-track phases without an explicit
 user decision. This roadmap does not reopen any deferred group above.
 
 Gate changes are recorded in the roadmap doc's **Gate-change log** (moved from
-this file 2026-07-29 — record each new one there). Current state: Phases 1-4
-and 6-9 (slice 1) shipped (ADR-0091 through ADR-0111); **Phase 5 gate NOT yet
-met** — GUI recipe *load* is still missing (save shipped; validate/run are
-headless-CLI only); Phase 6 `.pyt`/CLI run-history logging deferred (gate
-items 3 & 6); Phases 7/8/9 have owner-gated acceptance legs (Phase 9 = issue
-#307); Phase 10 not started — no ADR yet.
+this file 2026-07-29 — record each new one there). Current state: Phases 1-5
+and 6-9 (slice 1) shipped (ADR-0091 through ADR-0111); the Phase 5 gate was
+met 2026-07-30 when GUI recipe load completed the existing save/validate/run
+path. Phase 6 `.pyt`/CLI run-history logging remains deferred (gate items 3 &
+6); Phases 7/8/9 have owner-gated acceptance legs (Phase 9 = issue #307);
+Phase 10 has not started — no ADR yet.
 
 ## Survey123 optional add-on roadmap
 

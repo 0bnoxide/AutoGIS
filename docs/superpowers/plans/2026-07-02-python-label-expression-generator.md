@@ -1032,7 +1032,7 @@ to set; without this field that value would have to be hardcoded externally.
 
 ## Related decisions
 
-- [ADR-0002: Arcpy-free core invariant](0002-arcpy-free-core-invariant.md) —
+- [ADR-0002: Arcpy-free core invariant](../../adr/0002-arcpy-free-core-invariant.md) —
   `python_label_generator.py` and `label_expression_common.py` uphold this invariant.
 - `docs/superpowers/specs/2026-06-28-generate-arcade-label-expressions-design.md` —
   original design for the Arcade tool this one mirrors.
