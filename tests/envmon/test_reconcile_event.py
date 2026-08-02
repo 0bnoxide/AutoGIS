@@ -292,6 +292,67 @@ def test_csv_and_summary_roundtrip(tmp_path):
     assert "field" in summary["legs_run"]
 
 
+def test_golden_event_every_outcome_and_balance_explains_residual():
+    a = lambda loc: {"location_id": loc, "event_date": "2026-07-15", "matrix": "GW"}
+    C = lambda n: {"coc_number": n}
+    legs = {
+        "plan": [re_mod.SourceRow("MW-1-20260715-GW", a("MW-1")),    # clean planned
+                 re_mod.SourceRow("MW-3-20260715-GW", a("MW-3")),    # dry / not collected
+                 re_mod.SourceRow("MW-6-20260715-GW", a("MW-6"))],   # detail conflict
+        "field": [re_mod.SourceRow("MW-1-20260715-GW", a("MW-1")),
+                  re_mod.SourceRow("MW-9-20260715-GW", a("MW-9")),   # field-added clean
+                  re_mod.SourceRow("MW-2-20260715-GW", a("MW-2")),   # stalled after coc
+                  re_mod.SourceRow("MW-5-20260715-GW", a("MW-5")),   # presence gap
+                  re_mod.SourceRow("MW-6-20260715-GW", a("MW-6"))],
+        "coc": [re_mod.SourceRow("MW-1-20260715-GW", C("C1")),
+                re_mod.SourceRow("MW-9-20260715-GW", C("C1")),
+                re_mod.SourceRow("MW-2-20260715-GW", C("C1")),
+                re_mod.SourceRow("MW-6-20260715-GW", C("C1")),
+                re_mod.SourceRow("MW-8-20260715-GW", C("C1")),       # multi-coc
+                re_mod.SourceRow("MW-8-20260715-GW", C("C2"))],
+        "lab": [re_mod.SourceRow("MW-1-20260715-GW", a("MW-1")),
+                re_mod.SourceRow("MW-9-20260715-GW", a("MW-9")),
+                re_mod.SourceRow("MW-6-20260715-GW",
+                                 {"location_id": "MW-6", "matrix": "SO",
+                                  "sample_date": "2026-07-15"}),      # matrix conflict
+                re_mod.SourceRow("MW-4-20260715-GW", a("MW-4")),      # orphan
+                re_mod.SourceRow("MW-1-20260715-GW-MB", {}),          # lab QC, mask-clean
+                re_mod.SourceRow("MW-8-20260715-GW", a("MW-8"))],
+        "gdb": [re_mod.SourceRow("MW-1-20260715-GW", a("MW-1")),
+                re_mod.SourceRow("MW-9-20260715-GW", a("MW-9")),
+                re_mod.SourceRow("MW-5-20260715-GW", a("MW-5")),
+                re_mod.SourceRow("MW-6-20260715-GW", a("MW-6")),
+                re_mod.SourceRow("MW-8-20260715-GW", a("MW-8"))],
+    }
+    result = re_mod.reconcile_event(
+        legs, dry_wells={"MW-3": "well dry"}, garbled=["??bad-row??"],
+        observations={"water_levels": 4, "site_conditions": 2})
+    by = {r.key: r.outcome for r in result.rows}
+    assert by["MW-1-20260715-GW"] == re_mod.OUTCOME_RECONCILED
+    assert by["MW-9-20260715-GW"] == re_mod.OUTCOME_RECONCILED
+    assert by["MW-1-20260715-GW-MB"] == re_mod.OUTCOME_RECONCILED
+    assert by["MW-2-20260715-GW"] == re_mod.OUTCOME_STALLED
+    assert by["MW-3-20260715-GW"] == re_mod.OUTCOME_NOT_COLLECTED
+    assert by["MW-4-20260715-GW"] == re_mod.OUTCOME_ORPHAN
+    assert by["MW-5-20260715-GW"] == re_mod.OUTCOME_NEEDS_REVIEW
+    assert by["MW-6-20260715-GW"] == re_mod.OUTCOME_DETAIL_CONFLICT
+    assert by["MW-8-20260715-GW"] == re_mod.OUTCOME_NEEDS_REVIEW   # multi-coc
+    assert by["UNPARSEABLE:??bad-row??"] == re_mod.OUTCOME_NEEDS_REVIEW
+    assert not result.clean
+    # Every point of residual is explained by a named row:
+    explained = sum(
+        sum(1 for s in re_mod.SOURCES
+            if r.mask[s] == re_mod.REQUIRED and not r.present[s])
+        + sum(1 for s in re_mod.SOURCES
+              if r.mask[s] == re_mod.FORBIDDEN and r.present[s])
+        for r in result.rows)
+    assert result.residual == explained
+    # Observations stayed out of the grid but in the summary:
+    s = re_mod.summary_dict(result)
+    assert s["observations"] == {"water_levels": 4, "site_conditions": 2}
+    assert all(not k.startswith("WL") for k in by)
+
+
 # ── CLI end-to-end ───────────────────────────────────────────────
 import json
 from click.testing import CliRunner
