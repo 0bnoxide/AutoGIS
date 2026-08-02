@@ -330,11 +330,19 @@ def test_reconcile_event_stalled_exits_2(tmp_path):
     subs = _field_csv(tmp_path, ["MW-1,2026-07-15,GW,AB,COC-001,,"])
     store = tmp_path / "custody.json"
     store.write_text("{}", encoding="utf-8")            # provided but empty COC leg
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
     res = CliRunner().invoke(autogis, [
         "envmon", "reconcile-event", "--site-id", "SITE1",
         "--submissions-csv", str(subs), "--custody-store", str(store),
-        "--out-csv", str(tmp_path / "r.csv"), "--out-json", str(tmp_path / "r.json")])
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
     assert res.exit_code == 2, res.output
+    # SIDE_EFFECT_SAFETY: outputs must be written before the semantic exit,
+    # not skipped by it -- a regression that raised exit 2 before writing
+    # would still pass on exit_code alone.
+    assert out_csv.exists() and out_json.exists()
+    assert "MW-1-20260715-GW" in out_csv.read_text(encoding="utf-8")
+    summary = json.loads(out_json.read_text(encoding="utf-8"))
+    assert summary["clean"] is False
 
 
 def test_reconcile_event_no_legs_is_usage_error(tmp_path):
