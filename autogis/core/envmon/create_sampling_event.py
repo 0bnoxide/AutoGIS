@@ -153,11 +153,23 @@ def build_sampling_event_plan(
     if not crew_list:
         raise ValueError("event_config must have at least one entry in crew_list")
 
+    # A scalar under a group (``VOC: Benzene`` instead of ``VOC: [Benzene]``)
+    # used to skip the analyte-dictionary check entirely and ship an
+    # unvalidated group (issue #437) -- reject the shape before validating.
+    bad_shape = sorted(
+        str(group) for group, names in analyte_groups.items()
+        if not isinstance(names, (list, tuple))
+    )
+    if bad_shape:
+        raise ValueError(
+            f"analyte_groups values must be lists of analyte names; got a "
+            f"non-list value for group(s): {', '.join(bad_shape)}"
+        )
+
     # Validate every analyte in analyte_groups exists in analyte_dict
     unknown = {
         analyte
         for names in analyte_groups.values()
-        if isinstance(names, list)
         for analyte in names
         if analyte not in analyte_dict
     }
@@ -171,6 +183,18 @@ def build_sampling_event_plan(
     site_name: str = site_config_dict.get("site_name", site_id)
 
     date_compact = _date_to_yyyymmdd(event_date)
+    # Only the first matrix has ever reached the plan; the rest were dropped
+    # with no signal, so a crew was sent out with no bottles for them and the
+    # gap only resurfaced as lab-side `matrix_mismatch` errors (issue #421).
+    # There is no per-analyte-group matrix mapping in the event schema to
+    # build a correct multi-matrix plan from, so refuse rather than guess.
+    if len(matrices) > 1:
+        raise ValueError(
+            f"event_config declares {len(matrices)} matrices "
+            f"({', '.join(str(m) for m in matrices)}) but a sampling-event "
+            f"plan covers exactly one; only {matrices[0]!r} would be planned "
+            f"and the rest silently dropped. Use one event config per matrix."
+        )
     primary_matrix = matrices[0] if matrices else "GW"
     crew_map = _round_robin(location_ids, crew_list)
     dup_set = _dup_wells(location_ids, dup_frequency)

@@ -196,8 +196,14 @@ try:
         # Compute the minimum segment length and divide by factor so that
         # every segment gets at least `factor` sub-intervals.
         lengths = np.linalg.norm(np.diff(xy, axis=0), axis=1)
-        min_len = lengths.min()
-        spacing = min_len / factor
+        # Zero-length segments (duplicate consecutive vertices, common in
+        # contour output) are not a length to divide by -- taking the raw min
+        # made spacing 0 and returned the input undensified, silently, off a
+        # single repeated vertex (issue #435).
+        nonzero = lengths[lengths > 0]
+        if nonzero.size == 0:
+            return xy  # every vertex identical: nothing to densify
+        spacing = nonzero.min() / factor
         if spacing <= 0:
             return xy
         return _densify(xy, spacing=spacing)

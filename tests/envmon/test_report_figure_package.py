@@ -347,3 +347,75 @@ def test_existing_destination_hardlink_is_rejected_before_copy(tmp_path):
     assert external.read_text(encoding="utf-8") == "external"
     assert not (data_dir / "safe.csv").exists()
     assert not (out_dir / "manifest.csv").exists()
+
+
+# ── issue #427: unknown roles landed at the package root ───────────────────
+
+def test_unknown_role_is_rejected_before_any_output(tmp_path):
+    """A misspelled role used to resolve to `.` via _ROLE_SUBDIR.get(role, "."),
+    copying the file to the package root, keeping the invalid role in the
+    manifest and exiting 0."""
+    src = tmp_path / "Fig-1A.pdf"
+    src.write_bytes(b"PDF content")
+    spec = _make_spec_yaml(tmp_path, [{"path": str(src), "role": "figure_pfd"}])
+    out_dir = tmp_path / "deliverable"
+    with pytest.raises(ValueError) as exc:
+        assemble_figure_package(load_deliverable_spec(spec), out_dir)
+    assert "figure_pfd" in str(exc.value)
+    assert not out_dir.exists()          # rejected before package mutation
+
+
+@pytest.mark.parametrize("role", DELIVERABLE_ROLES)
+def test_every_advertised_role_is_accepted(tmp_path, role):
+    """Whatever DELIVERABLE_ROLES advertises must actually resolve to a
+    destination -- the validation and the subdir map cannot drift apart."""
+    src = tmp_path / "deliverable.dat"
+    src.write_bytes(b"x")
+    spec = _make_spec_yaml(tmp_path, [{"path": str(src), "role": role}])
+    result = assemble_figure_package(
+        load_deliverable_spec(spec), tmp_path / f"out_{role}")
+    assert result.copied_count == 1
+
+
+# ── issue #426: source_gdb is a directory, copy2 cannot copy it ────────────
+
+def test_file_geodatabase_directory_is_packaged(tmp_path):
+    """`source_gdb` is an advertised role and an Esri file geodatabase is a
+    directory -- shutil.copy2() raised instead of producing the package."""
+    gdb = tmp_path / "source.gdb"
+    (gdb / "nested").mkdir(parents=True)
+    (gdb / "a00000001.gdbtable").write_bytes(b"table")
+    (gdb / "nested" / "gdb").write_bytes(b"child")
+    spec = _make_spec_yaml(tmp_path, [{"path": str(gdb), "role": "source_gdb"}])
+    out_dir = tmp_path / "deliverable"
+    result = assemble_figure_package(load_deliverable_spec(spec), out_dir)
+
+    assert result.copied_count == 1
+    assert (out_dir / "data" / "source.gdb" / "a00000001.gdbtable").read_bytes() == b"table"
+    assert (out_dir / "data" / "source.gdb" / "nested" / "gdb").read_bytes() == b"child"
+    assert result.files[0].sha256           # a digest, not an empty string
+    rows = list(csv.DictReader((out_dir / "manifest.csv").open(encoding="utf-8")))
+    assert rows[0]["status"] == "copied"
+    assert rows[0]["dest_path"] == str(Path("data") / "source.gdb")
+
+
+def test_directory_digest_is_content_addressed_and_stable(tmp_path):
+    """The manifest digest for a directory deliverable must change with its
+    contents and not depend on directory iteration order."""
+    def _package(name, payload):
+        gdb = tmp_path / name / "source.gdb"
+        gdb.mkdir(parents=True)
+        (gdb / "a.gdbtable").write_bytes(payload)
+        (gdb / "b.gdbtable").write_bytes(b"same")
+        spec = _make_spec_yaml(tmp_path / name,
+                               [{"path": str(gdb), "role": "source_gdb"}])
+        return assemble_figure_package(
+            load_deliverable_spec(spec), tmp_path / name / "out").files[0].sha256
+
+    for name in ("one", "two", "three"):
+        (tmp_path / name).mkdir()
+    same_a = _package("one", b"payload")
+    same_b = _package("two", b"payload")
+    different = _package("three", b"different")
+    assert same_a == same_b
+    assert different != same_a

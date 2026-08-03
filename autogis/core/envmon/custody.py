@@ -200,10 +200,17 @@ def records_from_plan(plan, *, at: datetime, actor: str) -> List[CustodyRecord]:
 
     ``plan`` is an ``autogis.core.envmon.create_sampling_event.SamplingEventPlan``
     (duck-typed here to keep this module import-light).
+
+    Sample IDs are deduplicated in plan order: the planner emits one row per
+    (location x analyte_group) and those rows share a sample ID, so appending
+    per row made the audit trail's ``sample_count`` claim more planned samples
+    than ``reconcile()`` could ever match (issue #422).
     """
     by_coc: Dict[str, List[str]] = {}
     for row in plan.expected_samples:
-        by_coc.setdefault(row.coc_number, []).append(row.sample_id)
+        ids = by_coc.setdefault(row.coc_number, [])
+        if row.sample_id not in ids:
+            ids.append(row.sample_id)
     return [
         new_record(
             coc,

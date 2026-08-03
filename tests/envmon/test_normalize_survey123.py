@@ -353,3 +353,33 @@ def test_route_late_insert_error_finalizes_blocked(tmp_path, monkeypatch):
 
     assert result.exit_code != 0
     assert outcomes == ["BLOCKED_BY_QA"]
+
+
+# ── issue #439: a non-UTF-8 CSV crashed consumers with a raw codec error ───
+
+def test_non_utf8_submissions_csv_raises_a_named_value_error(tmp_path):
+    """cp1252 is the Windows/Excel default, so a well name with an accent
+    reached the loader as undecodable bytes and every consuming CLI died with
+    a raw UnicodeDecodeError traceback."""
+    import pytest
+    from autogis.core.common.qa import QACollector
+
+    p = tmp_path / "subs_cp1252.csv"
+    p.write_bytes(
+        "WellID,SamplingDate,Matrix,SampledBy,COCNumber\n"
+        "MW-é,2026-07-15,GW,AB,COC-001\n".encode("cp1252"))
+    with pytest.raises(ValueError) as exc:
+        load_survey123_csv_submissions(p, "H281", "B1", QACollector())
+    msg = str(exc.value)
+    assert "subs_cp1252.csv" in msg and "UTF-8" in msg
+    assert not isinstance(exc.value, UnicodeDecodeError)
+
+
+def test_missing_submissions_csv_raises_a_named_value_error(tmp_path):
+    import pytest
+    from autogis.core.common.qa import QACollector
+
+    with pytest.raises(ValueError) as exc:
+        load_survey123_csv_submissions(
+            tmp_path / "nope.csv", "H281", "B1", QACollector())
+    assert "nope.csv" in str(exc.value)

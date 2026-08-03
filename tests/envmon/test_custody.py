@@ -138,6 +138,36 @@ def test_records_from_plan_groups_by_coc():
     assert all(r.state == DRAFT for r in recs)
 
 
+def test_records_from_plan_dedupes_shared_sample_ids():
+    """Issue #422: the planner emits one row per (location x analyte_group)
+    and those rows share a sample ID, so appending per row made the audit
+    trail's sample_count claim more planned samples than reconcile() could
+    ever match."""
+    from autogis.core.envmon.create_sampling_event import (
+        ExpectedSampleRow, SamplingEventPlan)
+
+    def _row(group, sid):
+        return ExpectedSampleRow(
+            sample_id=sid, location_id="MW-1", event_date="2026-07-23",
+            matrix="GW", analyte_group=group, sample_type="Regular",
+            container_type="", preservative="", hold_time_hr=0, bottle_count=1,
+            coc_number="P-001", assigned_to="a")
+
+    plan = SamplingEventPlan(
+        event_name="EVT", event_date="2026-07-23", site_id="SITE",
+        site_name="Site", lab_name="LabCo", coc_prefix="P", run_id="r",
+        expected_samples=[_row("VOCs", "MW-1-20260723-GW"),
+                          _row("Metals", "MW-1-20260723-GW"),
+                          _row("VOCs", "MW-2-20260723-GW")],
+        crew_assignments=[])
+    rec = custody.records_from_plan(plan, at=T0, actor="planner")[0]
+    # Plan order preserved, duplicates collapsed.
+    assert rec.sample_ids == ["MW-1-20260723-GW", "MW-2-20260723-GW"]
+    # The audit count and what reconcile() can match now agree.
+    assert rec.audit[0].details["sample_count"] == 2
+    assert custody.reconcile(rec, rec.sample_ids).matched == rec.sample_ids
+
+
 # ── persistence ────────────────────────────────────────────────────────────
 
 def test_store_round_trip(tmp_path):

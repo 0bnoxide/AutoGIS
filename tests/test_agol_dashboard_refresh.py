@@ -180,3 +180,40 @@ def test_empty_rows_still_truncates_but_skips_append_call():
     layer.edit_features.assert_not_called()
     assert result.rows_pushed == {"Dash_SiteStatus": 0}
     assert result.tables_refreshed == 1
+
+
+# ── issue #424: an empty mart reported success ────────────────────────────
+
+def test_empty_mart_tables_raises_instead_of_reporting_success():
+    """`tables_refreshed=0 rows_pushed={} failures=[]` at exit 0 is
+    indistinguishable from a real refresh, so automation could not tell the
+    no-op apart. Fail closed instead."""
+    import pytest
+
+    gis = _fake_gis({})
+    with pytest.raises(ValueError) as exc:
+        refresh_dashboard_data(gis, {}, {"Dash_SiteStatus": "item-1"})
+    assert "nothing" in str(exc.value)
+    gis.content.get.assert_not_called()
+
+
+def test_cli_rejects_an_empty_mart_dir_before_authenticating(tmp_path, monkeypatch):
+    """The CLI half of #424: an existing but empty --mart-dir used to
+    authenticate, refresh nothing and exit 0."""
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+
+    def _no_auth(*a, **kw):
+        raise AssertionError("must fail closed before authenticating")
+
+    monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", _no_auth)
+    mart_dir = tmp_path / "mart"
+    mart_dir.mkdir()
+    layer_map = tmp_path / "layers.yaml"
+    layer_map.write_text("Dash_SiteStatus: item-1\n", encoding="utf-8")
+
+    res = CliRunner().invoke(autogis, [
+        "agol", "refresh-dashboard",
+        "--mart-dir", str(mart_dir), "--layer-map", str(layer_map)])
+    assert res.exit_code != 0
+    assert "No Dash_*.json files" in res.output

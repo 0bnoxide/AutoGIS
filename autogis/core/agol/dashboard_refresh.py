@@ -48,7 +48,16 @@ def refresh_dashboard_data(
     rest. A table absent from ``layer_map`` is a WARNING + skip, not a crash.
     ``dry_run=True`` validates row keys against the hosted layer's fields and
     writes nothing.
+
+    An empty ``mart_tables`` raises ``ValueError``: iterating zero tables and
+    reporting ``tables_refreshed=0 failures=[]`` is indistinguishable from a
+    successful refresh, so automation could not tell a no-op apart from a real
+    run (issue #424).
     """
+    if not mart_tables:
+        raise ValueError(
+            "no data-mart tables to refresh; refusing to report success for a "
+            "refresh that validated and pushed nothing")
     result = RefreshResult()
     for table, rows in mart_tables.items():
         layer_id = layer_map.get(table)

@@ -69,6 +69,21 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _sha256_tree(path: Path) -> str:
+    """Deterministic digest of a directory deliverable (a file geodatabase).
+
+    Hashes each contained file's POSIX-relative path and content digest in
+    sorted order, so the manifest value is stable across hosts and does not
+    depend on directory iteration order.
+    """
+    h = hashlib.sha256()
+    for rel in sorted(p.relative_to(path).as_posix()
+                      for p in path.rglob("*") if p.is_file()):
+        h.update(rel.encode("utf-8"))
+        h.update(_sha256_file(path / rel).encode("ascii"))
+    return h.hexdigest()
+
+
 def load_deliverable_spec(spec_path: Path) -> list:
     import yaml
     # safe_load returns None for an empty / comment-only file — fall back to {}.
@@ -174,6 +189,14 @@ def _validate_package_destinations(spec_entries: list, out_dir: Path) -> None:
     }
     destinations = {out_dir / "manifest.csv", out_dir / "README.txt"}
     for entry in spec_entries:
+        # An unknown role used to fall back to `other` and land at the package
+        # root, keeping the invalid role in the manifest and exiting 0 -- a
+        # misspelled role is a config error, not a deliverable (issue #427).
+        role = entry.get("role", "other")
+        if role not in DELIVERABLE_ROLES:
+            raise ValueError(
+                f"Unknown deliverable role {role!r} for {entry.get('path', '')!r}; "
+                f"expected one of: {', '.join(DELIVERABLE_ROLES)}")
         src = Path(entry.get("path", ""))
         _validate_windows_destination_component(src.name)
         if src.is_file():
@@ -186,7 +209,7 @@ def _validate_package_destinations(spec_entries: list, out_dir: Path) -> None:
                 raise ValueError(
                     f"Source has NTFS named streams that cannot be packaged: "
                     f"{src} ({', '.join(streams)})")
-        subdir = _ROLE_SUBDIR.get(entry.get("role", "other"), ".")
+        subdir = _ROLE_SUBDIR[role]
         dest = str(Path(subdir) / src.name)
         # Packages move between Windows and POSIX hosts.  Match Windows' path
         # identity on every host so case/separator variants cannot overwrite.
@@ -228,7 +251,7 @@ def assemble_figure_package(
     for entry in spec_entries:
         src_str = entry.get("path", "")
         role = entry.get("role", "other")
-        subdir_name = _ROLE_SUBDIR.get(role, ".")
+        subdir_name = _ROLE_SUBDIR[role]  # validated in the preflight above
         src = Path(src_str)
 
         if not src.exists():
@@ -244,8 +267,14 @@ def assemble_figure_package(
         dest_dir = out_dir / subdir_name if subdir_name != "." else out_dir
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / src.name
-        shutil.copy2(str(src), str(dest))
-        sha = _sha256_file(dest)
+        if src.is_dir():
+            # An Esri file geodatabase -- the advertised `source_gdb` role --
+            # is a directory, which copy2() cannot copy at all (issue #426).
+            shutil.copytree(str(src), str(dest), dirs_exist_ok=True)
+            sha = _sha256_tree(dest)
+        else:
+            shutil.copy2(str(src), str(dest))
+            sha = _sha256_file(dest)
         files.append(DeliverableFile(
             source_path=src_str, dest_subdir=subdir_name,
             role=role, sha256=sha, status="copied",
