@@ -17,6 +17,18 @@ _GPKG_SRS_WKT = (
     'PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]'
 )
 
+# OGC GeoPackage Requirement 11: gpkg_spatial_ref_sys must contain the
+# undefined cartesian (-1) and undefined geographic (0) rows in every
+# GeoPackage, alongside whatever SRS the data actually uses. Without them the
+# container fails the base SRS-table requirement (issue #416).
+# https://docs.ogc.org/is/12-128r19/12-128r19.html#_spatial_ref_sys_data_values
+_MANDATORY_SRS_ROWS = [
+    ("Undefined cartesian SRS", -1, "NONE", -1, "undefined",
+     "undefined cartesian coordinate reference system"),
+    ("Undefined geographic SRS", 0, "NONE", 0, "undefined",
+     "undefined geographic coordinate reference system"),
+]
+
 
 @dataclass
 class GeoPackageResult:
@@ -47,6 +59,22 @@ def _parse_float(v) -> Optional[float]:
 
 def create_geopackage(gpkg_path: Path, *, srs_id: int = _GPKG_SRS_ID,
                       overwrite: bool = True) -> None:
+    """Create an empty GeoPackage container.
+
+    ``srs_id`` is constrained to EPSG:4326. This exporter reads WGS84
+    latitude/longitude fields and hardcodes the WGS84 definition, so accepting
+    an arbitrary SRS produced a container advertising (say) EPSG:26911 while
+    holding WGS84 WKT, lat/lon coordinates, and a wells layer independently
+    registered as 4326 (issue #419). Reprojection is out of scope for a
+    stdlib-only writer, so the parameter is kept -- callers passing the
+    default keep working -- and anything else is rejected rather than
+    silently mislabelled.
+    """
+    if srs_id != _GPKG_SRS_ID:
+        raise ValueError(
+            f"create_geopackage only supports srs_id={_GPKG_SRS_ID} "
+            f"(WGS 84); got {srs_id}. This exporter writes WGS84 lat/lon "
+            f"geometry and does not reproject.")
     p = Path(gpkg_path)
     if p.exists():
         if not overwrite:
@@ -85,9 +113,12 @@ def create_geopackage(gpkg_path: Path, *, srs_id: int = _GPKG_SRS_ID,
             CONSTRAINT pk_geom_cols PRIMARY KEY (table_name, column_name)
         );
     """)
-    conn.execute(
+    conn.executemany(
         "INSERT OR IGNORE INTO gpkg_spatial_ref_sys VALUES (?,?,?,?,?,?)",
-        ("WGS 84", srs_id, "EPSG", srs_id, _GPKG_SRS_WKT, "WGS 84 geographic"),
+        _MANDATORY_SRS_ROWS + [
+            ("WGS 84", srs_id, "EPSG", srs_id, _GPKG_SRS_WKT,
+             "WGS 84 geographic"),
+        ],
     )
     conn.commit()
     conn.close()
@@ -184,14 +215,28 @@ def export_env_data_geopackage(
                         f"{gpkg_path} already exists. Use overwrite=True."))
         raise FileExistsError(f"{gpkg_path} already exists.")
 
-    # Count wells with missing coords for warning
-    missing_coords = sum(
-        1 for r in well_rows
-        if not r.get("Latitude") or not r.get("Longitude")
-    )
+    # Report every well write_wells_layer will skip, using its own predicate.
+    # Counting on truthiness alone missed non-empty values that don't parse as
+    # floats ("not-a-number"), so those rows were dropped from the export with
+    # no QA record at all (issue #417).
+    # Counting on truthiness also mislabelled a well on the equator or prime
+    # meridian (a real 0 coordinate) as missing, even though it was written.
+    missing_coords = invalid_coords = 0
+    for r in well_rows:
+        raw = (r.get("Latitude", ""), r.get("Longitude", ""))
+        if all(_parse_float(v) is not None for v in raw):
+            continue                       # written -- not skipped at all
+        if any(v is None or str(v).strip() == "" for v in raw):
+            missing_coords += 1
+        else:
+            invalid_coords += 1
     if missing_coords:
         qa.add(QARecord(SEV_WARNING, "missing_coords",
                         f"{missing_coords} well(s) skipped — missing lat/lon."))
+    if invalid_coords:
+        qa.add(QARecord(SEV_WARNING, "invalid_coords",
+                        f"{invalid_coords} well(s) skipped — lat/lon present "
+                        f"but not numeric."))
 
     create_geopackage(gpkg_path, overwrite=True)
     conn = sqlite3.connect(str(gpkg_path))

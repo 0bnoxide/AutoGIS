@@ -138,7 +138,12 @@ def _record_tool_name(ctx) -> str:
             names.append(current.info_name)
         current = current.parent
     names.reverse()
-    return names[1] if len(names) > 1 else (names[0] if names else "")
+    if names:
+        return names[1] if len(names) > 1 else names[0]
+    # No parent context: the command was invoked as its own console script
+    # (the `autogis-harvest` legacy alias). ctx.info_name would be the script
+    # name; the registry name is the command's own.
+    return getattr(ctx.command, "name", "") or ""
 
 
 def _record_site_id(params: dict) -> str:

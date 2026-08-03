@@ -217,3 +217,64 @@ def test_cli_rejects_an_empty_mart_dir_before_authenticating(tmp_path, monkeypat
         "--mart-dir", str(mart_dir), "--layer-map", str(layer_map)])
     assert res.exit_code != 0
     assert "No Dash_*.json files" in res.output
+
+
+# ── issue #428: a partial append was counted as a refreshed table ──────────
+
+def test_rejected_adds_are_blocking_failures_not_success():
+    """ArcGIS edit APIs report per-feature failures inside a normal response
+    rather than raising, so the table could be truncated, only partly
+    restored, counted as refreshed, and exit 0."""
+    layer = _fake_layer(["SiteID"])
+    layer.edit_features.return_value = {"addResults": [
+        {"objectId": 1, "success": True},
+        {"success": False, "error": {"code": 1000, "description": "bad field"}},
+    ]}
+    gis = _fake_gis({"item-1": layer})
+    result = refresh_dashboard_data(
+        gis, {"Dash_SiteStatus": [{"SiteID": "A"}, {"SiteID": "B"}]},
+        {"Dash_SiteStatus": "item-1"})
+
+    assert result.failures == ["Dash_SiteStatus"]
+    assert result.tables_refreshed == 0
+    assert "Dash_SiteStatus" not in result.rows_pushed
+    msg = " ".join(r.message for r in result.qa.records)
+    assert "PARTIAL" in msg                    # destructive state surfaced
+    assert "bad field" in msg                  # service's own reason
+    assert "Re-run this command" in msg        # documented recovery
+
+
+def test_all_successful_adds_still_count_as_refreshed():
+    layer = _fake_layer(["SiteID"])
+    layer.edit_features.return_value = {
+        "addResults": [{"objectId": 1, "success": True}]}
+    gis = _fake_gis({"item-1": layer})
+    result = refresh_dashboard_data(
+        gis, {"Dash_SiteStatus": [{"SiteID": "A"}]}, {"Dash_SiteStatus": "item-1"})
+    assert result.failures == []
+    assert result.tables_refreshed == 1
+    assert result.rows_pushed == {"Dash_SiteStatus": 1}
+
+
+def test_append_exception_after_truncate_names_the_destructive_state():
+    """A raised append leaves the table empty; the report has to say so."""
+    layer = _fake_layer(["SiteID"])
+    layer.edit_features.side_effect = RuntimeError("service unavailable")
+    gis = _fake_gis({"item-1": layer})
+    result = refresh_dashboard_data(
+        gis, {"Dash_SiteStatus": [{"SiteID": "A"}]}, {"Dash_SiteStatus": "item-1"})
+    assert result.failures == ["Dash_SiteStatus"]
+    msg = " ".join(r.message for r in result.qa.records)
+    assert "EMPTY or PARTIAL" in msg and "Re-run this command" in msg
+
+
+def test_failure_before_truncate_says_the_table_was_untouched():
+    """Distinguish the recoverable-nothing-happened case from the destructive
+    one -- an operator reads these to decide whether hosted data is at risk."""
+    gis = _fake_gis({"item-1": RuntimeError("item not found")})
+    result = refresh_dashboard_data(
+        gis, {"Dash_SiteStatus": [{"SiteID": "A"}]}, {"Dash_SiteStatus": "item-1"})
+    assert result.failures == ["Dash_SiteStatus"]
+    msg = " ".join(r.message for r in result.qa.records)
+    assert "was not modified" in msg
+    assert "EMPTY" not in msg
