@@ -41,8 +41,18 @@ success.
 - **#424** `refresh_dashboard_data` iterated an empty mart and reported
   `tables_refreshed=0 rows_pushed={} failures=[]` at exit 0, indistinguishable
   from a real refresh.
+- **#428** the same function treated any non-raising `edit_features()` call as
+  success, but ArcGIS reports per-feature failures *inside* a normal response —
+  so a table could be truncated, partly restored, counted as refreshed, exit 0.
+- **#416/#419/#417** the GeoPackage exporter omitted the SRS rows OGC
+  Requirement 11 makes mandatory; publicly accepted an arbitrary `srs_id` it
+  then contradicted in three places; and dropped wells whose coordinates were
+  present but unparseable, with no QA record.
+- **#442** (found while auditing the README against the repo) `autogis-harvest`,
+  documented as a legacy alias for the Harvester, was wired to the `autogis`
+  *group*, so every legacy `--config` invocation failed.
 
-Two of these needed a judgment call rather than a mechanical fix, and that is
+Four of these needed a judgment call rather than a mechanical fix, and that is
 what this ADR records.
 
 ## Decision
@@ -84,6 +94,37 @@ guard lives in `refresh_dashboard_data` so direct core callers get it too; the
 CLI checks the mart directory *before* authenticating, so a doomed run never
 reaches AGOL.
 
+**5. Constrain a parameter the implementation cannot honor (#419).** The
+GeoPackage exporter is a stdlib-only writer of WGS84 lat/lon geometry with no
+reprojection. `create_geopackage(p, srs_id=26911)` wrote the *WGS84* WKT
+definition under srs_id 26911, while `write_wells_layer` independently
+registered `gpkg_contents`, `gpkg_geometry_columns` and the embedded
+GeoPackageBinary header as 4326 — a container advertising an SRS none of its
+data used. Honoring an arbitrary SRS needs a CRS database and reprojection,
+which is a different tool. The parameter is kept (default callers are
+unaffected) and anything but 4326 is rejected, so the exporter's one supported
+contract is stated rather than silently violated. Requirement 11's mandatory
+`-1`/`0` rows are added unconditionally (#416).
+
+**6. Name the destructive state; the mart is the rollback (#428).**
+Truncate-and-append has no transaction, and once `truncate()` lands there is
+nothing on the service to roll back *to*. Rather than build staging/swap
+machinery that cannot be exercised without a live portal, per-feature
+rejections are promoted to blocking failures and the QA record states the
+resulting hosted state (`EMPTY`/`PARTIAL` versus untouched) and the recovery
+path. That recovery is real, not a disclaimer: the local mart holds every row
+and each refresh rebuilds the table from it, so re-running after fixing the
+rejected rows restores the table. Distinguishing "failed before truncate"
+from "failed after" is the part an operator actually needs, and it costs one
+flag.
+
+**7. A documented alias must do what it documents (#442).** `autogis-harvest`
+had been pointed at the CLI *group*, so the alias existed but served none of
+its backward-compatibility purpose. Repointing it at `harvest_cmd` restores
+the documented contract; `_record_tool_name` gained a no-parent fallback to
+the command's registry name so a direct console-script invocation records
+`tool_name=harvest` rather than an empty string.
+
 ## Consequences
 
 ### Positive consequences
@@ -91,8 +132,11 @@ reaches AGOL.
 - Every fix converts a false success into a diagnosable failure at the layer
   that knows why.
 - #434 closes a regulatory false-negative of the same class as #339/#341.
-- #426 makes `source_gdb` a working role for the first time.
-- Each fix carries a regression test; the arcpy-free suite covers all eleven
+- #426 makes `source_gdb` a working role for the first time; #442 makes
+  `autogis-harvest` work as documented for the first time since the CLI grew
+  subcommands.
+- #416 brings generated GeoPackages into compliance with OGC Requirement 11.
+- Each fix carries a regression test; the arcpy-free suite covers all of them
   (no arcpy seam was touched, so nothing landed under `pragma: no cover`).
 
 ### Negative consequences
@@ -108,6 +152,14 @@ reaches AGOL.
   logger instead. No caller in this repo relied on propagation.
 - Directory deliverables make packaging time and size proportional to the
   geodatabase, and the digest reads every contained file.
+- **#419 is a behavior break** for any programmatic caller passing a non-4326
+  `srs_id`. No caller in this repo does; those that did were getting a
+  mislabelled container.
+- **#428 makes previously-"successful" partial refreshes fail.** That is the
+  point, but a pipeline that tolerated silent partial pushes will now go red.
+- #428 does not add rollback. A truncate followed by a rejected append still
+  leaves the hosted table empty or partial — the change makes that state
+  *reported* rather than *hidden*. Real staging/swap remains open work.
 
 ## Alternatives considered
 
@@ -126,15 +178,32 @@ reaches AGOL.
   capability gap.
 - **#432, drop the lock entirely off Windows.** Already the case (ADR-0051);
   only the open mode needed to follow.
+- **#419, propagate an arbitrary SRS** through container metadata, feature
+  metadata and geometry headers. Rejected: the coordinates come from
+  `Latitude`/`Longitude` fields and are not reprojected, so a propagated
+  non-geographic SRS would label WGS84 degrees as (say) UTM metres — a worse
+  lie than the one being fixed.
+- **#428, staging-and-swap or query-before-truncate rollback.** Rejected for
+  now: it doubles the hosted round-trips, adds its own partial-failure modes,
+  and cannot be exercised without a live portal, so it would ship untested
+  against the exact scenario it exists for. Reporting the destructive state
+  plus the mart-rebuild recovery is the honest, testable subset.
+- **#442, fix the README instead of the entry point.** Rejected: that
+  documents the defect. The alias exists solely for backward compatibility and
+  was fulfilling none of it.
 
 ## Related decisions
 
 - [ADR-0051: run-history sentinel locking](0051-run-history-msvcrt-sentinel-lock.md)
 - [ADR-0122: Report-package integrity and dashboard JSON bridge](0122-report-package-integrity-and-dashboard-json-bridge.md)
 - [ADR-0123: Survey123 Phase 3 event reconciliation](0123-survey123-phase3-event-reconciliation.md)
-- Issues [#421](https://github.com/0bnoxide/AutoGIS/issues/421),
+- Issues [#416](https://github.com/0bnoxide/AutoGIS/issues/416),
+  [#417](https://github.com/0bnoxide/AutoGIS/issues/417),
+  [#419](https://github.com/0bnoxide/AutoGIS/issues/419),
+  [#421](https://github.com/0bnoxide/AutoGIS/issues/421),
   [#422](https://github.com/0bnoxide/AutoGIS/issues/422),
   [#424](https://github.com/0bnoxide/AutoGIS/issues/424),
+  [#428](https://github.com/0bnoxide/AutoGIS/issues/428),
   [#426](https://github.com/0bnoxide/AutoGIS/issues/426),
   [#427](https://github.com/0bnoxide/AutoGIS/issues/427),
   [#432](https://github.com/0bnoxide/AutoGIS/issues/432),
@@ -142,4 +211,10 @@ reaches AGOL.
   [#434](https://github.com/0bnoxide/AutoGIS/issues/434),
   [#435](https://github.com/0bnoxide/AutoGIS/issues/435),
   [#437](https://github.com/0bnoxide/AutoGIS/issues/437),
-  [#439](https://github.com/0bnoxide/AutoGIS/issues/439)
+  [#439](https://github.com/0bnoxide/AutoGIS/issues/439),
+  [#442](https://github.com/0bnoxide/AutoGIS/issues/442)
+- Filed by this session, not fixed here:
+  [#441](https://github.com/0bnoxide/AutoGIS/issues/441) (landxml tests fail
+  rather than skip without the optional extra),
+  [#443](https://github.com/0bnoxide/AutoGIS/issues/443)-[#450](https://github.com/0bnoxide/AutoGIS/issues/450)
+  (wiring-gap survey findings)
