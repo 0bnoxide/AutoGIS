@@ -267,10 +267,22 @@ def assemble_figure_package(
         dest_dir = out_dir / subdir_name if subdir_name != "." else out_dir
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / src.name
+        # Replace whatever is at the destination rather than writing into it.
+        # copy2() replaces a file's whole contents, but copytree(dirs_exist_ok)
+        # *merges*: files deleted or renamed in the source would survive from an
+        # earlier build into this package, and the tree digest computed below
+        # would then certify that stale content as valid. Also covers a
+        # destination whose kind changed between builds (file <-> directory),
+        # which neither copy call handles.
+        if dest.is_dir() and not dest.is_symlink():
+            shutil.rmtree(dest)
+        elif dest.exists() or dest.is_symlink():
+            dest.unlink()
+
         if src.is_dir():
             # An Esri file geodatabase -- the advertised `source_gdb` role --
             # is a directory, which copy2() cannot copy at all (issue #426).
-            shutil.copytree(str(src), str(dest), dirs_exist_ok=True)
+            shutil.copytree(str(src), str(dest))
             sha = _sha256_tree(dest)
         else:
             shutil.copy2(str(src), str(dest))

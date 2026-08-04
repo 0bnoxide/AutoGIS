@@ -419,3 +419,53 @@ def test_directory_digest_is_content_addressed_and_stable(tmp_path):
     different = _package("three", b"different")
     assert same_a == same_b
     assert different != same_a
+
+
+# ── #426 follow-up: a rebuild must replace a directory, not merge into it ──
+
+def test_rebuilding_a_geodatabase_package_replaces_stale_contents(tmp_path):
+    """copytree(dirs_exist_ok=True) merged, so a file deleted or renamed in the
+    source survived from the previous build -- and the tree digest computed
+    afterwards certified that stale content as valid."""
+    gdb = tmp_path / "source.gdb"
+    gdb.mkdir()
+    (gdb / "keep.gdbtable").write_bytes(b"keep")
+    (gdb / "dropped.gdbtable").write_bytes(b"stale")
+    spec = _make_spec_yaml(tmp_path, [{"path": str(gdb), "role": "source_gdb"}])
+    out_dir = tmp_path / "deliverable"
+    assemble_figure_package(load_deliverable_spec(spec), out_dir)
+    assert (out_dir / "data" / "source.gdb" / "dropped.gdbtable").exists()
+
+    # Second build: the source no longer contains that file.
+    (gdb / "dropped.gdbtable").unlink()
+    result = assemble_figure_package(load_deliverable_spec(spec), out_dir)
+
+    dest = out_dir / "data" / "source.gdb"
+    assert not (dest / "dropped.gdbtable").exists()
+    assert (dest / "keep.gdbtable").read_bytes() == b"keep"
+    # The manifest digest must describe the source as it is now, so a freshly
+    # built package of the same source verifies identically.
+    fresh = assemble_figure_package(
+        load_deliverable_spec(spec), tmp_path / "fresh")
+    assert result.files[0].sha256 == fresh.files[0].sha256
+
+
+def test_destination_kind_change_between_builds_is_handled(tmp_path):
+    """A destination that was a file in one build and a directory in the next
+    (or vice versa) breaks both copy calls unless it is cleared first."""
+    payload = tmp_path / "source.gdb"          # a *file* named like a gdb
+    payload.write_bytes(b"file first")
+    spec = _make_spec_yaml(tmp_path, [{"path": str(payload), "role": "source_gdb"}])
+    out_dir = tmp_path / "deliverable"
+    assemble_figure_package(load_deliverable_spec(spec), out_dir)
+    assert (out_dir / "data" / "source.gdb").is_file()
+
+    payload.unlink()
+    payload.mkdir()
+    (payload / "a.gdbtable").write_bytes(b"now a directory")
+    result = assemble_figure_package(load_deliverable_spec(spec), out_dir)
+
+    dest = out_dir / "data" / "source.gdb"
+    assert dest.is_dir()
+    assert (dest / "a.gdbtable").read_bytes() == b"now a directory"
+    assert result.copied_count == 1
