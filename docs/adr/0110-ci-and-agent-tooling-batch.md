@@ -52,6 +52,18 @@ Add three pieces of workflow tooling (no product/architecture code changes):
   unmerged branch is invisible to other sessions — only a shared store closes
   the gap, and the repo already has one.
 
+### Amendment — SonarCloud CI analysis (2026-08-04)
+
+- **`.github/workflows/build.yml`** runs the pinned SonarSource scanner on
+  pushes to `main` and opened, synchronized, or reopened pull requests. It
+  uses the existing **`windows-2022`** runner policy from ADR-0119 and the
+  repository `SONAR_TOKEN` secret; the project key and organization are in
+  `sonar-project.properties`.
+- The SonarCloud project operator must keep **Automatic Analysis disabled**.
+  Automatic Analysis and CI analysis cannot run together; the workflow scan is
+  the authoritative analysis path because it is versioned, reviewable, and
+  runs on pull requests before merge.
+
 ## Consequences
 
 ### Positive consequences
@@ -62,6 +74,8 @@ Add three pieces of workflow tooling (no product/architecture code changes):
   doc-citing check instead of relying on memory.
 - ADR-number collisions are less frequent (preflight) and, when `reserve-adr` is
   used, prevented across live sessions before a PR exists.
+- SonarCloud quality-gate analysis is versioned with the repository and runs
+  against pull requests as well as `main`.
 
 ### Negative consequences
 
@@ -74,6 +88,8 @@ Add three pieces of workflow tooling (no product/architecture code changes):
   0107), and was renumbered to a `reserve-adr`-claimed **0110**.
 - reserve-adr adds a new claim *kind* (`adr`) to the shared registry; it reuses
   the existing lock/TTL/reaping, so no new storage or lifecycle to maintain.
+- A SonarCloud project administrator must maintain the one external setting
+  that disables Automatic Analysis; enabling it makes the CI scanner fail.
 
 ## Alternatives considered
 
@@ -85,6 +101,9 @@ Add three pieces of workflow tooling (no product/architecture code changes):
   subagent does the actual verification.
 - **Hard-fail `next-adr` when `gh` is down** — rejected; degrades usability for
   no safety gain. Local-only scan is still an improvement.
+- **SonarCloud Automatic Analysis** — rejected because it conflicts with the
+  CI scanner and does not make the analysis invocation reviewable in this
+  repository.
 
 ## Related decisions
 
