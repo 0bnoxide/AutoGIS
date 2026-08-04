@@ -63,6 +63,10 @@ Add three pieces of workflow tooling (no product/architecture code changes):
   Automatic Analysis and CI analysis cannot run together; the workflow scan is
   the authoritative analysis path because it is versioned, reviewable, and
   runs on pull requests before merge.
+- Fork-originated pull requests skip the token-backed scan. GitHub does not
+  pass repository secrets to fork workflows, so running the scanner there would
+  fail with an empty token; same-repository pull requests and pushes to `main`
+  continue to scan.
 
 ## Consequences
 
