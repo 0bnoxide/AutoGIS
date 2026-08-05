@@ -99,6 +99,16 @@ gate showed 0.0%.
   unchanged by this amendment.
 - The `checkout` step now sets `fetch-depth: 0`, which the deleted workflow
   already did and which Sonar needs for new-code blame.
+- **`sonar.sources=autogis` / `sonar.tests=tests` are part of the fix, not
+  tidying.** With `sonar.sources` left at its `.` default, every added *test*
+  line counts as new code needing coverage — and tests are not covered by
+  `--cov=autogis`. Uploading coverage alone therefore moved PR #453 from 0.0%
+  to 14.3%, not to the 95% its added production lines actually had: the PR
+  added ~40 executable production lines and ~490 lines of regression tests, so
+  the tests swamped the ratio. A well-tested change would have failed the gate
+  *harder* the more tests it brought. `tests` stays declared as `sonar.tests`
+  rather than excluded, so it is still analyzed for issues — it is just not
+  held to a coverage threshold it cannot meet by construction.
 
 ## Consequences
 

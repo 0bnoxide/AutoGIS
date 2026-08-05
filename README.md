@@ -877,7 +877,11 @@ condition (ADR-0110's 2026-08-05 amendment, issue #452). Fork pull requests
 skip the scan — GitHub does not give them `SONAR_TOKEN`. Coverage is therefore
 not optional tooling: `pytest-cov` ships in the `[dev]` extra and
 `[tool.coverage.run] relative_files` in `pyproject.toml` keeps the report's
-paths resolvable from any checkout location.
+paths resolvable from any checkout location. `sonar-project.properties`
+declares `sonar.sources=autogis` / `sonar.tests=tests`, so the coverage
+condition is measured against production code — leaving it at the default `.`
+counts added test lines as uncovered new code and penalizes well-tested
+changes.
 
 ```bash
 python -m pytest -q
