@@ -143,7 +143,8 @@ def _water_level_for_row(reader: ProfileWorkbookReader, sheet: SheetProfile,
 def normalize_gw_table_2(workbook_path, profile: ParserProfile, site_id: str,
                          batch_id: str, analyte_dictionary: dict,
                          screening_levels: dict, qa: QACollector,
-                         reader: ProfileWorkbookReader | None = None
+                         reader: ProfileWorkbookReader | None = None,
+                         plausible_gwe_range_ft=None
                          ) -> Tuple[List[WaterLevelRecord],
                                     List[SampleRecord],
                                     List[AnalyticalResultRecord]]:
@@ -156,7 +157,13 @@ def normalize_gw_table_2(workbook_path, profile: ParserProfile, site_id: str,
     samples: List[SampleRecord] = []
     results: List[AnalyticalResultRecord] = []
     gwe_range = None
-    rng = profile.data.get("plausible_gwe_range_ft")
+    # The site config owns this window, not the parser profile (#445): it
+    # describes the site's AMSL elevation band, not a workbook's layout, and
+    # `config_validation` requires+type-checks it on the site config while the
+    # parser-profile template never carried it at all. Callers pass the site
+    # config's value; a profile-only value is no longer consulted, so the two
+    # surfaces cannot drift with the wrong one silently winning.
+    rng = plausible_gwe_range_ft
     if rng and len(rng) == 2:
         gwe_range = (float(rng[0]), float(rng[1]))
     for sheet in (profile.sheets_of_type("GW_ANALYTICAL_AND_WATER_LEVEL")

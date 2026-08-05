@@ -871,6 +871,14 @@ arcpy-free, and the suite runs in CI on every push and pull request
 ADR-0119 amending ADR-0110).
 The LOCAL arcpy paths are still excluded — see *Caveats*.
 
+That same job writes `coverage.xml` and then runs the pinned SonarCloud
+scanner, which reads it for the quality gate's *Coverage on New Code*
+condition (ADR-0110's 2026-08-05 amendment, issue #452). Fork pull requests
+skip the scan — GitHub does not give them `SONAR_TOKEN`. Coverage is therefore
+not optional tooling: `pytest-cov` ships in the `[dev]` extra and
+`[tool.coverage.run] relative_files` in `pyproject.toml` keeps the report's
+paths resolvable from any checkout location.
+
 ```bash
 python -m pytest -q
 python -m pytest --cov=autogis --cov-report=term-missing

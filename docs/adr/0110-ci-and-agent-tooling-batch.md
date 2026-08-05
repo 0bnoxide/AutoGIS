@@ -68,6 +68,38 @@ Add three pieces of workflow tooling (no product/architecture code changes):
   fail with an empty token; same-repository pull requests and pushes to `main`
   continue to scan.
 
+### Amendment — scan moved into the CI job, with coverage (2026-08-05)
+
+Resolves issue #452. The scan-only design above produced no coverage report, so
+SonarCloud's default **Coverage on New Code ≥ 80%** condition read 0.0% and
+failed the quality gate on **every** pull request that added Python lines,
+regardless of how well tested they were. That is a reporting gap, not a
+coverage gap: PR #440 measured 95.2% coverage on its own added lines while the
+gate showed 0.0%.
+
+- **`build.yml` is deleted; the scan is now the last step of the existing
+  `ci.yml` `pytest` job.** The suite runs once, with
+  `--cov=autogis --cov-report=xml`, and the scanner reads that `coverage.xml`
+  from the same workspace. `sonar-project.properties` gains
+  `sonar.python.coverage.reportPaths=coverage.xml`; `pyproject.toml` gains
+  `pytest-cov` in the `dev` extra and `[tool.coverage.run] relative_files =
+  true` so the report's paths resolve independently of the checkout location.
+- **Why not a second job.** Re-running the suite there would double the
+  Windows minutes this ADR already flags as billing ~2×; passing the report
+  between jobs as an artifact adds plumbing and a path-matching failure mode
+  for no benefit. In-job also means a red suite no longer publishes metrics.
+  Net cost is *lower* than the two-workflow arrangement it replaces, which
+  span up a second Windows runner and checkout per PR.
+- **Why not lower the gate instead.** That was the other option in #452 and it
+  is free, but it is an external SonarCloud setting — unversioned, invisible in
+  review, and it would have hidden real coverage regressions along with the
+  false one. It remains available if the 80% threshold proves wrong against
+  this repo's `pragma: no cover` arcpy surface (whole-repo coverage is ~79%,
+  the shortfall concentrated in exactly those seams). The threshold itself is
+  unchanged by this amendment.
+- The `checkout` step now sets `fetch-depth: 0`, which the deleted workflow
+  already did and which Sonar needs for new-code blame.
+
 ## Consequences
 
 ### Positive consequences

@@ -106,6 +106,7 @@ class HarvestAttachments(object):
                    required=False, default=False),
         ]
 
+    @toolbox_core.record_pyt_run("harvest", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.runtime.sessions import pro_active_portal
         p = {q.name: q for q in parameters}
@@ -119,7 +120,7 @@ class HarvestAttachments(object):
             where=p["where"].valueAsText or "1=1",
             incremental=bool(p["incremental"].value),
         )
-        results = toolbox_core.run_harvest(config, pro_active_portal())
+        results = toolbox_core.run_harvest(config, pro_active_portal(), qa)
         messages.addMessage(f"{len(results)} attachment(s) processed.")
         _msg(messages, qa)
 
@@ -149,6 +150,7 @@ class InspectWorkbook(object):
             _param("output_dir", "Inspection output folder", "DEFolder"),
         ]
 
+    @toolbox_core.record_pyt_run("inspect", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.core.envmon.excel_workbook_inspector import (
             inspect_workbook_structure, write_inspection_outputs,
@@ -182,6 +184,7 @@ class ReadParserProfile(object):
                    "DEFile", direction="Output"),
         ]
 
+    @toolbox_core.record_pyt_run("parser-profile", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.core.envmon.excel_workbook_inspector import (
             inspect_workbook_structure, propose_parser_profile,
@@ -224,6 +227,7 @@ class LoadFigureSpec(object):
                            "COMPACT_KV", "CUSTOM_ANALYTICAL")),
         ]
 
+    @toolbox_core.record_pyt_run("figure-spec", site_config_param=None)
     def execute(self, parameters, messages):
         out = Path(parameters[0].valueAsText)
         kind = parameters[1].valueAsText
@@ -853,8 +857,10 @@ class FullPipeline(object):
             _param("screening_levels", "Screening levels", "DEFile"),
             _param("figure_specs", "Figure specs", "DEFile", multi=True),
             _param("event_date", "Event date YYYY-MM-DD", "GPString"),
+            # No export folder: this tool deliberately stops before export
+            # (see the closing message) and Tool 6 owns that parameter. It was
+            # required-but-never-read, so Pro blocked the run on it (#446).
             _param("qa_output_dir", "QA output folder", "DEFolder"),
-            _param("export_dir", "Export folder", "DEFolder"),
             _param("import_mode", "Import mode", "GPString", default="append",
                    domain=("append", "replace_site_event")),
             _param("build_contours", "Build DRAFT contours", "GPBoolean",
@@ -910,7 +916,9 @@ class FullPipeline(object):
             )
             if bool(p["build_contours"].value) and \
                     spec.get("map_type") == "GW_POTENTIOMETRIC":
-                build_groundwater_contours(gdb, site.site_id, ev, qa)
+                build_groundwater_contours(
+                    gdb, site.site_id, ev, qa,
+                    **toolbox_core.spec_contour_kwargs(spec))
             _msg(messages, qa)
         messages.addMessage(
             "Pipeline data stages complete. Run Tool 6 per figure spec to "
@@ -1535,6 +1543,7 @@ class DownloadOpenTopoDEM(object):
                 "No active map view — open a map, or choose another AOI source.")
         return self._to_wgs84(view.camera.getExtent())
 
+    @toolbox_core.record_pyt_run("download-dem", site_config_param=None)
     def execute(self, parameters, messages):
         from autogis.core.envmon.opentopo import download_dem
         p = {q.name: q for q in parameters}

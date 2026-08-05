@@ -15,8 +15,8 @@
 # "GW Table 2" sheet's row anchors below were shifted to match that real
 # spacing — group_header_row was already right; analyte_header_row through
 # data_start_row moved up by one. Column anchors, Table 3/Metals
-# Table/RPD anchors, and plausible_gwe_range_ft have no real analog to check
-# against and are still exactly as spec-guessed.
+# and Table/RPD anchors have no real analog to check against and are still
+# exactly as spec-guessed.
 #
 # REQUIRED BEFORE FIRST IMPORT:
 #   1. Run Tool 1 (Inspect Environmental Workbook) on the real workbook.
@@ -34,7 +34,10 @@ profile_description: >-
 workbook_type: quarterly_gw_monitoring
 date_system: "1900"
 formula_handling: use_cached_then_qa
-plausible_gwe_range_ft: [1900, 2400]   # _TODO verify
+# plausible_gwe_range_ft lives on the site config, which owns the site's
+# AMSL band and is where config_validation requires it (#445). It was here
+# too, and the profile copy was the one that actually took effect --
+# exactly the drift that made the site.yaml value a silent no-op.
 
 sheets:
   - sheet_name: "GW Table 2"

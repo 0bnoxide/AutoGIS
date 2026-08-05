@@ -37,3 +37,9 @@ run_history.csv
 # .mcp.json"). Kept out of the repo so it never auto-loads for other sessions.
 .mcp.json
 build/
+
+# Coverage artifacts (CI writes coverage.xml for the Sonar scan)
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

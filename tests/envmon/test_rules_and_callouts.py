@@ -354,3 +354,57 @@ def test_assemble_callouts_with_override_and_missing_point(qa, adict):
     # every callout has a leader from its source point
     for c in out:
         assert c["geometry"].leader is not None
+
+
+# ------------------------------------------------- generate_callouts (#443)
+def test_spec_can_switch_callout_generation_off(qa):
+    """`generate_callouts: false` was read by nothing, so the shipped
+    potentiometric spec ("labels only") got callout features anyway (#443).
+
+    Honored inside generate_callout_features rather than at each call site, so
+    Tool 3 and the full pipeline obey the same spec. Checked before the
+    function touches arcpy, which is why this runs headless.
+    """
+    from autogis.core.envmon.build_figure_dataset import generate_callout_features
+
+    spec = FigureSpec(data={"figure_spec_id": "F1", "generate_callouts": False})
+    written = generate_callout_features(
+        gdb=None, site_id="S1", figure_spec=spec, wide_rows=[],
+        analyte_dictionary={}, qa=qa, event_date="2026-01-02",
+        map_type="GW_POTENTIOMETRIC")
+
+    assert written == 0
+    assert [r.category for r in qa.records] == ["callouts_disabled_by_spec"]
+
+
+def test_callout_generation_is_on_by_default(qa, monkeypatch):
+    """Omitting the key must not silently disable callouts — every other
+    figure spec in the repo relies on the default."""
+    from autogis.core.envmon import build_figure_dataset as bfd
+
+    monkeypatch.setattr(bfd, "_arcpy", lambda: None)
+    monkeypatch.setattr(bfd, "read_location_points",
+                        lambda *_a, **_kw: {})   # stop right after the guard
+    spec = FigureSpec(data={"figure_spec_id": "F1"})
+    written = bfd.generate_callout_features(
+        gdb=None, site_id="S1", figure_spec=spec, wide_rows=[],
+        analyte_dictionary={}, qa=qa, event_date="2026-01-02",
+        map_type="GW_ANALYTICAL")
+
+    assert written == 0
+    assert "callouts_disabled_by_spec" not in {r.category for r in qa.records}
+    assert "missing_required_map_layer" in {r.category for r in qa.records}
+
+
+def test_shipped_potentiometric_spec_is_the_one_that_opts_out():
+    """Pins the intent the spec comment states, so a later edit that drops the
+    key (rather than the feature) is visible."""
+    import pathlib
+
+    import autogis
+    from autogis.core.common.config import FigureSpec as _Spec
+
+    specs = (pathlib.Path(autogis.__file__).parent / "config" / "figure_specs")
+    off = {p.stem for p in specs.glob("*.yaml")
+           if _Spec.load(p).get("generate_callouts", True) is False}
+    assert off == {"CKG_GW_Potentiometric"}
