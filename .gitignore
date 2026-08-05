@@ -37,3 +37,10 @@ run_history.csv
 # .mcp.json"). Kept out of the repo so it never auto-loads for other sessions.
 .mcp.json
 build/
+
+# Coverage artifacts. `pytest --cov` writes these; issue #452 will likely make
+# coverage runs routine (SonarCloud needs a report), so keep them out of git.
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

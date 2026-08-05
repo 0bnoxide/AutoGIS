@@ -658,11 +658,12 @@ def test_reconcile_event_plan_lab_analyte_missing_member(tmp_path):
     assert "analyte_missing:Toluene" in text
 
 
-def test_reconcile_event_plan_analyte_group_scalar_is_unresolved_not_chars(tmp_path):
-    """A YAML/JSON scalar under a group key (not a list) mirrors
-    build_sampling_event_plan's own `isinstance(names, list)` validation
-    guard -- it must fall to the "unresolved group" branch, not get iterated
-    character-by-character (["B","e","n",...]) into attrs["analytes"]."""
+def test_reconcile_event_plan_analyte_group_scalar_is_rejected_upstream(tmp_path):
+    """A YAML/JSON scalar under a group key (not a list) is a malformed event
+    config. Since issue #437 the planner rejects it outright, so the plan leg
+    fails with a clean ClickException instead of producing a plan built from an
+    unvalidated group -- and it is never iterated character-by-character
+    (["B","e","n",...]) into attrs["analytes"]."""
     site, event, analytes = _plan_configs(tmp_path, groups={"VOCs": ["Benzene"]})
     # Overwrite with a scalar group value after _plan_configs built the
     # analyte dict from the (list-shaped) groups it was given.
@@ -680,11 +681,34 @@ def test_reconcile_event_plan_analyte_group_scalar_is_unresolved_not_chars(tmp_p
         "--site", str(site), "--event", str(event), "--analytes", str(analytes),
         "--lab-results-csv", str(lab),
         "--out-csv", str(out_csv), "--out-json", str(out_json)])
+    assert res.exit_code != 0
+    assert "plan leg failed" in res.output and "VOCs" in res.output
+    assert not out_csv.exists() and not out_json.exists()
+
+
+def test_reconcile_event_plan_empty_analyte_group_is_unresolved_not_chars(tmp_path):
+    """The reconciler's own group->member expansion still has to stay loud for
+    the shapes the planner accepts: an empty member list resolves to nothing,
+    so the group NAME stands in and one QA warning is emitted per group."""
+    site, event, analytes = _plan_configs(tmp_path, groups={"VOCs": ["Benzene"]})
+    event.write_text(json.dumps({
+        "event_name": "2026-Q2", "event_date": "2026-07-15",
+        "coc_prefix": "COC", "lab_name": "TestLab",
+        "matrices": ["GW"], "location_ids": ["MW-1", "MW-2"],
+        "crew_list": ["Alice"], "dup_frequency": 0,
+        "analyte_groups": {"VOCs": []},               # accepted, but no members
+    }), encoding="utf-8")
+    lab = _lab_csv(tmp_path, [("MW-1-20260715-GW", "MW-1", "Benzene")])
+    out_csv, out_json = tmp_path / "r.csv", tmp_path / "r.json"
+    res = CliRunner().invoke(autogis, [
+        "envmon", "reconcile-event",
+        "--site", str(site), "--event", str(event), "--analytes", str(analytes),
+        "--lab-results-csv", str(lab),
+        "--out-csv", str(out_csv), "--out-json", str(out_json)])
     text = out_csv.read_text(encoding="utf-8")
     # Fallback keeps the group NAME ("VOCs") as the plan's stand-in analyte,
     # so MW-1 legitimately mismatches vs the lab's real canonical name
-    # ("Benzene") -- a normal analyte_* code, never a per-character one
-    # (["B","e","n",...]) that a bare `.update("Benzene")` would produce.
+    # ("Benzene") -- a normal analyte_* code, never a per-character one.
     assert "analyte_missing:VOCs" in text
     assert "analyte_missing:B" not in text and "analyte_missing:e" not in text
     # Two wells share the one unresolved group -- exactly one QA record, not

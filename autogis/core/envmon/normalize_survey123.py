@@ -144,13 +144,31 @@ def load_survey123_csv_submissions(
     qa: QACollector,
     field_map: Optional[Survey123Field] = None,
 ) -> tuple[list[dict], list[dict]]:
+    """Normalize every row of a Survey123 submissions CSV.
+
+    The file must be UTF-8. A non-UTF-8 export (cp1252 is the Windows/Excel
+    default) is reported as a ``ValueError`` naming the file, not a raw
+    ``UnicodeDecodeError`` traceback out of the codec (issue #439). Decoding
+    with a guessed codepage instead would silently corrupt well and sample
+    IDs, so this stays strict.
+    """
     all_wl: list[dict] = []
     all_samp: list[dict] = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
-        for i, row in enumerate(csv.DictReader(fh)):
-            step_batch = f"{batch_id}_{i}"
-            wl, samp = normalize_survey123_submission(
-                dict(row), site_id, step_batch, qa, field_map)
-            all_wl.extend(wl)
-            all_samp.extend(samp)
+    path = Path(path)
+    try:
+        with path.open(newline="", encoding="utf-8") as fh:
+            for i, row in enumerate(csv.DictReader(fh)):
+                step_batch = f"{batch_id}_{i}"
+                wl, samp = normalize_survey123_submission(
+                    dict(row), site_id, step_batch, qa, field_map)
+                all_wl.extend(wl)
+                all_samp.extend(samp)
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"{path}: submissions CSV is not valid UTF-8 ({exc.reason} at byte "
+            f"{exc.start}); re-export or re-save it as UTF-8.") from exc
+    except csv.Error as exc:
+        raise ValueError(f"{path}: malformed submissions CSV ({exc}).") from exc
+    except OSError as exc:
+        raise ValueError(f"{path}: cannot read submissions CSV ({exc}).") from exc
     return all_wl, all_samp

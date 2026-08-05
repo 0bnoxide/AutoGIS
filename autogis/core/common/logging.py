@@ -8,6 +8,7 @@ cleanly with no arcpy present (deltas C1 — the 9th arcpy-edge module, lazy/saf
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -32,21 +33,38 @@ class _ArcpyHandler(logging.Handler):
             arcpy.AddMessage(msg)
 
 
+def _attach_logfile(logger: logging.Logger, logfile: Path) -> None:
+    """Add a file handler for *logfile* unless this logger already has one.
+
+    Compared on the absolute path FileHandler itself stores, so repeat calls
+    with the same file stay idempotent while a call naming a *different* file
+    still gets its handler -- the old ``_envmon_configured`` short-circuit
+    dropped it and the caller's log file stayed empty (issue #433).
+    """
+    target = os.path.abspath(str(logfile))
+    if any(isinstance(h, logging.FileHandler) and h.baseFilename == target
+           for h in logger.handlers):
+        return
+    Path(target).parent.mkdir(parents=True, exist_ok=True)
+    fh = logging.FileHandler(target, encoding="utf-8")
+    fh.setFormatter(logging.Formatter(_FMT))
+    logger.addHandler(fh)
+
+
 def get_logger(name: str, logfile: Optional[Path] = None,
                level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger(name)
-    if getattr(logger, "_envmon_configured", False):
-        return logger
-    logger.setLevel(level)
-    sh = logging.StreamHandler(sys.stderr)
-    sh.setFormatter(logging.Formatter(_FMT))
-    logger.addHandler(sh)
-    logger.addHandler(_ArcpyHandler())
+    if not getattr(logger, "_envmon_configured", False):
+        logger.setLevel(level)
+        sh = logging.StreamHandler(sys.stderr)
+        sh.setFormatter(logging.Formatter(_FMT))
+        logger.addHandler(sh)
+        logger.addHandler(_ArcpyHandler())
+        # Our handlers are the delivery path; leaving propagate on emitted
+        # every record a second time through any root handler a host app,
+        # pytest or ArcGIS Pro had already installed (issue #433).
+        logger.propagate = False
+        logger._envmon_configured = True  # type: ignore[attr-defined]
     if logfile is not None:
-        logfile = Path(logfile)
-        logfile.parent.mkdir(parents=True, exist_ok=True)
-        fh = logging.FileHandler(logfile, encoding="utf-8")
-        fh.setFormatter(logging.Formatter(_FMT))
-        logger.addHandler(fh)
-    logger._envmon_configured = True  # type: ignore[attr-defined]
+        _attach_logfile(logger, Path(logfile))
     return logger

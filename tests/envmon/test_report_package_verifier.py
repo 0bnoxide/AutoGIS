@@ -270,3 +270,72 @@ def test_verify_rejects_hardlinked_package_file(tmp_path):
     result = verify_report_package(package)
 
     assert "package_hard_link" in _categories(result)
+
+
+# ── #426 follow-up: directory deliverables must verify, not just assemble ──
+
+def _gdb_package(tmp_path: Path, payload: bytes = b"table"):
+    """Assemble a package whose only deliverable is a file geodatabase."""
+    gdb = tmp_path / "source" / "source.gdb"
+    (gdb / "nested").mkdir(parents=True)
+    (gdb / "a00000001.gdbtable").write_bytes(payload)
+    (gdb / "nested" / "gdb").write_bytes(b"child")
+    package = tmp_path / "package"
+    assemble_figure_package([{"path": str(gdb), "role": "source_gdb"}], package)
+    return package, package / "data" / "source.gdb"
+
+
+def test_assembled_geodatabase_package_verifies_clean(tmp_path):
+    """The verifier required every copied target to be is_file(), so an
+    assembled GDB package was reported missing *and* its contents flagged as
+    extras -- the build-then-verify workflow could never pass for this role."""
+    package, _ = _gdb_package(tmp_path)
+
+    result = verify_report_package(package)
+
+    assert _categories(result) == {"package_verification_complete"}
+    assert result.verified_count == 1
+    assert result.expected_count == 1
+    assert result.extra_count == 0        # contained files are not extras
+
+
+def test_modified_file_inside_geodatabase_is_detected(tmp_path):
+    """Proves the directory digest is recomputed, not merely presence-checked."""
+    package, dest = _gdb_package(tmp_path)
+    (dest / "nested" / "gdb").write_bytes(b"tampered")
+
+    result = verify_report_package(package)
+
+    assert "package_file_modified" in _categories(result)
+    assert result.verified_count == 0
+
+
+def test_file_added_inside_geodatabase_is_detected(tmp_path):
+    """A file smuggled into the packaged .gdb changes the tree digest, so it is
+    caught as a modification rather than passing as an unlisted extra."""
+    package, dest = _gdb_package(tmp_path)
+    (dest / "unexpected.gdbtable").write_bytes(b"smuggled")
+
+    result = verify_report_package(package)
+
+    assert "package_file_modified" in _categories(result)
+
+
+def test_symlink_inside_geodatabase_is_still_inspected(tmp_path):
+    """Suppressing extras for manifested directories must not suppress the
+    security checks that run over their contents."""
+    if not hasattr(os, "symlink"):
+        pytest.skip("platform has no symlink support")
+    package, dest = _gdb_package(tmp_path)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    try:
+        (dest / "link.gdbtable").symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation not permitted here")
+
+    result = verify_report_package(package)
+
+    categories = _categories(result)
+    assert ("package_external_symlink" in categories
+            or "package_reparse_point" in categories)

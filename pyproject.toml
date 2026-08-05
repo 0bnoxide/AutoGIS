@@ -27,7 +27,11 @@ notebook = ["nbclient", "ipykernel"]   # Phase 4 monitoring-event review noteboo
 
 [project.scripts]
 autogis = "autogis.adapters.cli:autogis"
-autogis-harvest = "autogis.adapters.cli:autogis"
+# Legacy alias: the Harvester itself, as documented in the README. Pointing
+# it at the `autogis` group (which it did once the single-command CLI grew
+# subcommands) silently turned every legacy `autogis-harvest --config X`
+# call into `Error: No such option '--config'`.
+autogis-harvest = "autogis.adapters.cli:harvest_cmd"
 autogis-gui = "autogis.adapters.gui.app:main"
 
 [build-system]

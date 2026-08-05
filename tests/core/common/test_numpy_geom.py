@@ -107,6 +107,23 @@ def test_densify_polyline_midpoint_correct():
                for p in midpoints)
 
 
+def test_densify_polyline_ignores_zero_length_segments():
+    """Issue #435: a duplicate consecutive vertex (common in contour output)
+    made the min segment length -- and therefore the spacing -- 0, and the
+    input came back undensified with no error or QA signal."""
+    xy = np.array([[0.0, 0.0], [0.0, 0.0], [4.0, 0.0]])
+    result = densify_polyline(xy, factor=4)
+    assert len(result) > len(xy)
+    np.testing.assert_allclose(result[-1], xy[-1])
+
+
+def test_densify_polyline_all_duplicate_vertices_is_a_no_op():
+    """Nothing to densify when every vertex is identical -- return the input
+    rather than dividing by a zero length."""
+    xy = np.array([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]])
+    np.testing.assert_allclose(densify_polyline(xy, factor=4), xy)
+
+
 from autogis.core.common.numpy_geom import concave_hull
 
 
