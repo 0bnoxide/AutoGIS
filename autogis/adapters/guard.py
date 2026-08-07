@@ -2,11 +2,14 @@
 
 LOCAL tools (the arcpy-touching envmon tools) are *registered* in the CLI but
 only *runnable* where ``arcpy`` is present (ArcGIS Pro) -- with one
-exception: per ADR-0006, tools 2-8 (``import-gdb``, ``build-event``,
-``build-callouts``, ``gw-contours``, ``export-figures``, ``full-pipeline``,
-``validate-db``) always guard then redirect to the ``.pyt`` toolbox and never
+exception: per ADR-0006, several of tools 2-8 (``import-gdb``,
+``build-event``, ``build-callouts``, ``gw-contours``, ``export-figures``,
+``full-pipeline``) guard then redirect to the ``.pyt`` toolbox and never
 actually execute via the CLI, even with arcpy present -- the ``.pyt`` is their
-primary UI by design, not a headless-only fallback.
+primary UI by design, not a headless-only fallback. The redirect is *per
+command*, not uniform across 2-8: ``validate-db``, for instance, guards and
+then executes directly in the CLI (``cli.py``'s ``validate_db_cmd``). See the
+README's Runtime Matrix for the per-command breakdown.
 ``require_runtime(name)`` is the single gate: it consults the capability
 registry (``runtime.capabilities.requires_arcpy``) and, for a LOCAL tool with
 no arcpy on the path, raises a clear ``RuntimeUnavailable`` instead of letting

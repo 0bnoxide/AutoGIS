@@ -138,7 +138,12 @@ def _record_tool_name(ctx) -> str:
             names.append(current.info_name)
         current = current.parent
     names.reverse()
-    return names[1] if len(names) > 1 else (names[0] if names else "")
+    if names:
+        return names[1] if len(names) > 1 else names[0]
+    # No parent context: the command was invoked as its own console script
+    # (the `autogis-harvest` legacy alias). ctx.info_name would be the script
+    # name; the registry name is the command's own.
+    return getattr(ctx.command, "name", "") or ""
 
 
 def _record_site_id(params: dict) -> str:
@@ -3211,12 +3216,19 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
     import json
     from autogis.core.agol.dashboard_refresh import refresh_dashboard_data
 
-    gis = agol_from_profile(profile)
     layer_map = yaml.safe_load(Path(layer_map_path).read_text(encoding="utf-8"))
     mart_tables = {
         p.stem: json.loads(p.read_text(encoding="utf-8"))
         for p in Path(mart_dir).glob("Dash_*.json")
     }
+    # Fail closed before authenticating: an empty mart directory used to
+    # authenticate, refresh nothing and exit 0 (issue #424).
+    if not mart_tables:
+        raise click.ClickException(
+            f"No Dash_*.json files found in --mart-dir {mart_dir}; run "
+            f"`envmon build-dashboard-data-mart --export-dir {mart_dir}` first.")
+
+    gis = agol_from_profile(profile)
     result = refresh_dashboard_data(gis, mart_tables, layer_map, dry_run=dry_run)
     for rec in result.qa.records:
         click.echo(f"[{rec.severity}] {rec.message}")
@@ -4709,7 +4721,9 @@ def reconcile_event_cmd(site_path, event_path, analytes_path, site_id,
         try:
             water_levels, samples = load_survey123_csv_submissions(
                 Path(submissions_csv), site_id, "reconcile", qa)
-        except (UnicodeDecodeError, OSError, _csv_mod.Error) as exc:
+        except ValueError as exc:
+            # The loader normalizes decode/CSV/OS read failures into a
+            # ValueError naming the file (issue #439).
             raise click.ClickException(
                 f"--submissions-csv: could not read {submissions_csv}: {exc}")
         observations["water_levels"] = len(water_levels)
@@ -4863,7 +4877,13 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
         payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
         wl, samp = normalize_survey123_submission(payload, site_id, bid, qa)
     else:
-        wl, samp = load_survey123_csv_submissions(Path(input_path), site_id, bid, qa)
+        try:
+            wl, samp = load_survey123_csv_submissions(
+                Path(input_path), site_id, bid, qa)
+        except ValueError as exc:
+            # Decode/CSV/OS read failures arrive normalized from the loader
+            # (issue #439) -- report them before touching the geodatabase.
+            raise click.ClickException(f"--input: {exc}")
 
     arcpy = arcpy_env()
     batch_fields = ["ImportBatchID", "SiteID", "SiteName", "SourceWorkbook",

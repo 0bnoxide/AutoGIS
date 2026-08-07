@@ -201,3 +201,52 @@ def test_dup_well_bottle_count_includes_fd_bottles():
     row = next(r for r in plan.crew_assignments if r.location_id == "MW-1")
     # 2 groups × 1 bottle each × 2 (primary + FD) = 4
     assert row.bottle_count == 4
+
+
+# ── issue #421: matrices beyond the first were silently dropped ────────────
+
+def test_multiple_matrices_rejected_not_silently_dropped():
+    """`matrices: [GW, SO]` used to plan GW only, with no signal -- the crew
+    reached the field with no soil bottles and the gap resurfaced later as
+    lab-side matrix_mismatch errors."""
+    event = dict(EVENT_BASE, matrices=["GW", "SO"])
+    with pytest.raises(ValueError) as exc:
+        build_sampling_event_plan(SITE, event, ADICT, run_id=FIXED_RUN_ID)
+    msg = str(exc.value)
+    assert "GW" in msg and "SO" in msg
+    assert "one event config per matrix" in msg
+
+
+def test_single_matrix_still_plans():
+    plan = build_sampling_event_plan(
+        dict(SITE), dict(EVENT_BASE, matrices=["SO"]), ADICT,
+        run_id=FIXED_RUN_ID)
+    assert {r.matrix for r in plan.expected_samples} == {"SO"}
+
+
+# ── issue #437: scalar analyte_groups value bypassed validation ────────────
+
+def test_scalar_analyte_group_value_rejected():
+    """`VOCs: Benzene` (a scalar, not a list) skipped the analyte-dictionary
+    check entirely and shipped an unvalidated group."""
+    event = dict(EVENT_BASE, analyte_groups={"VOCs": "Benzene"})
+    with pytest.raises(ValueError) as exc:
+        build_sampling_event_plan(SITE, event, ADICT, run_id=FIXED_RUN_ID)
+    assert "VOCs" in str(exc.value) and "list" in str(exc.value)
+
+
+def test_scalar_analyte_group_with_unknown_analyte_still_rejected():
+    """The shape check must fire before -- not instead of -- the unknown
+    analyte check, so a mis-shaped group never reaches the plan either way."""
+    event = dict(EVENT_BASE, analyte_groups={"VOCs": "Nonexistium"})
+    with pytest.raises(ValueError):
+        build_sampling_event_plan(SITE, event, ADICT, run_id=FIXED_RUN_ID)
+
+
+def test_empty_analyte_group_list_is_still_accepted():
+    """An empty list is a well-formed (if empty) group -- only non-list values
+    are rejected."""
+    event = dict(EVENT_BASE, analyte_groups={"VOCs": []},
+                 group_sampling={})
+    plan = build_sampling_event_plan(SITE, event, ADICT, run_id=FIXED_RUN_ID)
+    assert [r.analyte_group for r in plan.expected_samples] == ["VOCs"] * 3

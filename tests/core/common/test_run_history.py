@@ -1,11 +1,17 @@
 from __future__ import annotations
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from autogis.core.common.run_history import RunHistory, RunRecord, RunHistoryError
+
+
+@contextmanager
+def _null_lock(fh):
+    yield
 
 
 def _record(**overrides) -> RunRecord:
@@ -127,3 +133,41 @@ def test_corrupt_file_raises_run_history_error(tmp_path):
     h = RunHistory(p)
     with pytest.raises(RunHistoryError):
         h.query()
+
+
+# ── issue #432: read paths demanded a writable handle ──────────────────────
+
+def test_load_opens_read_only_where_the_lock_is_a_no_op(tmp_path, monkeypatch):
+    """Off Windows the sentinel lock is a documented no-op (ADR-0051), so
+    demanding a writable handle bought nothing there and only made
+    query()/latest() fail on read-only files and read-only mounts.
+
+    Asserted on the open mode rather than on a chmod'd file: this suite also
+    runs as root in CI containers, where permission bits are bypassed and a
+    filesystem-level probe would pass no matter which mode was used.
+    """
+    import autogis.core.common.run_history as rh
+
+    path = tmp_path / "run_history.csv"
+    RunHistory(path).write(_record(tool_name="ReadOnlyTool"))
+
+    modes = []
+    real_open = Path.open
+
+    def _spy(self, mode="r", *args, **kwargs):
+        if self == path:
+            modes.append(mode)
+        return real_open(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _spy)
+
+    monkeypatch.setattr(rh, "msvcrt", None)
+    assert [r.tool_name for r in RunHistory(path).query()] == ["ReadOnlyTool"]
+    assert modes == ["r"]
+
+    # Where the lock does engage, the writable handle it needs is still used.
+    modes.clear()
+    monkeypatch.setattr(rh, "msvcrt", object())
+    monkeypatch.setattr(rh, "_sentinel_lock", _null_lock)
+    assert [r.tool_name for r in RunHistory(path).query()] == ["ReadOnlyTool"]
+    assert modes == ["r+"]

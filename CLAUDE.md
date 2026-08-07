@@ -179,10 +179,12 @@ user decisions.
 
 Gate changes are recorded in the roadmap doc's **Gate-change log** (moved from
 this file 2026-07-29 — record each new one there). Current state: Phase 0
-slice A (ADR-0113), Phase 1 (ADR-0115), and Phase 2 slice 1 (ADR-0116)
-shipped — each started by explicit owner decision, not roadmap momentum;
-Phase 0's envelope leg is deliberately deferred to Phase 2; live and
-non-production gate legs remain owner-gated.
+slice A (ADR-0113), Phase 1 (ADR-0115), Phase 2 slice 1 (ADR-0116) and
+Phase 3 (ADR-0123, PR #438) shipped — each started by explicit owner
+decision, not roadmap momentum; Phase 0's envelope leg is deliberately
+deferred to Phase 2; live and non-production gate legs remain owner-gated,
+including Phase 3's "sanitized real event reconciles end-to-end" sign-off
+(ADR-0123 is still **Proposed** pending it).
 
 ## Decision records
 

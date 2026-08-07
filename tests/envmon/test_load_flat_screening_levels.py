@@ -120,3 +120,35 @@ def test_shipped_screening_levels_feed_build_exceedance_event():
     assert len(records) == 1
     assert records[0].screening_level == 5.0
     assert records[0].has_exceedance is True
+
+
+# ── issue #434: mixed-shape files silently yielded {} ──────────────────────
+
+def test_mixed_flat_and_nested_shape_raises(tmp_path):
+    """A file mixing a flat level with a nested one took the nested branch,
+    where every flat key was skipped -- yielding {} and therefore reporting no
+    exceedance anywhere, silently."""
+    p = tmp_path / "sl.yaml"
+    p.write_text("Benzene: 5\nLead: {value: 15}\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as exc:
+        load_flat_screening_levels(p)
+    assert "mixes" in str(exc.value)
+    assert "Benzene" in str(exc.value) and "Lead" in str(exc.value)
+
+
+def test_null_values_do_not_make_a_file_mixed(tmp_path):
+    """A blank level in a flat file and an empty matrix in a nested one are
+    both legal -- None must not count as "the other shape"."""
+    flat = tmp_path / "flat.yaml"
+    flat.write_text("Benzene: 5\nTPH:\n", encoding="utf-8")
+    assert load_flat_screening_levels(flat) == {"Benzene": 5.0}
+
+    nested = tmp_path / "nested.yaml"
+    nested.write_text(
+        "screening_levels:\n"
+        "  GW:\n"
+        "    Benzene: {value: 5, units: ug/L, source: x}\n"
+        "  SOIL:\n",
+        encoding="utf-8",
+    )
+    assert load_flat_screening_levels(nested) == {"Benzene": 5.0}

@@ -288,3 +288,45 @@ def test_default_path_is_cwd_run_history_csv(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert (tmp_path / "run_history.csv").exists()
+
+
+# ── the `autogis-harvest` legacy console script ───────────────────────────
+
+def test_legacy_harvest_alias_entry_point_is_the_harvester():
+    """`autogis-harvest` is documented as a legacy alias for the Harvester.
+    It was wired to the `autogis` *group* once the single-command CLI grew
+    subcommands, so every legacy `autogis-harvest --config X` call exited with
+    `Error: No such option '--config'`."""
+    import importlib
+    import tomllib
+    from pathlib import Path as _Path
+
+    pyproject = _Path(__file__).resolve().parent.parent / "pyproject.toml"
+    target = tomllib.loads(pyproject.read_text(encoding="utf-8")
+                           )["project"]["scripts"]["autogis-harvest"]
+    module, _, attr = target.partition(":")
+    command = getattr(importlib.import_module(module), attr)
+
+    assert "config_path" in {p.name for p in command.params}
+    # A click Group would reject --config; a leaf command reports it missing
+    # a value, which is what proves we resolved to the Harvester itself.
+    out = CliRunner().invoke(command, ["--help"]).output
+    assert "--config" in out and "COMMAND [ARGS]" not in out
+
+
+def test_directly_invoked_command_records_its_registry_name(tmp_path, monkeypatch):
+    """A command invoked as its own console script has no parent context, so
+    the tool-name walk found nothing and recorded an empty tool_name."""
+    from autogis.adapters.cli import harvest_cmd
+
+    rh = tmp_path / "rh.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(rh))
+    cfg = tmp_path / "h.yaml"
+    cfg.write_text("layer_url: https://example.invalid/FeatureServer/0\n",
+                   encoding="utf-8")
+
+    CliRunner().invoke(harvest_cmd, ["--config", str(cfg)])
+
+    records = _records(rh)
+    assert len(records) == 1
+    assert records[0].tool_name == "harvest"

@@ -154,3 +154,87 @@ def test_overwrite_true_succeeds(tmp_path):
     export_env_data_geopackage(_WELLS[:1], [], gpkg)
     result = export_env_data_geopackage(_WELLS[:1], [], gpkg, overwrite=True)
     assert result.well_count >= 1
+
+
+# ── issue #416: OGC Requirement 11 mandatory SRS rows ─────────────────────
+
+def test_mandatory_undefined_srs_rows_are_present(tmp_path):
+    """OGC GeoPackage Requirement 11 needs the undefined cartesian (-1) and
+    undefined geographic (0) rows in every GeoPackage, not just the active
+    SRS."""
+    gpkg = tmp_path / "t.gpkg"
+    create_geopackage(gpkg)
+    conn = sqlite3.connect(str(gpkg))
+    rows = conn.execute(
+        "SELECT srs_id, organization, organization_coordsys_id, definition "
+        "FROM gpkg_spatial_ref_sys ORDER BY srs_id").fetchall()
+    conn.close()
+    assert [r[0] for r in rows] == [-1, 0, 4326]
+    assert rows[0][1:] == ("NONE", -1, "undefined")
+    assert rows[1][1:] == ("NONE", 0, "undefined")
+
+
+# ── issue #419: custom srs_id was accepted but never propagated ───────────
+
+def test_custom_srs_id_is_rejected_not_silently_mislabelled(tmp_path):
+    """create_geopackage advertised an arbitrary srs_id while writing WGS84
+    WKT, WGS84 lat/lon geometry, and a wells layer registered as 4326."""
+    with pytest.raises(ValueError) as exc:
+        create_geopackage(tmp_path / "t.gpkg", srs_id=26911)
+    assert "26911" in str(exc.value) and "4326" in str(exc.value)
+    assert not (tmp_path / "t.gpkg").exists()
+
+
+def test_srs_is_consistent_across_container_and_wells_metadata(tmp_path):
+    """Every SRS registration and the embedded GeoPackageBinary header must
+    agree -- the constraint above is what makes that guaranteed."""
+    gpkg = tmp_path / "t.gpkg"
+    create_geopackage(gpkg)
+    conn = sqlite3.connect(str(gpkg))
+    write_wells_layer(conn, [{"Latitude": "34.05", "Longitude": "-118.24"}])
+    conn.commit()
+    contents_srs = conn.execute(
+        "SELECT srs_id FROM gpkg_contents WHERE table_name='wells'").fetchone()[0]
+    geom_srs = conn.execute(
+        "SELECT srs_id FROM gpkg_geometry_columns WHERE table_name='wells'"
+    ).fetchone()[0]
+    blob = conn.execute("SELECT geom FROM wells").fetchone()[0]
+    conn.close()
+    header_srs = struct.unpack("<2sBBi", blob[:8])[3]
+    assert contents_srs == geom_srs == header_srs == 4326
+    # ... and that SRS actually has a row in the container.
+    conn = sqlite3.connect(str(gpkg))
+    assert conn.execute(
+        "SELECT COUNT(*) FROM gpkg_spatial_ref_sys WHERE srs_id=?",
+        (header_srs,)).fetchone()[0] == 1
+    conn.close()
+
+
+# ── issue #417: nonnumeric coordinates were dropped with no QA record ─────
+
+def test_nonnumeric_coordinates_are_reported_in_qa(tmp_path):
+    """A non-empty but unparseable coordinate is truthy, so missing_coords
+    stayed 0 while write_wells_layer skipped the row -- the export reported
+    success with fewer wells than supplied and no explanation."""
+    wells = [
+        {"WellID": "MW-1", "Latitude": "34.05", "Longitude": "-118.24"},
+        {"WellID": "MW-2", "Latitude": "not-a-number", "Longitude": "-118.4"},
+        {"WellID": "MW-3", "Latitude": "", "Longitude": "-118.4"},
+    ]
+    result = export_env_data_geopackage(wells, [], tmp_path / "t.gpkg")
+    codes = [r.category for r in result.qa.records]
+    assert "invalid_coords" in codes and "missing_coords" in codes
+    assert result.well_count == 1
+    # Every supplied well is accounted for: written, missing, or invalid.
+    skipped = sum(1 for r in result.qa.records
+                  if r.category in ("missing_coords", "invalid_coords"))
+    assert skipped == 2
+
+
+def test_zero_coordinates_are_written_not_reported_as_missing(tmp_path):
+    """A well on the equator/prime meridian is a real location -- the old
+    truthiness test called it missing while the row was written."""
+    wells = [{"WellID": "MW-0", "Latitude": 0, "Longitude": 0}]
+    result = export_env_data_geopackage(wells, [], tmp_path / "t.gpkg")
+    assert result.well_count == 1
+    assert "missing_coords" not in [r.category for r in result.qa.records]

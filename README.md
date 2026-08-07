@@ -18,7 +18,7 @@ fully-shipped domain not counted in the 79 tools.
 
 | Status | Count | Notes |
 |--------|------:|-------|
-| Fully implemented (CLI command + core module + tests) | 75 | catalogued tools, plus the post-roadmap extras below |
+| Fully implemented (CLI command + core module + tests) | 75 | the catalogued §2–11 tools that are not deferred. **Counts only the catalog** — the post-roadmap extras listed below are additional and deliberately not folded into this number, so the *Fully implemented* tables below carry more rows than 75 |
 | Foundation laid (partial code, not fully wired) | 0 | |
 | **Planned** (spec / plan written, not yet coded) | 0 | BatchEDDImport folded into Tool 2.2 `batch-import-workbooks` — see ADR-0048 |
 | **Deferred** (gated, not started) | 4 | the §11 AI-assisted tools — see *Not started* below |
@@ -314,7 +314,7 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 - **Domain modules:** `autogis.core.harvest` (Attachment Harvester), `autogis.core.envmon`
   (environmental monitoring), and `autogis.core.agol` (AGOL publishing) sit on top of common
 - **Four adapters:** the importable `autogis.core` library surface, `autogis.adapters.cli`
-  (Click CLI), `autogis.adapters.toolbox.pyt` (ArcGIS Pro GUI), and
+  (Click CLI), `autogis/adapters/toolbox.pyt` (ArcGIS Pro GUI), and
   `autogis.adapters.gui` (`autogis-gui`, a unified PySide6 desktop GUI that introspects the
   CLI's command tree and can drive both headless and LOCAL tools — ADR-0050). The three user
   interfaces construct and validate the *same* config dataclasses and call the *same* core
@@ -334,9 +334,14 @@ Full roadmap detail: [`docs/ROADMAP_STATUS_2026-06-27.md`](docs/ROADMAP_STATUS_2
 
 ## Runtime Matrix
 
-Every tool declares a runtime class; the suite enforces it at the adapter layer. Runtime classes
-and backing modules below are taken directly from `autogis/runtime/capabilities.py` and
-`autogis/adapters/cli.py`.
+Every tool declares a runtime class; the suite enforces it at the adapter layer. Backing modules
+below come from `autogis/adapters/cli.py`. Runtime classes come from
+`autogis/runtime/capabilities.py` **for the commands registered there** — `capabilities.TOOLS`
+covers the catalogued tools, and the guard is what enforces LOCAL. Commands not in the registry
+(most `agol` commands, and utility commands such as `list-tools`, `init-site`,
+`validate-recipe`/`run-recipe`, `evaluate-readiness`) are shown CLOUD because they never touch
+arcpy — that label is derived from the code, not read from the registry. `envmon list-tools` is
+the authority for registered tools; this table is the authority for the rest.
 
 ### Headless (CLOUD / HYBRID) — run anywhere without ArcGIS Pro
 
@@ -354,7 +359,7 @@ not by flag.
 | `autogis envmon figure-spec` | CLOUD | `core/common/config.py` (`FigureSpec`) |
 | `autogis envmon validate-config` | CLOUD | `core/envmon/validate_config.py` |
 | `autogis envmon manage-analyte-dict` | CLOUD | `core/envmon/manage_analyte_dict.py` |
-| `autogis envmon manage-screening-levels` | DRAFT | `core/envmon/manage_screening_levels.py` |
+| `autogis envmon manage-screening-levels` | CLOUD | `core/envmon/manage_screening_levels.py` (the shipped screening levels are a DRAFT pre-production stub — the *runtime* class is CLOUD) |
 | `autogis envmon reconcile-locations` | HYBRID | `core/envmon/reconcile_locations.py` (`--wells-csv` headless; `--gdb` guards + redirects to the `.pyt` ReconcileSampleLocations) |
 | `autogis envmon validate-units` | CLOUD | `core/envmon/validate_units.py` |
 | `autogis envmon evaluate-rpd-qa` | CLOUD | `core/envmon/evaluate_rpd_qa.py` |
@@ -574,7 +579,9 @@ new site bundle; existing files are never overwritten unless **Force** is select
 ## CLI Reference
 
 `autogis` exposes the Harvester at the top level and envmon tools under an `envmon` sub-group;
-publishing lives under an `agol` sub-group. `autogis-harvest` is preserved as a legacy alias.
+publishing lives under an `agol` sub-group. `autogis-harvest` is preserved as a legacy alias for
+the Harvester itself, so `autogis-harvest --config job.yaml` and `autogis harvest --config job.yaml`
+are equivalent.
 
 ### Attachment Harvester
 

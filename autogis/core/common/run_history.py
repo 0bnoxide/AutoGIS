@@ -183,8 +183,13 @@ class RunHistory:
             return self._cache
         try:
             # "r+" (not "r") because msvcrt.locking requires a handle opened
-            # for writing, even though we only read here.
-            with self._path.open("r+", newline="", encoding="utf-8") as fh:
+            # for writing, even though we only read here -- but only where the
+            # lock actually engages. Off Windows the sentinel lock is a
+            # documented no-op (ADR-0051), so demanding a writable handle
+            # there only made query()/latest() fail on read-only files and
+            # read-only mounts (issue #432).
+            mode = "r+" if msvcrt is not None else "r"
+            with self._path.open(mode, newline="", encoding="utf-8") as fh:
                 with _sentinel_lock(fh):
                     self._cache = [_decode(row) for row in csv.DictReader(fh)]
         except Exception as exc:

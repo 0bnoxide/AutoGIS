@@ -260,3 +260,11 @@ Moved here from `CLAUDE.md` on 2026-07-29; record each new gate change here.
   headless with no portal I/O. Started on an explicit user instruction, not by
   the roadmap's own momentum. (Phase 2 was separately user-directed and has
   its own entry above.)
+- 2026-08-02 — Phase 3 (event reconciliation) shipped via ADR-0123 (PR #438):
+  the headless five-source presence-matrix engine
+  (`core/envmon/reconcile_event.py`) and `envmon reconcile-event`. Backfilled
+  into this log on 2026-08-03 — the code and ADR landed without a dated entry
+  here, which is the drift this log exists to prevent. ADR-0123 remains
+  **Proposed**: its exit-gate leg (a sanitized real event reconciling
+  end-to-end) is owner-gated and still open, so the phase is shipped but the
+  gate is not closed.

@@ -13,6 +13,7 @@ from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 from .report_figure_package import (
     _is_link_or_reparse,
     _named_streams,
+    _sha256_tree,
     _validate_windows_destination_component,
 )
 from .source_registry import compute_sha256
@@ -53,6 +54,17 @@ def _destination_parts(value: str) -> tuple[str, ...] | None:
     except ValueError:
         return None
     return parts
+
+
+def _within_manifested_dir(key: str, manifested_dirs: set) -> bool:
+    """Is *key* a path inside a directory the manifest already accounts for?
+
+    A directory deliverable is manifested as one row, so its contents are
+    covered by that row's tree digest rather than being unmanifested extras.
+    They are still walked -- the symlink, named-stream, hard-link and portable
+    -path checks must apply inside a packaged geodatabase too.
+    """
+    return any(key.startswith(parent + ntpath.sep) for parent in manifested_dirs)
 
 
 def _outside_root(path: Path, root: Path) -> bool:
@@ -130,6 +142,7 @@ def verify_report_package(
         return result()
 
     expected: set[str] = set()
+    expected_dirs: set[str] = set()
     verified = 0
     external_links: set[str] = set()
 
@@ -178,7 +191,14 @@ def verify_report_package(
             qa.add(SEV_ERROR, "manifest_status_invalid",
                    f"Manifest row {row_number} has unknown status: {status!r}")
             continue
-        if not target.is_file():
+        # A `source_gdb` deliverable is a directory (issue #426), so requiring
+        # is_file() here reported every successfully assembled GDB package as
+        # missing *and* flagged its contents as extras -- the advertised
+        # build-then-verify workflow could never pass for that role.
+        is_directory = target.is_dir() and not target.is_symlink()
+        if is_directory:
+            expected_dirs.add(key)
+        elif not target.is_file():
             qa.add(SEV_ERROR, "package_file_missing",
                    f"Manifest file not found: {dest_value}")
             continue
@@ -189,7 +209,9 @@ def verify_report_package(
                    f"Manifest row {row_number} has invalid SHA-256")
             continue
         try:
-            actual_sha = compute_sha256(target)
+            # Same digest function the packager used, so the two cannot drift.
+            actual_sha = (_sha256_tree(target) if is_directory
+                          else compute_sha256(target))
         except OSError as exc:
             qa.add(SEV_ERROR, "package_file_unreadable",
                    f"Cannot read {dest_value}: {exc}")
@@ -276,7 +298,8 @@ def verify_report_package(
         for path in inventory_entries:
             relative = path.relative_to(root).as_posix()
             key = _path_key(relative)
-            if key in _METADATA_PATHS or key in expected:
+            if (key in _METADATA_PATHS or key in expected
+                    or _within_manifested_dir(key, expected_dirs)):
                 continue
             extra += 1
             qa.add(SEV_WARNING, "package_file_extra",

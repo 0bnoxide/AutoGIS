@@ -269,15 +269,30 @@ def load_flat_screening_levels(path: Path) -> Dict[str, float]:
       non-null values in different matrices -- there is no safe way to pick
       one, so this fails loudly instead of silently choosing the wrong one
       (issue #341).
+
+    A file that *mixes* the two shapes is rejected with ``ConfigError``: the
+    old "any value is a dict" test sent such a file down the nested branch,
+    where every flat key was skipped and the result was silently ``{}`` --
+    a screening surface with no levels reports no exceedances (issue #434).
+    ``None`` values are ignored when classifying, so a blank level
+    (``Benzene:``) and an empty matrix (``SO:``) stay legal in either shape.
     """
     raw = load_screening_levels(path)
     if not raw:
         return {}
 
-    def _is_nested(d: dict) -> bool:
-        return any(isinstance(v, dict) for v in d.values())
+    present = {k: v for k, v in raw.items() if v is not None}
+    nested_keys = [k for k, v in present.items() if isinstance(v, dict)]
+    if nested_keys and len(nested_keys) != len(present):
+        flat_keys = [k for k in present if not isinstance(present[k], dict)]
+        raise ConfigError(
+            f"{path}: screening-levels file mixes matrix-nested entries "
+            f"({', '.join(sorted(str(k) for k in nested_keys))}) with flat "
+            f"entries ({', '.join(sorted(str(k) for k in flat_keys))}). "
+            f"Use either {{matrix: {{AnalyteName: value}}}} or a flat "
+            f"{{AnalyteName: value}} mapping, not both.")
 
-    if not _is_nested(raw):
+    if not nested_keys:
         out = {}
         for k, v in raw.items():
             if v is None:
