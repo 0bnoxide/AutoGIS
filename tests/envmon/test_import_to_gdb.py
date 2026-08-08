@@ -484,3 +484,53 @@ def test_water_level_unique_key_separates_two_events_at_one_well():
     jun = dict(_normalized_water_level(), EventDate="2026-06-15")
     assert (compute_unique_key(jan, "Env_WaterLevels")
             != compute_unique_key(jun, "Env_WaterLevels"))
+
+
+# --- PR #464 cold-review follow-ups -----------------------------------------
+
+def test_unmapped_record_fields_reads_dataclass_records():
+    """Real callers pass dataclasses, not just dicts. The guard reads field
+    NAMES (dataclasses.fields) rather than asdict()-ing every record, so the
+    dataclass path needs its own pin."""
+    from autogis.core.envmon.gdb_schema import WaterLevelRecord
+    rec = WaterLevelRecord(
+        ImportBatchID="B1", SiteID="H281", LocationID="MW-1",
+        EventDate=None, SampleDateRaw="", MonitoringPointElevation_ft=None,
+        DepthToWater_ft=1.0, GroundwaterElevation_ft=None,
+        GroundwaterElevationRawText="", IsDry=0, IsMeasured=1,
+        MeasurementStatus="", UseForContour=1, ExclusionReason="",
+        SourceWorkbook="", SourceSheet="", SourceRow=1)
+    assert import_to_gdb.unmapped_record_fields([rec], "Env_WaterLevels") == []
+
+
+def test_generator_records_are_not_consumed_before_the_insert_loop(
+        monkeypatch, tmp_path):
+    """The guard added a second pass over `records`. A generator would be
+    exhausted by it, and the insert loop would write nothing while returning
+    (0, 0) — zero rows reported as a clean run."""
+    cursor = _RecordingCursor()
+    _fake_arcpy(monkeypatch, cursor)
+    gen = (d for d in [{"SiteID": "H281", "SampleID": "S1"},
+                       {"SiteID": "H281", "SampleID": "S2"}])
+
+    inserted, _ = import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples", gen, QACollector(), "B1")
+
+    assert inserted == 2
+    assert len(cursor.rows) == 2
+
+
+def test_dropped_field_message_is_capped_for_the_512_char_qa_column(
+        monkeypatch, tmp_path):
+    """Env_ImportQA.Message is TEXT(512) and write_qa_to_gdb does not truncate."""
+    _fake_arcpy(monkeypatch, _RecordingCursor())
+    qa = QACollector()
+    rec = {"SiteID": "H281"}
+    rec.update({f"Bogus{i:03d}": 1 for i in range(60)})
+    import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples", [rec], qa, "B1")
+    msg = next(r.message for r in qa.records
+               if r.category == "record_fields_not_in_schema")
+    assert "60 field(s)" in msg          # the true count is still reported
+    assert "more)" in msg                # but the name list is capped
+    assert len(msg) <= 512

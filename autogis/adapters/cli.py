@@ -4867,6 +4867,7 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
         normalize_survey123_submission, load_survey123_csv_submissions)
     from autogis.core.envmon.import_to_gdb import (
         append_records_idempotent, finalize_batch, write_qa_to_gdb)
+    from autogis.core.envmon.gdb_schema import create_or_update_gdb_schema
     from autogis.runtime.sessions import arcpy_env
 
     bid = batch_id or f"S123-{uuid.uuid4().hex[:8].upper()}"
@@ -4886,6 +4887,14 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
             raise click.ClickException(f"--input: {exc}")
 
     arcpy = arcpy_env()
+    # Self-heal the schema BEFORE the batch row, exactly as run_import
+    # (import_to_gdb.py:345) and the EDD path (edd_importer.py:605) do. Without
+    # it, a pre-2.8 GDB raises inside append_records_idempotent on the new
+    # Env_Samples / Env_WaterLevels columns -- after the IN_PROGRESS batch row
+    # is already written, so finalize_batch and write_qa_to_gdb never run and
+    # the operator is left with an orphan batch and no QA. Additive and
+    # idempotent, so it is a no-op on a current GDB.
+    create_or_update_gdb_schema(gdb, qa=qa)
     batch_fields = ["ImportBatchID", "SiteID", "SiteName", "SourceWorkbook",
                     "SourceWorkbookHash", "ImportDateTime", "ImportedBy",
                     "ParserProfile", "ImportMode", "QAStatus", "SourceSheets"]

@@ -259,6 +259,7 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
     from click.testing import CliRunner
     from autogis.adapters import cli as cli_mod
     from autogis.core.envmon import import_to_gdb
+    from autogis.core.envmon import gdb_schema
     from autogis.runtime import sessions
 
     payload = tmp_path / "submission.json"
@@ -293,6 +294,10 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
         lambda *a, **k: outcomes.append(a[-1]))
     monkeypatch.setattr(import_to_gdb, "write_qa_to_gdb",
                         lambda *a, **k: 0)
+    # route-survey123 self-heals the schema before the batch row (its siblings
+    # already did); stub that arcpy seam like every other one here.
+    monkeypatch.setattr(gdb_schema, "create_or_update_gdb_schema",
+                        lambda *a, **k: None)
 
     result = CliRunner().invoke(
         cli_mod.autogis,
@@ -310,6 +315,7 @@ def test_route_late_insert_error_finalizes_blocked(tmp_path, monkeypatch):
     from click.testing import CliRunner
     from autogis.adapters import cli as cli_mod
     from autogis.core.envmon import import_to_gdb
+    from autogis.core.envmon import gdb_schema
     from autogis.runtime import sessions
 
     payload = tmp_path / "submission.json"
@@ -346,6 +352,10 @@ def test_route_late_insert_error_finalizes_blocked(tmp_path, monkeypatch):
         lambda *a, **k: outcomes.append(a[-1]))
     monkeypatch.setattr(import_to_gdb, "write_qa_to_gdb",
                         lambda *a, **k: 0)
+    # route-survey123 self-heals the schema before the batch row (its siblings
+    # already did); stub that arcpy seam like every other one here.
+    monkeypatch.setattr(gdb_schema, "create_or_update_gdb_schema",
+                        lambda *a, **k: None)
 
     result = CliRunner().invoke(
         cli_mod.autogis,

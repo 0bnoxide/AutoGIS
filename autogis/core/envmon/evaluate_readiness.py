@@ -13,6 +13,44 @@ from typing import List, Optional
 from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 from ..common.run_history import RunHistory, RunHistoryError
 
+# Tools that structurally cannot carry a site identity: their CLI commands
+# accept no site parameter at all, and their .pyt counterparts are decorated
+# `site_config_param=None`, so BOTH execution paths record site_id="" (#412).
+#
+# This is a deliberate ALLOWLIST, not "any record whose site_id is empty".
+# `_record_site_id` also returns "" for the many per-site commands identified
+# by --gdb/--results rather than --site-id, and for any command whose site
+# config merely failed to load. Treating every "" record as site-agnostic
+# would let a run against ANOTHER site's data satisfy this site's delivery
+# gate — a false PASS on the report-readiness check, which is worse than the
+# unsatisfiable check it was meant to fix.
+#
+# Keep in sync with the `site_config_param=None` decorations in
+# adapters/toolbox.pyt; test_site_less_tools_match_the_pyt_decorations pins it.
+SITE_LESS_TOOLS = frozenset({
+    "validate-db", "condition-dem", "compare-drone-surfaces",
+    "build-cad-package", "export-civil3d", "transform-landxml",
+})
+
+
+def latest_run(run_history: RunHistory, tool: str, site_id: str):
+    """Return ``(record_or_None, matched_site_less)`` for `tool` at `site_id`.
+
+    The single definition of "has this tool run for this site", shared by
+    `evaluate_readiness` and `portfolio_metrics` so the two cannot disagree
+    about it — `portfolio_metrics` recomputes its `missing` list independently
+    and flags drift, so a widening applied to only one of them produces a row
+    that is internally self-contradictory (`ready=True` next to
+    `missing_tools=...`).
+
+    Raises `RunHistoryError` from the underlying reads; callers handle it.
+    """
+    latest = run_history.latest(tool, site_id)
+    if latest is None and site_id and tool in SITE_LESS_TOOLS:
+        latest = run_history.latest(tool, "")
+        return latest, latest is not None
+    return latest, False
+
 
 def evaluate_readiness(
     site_id: str,
@@ -34,21 +72,13 @@ def evaluate_readiness(
 
     for tool in required_tools:
         try:
-            latest = run_history.latest(tool, site_id)
-            site_less_match = False
-            if latest is None and site_id:
-                # Site-less tools record site_id="" on BOTH execution paths:
-                # the CLI takes no site input so _record_site_id returns "",
-                # and the .pyt decorates with site_config_param=None. Strict
-                # equality in RunHistory.latest() therefore never matches a
-                # site-scoped lookup, so the check was unsatisfiable AND its
-                # recommended action ("run it again") wrote another unmatchable
-                # record — the operator loops forever. Fall back to the
-                # site-less series rather than reporting a tool that did run as
-                # never run (#412). Recorded, not silent: a site-less run is
-                # weaker evidence than a site-scoped one.
-                latest = run_history.latest(tool, "")
-                site_less_match = latest is not None
+            # Strict equality in RunHistory.latest() can never match a tool
+            # that records site_id="" on every path, so the check was
+            # unsatisfiable AND its recommended action ("run it again") wrote
+            # another unmatchable record — the operator loops forever (#412).
+            # latest_run() widens to the site-less series for exactly the tools
+            # that cannot carry a site, and for no others.
+            latest, site_less_match = latest_run(run_history, tool, site_id)
         except RunHistoryError as exc:
             qa.add(SEV_ERROR, "run_history_unreadable",
                    f"cannot read run history: {exc}", site_id=site_id)

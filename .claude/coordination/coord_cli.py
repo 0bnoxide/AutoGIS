@@ -171,16 +171,23 @@ def _adr_scan_base(cwd):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     try:
         import next_adr_number
-        import registry
         from pathlib import Path
         base = next_adr_number._scan_max(Path(tree))
+    except Exception:
+        return 0
+    # Widen to the caller's worktree in its OWN try: a failure here must not
+    # discard the floor we already computed. Folding both into one try made a
+    # git or registry hiccup return 0 — strictly less safe for reservation
+    # than before the #425 fix.
+    try:
+        import registry
         caller = _git_toplevel(cwd)
         if caller and not registry.samepath(caller, tree):
             base = max(base, next_adr_number._local_max(
                 Path(caller) / "docs" / "adr"))
-        return base
     except Exception:
-        return 0
+        pass
+    return base
 
 
 def _reg_path():

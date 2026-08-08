@@ -6,7 +6,8 @@ import uuid
 import pytest
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING, SEV_INFO
 from autogis.core.common.run_history import RunHistory, RunRecord
-from autogis.core.envmon.evaluate_readiness import evaluate_readiness
+from autogis.core.envmon.evaluate_readiness import (
+    SITE_LESS_TOOLS, evaluate_readiness, latest_run)
 
 
 def _record(tool, site, event, status="success"):
@@ -138,6 +139,61 @@ def test_site_scoped_record_still_wins_over_a_site_less_one(tmp_path):
                             required_tools=["import-lab-edd"])
     assert "required_tool_not_run" in {r.category for r in qa.records}
     assert "tool_run_not_site_scoped" not in {r.category for r in qa.records}
+
+
+def test_empty_site_id_on_a_SITE_SCOPED_tool_does_not_satisfy_the_check(
+        tmp_path):
+    """The blocker the cold review of PR #464 caught.
+
+    _record_site_id returns "" for far more than the structurally site-less
+    tools: ~80 per-site commands are identified by --gdb/--results rather than
+    --site-id, and any command whose site config fails to load also records "".
+    So "no site recorded" must NOT mean "applies to every site" -- otherwise a
+    run against ANOTHER site's data satisfies this site's delivery gate, a
+    false PASS on report readiness. Only SITE_LESS_TOOLS may widen.
+    """
+    assert "generate-qc-summary" not in SITE_LESS_TOOLS
+    h = _history(tmp_path, [_record("generate-qc-summary", "", None)])
+    qa = evaluate_readiness("H281", "EV01", h,
+                            required_tools=["generate-qc-summary"])
+    assert "required_tool_not_run" in {r.category for r in qa.records}
+    assert qa.status() == "FAIL"
+
+
+def test_site_less_tools_match_the_pyt_decorations():
+    """Derive the allowlist's ground truth instead of restating it.
+
+    SITE_LESS_TOOLS is hand-maintained; a .pyt tool newly decorated
+    site_config_param=None (or one that stops being site-less) must not drift
+    away from it silently -- that is the same freeze-a-snapshot mistake the
+    #447 recorder allowlist made.
+    """
+    import re
+    src = (Path(__file__).resolve().parents[2]
+           / "autogis" / "adapters" / "toolbox.pyt").read_text(encoding="utf-8")
+    declared = set(re.findall(
+        r'record_pyt_run\(\s*"([\w-]+)"[^)]*?site_config_param=None', src, re.S))
+    assert declared, "could not read any site-less .pyt decorations"
+    assert declared == set(SITE_LESS_TOOLS), (
+        f"only in .pyt: {declared - set(SITE_LESS_TOOLS)}; "
+        f"only in SITE_LESS_TOOLS: {set(SITE_LESS_TOOLS) - declared}")
+
+
+def test_portfolio_metrics_agrees_with_readiness_on_a_site_less_tool(tmp_path):
+    """The second blocker: portfolio_metrics recomputes `missing` independently
+    (ADR-0032) and flags drift, so widening only evaluate_readiness emitted a
+    delivered row reading ready=True beside missing_tools='validate-db'."""
+    from autogis.core.envmon.portfolio_metrics import build_portfolio_metrics
+    h = _history(tmp_path, [_record("validate-db", "", None),
+                            _record("import-lab-edd", "H281", "EV01")])
+    qa = QACollector()
+    rows = build_portfolio_metrics(
+        run_history=h, required_tools=["validate-db"],
+        site_ids=["H281"], qa=qa)
+    assert rows[0].ready is True
+    assert not rows[0].missing_tools, "ready=True beside a missing tool"
+    assert not [r for r in qa.records
+                if r.category == "portfolio_status_inconsistent"]
 
 
 def test_no_fallback_when_the_check_itself_is_site_less(tmp_path):

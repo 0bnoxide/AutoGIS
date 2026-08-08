@@ -66,7 +66,7 @@ than returning the unguarded answer silently.**
 |---|---|
 | #420 | `Env_Samples` gains `COCNumber` / `SampledBy` / `SampleSource` (`SCHEMA_VERSION` → **2.8**, additive, picked up by `upgrade-schema`). Separately, `append_records_idempotent` now emits one `record_fields_not_in_schema` WARNING naming every key it will not store — the projection is shared by every caller, so one guard covers the whole class rather than this one instance |
 | #457 | The normalizer emits the **schema's** names (`EventDate`, `DepthToWater_ft`, `GroundwaterElevation_ft`); `Env_WaterLevels` gains `MeasuredBy` / `MeasurementMethod` in the same 2.8 bump, as the water-level analogue of #420's provenance columns. Two tests that had pinned the invented names were updated — they agreed with the bug |
-| #412 | `evaluate_readiness` falls back to the site-less (`site_id=""`) series when a site-scoped lookup finds nothing, and records a `tool_run_not_site_scoped` INFO saying it did |
+| #412 | A shared `latest_run()` widens to the site-less (`site_id=""`) series when a site-scoped lookup finds nothing — but **only for tools on the explicit `SITE_LESS_TOOLS` allowlist** — and records a `tool_run_not_site_scoped` INFO saying it did. `portfolio_metrics` calls the same helper |
 | #454 | `_open_pr_max()` warns on **stderr** when the scan could not run, naming the exception class. The number still prints on stdout, so callers that parse it are unaffected |
 | #425 | The ADR scan floor is now the max over **both** trees — coord_cli's own checkout and the caller's worktree (`git rev-parse --show-toplevel`) — because either can be ahead of the other |
 | #455 | The guard probes the property the tests actually depend on: that this `bash` can see the script *at its Windows path* (`test -f '<posix path>'`), not merely that it exits 0 |
@@ -80,11 +80,28 @@ width so the two agree. The new unmapped-key guard is a WARNING because the rows
 still land and a producer carrying legitimate scratch keys should not be blocked
 from importing — but it must not be *silent*, which is the entire defect.
 
+**#412 — an allowlist, not "any record whose site_id is empty".**
+The issue offered both. The first draft of this batch took the loose branch and
+the cold review proved it unsafe: `_record_site_id` returns `""` not only for
+structurally site-less commands but for the ~80 per-site commands identified by
+`--gdb`/`--results` rather than `--site-id`, *and* for any command whose site
+config merely failed to load. Under the loose rule a `generate-qc-summary` run
+against **site B's data** made site A's delivery gate report PASS — a false
+green on the readiness check, which is worse than the unsatisfiable check it
+replaced. `SITE_LESS_TOOLS` now names the six tools that cannot carry a site on
+either path, and `test_site_less_tools_match_the_pyt_decorations` derives that
+set from `toolbox.pyt` so the allowlist cannot drift from reality.
+
+The widening also had to be shared. `portfolio_metrics` deliberately recomputes
+its `missing` list independently of `evaluate_readiness` (ADR-0032) and flags
+disagreement — so widening only one of them emitted a delivered row reading
+`ready=True` beside `missing_tools=validate-db`. Both now call one `latest_run()`.
+
 **#412 — widen which record is found, never what counts as success.**
-The fallback only fires when the site-scoped lookup finds nothing *and* a site
-was actually asked for. A failed site-less run still fails the check, and a
-site-scoped tool keeps matching strictly — a successful run for another site must
-not satisfy this site's check. Both are pinned by tests.
+The fallback fires only when the site-scoped lookup finds nothing *and* a site
+was actually asked for *and* the tool is on the allowlist. A failed site-less run
+still fails the check, and a site-scoped tool keeps matching strictly. All pinned
+by tests.
 
 ## Consequences
 
@@ -104,15 +121,20 @@ not satisfy this site's check. Both are pinned by tests.
 
 ### Negative consequences
 
-- **Schema bump.** A GDB written before 2.8 must run `envmon upgrade-schema`
-  before the next `Env_Samples` import; `arcpy.da.InsertCursor` raises on the
-  absent fields until then. Additive-only, so no data migrates.
+- **Schema bump.** A GDB written before 2.8 gains the new columns on the next
+  run of any path that self-heals the schema (`run_import`, the EDD importer,
+  and now `route-survey123`) or an explicit `envmon upgrade-schema`. Additive-
+  only, so no data migrates. `route-survey123` did **not** self-heal before this
+  batch, which the 2.8 bump would have turned into a mid-write raise *after* its
+  `IN_PROGRESS` batch row was inserted — orphan batch, no `finalize_batch`, no
+  QA. It now calls `create_or_update_gdb_schema` first, like its siblings.
 - **New WARNING on existing imports.** Any producer already emitting a key the
   target table lacks starts reporting it. That is the point, but it can surface
   on the first run after upgrade in a pipeline that read as clean.
-- **#412's fallback is a widening.** A site-less run is weaker evidence than a
-  site-scoped one; the INFO record is what keeps that visible rather than
-  laundering it into a plain PASS.
+- **#412's fallback is a widening,** even bounded by the allowlist. A site-less
+  run is weaker evidence than a site-scoped one; the INFO record is what keeps
+  that visible rather than laundering it into a plain PASS. `SITE_LESS_TOOLS` is
+  a hand-maintained list — the drift test makes that cheap, not free.
 - **stderr noise.** Every `reserve-adr` in a cloud session now prints a warning.
   Correct, but it is unconditional in the environment where it always applies.
 
@@ -145,6 +167,4 @@ not satisfy this site's check. Both are pinned by tests.
 - ADR-0068 item 4 / ADR-0054 — the `site_id=""` convention for site-less commands that #412 sits downstream of
 - ADR-0076 — fixed the same matching class one level lower, at record time
 - [ADR-0112](0112-survey123-optional-add-on-roadmap.md) / [ADR-0123](0123-survey123-phase3-event-reconciliation.md) — the Survey123 track whose Phase 3 reconciler #420 was blocking
-- Issues [#412](https://github.com/0bnoxide/AutoGIS/issues/412), [#420](https://github.com/0bnoxide/AutoGIS/issues/420), [#425](https://github.com/0bnoxide/AutoGIS/issues/425), [#454](https://github.com/0bnoxide/AutoGIS/issues/454), [#455](https://github.com/0bnoxide/AutoGIS/issues/455)
-</content>
-</invoke>
+- Issues [#412](https://github.com/0bnoxide/AutoGIS/issues/412), [#420](https://github.com/0bnoxide/AutoGIS/issues/420), [#425](https://github.com/0bnoxide/AutoGIS/issues/425), [#454](https://github.com/0bnoxide/AutoGIS/issues/454), [#455](https://github.com/0bnoxide/AutoGIS/issues/455), [#457](https://github.com/0bnoxide/AutoGIS/issues/457)

@@ -10,7 +10,8 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# 2.8 — Env_Samples gains COCNumber / SampledBy / SampleSource (#420).
+# 2.8 — Env_Samples gains COCNumber / SampledBy / SampleSource (#420);
+#       Env_WaterLevels gains MeasuredBy / MeasurementMethod (#457).
 SCHEMA_VERSION = "2.8"
 
 

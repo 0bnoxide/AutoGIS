@@ -7,6 +7,7 @@ reported "synced"/"clean" (PR #247 review, [P2]). These tests pin the two
 reproduced failure modes plus the base mirror, driving the script through its
 PONYTAIL_CACHE_ROOT / PONYTAIL_VENDOR_DIR env seams.
 """
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -34,7 +35,7 @@ def _bash_works() -> bool:
     """
     try:
         return subprocess.run(
-            ["bash", "-c", f"test -f '{SCRIPT.as_posix()}'"],
+            ["bash", "-c", f"test -f {shlex.quote(SCRIPT.as_posix())}"],
             capture_output=True, timeout=30,
         ).returncode == 0
     except (OSError, subprocess.SubprocessError):
