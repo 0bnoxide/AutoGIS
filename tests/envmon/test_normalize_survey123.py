@@ -277,9 +277,11 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
             return False
 
         def insertRow(self, row):
+            order.append("batch_row_insert")
             batch_rows.append(row)
 
     outcomes = []
+    order = []
     monkeypatch.setattr(cli_mod, "_guard", lambda tool: None)
     monkeypatch.setattr(
         sessions, "arcpy_env",
@@ -295,9 +297,11 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
     monkeypatch.setattr(import_to_gdb, "write_qa_to_gdb",
                         lambda *a, **k: 0)
     # route-survey123 self-heals the schema before the batch row (its siblings
-    # already did); stub that arcpy seam like every other one here.
+    # already did); stub that arcpy seam like every other one here, and record
+    # the call so the ORDER can be asserted -- deleting the self-heal must not
+    # leave the suite green (#464 review).
     monkeypatch.setattr(gdb_schema, "create_or_update_gdb_schema",
-                        lambda *a, **k: None)
+                        lambda *a, **k: order.append("schema_selfheal"))
 
     result = CliRunner().invoke(
         cli_mod.autogis,
@@ -309,6 +313,9 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
     assert result.exit_code != 0
     assert batch_rows
     assert outcomes == ["BLOCKED_BY_QA"]
+    # The point of the self-heal is that it lands BEFORE the batch row: raising
+    # after that row is written orphans an IN_PROGRESS batch with no QA.
+    assert order[:2] == ["schema_selfheal", "batch_row_insert"]
 
 
 def test_route_late_insert_error_finalizes_blocked(tmp_path, monkeypatch):

@@ -64,6 +64,7 @@ than returning the unguarded answer silently.**
 
 | Issue | Fix |
 |---|---|
+| QA writer | `write_qa_to_gdb` inserted every QA record's free text raw into fixed-width columns (`Message` is `TEXT(512)`), so one overlong value — a dropped-field list, a path, an exception string, from **any** category — made the `InsertCursor` raise and lost the batch's entire QA report. It now clamps each TEXT value to its declared `TABLE_SCHEMAS` width. Pre-existing; surfaced by review of this batch's new warning |
 | #420 | `Env_Samples` gains `COCNumber` / `SampledBy` / `SampleSource` (`SCHEMA_VERSION` → **2.8**, additive, picked up by `upgrade-schema`). Separately, `append_records_idempotent` now emits one `record_fields_not_in_schema` WARNING naming every key it will not store — the projection is shared by every caller, so one guard covers the whole class rather than this one instance |
 | #457 | The normalizer emits the **schema's** names (`EventDate`, `DepthToWater_ft`, `GroundwaterElevation_ft`); `Env_WaterLevels` gains `MeasuredBy` / `MeasurementMethod` in the same 2.8 bump, as the water-level analogue of #420's provenance columns. Two tests that had pinned the invented names were updated — they agreed with the bug |
 | #412 | A shared `latest_run()` widens to the site-less (`site_id=""`) series when a site-scoped lookup finds nothing — but **only for tools on the explicit `SITE_LESS_TOOLS` allowlist** — and records a `tool_run_not_site_scoped` INFO saying it did. `portfolio_metrics` calls the same helper |
@@ -131,10 +132,23 @@ by tests.
 - **New WARNING on existing imports.** Any producer already emitting a key the
   target table lacks starts reporting it. That is the point, but it can surface
   on the first run after upgrade in a pipeline that read as clean.
-- **#412's fallback is a widening,** even bounded by the allowlist. A site-less
-  run is weaker evidence than a site-scoped one; the INFO record is what keeps
-  that visible rather than laundering it into a plain PASS. `SITE_LESS_TOOLS` is
-  a hand-maintained list — the drift test makes that cheap, not free.
+- **#412's widening carries an accepted cross-site residual.** The allowlisted
+  tools are not site-*free*, they are site-*unattributed*: `validate-db --gdb
+  <a site's gdb>` plainly concerns one site, but `_record_site_id` cannot parse
+  a site out of a path (#412 rejected that as fragile — a path is not a
+  site_id). So one site-less record satisfies **every** site's check. This is
+  why the widened match is a **WARNING and not an INFO**: it must not read as a
+  clean PASS, and `--fail-on warning` must be able to reject it. Closing the
+  residual properly means giving these tools a real site identity at record
+  time, which is a separate change from this batch.
+- **`SITE_LESS_TOOLS` is curated, and stays that way.** A `.pyt`
+  `site_config_param=None` decoration is *necessary but not sufficient* for
+  membership. The drift test asserts a **subset**, not equality — with equality
+  it dragged ADR-0125/#447's five newly decorated tools (`harvest`, `inspect`,
+  `parser-profile`, `figure-spec`, `download-dem`) straight into the allowlist
+  on the first CI run after that batch merged, widening the residual with no
+  decision behind it. None of those five is evidence that anything happened for
+  a given site, so none was admitted.
 - **stderr noise.** Every `reserve-adr` in a cloud session now prints a warning.
   Correct, but it is unconditional in the environment where it always applies.
 

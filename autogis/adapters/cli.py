@@ -4887,14 +4887,21 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
             raise click.ClickException(f"--input: {exc}")
 
     arcpy = arcpy_env()
-    # Self-heal the schema BEFORE the batch row, exactly as run_import
-    # (import_to_gdb.py:345) and the EDD path (edd_importer.py:605) do. Without
-    # it, a pre-2.8 GDB raises inside append_records_idempotent on the new
+    # Self-heal the schema BEFORE the batch row, as run_import
+    # (import_to_gdb.py) and the EDD path (edd_importer.py) do. Without it, a
+    # pre-2.8 GDB raises inside append_records_idempotent on the new
     # Env_Samples / Env_WaterLevels columns -- after the IN_PROGRESS batch row
     # is already written, so finalize_batch and write_qa_to_gdb never run and
     # the operator is left with an orphan batch and no QA. Additive and
     # idempotent, so it is a no-op on a current GDB.
-    create_or_update_gdb_schema(gdb, qa=qa)
+    #
+    # No `qa=` -- deliberately the EDD path's contract, not run_import's.
+    # Passing the collector routes create_or_update_gdb_schema's blocking
+    # missing_required_map_layer ERROR into has_blocking() below, which would
+    # discard an otherwise valid field submission because the GDB lacks a
+    # placeholder map layer. Preventing the crash is this call's job; adding a
+    # new gate is not.
+    create_or_update_gdb_schema(gdb)
     batch_fields = ["ImportBatchID", "SiteID", "SiteName", "SourceWorkbook",
                     "SourceWorkbookHash", "ImportDateTime", "ImportedBy",
                     "ParserProfile", "ImportMode", "QAStatus", "SourceSheets"]

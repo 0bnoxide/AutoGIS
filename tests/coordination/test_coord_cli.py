@@ -236,3 +236,25 @@ def test_reserve_adr_still_prints_a_number_when_gh_is_absent(
     out = capsys.readouterr()
     assert out.out.strip() == "0125"
     assert "open-PR ADR scan did not run" in out.err
+
+
+def test_adr_scan_base_keeps_its_floor_when_the_widening_raises(
+        tmp_path, monkeypatch):
+    """#464 review N1.
+
+    The caller-worktree widening added for #425 originally shared one try with
+    the own-tree scan, so any failure in it (git hiccup, registry import) threw
+    away an ALREADY-COMPUTED floor and returned 0 -- strictly less safe for ADR
+    reservation than before the fix. The floor must survive.
+    """
+    import next_adr_number
+    own = _fake_tree(tmp_path / "main", [118])
+    monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
+    monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+
+    def _boom(_cwd):
+        raise RuntimeError("git exploded")
+
+    monkeypatch.setattr(coord_cli, "_git_toplevel", _boom)
+
+    assert coord_cli._adr_scan_base(str(tmp_path)) == 118

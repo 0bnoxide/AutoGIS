@@ -119,7 +119,11 @@ def test_site_less_fallback_is_recorded_not_silent(tmp_path):
     qa = evaluate_readiness("H281", "EV01", h, required_tools=["validate-db"])
     notes = [r for r in qa.records if r.category == "tool_run_not_site_scoped"]
     assert len(notes) == 1
-    assert notes[0].severity == SEV_INFO
+    # WARNING, not INFO: the matched record may be from a run against a
+    # DIFFERENT site, so it must not read as a clean PASS and --fail-on warning
+    # has to be able to catch it.
+    assert notes[0].severity == SEV_WARNING
+    assert "DIFFERENT site" in notes[0].message
 
 
 def test_site_less_fallback_does_not_launder_a_failed_run(tmp_path):
@@ -174,9 +178,37 @@ def test_site_less_tools_match_the_pyt_decorations():
     declared = set(re.findall(
         r'record_pyt_run\(\s*"([\w-]+)"[^)]*?site_config_param=None', src, re.S))
     assert declared, "could not read any site-less .pyt decorations"
-    assert declared == set(SITE_LESS_TOOLS), (
-        f"only in .pyt: {declared - set(SITE_LESS_TOOLS)}; "
-        f"only in SITE_LESS_TOOLS: {set(SITE_LESS_TOOLS) - declared}")
+    # SUBSET, not equality. A .pyt decoration is necessary but NOT sufficient:
+    # equality would force every newly decorated tool into the readiness
+    # allowlist automatically, widening the cross-site residual with no
+    # decision. ADR-0125/#447 decorated five more tools and this assertion, when
+    # it was ==, duly dragged them in on the first CI run after that merge.
+    assert set(SITE_LESS_TOOLS) <= declared, (
+        f"on the allowlist but NOT site-less in the .pyt: "
+        f"{set(SITE_LESS_TOOLS) - declared}")
+
+
+def test_site_less_tools_take_no_site_parameter_on_the_cli_either():
+    """The .pyt decoration is only half the claim.
+
+    A tool earns its place on the allowlist by recording site_id="" on BOTH
+    paths. If a CLI command grew a --site-id while its .pyt stayed
+    site_config_param=None, the widening would start matching runs that DO
+    carry a site — which is the false-PASS this allowlist exists to prevent.
+    """
+    from autogis.adapters.cli import autogis as _root
+    envmon = _root.commands["envmon"]
+    site_params = {"site_id", "site", "site_config", "site_path"}
+    offenders = {}
+    for tool in SITE_LESS_TOOLS:
+        cmd = envmon.commands.get(tool) or _root.commands.get(tool)
+        assert cmd is not None, f"{tool!r} is on the allowlist but has no CLI command"
+        carried = {p.name for p in cmd.params} & site_params
+        if carried:
+            offenders[tool] = sorted(carried)
+    assert not offenders, (
+        f"these tools accept a site parameter and must leave SITE_LESS_TOOLS: "
+        f"{offenders}")
 
 
 def test_portfolio_metrics_agrees_with_readiness_on_a_site_less_tool(tmp_path):

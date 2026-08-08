@@ -25,8 +25,18 @@ from ..common.run_history import RunHistory, RunHistoryError
 # gate — a false PASS on the report-readiness check, which is worse than the
 # unsatisfiable check it was meant to fix.
 #
-# Keep in sync with the `site_config_param=None` decorations in
-# adapters/toolbox.pyt; test_site_less_tools_match_the_pyt_decorations pins it.
+# RESIDUAL, accepted knowingly: these tools are not site-*free*, they are
+# site-*unattributed*. `validate-db --gdb <a site's gdb>` plainly concerns one
+# site; `_record_site_id` simply cannot parse a site out of a path (#412
+# rejected doing so as fragile — a path is not a site_id). So one site-less
+# record satisfies EVERY site's check. That is why the widened match is a
+# WARNING and not an INFO: it must not read as a clean PASS, and
+# `--fail-on warning` must be able to catch it.
+# A .pyt `site_config_param=None` decoration is NECESSARY but NOT SUFFICIENT for
+# membership — this list is curated, and deliberately stays at the six tools
+# #412 scoped. ADR-0125/#447 later decorated five more (harvest, inspect,
+# parser-profile, figure-spec, download-dem); they are *not* admitted here,
+# because none of them is evidence that anything happened for a given site.
 SITE_LESS_TOOLS = frozenset({
     "validate-db", "condition-dem", "compare-drone-surfaces",
     "build-cad-package", "export-civil3d", "transform-landxml",
@@ -86,11 +96,16 @@ def evaluate_readiness(
             continue
 
         if site_less_match:
-            qa.add(SEV_INFO, "tool_run_not_site_scoped",
+            qa.add(SEV_WARNING, "tool_run_not_site_scoped",
                    f"tool {tool!r} has no site-scoped run record; matched its "
-                   f"site-less run history instead (this tool takes no site "
-                   f"input, so it records site_id=\"\").",
-                   site_id=site_id)
+                   f"site-less run history instead (it takes no site input, so "
+                   f"it records site_id=\"\"). That record may be from a run "
+                   f"against a DIFFERENT site — it cannot be attributed.",
+                   site_id=site_id,
+                   recommended_action=f"confirm {tool!r} was run against this "
+                                      f"site's data, or use --fail-on warning "
+                                      f"to treat an unattributable run as a "
+                                      f"failure")
 
         if latest is None or latest.status != "success":
             last_status = latest.status if latest else "never run"

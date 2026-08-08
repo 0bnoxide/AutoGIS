@@ -19,7 +19,7 @@ import datetime as _dt
 import hashlib
 import json
 import uuid
-from dataclasses import asdict, fields, is_dataclass
+from dataclasses import asdict, fields as dc_fields, is_dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -132,7 +132,7 @@ def unmapped_record_fields(records: Sequence, table_name: str) -> List[str]:
         # import (measured 2.8s on 50k records) to learn something available
         # without copying anything.
         seen |= (rec.keys() if isinstance(rec, dict)
-                 else {f.name for f in fields(rec)})
+                 else {f.name for f in dc_fields(rec)})
     return sorted(seen - known)
 
 
