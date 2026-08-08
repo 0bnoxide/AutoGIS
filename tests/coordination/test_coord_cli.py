@@ -137,3 +137,102 @@ def test_reserve_adr_reserves_and_increments(tmp_path, capsys, monkeypatch):
 def test_reserve_adr_needs_resolvable_session(tmp_path):
     assert coord_cli.run(["reserve-adr"], tmp_path / "c.json", cwd="/nowhere",
                          env={}) == 1
+
+
+# --- #425: the scan must see the CALLER's worktree, not just coord_cli's -----
+#
+# A pinned/worktree session invokes the shared main-tree coord_cli.py. The scan
+# resolved docs/adr from coord_cli's __file__, so when main was behind the
+# branch being reserved for, it handed back a number the caller's worktree had
+# already used (observed: returned 0121 with 0121-*.md sitting in the worktree).
+
+def _fake_tree(root, adr_numbers):
+    adr = root / "docs" / "adr"
+    adr.mkdir(parents=True, exist_ok=True)
+    for n in adr_numbers:
+        (adr / f"{n:04d}-x.md").write_text("", encoding="utf-8")
+    return root
+
+
+def test_adr_scan_base_includes_the_callers_worktree(tmp_path, monkeypatch):
+    """coord_cli's own tree is behind; the caller's worktree has ADR-0121."""
+    import next_adr_number
+    own = _fake_tree(tmp_path / "main", [118])
+    caller = _fake_tree(tmp_path / "wt", [121])
+    monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: str(caller))
+    monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
+
+    assert coord_cli._adr_scan_base(str(caller)) == 121
+
+
+def test_adr_scan_base_keeps_its_own_tree_when_that_one_is_ahead(
+        tmp_path, monkeypatch):
+    """Symmetric: either tree can be ahead, so the floor is the max of both."""
+    import next_adr_number
+    own = _fake_tree(tmp_path / "main", [130])
+    caller = _fake_tree(tmp_path / "wt", [121])
+    monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: str(caller))
+    monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
+
+    assert coord_cli._adr_scan_base(str(caller)) == 130
+
+
+def test_adr_scan_base_survives_a_non_git_cwd(tmp_path, monkeypatch):
+    """git unavailable -> "" toplevel -> fall back to coord_cli's own tree,
+    never crash (reserve-adr must keep working off reservations alone)."""
+    import next_adr_number
+    own = _fake_tree(tmp_path / "main", [118])
+    monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: "")
+    monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
+
+    assert coord_cli._adr_scan_base(str(tmp_path / "nowhere")) == 118
+
+
+# --- #454: a skipped open-PR scan must be visible, not silent ---------------
+#
+# _open_pr_max() shells out to `gh`. Cloud/web sessions have no gh at all
+# (GitHub is reached via MCP there), so FileNotFoundError was swallowed, the
+# open-PR half of the scan went dark, and reserve-adr printed a confidently
+# wrong number -- it handed out 0124 while open PR #440 already added
+# docs/adr/0124-*.md. Failing soft is right; failing silently is not.
+
+def _no_gh(monkeypatch):
+    import subprocess
+    import next_adr_number
+
+    def _boom(*a, **k):
+        raise FileNotFoundError("gh")
+
+    monkeypatch.setattr(next_adr_number.subprocess, "run", _boom)
+    return subprocess
+
+
+def test_open_pr_max_warns_on_stderr_when_gh_is_absent(monkeypatch, capsys):
+    import next_adr_number
+    _no_gh(monkeypatch)
+
+    assert next_adr_number._open_pr_max() == 0        # still fails soft
+    err = capsys.readouterr().err
+    assert "open-PR ADR scan did not run" in err
+    assert "FileNotFoundError" in err                 # names why
+
+
+def test_reserve_adr_still_prints_a_number_when_gh_is_absent(
+        tmp_path, monkeypatch, capsys):
+    """The warning goes to stderr so stdout stays machine-readable: callers
+    that parse the number are unaffected by the added visibility."""
+    import next_adr_number
+    _no_gh(monkeypatch)
+    monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(tmp_path / "t"))
+    monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: "")
+    (tmp_path / "t" / "docs" / "adr").mkdir(parents=True)
+    (tmp_path / "t" / "docs" / "adr" / "0124-x.md").write_text("")
+
+    assert coord_cli.run(["reserve-adr", "--session", "s1"],
+                         tmp_path / "c.json") == 0
+    out = capsys.readouterr()
+    assert out.out.strip() == "0125"
+    assert "open-PR ADR scan did not run" in out.err

@@ -92,7 +92,7 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [CompareScheduleVsActual](autogis/core/envmon/schedule_vs_actual.py) | — | `envmon compare-schedule-vs-actual` | Compare scheduled monitoring wells/analytes vs actual results (headless) |
 | [ProcessLevelLoop](autogis/core/envmon/level_loop.py) | 8.1 | `envmon process-level-loop` | Tool 8.1: differential leveling — adjusted elevations + misclosure QA |
 | [ValidateRTKSurvey](autogis/core/envmon/validate_rtk_survey.py) | 8.4 | `envmon validate-rtk-survey` | Validate an RTK survey CSV for precision and fix-type QA; auto-detects headerless PNEZD/PENZD field exports (`--format`/`--extra-columns` to override, ADR-0049) (headless) |
-| [DroneGCPCheckpointQA](autogis/core/envmon/drone_checkpoint_qa.py) | 8.7 | `envmon drone-checkpoint-qa` | Tool 11.1: evaluate GCP checkpoint accuracy (headless) |
+| [DroneGCPCheckpointQA](autogis/core/envmon/drone_checkpoint_qa.py) | 8.7 | `envmon drone-checkpoint-qa` | Tool 8.7: evaluate GCP checkpoint accuracy (headless) |
 | [ReconcileSurvey123AndLabResults](autogis/core/envmon/reconcile_survey123_lab.py) | 2.6 | `envmon reconcile-survey123-lab` | Pre-production: reconcile Survey123 field submissions vs lab EDD (headless) |
 | [BuildSurvey123XLSFormFromConfig](autogis/core/envmon/survey123_form_builder.py) | 7.1a | `envmon build-survey-form` | Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config |
 | [ValidateSurveyForm](autogis/core/envmon/survey_schema.py) | S123-1.1 | `envmon validate-survey-form` | S123 Phase 1: static XLSForm validation — structure, choices, references, the ADR-0113 SampleID contract, and site/event config cross-checks (headless, no portal, ADR-0115) |

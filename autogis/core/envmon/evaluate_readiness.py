@@ -35,11 +35,32 @@ def evaluate_readiness(
     for tool in required_tools:
         try:
             latest = run_history.latest(tool, site_id)
+            site_less_match = False
+            if latest is None and site_id:
+                # Site-less tools record site_id="" on BOTH execution paths:
+                # the CLI takes no site input so _record_site_id returns "",
+                # and the .pyt decorates with site_config_param=None. Strict
+                # equality in RunHistory.latest() therefore never matches a
+                # site-scoped lookup, so the check was unsatisfiable AND its
+                # recommended action ("run it again") wrote another unmatchable
+                # record — the operator loops forever. Fall back to the
+                # site-less series rather than reporting a tool that did run as
+                # never run (#412). Recorded, not silent: a site-less run is
+                # weaker evidence than a site-scoped one.
+                latest = run_history.latest(tool, "")
+                site_less_match = latest is not None
         except RunHistoryError as exc:
             qa.add(SEV_ERROR, "run_history_unreadable",
                    f"cannot read run history: {exc}", site_id=site_id)
             failed.append(tool)
             continue
+
+        if site_less_match:
+            qa.add(SEV_INFO, "tool_run_not_site_scoped",
+                   f"tool {tool!r} has no site-scoped run record; matched its "
+                   f"site-less run history instead (this tool takes no site "
+                   f"input, so it records site_id=\"\").",
+                   site_id=site_id)
 
         if latest is None or latest.status != "success":
             last_status = latest.status if latest else "never run"

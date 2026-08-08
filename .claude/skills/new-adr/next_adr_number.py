@@ -7,9 +7,10 @@ real example). This also scans open PR diffs for added `docs/adr/NNNN-*.md`.
 
 Scope, honestly: this REDUCES collisions, it does not eliminate them. Two live
 sessions that both grab NNNN *before either opens a PR* are invisible to a PR
-scan — and that is exactly the recurring case. Fails soft: if `gh` is offline or
-unauthed, it degrades to the local-only scan (still correct, just less
-protective).
+scan — and that is exactly the recurring case. Fails soft: if `gh` is offline,
+unauthed, or (cloud/web sessions) not installed at all, it degrades to the
+local-only scan and says so on stderr — the degraded answer is still printed,
+but the caller can now tell it apart from a guarded one (#454).
 
 Usage:
     python next_adr_number.py          # prints next number, zero-padded (e.g. 0106)
@@ -44,8 +45,26 @@ def _local_max(adr_dir: Path) -> int:
     )
 
 
+_NO_GH_WARNING = (
+    "warning: open-PR ADR scan did not run (no usable `gh` CLI: {why}). "
+    "The number below is guarded by local files and live reservations ONLY — "
+    "an ADR added by an already-open PR will NOT be seen. Verify against open "
+    "PRs before use."
+)
+
+
 def _open_pr_max() -> int:
-    """Max ADR number in files added by any open PR. 0 if gh is unavailable."""
+    """Max ADR number in files added by any open PR. 0 if gh is unavailable.
+
+    Failing soft is right — the local scan still ran — but failing *silently*
+    is not: the caller gets a confidently wrong number and cannot tell the
+    degraded answer from the guarded one. Cloud/web sessions have no `gh` at
+    all (GitHub is reached through MCP there), so this half of the scan is dark
+    for a whole class of session; #454 is a live instance where it handed out a
+    number an open PR already used. Warn on stderr so the degradation is
+    visible to every caller, in-process or via subprocess, without changing the
+    number printed on stdout.
+    """
     try:
         out = subprocess.run(
             ["gh", "pr", "list", "--state", "open", "--limit", "200",
@@ -53,7 +72,8 @@ def _open_pr_max() -> int:
             capture_output=True, text=True, timeout=30, check=True,
         ).stdout
         prs = json.loads(out)
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        print(_NO_GH_WARNING.format(why=type(exc).__name__), file=sys.stderr)
         return 0  # fail soft — local-only scan still ran
     best = 0
     for pr in prs:
@@ -112,6 +132,21 @@ def _check() -> None:
             (adr / n).write_text("")
         assert _local_max(adr) == 7
         assert _local_max(Path(d) / "docs" / "missing") == 0   # absent dir -> 0
+
+    # #454: gh absent must warn, not just quietly return 0.
+    import contextlib
+    import io
+    real_run, err = subprocess.run, io.StringIO()
+    try:
+        def _boom(*_a, **_k):
+            raise FileNotFoundError("gh")
+        subprocess.run = _boom
+        with contextlib.redirect_stderr(err):
+            assert _open_pr_max() == 0
+    finally:
+        subprocess.run = real_run
+    assert "open-PR ADR scan did not run" in err.getvalue()
+
     print("next_adr_number self-check OK")
 
 

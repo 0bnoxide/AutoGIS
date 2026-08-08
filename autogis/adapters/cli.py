@@ -1269,7 +1269,7 @@ def compare_schedule_vs_actual_cmd(
 def drone_checkpoint_qa_cmd(
     checkpoints_csv, hrms_threshold, vrms_threshold, output, report, fail_on
 ):
-    """Tool 11.1: evaluate GCP checkpoint accuracy (headless)."""
+    """Tool 8.7: evaluate GCP checkpoint accuracy (headless)."""
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.drone_checkpoint_qa import (
         evaluate_gcp_checkpoints,

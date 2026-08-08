@@ -39,14 +39,25 @@ TABLE_SCHEMAS = {
         ("UseForContour", SH, None), ("ExclusionReason", T, 128),
         ("SourceWorkbook", T, 255), ("SourceSheet", T, 64),
         ("SourceRow", L, None), ("SourceColumn_MPE", T, 8),
-        ("SourceColumn_DTW", T, 8), ("SourceColumn_GWE", T, 8)],
+        ("SourceColumn_DTW", T, 8), ("SourceColumn_GWE", T, 8),
+        # Field-collection provenance (SCHEMA_VERSION 2.8) — the water-level
+        # analogue of Env_Samples' SampledBy / SampleSource below (#457).
+        ("MeasuredBy", T, 64), ("MeasurementMethod", T, 32)],
     "Env_Samples": [
         ("ImportBatchID", T, 64), ("SiteID", T, 32), ("Matrix", T, 16),
         ("LocationID", T, 32), ("SampleID", T, 64), ("ParentSampleID", T, 64),
         ("SampleDate", DT, None), ("SampleDateRaw", T, 64),
         ("DepthTop_ft", D, None), ("DepthBottom_ft", D, None),
         ("DepthIntervalText", T, 32), ("IsDuplicate", SH, None),
-        ("DuplicateType", T, 32), ("LabSampleID", T, 64)] + _SRC[:3],
+        ("DuplicateType", T, 32), ("LabSampleID", T, 64),
+        # Field-collection provenance (SCHEMA_VERSION 2.8). The Survey123
+        # normalizer has emitted all three on every sample since the add-on
+        # landed, but Env_Samples had no columns for them, so the insert
+        # projection dropped them without a trace (#420) — the operator's COC
+        # number was collected in the field and then vanished. COCNumber
+        # mirrors the BoringSamples width so the two agree.
+        ("COCNumber", T, 32), ("SampledBy", T, 64), ("SampleSource", T, 32),
+    ] + _SRC[:3],
     "Env_AnalyticalResults": [
         ("ImportBatchID", T, 64), ("SiteID", T, 32), ("Matrix", T, 16),
         ("LocationID", T, 32), ("SampleID", T, 64), ("ParentSampleID", T, 64),

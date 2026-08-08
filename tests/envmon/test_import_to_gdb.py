@@ -8,6 +8,7 @@ zero rows must not report a clean PASS indistinguishable from a healthy run.
 """
 
 import csv
+import re
 from types import SimpleNamespace
 
 from autogis.core.common.config import ParserProfile, SiteConfig
@@ -340,3 +341,146 @@ def test_unscoped_replace_still_deletes_all_four_tables(monkeypatch):
                               "Env_AnalyticalResults", "Env_RPDResults"}
     assert not [r for r in qa.records
                if r.category == "replace_skipped_unscopable_table"]
+
+
+# --- #420: silent projection loss on insert ---------------------------------
+#
+# append_records_idempotent projects each record onto TABLE_SCHEMAS
+# (`[d.get(f) for f in field_names]`), so a key with no column is discarded
+# with no exception and no QA record. The Survey123 normalizer emitted
+# COCNumber / SampledBy / SampleSource on every sample; Env_Samples had no
+# such columns, and the operator's COC number vanished between the field and
+# the GDB.
+
+def test_survey123_provenance_keys_have_columns_on_env_samples():
+    """The data-loss half: the three dropped keys now exist in the schema."""
+    from autogis.core.envmon.gdb_schema import TABLE_SCHEMAS
+    cols = {f[0] for f in TABLE_SCHEMAS["Env_Samples"]}
+    assert {"COCNumber", "SampledBy", "SampleSource"} <= cols
+
+
+def test_normalized_survey123_sample_has_no_unmapped_fields():
+    """Producer/consumer reachability at the real seam: every key the
+    Survey123 normalizer emits must map to a column, or it is dropped."""
+    from autogis.core.envmon.normalize_survey123 import (
+        normalize_survey123_submission)
+    import inspect
+    src = inspect.getsource(normalize_survey123_submission)
+    emitted = set(re.findall(r'"(\w+)":', src.split("samples: list[dict] = [")[1]))
+    assert emitted, "could not read the emitted sample keys"
+    assert import_to_gdb.unmapped_record_fields([dict.fromkeys(emitted)],
+                                                "Env_Samples") == []
+
+
+def test_unmapped_record_fields_names_every_dropped_key():
+    recs = [{"SiteID": "H281", "NotAColumn": 1},
+            {"SiteID": "H281", "AlsoMissing": 2, "SampleID": "S1"}]
+    assert import_to_gdb.unmapped_record_fields(recs, "Env_Samples") == [
+        "AlsoMissing", "NotAColumn"]
+
+
+def test_unmapped_record_fields_quiet_when_everything_maps():
+    assert import_to_gdb.unmapped_record_fields(
+        [{"SiteID": "H281", "SampleID": "S1"}], "Env_Samples") == []
+
+
+class _RecordingCursor:
+    def __init__(self):
+        self.rows = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def insertRow(self, row):
+        self.rows.append(row)
+
+
+def _fake_arcpy(monkeypatch, cursor):
+    monkeypatch.setattr(import_to_gdb, "_existing_key_set", lambda *a: set())
+    monkeypatch.setattr(
+        import_to_gdb, "_arcpy",
+        lambda: SimpleNamespace(
+            da=SimpleNamespace(InsertCursor=lambda *a: cursor)))
+
+
+def test_append_warns_once_naming_the_keys_it_will_not_store(
+        monkeypatch, tmp_path):
+    cursor = _RecordingCursor()
+    _fake_arcpy(monkeypatch, cursor)
+    qa = QACollector()
+
+    inserted, skipped = import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples",
+        [{"SiteID": "H281", "SampleID": "S1", "LegacyField": "x"},
+         {"SiteID": "H281", "SampleID": "S2", "LegacyField": "y"}],
+        qa, "B1")
+
+    warn = [r for r in qa.records
+            if r.category == "record_fields_not_in_schema"]
+    assert len(warn) == 1, "one warning per append, not one per row"
+    assert "LegacyField" in warn[0].message
+    assert warn[0].severity == "WARNING"
+    # Non-blocking: the rows still land.
+    assert (inserted, skipped) == (2, 0)
+    assert len(cursor.rows) == 2
+
+
+def test_append_stays_quiet_when_every_key_maps(monkeypatch, tmp_path):
+    """The guard must not turn every healthy import noisy."""
+    cursor = _RecordingCursor()
+    _fake_arcpy(monkeypatch, cursor)
+    qa = QACollector()
+
+    import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples",
+        [{"SiteID": "H281", "SampleID": "S1", "COCNumber": "COC-1",
+          "SampledBy": "AB", "SampleSource": "Survey123"}],
+        qa, "B1")
+
+    assert not [r for r in qa.records
+                if r.category == "record_fields_not_in_schema"]
+
+
+# --- #457: the same projection loss on Env_WaterLevels ----------------------
+#
+# Strictly worse than #420: the normalizer used MeasurementDate / DTW_ft /
+# GWE_ft, none of which exist on Env_WaterLevels, so every routed water level
+# landed with no date and no measurement. EventDate is part of the unique key,
+# so with it always NULL every event for a well collapsed onto one key and each
+# one after the first was skipped as a duplicate at INFO severity.
+
+def _normalized_water_level():
+    from autogis.core.envmon.normalize_survey123 import (
+        normalize_survey123_submission)
+    from autogis.core.common.qa import QACollector as _QA
+    wl, _samp = normalize_survey123_submission(
+        {"WellID": "MW-1", "SamplingDate": "2026-01-15", "Matrix": "GW",
+         "SampledBy": "AB", "COCNumber": "COC-1", "DepthToWater_ft": 12.5,
+         "Notes": ""},
+        "H281", "B1", _QA())
+    assert wl, "normalizer produced no water level for a valid DTW"
+    return wl[0]
+
+
+def test_normalized_water_level_has_no_unmapped_fields():
+    assert import_to_gdb.unmapped_record_fields(
+        [_normalized_water_level()], "Env_WaterLevels") == []
+
+
+def test_normalized_water_level_carries_the_measurement():
+    wl = _normalized_water_level()
+    assert wl["DepthToWater_ft"] == 12.5
+    assert wl["EventDate"] is not None
+
+
+def test_water_level_unique_key_separates_two_events_at_one_well():
+    """The compounding half: with EventDate populated, two gauging rounds at
+    the same well must NOT collapse onto one key."""
+    from autogis.core.envmon.gdb_schema import compute_unique_key
+    jan = dict(_normalized_water_level(), EventDate="2026-01-15")
+    jun = dict(_normalized_water_level(), EventDate="2026-06-15")
+    assert (compute_unique_key(jan, "Env_WaterLevels")
+            != compute_unique_key(jun, "Env_WaterLevels"))

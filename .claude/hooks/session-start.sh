@@ -48,13 +48,22 @@ fi
 # no-ops quietly when the plugin isn't installed (cloud/CI). ponytail: detect +
 # notify only — auto-writing would leave surprise changes on read-only main.
 SYNC="$PROJECT_DIR/.claude/scripts/sync-ponytail-skills.sh"
-[ -f "$SYNC" ] && bash "$SYNC" --check || true
+# "$BASH", not bare `bash`: this hook already runs under a bash that can see
+# $PROJECT_DIR, whereas bare `bash` can re-resolve to a *different* interpreter
+# (the WSL launcher on Windows) that cannot read the same paths and no-ops
+# silently — the hook-side half of #455.
+[ -f "$SYNC" ] && "${BASH:-bash}" "$SYNC" --check || true
 
 # Keep stdout clean in synchronous mode: send all install chatter to stderr.
 {
-  # --- AutoGIS project deps (so the 113-test suite runs in fresh sessions) ---
-  pip install --quiet pytest PyYAML click openpyxl
-  pip install --quiet --no-deps -e "$PROJECT_DIR"
+  # --- AutoGIS project deps (so the suite runs in fresh sessions) ---
+  # Install the project WITH its declared runtime deps rather than a
+  # hand-maintained list + --no-deps: that list drifted behind pyproject's
+  # `dependencies` (it never gained numpy or xlrd), so every fresh cloud
+  # session collected 4 ModuleNotFoundError: numpy errors before a single test
+  # ran. pip resolves `dependencies` itself; the heavy optional extras
+  # (arcgis, torch, PySide6, ...) stay out because they are extras, not deps.
+  pip install --quiet pytest -e "$PROJECT_DIR"
 } 1>&2
 
 # --- persist the session id for the coordination framework (coord_cli --session) ---

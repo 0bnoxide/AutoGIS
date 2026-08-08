@@ -19,16 +19,23 @@ SCRIPT = Path(__file__).resolve().parent.parent / ".claude" / "scripts" / "sync-
 def _bash_works() -> bool:
     """A *functional* POSIX bash, resolved the SAME way the tests invoke it.
 
-    The tests spawn bare ``["bash", ...]``. On windows-latest that resolves via
-    CreateProcess / App-Execution-Alias to the WSL launcher
-    (C:\\Windows\\System32\\bash.exe), which has no distro installed and exits
-    nonzero — even when a working Git bash is elsewhere on PATH. So probe bare
-    ``"bash"`` too; ``shutil.which("bash")`` would find that *other* working bash
-    and wrongly report the tests as runnable (they'd then fail on the WSL stub).
+    The tests spawn bare ``["bash", SCRIPT.as_posix(), ...]``. On windows-latest
+    that resolves via CreateProcess / App-Execution-Alias to the WSL launcher
+    (C:\\Windows\\System32\\bash.exe) — even when a working Git bash is elsewhere
+    on PATH. So probe bare ``"bash"`` too; ``shutil.which("bash")`` would find
+    that *other* working bash and wrongly report the tests as runnable.
+
+    Probe the property the tests actually depend on — that this bash can *see
+    the script at its Windows path* — not merely that it exits 0. A machine with
+    a working WSL distro passes ``bash -c "exit 0"`` but cannot resolve
+    ``C:/Users/...`` (it needs ``/mnt/c/...``), so the guard let the tests run,
+    the script silently no-op'd, and 5 tests failed red on every WSL-equipped
+    dev box (issue #455).
     """
     try:
         return subprocess.run(
-            ["bash", "-c", "exit 0"], capture_output=True, timeout=30
+            ["bash", "-c", f"test -f '{SCRIPT.as_posix()}'"],
+            capture_output=True, timeout=30,
         ).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False

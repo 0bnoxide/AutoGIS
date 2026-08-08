@@ -111,6 +111,25 @@ def _existing_key_set(table_path: str, key_fields: Sequence[str]) -> set:
     return keys
 
 
+def unmapped_record_fields(records: Sequence, table_name: str) -> List[str]:
+    """Record keys with no column in ``TABLE_SCHEMAS[table_name]``, sorted.
+
+    The insert path projects every record onto the target schema
+    (``[d.get(f) for f in field_names]``), so a key the schema does not carry is
+    discarded with no error, no exception and no QA record. That is how the
+    Survey123 normalizer's ``COCNumber`` / ``SampledBy`` / ``SampleSource``
+    reached ``Env_Samples`` and vanished (#420).
+
+    Pure and arcpy-free, so the whole silent-projection class is testable off
+    Pro rather than only observable as missing data in a delivered GDB.
+    """
+    known = {f[0] for f in TABLE_SCHEMAS[table_name]}
+    seen: set = set()
+    for rec in records:
+        seen |= set(_as_dict(rec))
+    return sorted(seen - known)
+
+
 def append_records_idempotent(
     gdb: Path,
     table_name: str,
@@ -130,6 +149,22 @@ def append_records_idempotent(
     field_names = [f[0] for f in TABLE_SCHEMAS[table_name]]
     table_path = str(gdb / table_name)
     key_fields = UNIQUE_KEYS[table_name]
+
+    # WARNING, not ERROR: the rows still land, and a producer that legitimately
+    # carries scratch keys should not be blocked from importing. But it must not
+    # be silent — every caller of this function shares the projection, so one
+    # guard here covers all of them.
+    dropped = unmapped_record_fields(records, table_name)
+    if dropped:
+        qa.add(SEV_WARNING, "record_fields_not_in_schema",
+               f"{table_name}: {len(dropped)} field(s) on the incoming records "
+               f"have no column in the target schema and are NOT stored: "
+               f"{', '.join(dropped)}.",
+               recommended_action="Add the column(s) to "
+                                  "gdb_schema.TABLE_SCHEMAS and run 'autogis "
+                                  "envmon upgrade-schema', or stop emitting "
+                                  "them upstream.",
+               import_batch_id=batch_id)
 
     existing = (set() if allow_duplicate_records
                 else _existing_key_set(table_path, key_fields))

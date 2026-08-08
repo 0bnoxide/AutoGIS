@@ -10,7 +10,8 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
-SCHEMA_VERSION = "2.7"
+# 2.8 — Env_Samples gains COCNumber / SampledBy / SampleSource (#420).
+SCHEMA_VERSION = "2.8"
 
 
 @dataclass

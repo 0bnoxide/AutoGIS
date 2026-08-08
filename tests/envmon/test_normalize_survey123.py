@@ -29,7 +29,10 @@ def test_minimal_payload_returns_water_level():
     wl, samp = normalize_survey123_submission(_PAYLOAD, "H281", "B1", qa)
     assert len(wl) == 1
     assert wl[0]["LocationID"] == "MW-01"
-    assert wl[0]["DTW_ft"] == 12.5
+    # Schema field names, not invented ones: this dict goes straight into
+    # Env_WaterLevels, which has no DTW_ft column (#457).
+    assert wl[0]["DepthToWater_ft"] == 12.5
+    assert wl[0]["EventDate"] is not None
 
 
 def test_minimal_payload_returns_sample_record():
