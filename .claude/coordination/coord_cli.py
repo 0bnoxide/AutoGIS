@@ -172,13 +172,18 @@ def _adr_scan_base(cwd):
     try:
         import next_adr_number
         from pathlib import Path
-        base = next_adr_number._scan_max(Path(tree))
     except Exception:
         return 0
-    # Widen to the caller's worktree in its OWN try: a failure here must not
-    # discard the floor we already computed. Folding both into one try made a
+    # Each tree's scan gets its OWN try: a failure in either must not discard
+    # the floor the other can still compute. Folding both into one try made a
     # git or registry hiccup return 0 — strictly less safe for reservation
-    # than before the #425 fix.
+    # than before the #425 fix (review N1 caught the caller-side half; the
+    # own-tree scan gets the same treatment for the same reason).
+    base = 0
+    try:
+        base = next_adr_number._scan_max(Path(tree))
+    except Exception:
+        pass
     try:
         import registry
         caller = _git_toplevel(cwd)

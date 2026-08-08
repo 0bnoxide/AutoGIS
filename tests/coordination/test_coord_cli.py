@@ -258,3 +258,20 @@ def test_adr_scan_base_keeps_its_floor_when_the_widening_raises(
     monkeypatch.setattr(coord_cli, "_git_toplevel", _boom)
 
     assert coord_cli._adr_scan_base(str(tmp_path)) == 118
+
+
+def test_adr_scan_base_keeps_the_caller_floor_when_its_own_scan_raises(
+        tmp_path, monkeypatch):
+    """Symmetric to the N1 fix above: a failure scanning coord_cli's OWN tree
+    must not discard the caller-worktree floor, which is still computable."""
+    import next_adr_number
+    caller = _fake_tree(tmp_path / "wt", [121])
+    monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(tmp_path / "gone"))
+    monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: str(caller))
+
+    def _boom(*_a):
+        raise RuntimeError("own-tree scan exploded")
+
+    monkeypatch.setattr(next_adr_number, "_scan_max", _boom)
+
+    assert coord_cli._adr_scan_base(str(caller)) == 121

@@ -8,7 +8,6 @@ zero rows must not report a clean PASS indistinguishable from a healthy run.
 """
 
 import csv
-import re
 from types import SimpleNamespace
 
 from autogis.core.common.config import ParserProfile, SiteConfig
@@ -361,15 +360,20 @@ def test_survey123_provenance_keys_have_columns_on_env_samples():
 
 def test_normalized_survey123_sample_has_no_unmapped_fields():
     """Producer/consumer reachability at the real seam: every key the
-    Survey123 normalizer emits must map to a column, or it is dropped."""
+    Survey123 normalizer emits must map to a column, or it is dropped.
+
+    Drives the actual normalizer, like its water-level twin below, rather than
+    regex-scraping the source for the emitted dict literal — the scrape broke
+    on any refactor of the literal and could silently read the wrong keys."""
     from autogis.core.envmon.normalize_survey123 import (
         normalize_survey123_submission)
-    import inspect
-    src = inspect.getsource(normalize_survey123_submission)
-    emitted = set(re.findall(r'"(\w+)":', src.split("samples: list[dict] = [")[1]))
-    assert emitted, "could not read the emitted sample keys"
-    assert import_to_gdb.unmapped_record_fields([dict.fromkeys(emitted)],
-                                                "Env_Samples") == []
+    _wl, samples = normalize_survey123_submission(
+        {"WellID": "MW-1", "SamplingDate": "2026-01-15", "Matrix": "GW",
+         "SampledBy": "AB", "COCNumber": "COC-1", "DepthToWater_ft": 12.5,
+         "Notes": ""},
+        "H281", "B1", QACollector())
+    assert samples, "normalizer produced no sample for a valid payload"
+    assert import_to_gdb.unmapped_record_fields(samples, "Env_Samples") == []
 
 
 def test_unmapped_record_fields_names_every_dropped_key():
@@ -522,7 +526,8 @@ def test_generator_records_are_not_consumed_before_the_insert_loop(
 
 def test_dropped_field_message_is_capped_for_the_512_char_qa_column(
         monkeypatch, tmp_path):
-    """Env_ImportQA.Message is TEXT(512) and write_qa_to_gdb does not truncate."""
+    """The name-list cap keeps the message readable on its own; the TEXT(512)
+    fit is guaranteed separately by write_qa_to_gdb's clamp (tested below)."""
     _fake_arcpy(monkeypatch, _RecordingCursor())
     qa = QACollector()
     rec = {"SiteID": "H281"}
@@ -566,3 +571,4 @@ def test_write_qa_to_gdb_clamps_text_to_the_declared_column_widths(
                 if isinstance(v, str) and len(v) > widths.get(f, 10 ** 9)}
     assert not too_long, f"values exceed their column width: {too_long}"
     assert row["Message"].startswith("mmm")   # clamped, not blanked
+    assert row["Message"].endswith("…")       # truncation is marked, not silent

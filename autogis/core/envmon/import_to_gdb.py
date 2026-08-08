@@ -326,9 +326,11 @@ def write_qa_to_gdb(gdb: Path, qa: QACollector, batch_id: str) -> int:
 
 
 def _clamp(value, width):
-    """Truncate a string to `width`; anything else passes through untouched."""
+    """Truncate an overlong string to `width`, ending in "…" so a clamped
+    value is distinguishable from one that fit exactly. Anything else passes
+    through untouched."""
     if width and isinstance(value, str) and len(value) > width:
-        return value[:width]
+        return value[:width - 1] + "…"
     return value
 
 
