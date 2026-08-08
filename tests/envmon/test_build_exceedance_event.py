@@ -5,12 +5,9 @@ docs/superpowers/specs/2026-06-28-build-analytical-exceedance-event-design.md
 """
 from pathlib import Path
 
-import yaml
-
 from autogis.core.envmon.build_exceedance_event import (
     classify_exceedance_tier,
     build_exceedance_event,
-    load_screening_levels_yaml,
     write_exceedance_event_csv,
     ExceedanceEventRecord,
 )
@@ -95,11 +92,20 @@ def test_date_range_latest():
     assert benz.sample_date == "2026-04-15"  # latest within window
 
 
-def test_load_screening_levels_yaml(tmp_path):
-    p = tmp_path / "sl.yaml"
-    p.write_text(yaml.dump({"Benzene": 5.0, "Lead": 15.0}), encoding="utf-8")
-    sl = load_screening_levels_yaml(p)
-    assert sl["Benzene"] == 5.0 and sl["Lead"] == 15.0
+def test_module_no_longer_ships_its_own_screening_levels_loader():
+    """#448: the removed `load_screening_levels_yaml` was a flat-only trap
+    sitting next to this module's real work. `load_flat_screening_levels` is
+    the canonical loader and reads the shipped nested file the dead one
+    raised TypeError on."""
+    import autogis
+    from autogis.core.common.config import load_flat_screening_levels
+    from autogis.core.envmon import build_exceedance_event as mod
+
+    assert not hasattr(mod, "load_screening_levels_yaml")
+    shipped = (Path(autogis.__file__).parent
+               / "config" / "screening_levels" / "screening_levels.yaml")
+    assert load_flat_screening_levels(shipped), (
+        "canonical loader must read the shipped screening levels")
 
 
 def test_write_csv_roundtrips_columns(tmp_path):

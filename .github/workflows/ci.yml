@@ -21,6 +21,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # Sonar's new-code detection needs full history
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"   # matches ArcGIS Pro 3.6 bundled Python
@@ -31,4 +33,16 @@ jobs:
         env:
           # repo-root on the path so gui-executor subprocess tests import autogis
           PYTHONPATH: ${{ github.workspace }}
-        run: python -m pytest -q -n auto --durations=20
+        run: python -m pytest -q -n auto --durations=20 --cov=autogis --cov-report=xml
+
+      # Scan here, on this job's coverage.xml, rather than in its own workflow:
+      # a separate job would have to re-run the suite (ADR-0110 flags Windows
+      # minutes as billing ~2x) or ship the report across workflows as an
+      # artifact. Neither buys anything, and running scan-after-tests also
+      # stops a red suite from publishing metrics. Skipped for fork PRs, which
+      # cannot read SONAR_TOKEN. See issue #452.
+      - name: SonarQube Scan
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

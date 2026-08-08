@@ -326,16 +326,66 @@ def build_harvest_config(
     return config
 
 
-def run_harvest(config: HarvestConfig, session) -> list[AttachmentResult]:
+def run_harvest(config: HarvestConfig, session, qa=None) -> list[AttachmentResult]:
     """Run the core harvester for ``config`` against an active GIS ``session``.
 
     Thin pass-through to ``core.harvest.harvest``; kept here so the .pyt's
-    ``execute()`` stays pure marshalling.
+    ``execute()`` stays pure marshalling. When ``qa`` is supplied, per-
+    attachment failures are recorded on it — ``harvest()`` deliberately never
+    kills a run over one bad attachment, so without this the .pyt reported
+    "N attachment(s) processed" with no hint that some of them failed (#431).
     """
     from autogis.core.harvest.harvester import harvest
 
     summary = harvest(session, config)
-    return list(summary.results)
+    results = list(summary.results)
+    if qa is not None:
+        from autogis.core.common.qa import SEV_ERROR, SEV_INFO
+        failed = [r for r in results if (r.disposition or r.status) == "failed"]
+        for r in failed:
+            qa.add(SEV_ERROR, "attachment_download_failed",
+                   f"{r.original_name or '?'} "
+                   f"(OBJECTID {r.objectid}, attachment {r.attachment_id}) "
+                   f"was not downloaded: {r.error or 'unknown error'}",
+                   recommended_action="Re-run; `skip_existing` keeps the "
+                                      "attachments that did land.")
+        qa.add(SEV_ERROR if failed else SEV_INFO, "harvest_summary",
+               f"{summary.downloaded} downloaded, {summary.skipped} skipped, "
+               f"{summary.failed} failed.")
+    return results
+
+
+def spec_contour_kwargs(figure_spec) -> dict:
+    """Map a figure spec's ``contours:`` block to ``build_groundwater_contours``
+    keyword arguments (#443).
+
+    Only keys the spec actually supplies are returned, so the core function's
+    own defaults stay the single source of truth. An unusable value is a
+    ``ValueError`` rather than a silent fallback: the whole point of the block
+    is that editing it changes the output.
+    """
+    from autogis.core.envmon.groundwater_contours import METHODS
+
+    block = figure_spec.get("contours") or {}
+    if not isinstance(block, dict):
+        raise ValueError(
+            f"figure spec 'contours' must be a mapping, got {type(block).__name__}")
+    kwargs: dict = {}
+    if (method := block.get("method")) is not None:
+        if method not in METHODS:
+            raise ValueError(
+                f"figure spec contours.method {method!r} is not one of {METHODS}")
+        kwargs["method"] = method
+    for spec_key, arg, cast in (("interval_ft", "contour_interval", float),
+                                ("min_valid_points", "min_valid_points", int)):
+        if (value := block.get(spec_key)) is not None:
+            try:
+                kwargs[arg] = cast(value)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"figure spec contours.{spec_key} must be numeric, "
+                    f"got {value!r}") from None
+    return kwargs
 
 
 def _pyt_run_history_path(dest_hint: Path | None) -> Path | None:

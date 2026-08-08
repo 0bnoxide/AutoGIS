@@ -131,6 +131,17 @@ def _write_contour_points(gdb, site_id: str, ev_dt, event_date: str,
     arcpy = _arcpy()
     fc = str(gdb / "Env_GWContourPoints")
     if not arcpy.Exists(fc):
+        # Pre-upgrade geodatabase: contouring can still run, but the points
+        # layer the potentiometric figure lists as visible will render empty.
+        # Reported rather than swallowed (#444) — this is the only use of `qa`
+        # here, and dropping it made the run look clean.
+        qa.add(SEV_WARNING, "contour_points_layer_missing",
+               f"{fc} does not exist; the {len(pts)} contour point(s) used "
+               "were not persisted, so any figure showing "
+               "Env_GWContourPoints renders empty or stale.",
+               recommended_action="Run `autogis envmon upgrade-schema` on "
+                                  "this geodatabase, then re-run.",
+               site_id=site_id)
         return
     where = f"SiteID = '{site_id}' AND " + _where_date("EventDate", event_date)
     with arcpy.da.UpdateCursor(fc, ["OID@"], where_clause=where) as cur:

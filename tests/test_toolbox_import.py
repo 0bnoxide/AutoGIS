@@ -3,6 +3,7 @@ import importlib.util, json, pathlib
 from types import SimpleNamespace
 
 import autogis
+import click
 import pytest
 
 
@@ -121,38 +122,59 @@ def test_marshal_helper_importable_without_arcpy():
     assert cfg.layer_ref() == "http://x"
 
 
-def test_redirect_only_pyt_tools_use_shared_run_recorder():
+def _pyt_run_recorders() -> tuple[set[str], dict[str, str]]:
+    """(tool classes that define execute(), {class: recorded tool name})."""
     pyt = pathlib.Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
     tree = ast.parse(pyt.read_text(encoding="utf-8"), filename=str(pyt))
-    recorded = {}
+    tools, recorded = set(), {}
     for cls in (node for node in tree.body if isinstance(node, ast.ClassDef)):
         for method in cls.body:
             if not isinstance(method, ast.FunctionDef) or method.name != "execute":
                 continue
+            tools.add(cls.name)
             for decorator in method.decorator_list:
                 if (isinstance(decorator, ast.Call)
                         and isinstance(decorator.func, ast.Attribute)
                         and decorator.func.attr == "record_pyt_run"):
                     recorded[cls.name] = decorator.args[0].value
+    return tools, recorded
 
-    assert recorded == {
-        "ImportToGdb": "import-gdb",
-        "BuildCurrentEvent": "build-event",
-        "BuildCallouts": "build-callouts",
-        "GroundwaterContours": "gw-contours",
-        "RunGWModelPipeline": "run-gw-model-pipeline",
-        "ApproveGWModel": "approve-gw-model",
-        "BuildConcentrationSurface": "build-conc-surface",
-        "ValidateDatabase": "validate-db",
-        "ExportFigures": "export-figures",
-        "FullPipeline": "full-pipeline",
-        "ReconcileSampleLocations": "reconcile-locations",
-        "ConditionDEM": "condition-dem",
-        "CompareDroneSurfaces": "compare-drone-surfaces",
-        "ExportContoursForCivil3D": "export-civil3d",
-        "TransformLandXMLSurface": "transform-landxml",
-        "BuildCADExportPackage": "build-cad-package",
-    }
+
+def test_every_pyt_tool_execute_uses_shared_run_recorder():
+    """ADR-0068 item 2: every `.pyt` execute() records its run.
+
+    Was an exact-match allowlist, which froze a snapshot rather than the rule
+    — five tools shipped undecorated and the assertion happily agreed with
+    them (#447). Stated as the invariant, a new tool without the decorator
+    now fails here instead of going silently unrecorded in Pro.
+    """
+    tools, recorded = _pyt_run_recorders()
+    assert tools, "no .pyt tool classes found — parser broken, not the toolbox"
+    missing = sorted(tools - set(recorded))
+    assert not missing, (
+        f".pyt tools whose execute() has no @toolbox_core.record_pyt_run, so "
+        f"their Pro runs are invisible to evaluate-readiness/portfolio-"
+        f"metrics: {missing}")
+
+
+def test_pyt_recorded_tool_names_are_live_cli_commands():
+    """A recorded name that doesn't match a CLI subcommand splits one tool's
+    run history in two, which readiness reads as "never run"."""
+    from autogis.adapters import cli
+
+    live: set[str] = set()
+
+    def walk(group):
+        for name, cmd in group.commands.items():
+            live.add(name)
+            if isinstance(cmd, click.Group):
+                walk(cmd)
+
+    walk(cli.autogis)
+    _tools, recorded = _pyt_run_recorders()
+    ghosts = sorted({n for n in recorded.values() if n not in live})
+    assert not ghosts, (
+        f"record_pyt_run names with no matching CLI subcommand: {ghosts}")
 
 
 def test_groundwater_approval_tool_is_registered():

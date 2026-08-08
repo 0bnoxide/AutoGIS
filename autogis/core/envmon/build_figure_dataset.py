@@ -214,8 +214,16 @@ def generate_callout_features(
     use_hull_collision: bool = False,
 ) -> int:
     """Write callouts to the four feature classes; returns callout count."""
-    arcpy = _arcpy()
     spec = figure_spec
+    # Honored here rather than at each call site so every caller (Tool 3, the
+    # full pipeline, anything future) obeys the spec (#443). Checked before
+    # `_arcpy()` so a spec that opts out costs nothing and needs no runtime.
+    if not spec.get("generate_callouts", True):
+        qa.add(SEV_INFO, "callouts_disabled_by_spec",
+               f"Figure spec {spec.get('figure_spec_id')} sets "
+               "generate_callouts: false; no callout features written.")
+        return 0
+    arcpy = _arcpy()
     spec_id = spec.figure_spec_id
     matrix = spec.get("matrix", "GW")
     try:
