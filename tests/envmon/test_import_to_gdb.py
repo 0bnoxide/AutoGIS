@@ -534,3 +534,35 @@ def test_dropped_field_message_is_capped_for_the_512_char_qa_column(
     assert "60 field(s)" in msg          # the true count is still reported
     assert "more)" in msg                # but the name list is capped
     assert len(msg) <= 512
+
+
+def test_write_qa_to_gdb_clamps_text_to_the_declared_column_widths(
+        monkeypatch, tmp_path):
+    """An overlong QA message must not lose the WHOLE batch's QA.
+
+    Env_ImportQA.Message is TEXT(512) and write_qa_to_gdb wrote it raw, so one
+    long free-text message (a dropped-field list, a path, an exception string)
+    made the InsertCursor raise and discarded every QA record for the batch.
+    Clamping is driven by TABLE_SCHEMAS, so it covers every category and every
+    text column rather than only the producer that happened to be long.
+    """
+    from autogis.core.envmon.gdb_schema import TABLE_SCHEMAS, T
+    widths = {f[0]: f[2] for f in TABLE_SCHEMAS["Env_ImportQA"]
+              if f[1] is T and f[2]}
+    cursor = _RecordingCursor()
+    monkeypatch.setattr(
+        import_to_gdb, "_arcpy",
+        lambda: SimpleNamespace(
+            da=SimpleNamespace(InsertCursor=lambda *a: cursor)))
+
+    qa = QACollector()
+    qa.add("WARNING", "x" * 200, "m" * 2000,
+           recommended_action="a" * 900, site_id="s" * 100)
+    assert import_to_gdb.write_qa_to_gdb(tmp_path / "site.gdb", qa, "B1") == 1
+
+    fields = [f[0] for f in TABLE_SCHEMAS["Env_ImportQA"]]
+    row = dict(zip(fields, cursor.rows[0]))
+    too_long = {f: len(v) for f, v in row.items()
+                if isinstance(v, str) and len(v) > widths.get(f, 10 ** 9)}
+    assert not too_long, f"values exceed their column width: {too_long}"
+    assert row["Message"].startswith("mmm")   # clamped, not blanked

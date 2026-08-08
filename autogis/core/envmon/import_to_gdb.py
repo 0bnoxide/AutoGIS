@@ -27,7 +27,7 @@ from ..common.logging import get_logger
 from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 from ..common.config import ParserProfile, SiteConfig, load_analyte_dictionary, load_screening_levels
 from .excel_profile_reader import ProfileWorkbookReader
-from .gdb_schema import TABLE_SCHEMAS, UNIQUE_KEYS, create_or_update_gdb_schema, compute_unique_key, _norm_key_part
+from .gdb_schema import T, TABLE_SCHEMAS, UNIQUE_KEYS, create_or_update_gdb_schema, compute_unique_key, _norm_key_part
 from .normalize_groundwater import normalize_gw_table_2
 from .normalize_soil import normalize_soil_table
 from .normalize_metals import normalize_metals_table
@@ -167,8 +167,10 @@ def append_records_idempotent(
     # guard here covers all of them.
     dropped = unmapped_record_fields(records, table_name)
     if dropped:
-        # Env_ImportQA.Message is TEXT(512) and write_qa_to_gdb does not
-        # truncate, so cap the name list rather than risk an overlong insert.
+        # Readability only — keep a 60-key dump from burying the count. The
+        # TEXT(512) guarantee is NOT here (a count cap bounds names, not
+        # characters); write_qa_to_gdb clamps every text column to its declared
+        # width, which is the one place that can promise it for every category.
         shown = ", ".join(dropped[:10])
         if len(dropped) > 10:
             shown += f", … (+{len(dropped) - 10} more)"
@@ -302,15 +304,32 @@ def create_edd_import_batch(
 
 def write_qa_to_gdb(gdb: Path, qa: QACollector, batch_id: str) -> int:
     arcpy = _arcpy()
-    fields = [f[0] for f in TABLE_SCHEMAS["Env_ImportQA"]]
+    schema = TABLE_SCHEMAS["Env_ImportQA"]
+    fields = [f[0] for f in schema]
+    # Clamp every TEXT value to its declared width, taken from the schema
+    # itself. A QA message is free text — a dropped-field list, a file path,
+    # an exception string — and Message is only TEXT(512). An overlong value
+    # makes the InsertCursor raise, which loses EVERY QA record for the batch:
+    # the entire report discarded because one line was long. One clamp here
+    # covers every category and every text column, which is why the producers
+    # do not each need their own. The sibling writers above already clamp the
+    # same way (`str(edd_path)[:255]`, `operator[:64]`).
+    widths = {f[0]: f[2] for f in schema if f[1] is T and f[2]}
     n = 0
     with arcpy.da.InsertCursor(str(gdb / "Env_ImportQA"), fields) as cur:
         for rec in qa.records:
             d = rec.as_gdb_row()
             d["ImportBatchID"] = d.get("ImportBatchID") or batch_id
-            cur.insertRow([d.get(f) for f in fields])
+            cur.insertRow([_clamp(d.get(f), widths.get(f)) for f in fields])
             n += 1
     return n
+
+
+def _clamp(value, width):
+    """Truncate a string to `width`; anything else passes through untouched."""
+    if width and isinstance(value, str) and len(value) > width:
+        return value[:width]
+    return value
 
 
 def run_import(
