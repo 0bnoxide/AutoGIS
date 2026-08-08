@@ -1,3 +1,4 @@
+import importlib.util
 import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 
@@ -12,6 +13,15 @@ from autogis.core.common.landxml import (
     write_landxml_surface,
 )
 from autogis.core.envmon.landxml_transform import transform_landxml_surface
+
+# `landxml_transform` imports pyproj lazily and raises its own message when it
+# is absent, so this module imports fine either way -- but every test that
+# actually transforms then hard-failed instead of skipping (#441). Marked
+# per-test rather than at module level so the parsing/unit-scale tests, which
+# need no pyproj at all, keep running on a bare install.
+requires_pyproj = pytest.mark.skipif(
+    importlib.util.find_spec("pyproj") is None,
+    reason="needs the optional [landxml] extra (pyproj)")
 
 
 def _surface() -> LandXMLSurface:
@@ -44,6 +54,7 @@ def test_linear_unit_scale_supports_every_landxml_pair(source, target):
         meters[source] / meters[target])
 
 
+@requires_pyproj
 def test_transform_meter_to_us_survey_foot_preserves_tin_and_round_trips(
         tmp_path):
     source = _surface()
@@ -79,6 +90,7 @@ def test_transform_meter_to_us_survey_foot_preserves_tin_and_round_trips(
     assert round_trip.faces == source.faces
 
 
+@requires_pyproj
 def test_transform_rejects_source_metadata_mismatch_without_override(tmp_path):
     input_xml = write_landxml_surface(
         _surface(), tmp_path / "input.xml",
@@ -98,6 +110,7 @@ def test_transform_rejects_source_metadata_mismatch_without_override(tmp_path):
     assert result.output_path.exists()
 
 
+@requires_pyproj
 def test_transform_converts_mixed_unit_elevations_without_scaling_xy(tmp_path):
     source = _surface()
     input_xml = write_landxml_surface(
@@ -116,6 +129,7 @@ def test_transform_converts_mixed_unit_elevations_without_scaling_xy(tmp_path):
     assert result.source_z_unit == "meter"
 
 
+@requires_pyproj
 def test_transform_rejects_unit_that_does_not_match_crs(tmp_path):
     input_xml = write_landxml_surface(
         _surface(), tmp_path / "input.xml",
@@ -144,6 +158,7 @@ def _montana_geographic_surface() -> LandXMLSurface:
     "ESRI:108190",
     "WGS_1984_(ITRF00)_To_NAD_1983",
 ])
+@requires_pyproj
 def test_transform_geographic_source_uses_requested_esri_operation(
         tmp_path, operation):
     source = _montana_geographic_surface()
@@ -168,6 +183,7 @@ def test_transform_geographic_source_uses_requested_esri_operation(
     assert result.operation_accuracy == pytest.approx(0.1)
 
 
+@requires_pyproj
 def test_transform_auto_selects_best_montana_operation(tmp_path):
     input_xml = write_landxml_surface(
         _montana_geographic_surface(), tmp_path / "input.xml",
@@ -182,6 +198,7 @@ def test_transform_auto_selects_best_montana_operation(tmp_path):
     assert result.operation_accuracy == pytest.approx(0.1)
 
 
+@requires_pyproj
 def test_transform_projected_us_survey_foot_to_international_foot(tmp_path):
     source = LandXMLSurface(
         name="Montana",
@@ -212,6 +229,7 @@ def test_transform_projected_us_survey_foot_to_international_foot(tmp_path):
     assert result.target_unit == "foot"
 
 
+@requires_pyproj
 @pytest.mark.parametrize("custom_scale", [3.28, 0.03])
 def test_transform_custom_z_scale_changes_only_elevation(
         tmp_path, custom_scale):
@@ -233,6 +251,7 @@ def test_transform_custom_z_scale_changes_only_elevation(
     assert result.z_scale_mode == "explicit"
 
 
+@requires_pyproj
 def test_custom_z_scale_needs_no_geographic_source_unit_metadata(tmp_path):
     source = _montana_geographic_surface()
     input_xml = write_landxml_surface(
@@ -254,6 +273,7 @@ def test_custom_z_scale_needs_no_geographic_source_unit_metadata(tmp_path):
     assert result.z_scale_mode == "explicit"
 
 
+@requires_pyproj
 def test_geographic_source_z_unit_still_drives_automatic_scale(tmp_path):
     input_xml = write_landxml_surface(
         _montana_geographic_surface(), tmp_path / "input.xml",
@@ -299,6 +319,7 @@ def test_transform_rejects_z_unit_and_custom_scale_together(tmp_path):
             source_z_unit="meter", z_scale=3.28)
 
 
+@requires_pyproj
 def test_transform_rejects_unknown_geographic_transformation(tmp_path):
     input_xml = write_landxml_surface(
         _montana_geographic_surface(), tmp_path / "input.xml",
@@ -311,6 +332,7 @@ def test_transform_rejects_unknown_geographic_transformation(tmp_path):
             geographic_transformation="Montana_Magic")
 
 
+@requires_pyproj
 def test_transform_rejects_missing_best_operation_grid(tmp_path, monkeypatch):
     input_xml = write_landxml_surface(
         _montana_geographic_surface(), tmp_path / "input.xml",
@@ -335,6 +357,7 @@ def test_transform_rejects_missing_best_operation_grid(tmp_path, monkeypatch):
             source_crs="EPSG:4326", target_crs="EPSG:2256")
 
 
+@requires_pyproj
 def test_transform_requires_override_for_authority_metadata_conflict(tmp_path):
     input_xml = write_landxml_surface(
         _montana_geographic_surface(), tmp_path / "input.xml",
@@ -352,6 +375,7 @@ def test_transform_requires_override_for_authority_metadata_conflict(tmp_path):
     assert result.output_path.exists()
 
 
+@requires_pyproj
 def test_transform_requires_surface_name_when_input_has_multiple_surfaces(
         tmp_path):
     input_xml = tmp_path / "multi.xml"
@@ -401,6 +425,7 @@ def test_transform_refuses_existing_output_without_overwrite(tmp_path):
     assert output_xml.read_text(encoding="utf-8") == "keep"
 
 
+@requires_pyproj
 def test_transform_landxml_cli(tmp_path):
     input_xml = write_landxml_surface(
         _surface(), tmp_path / "input.xml",
@@ -419,6 +444,7 @@ def test_transform_landxml_cli(tmp_path):
     assert output_xml.exists()
 
 
+@requires_pyproj
 def test_transform_landxml_cli_hides_legacy_units_and_reports_custom_z(
         tmp_path):
     help_result = CliRunner().invoke(

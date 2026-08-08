@@ -374,8 +374,10 @@ def run_import(
     run_soil = matrix_filter in (None, "SOIL")
 
     if run_gw:
-        wl, s, r = normalize_gw_table_2(workbook, profile, site_id, batch_id,
-                                        adict, slevels, qa, reader=reader)
+        wl, s, r = normalize_gw_table_2(
+            workbook, profile, site_id, batch_id, adict, slevels, qa,
+            reader=reader,
+            plausible_gwe_range_ft=site_config.get("plausible_gwe_range_ft"))
         water_levels.extend(wl); samples.extend(s); results.extend(r)
         s, r = normalize_metals_table(workbook, profile, site_id, batch_id,
                                       adict, slevels, qa, reader=reader)

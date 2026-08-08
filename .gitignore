@@ -38,8 +38,8 @@ run_history.csv
 .mcp.json
 build/
 
-# Coverage artifacts. `pytest --cov` writes these; issue #452 will likely make
-# coverage runs routine (SonarCloud needs a report), so keep them out of git.
+# Coverage artifacts. `pytest --cov` writes these, and since #452 every CI run
+# produces coverage.xml for the SonarCloud scan — so keep them out of git.
 .coverage
 .coverage.*
 coverage.xml

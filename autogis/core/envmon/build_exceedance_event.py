@@ -167,11 +167,11 @@ def build_exceedance_event(
     return records
 
 
-def load_screening_levels_yaml(path: Path) -> Dict[str, float]:
-    """Load a {AnalyteName: screening_value} mapping from YAML."""
-    import yaml
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    return {str(k): float(v) for k, v in data.items() if v is not None}
+# `load_screening_levels_yaml` lived here and was never called by anything but
+# its own test; it also assumed a flat {analyte: value} file and raised
+# TypeError on the shipped matrix-nested screening_levels.yaml (#448).
+# `autogis.core.common.config.load_flat_screening_levels` is the canonical
+# loader for that argument and handles both shapes.
 
 
 def write_exceedance_event_csv(
