@@ -2824,6 +2824,13 @@ def export_wqx_cmd(results_paths, locations_path, config_path, out_dir,
         MonitoringLocation, WqxExportConfig, map_to_wqx,
         source_row_from_analytical, SUBMISSION_COLUMNS)
 
+    # Before any write: --report inside --out-dir would land on one of the
+    # three artifacts below, and _render_qa picks its writer by extension --
+    # so `--report <out-dir>/wqx_submission.csv` replaced the submission with
+    # the QA report and still exited 0. Same guard the package-producing
+    # commands use.
+    _reject_report_path_in_artifact(report, out_dir)
+
     rows = []
     for p in results_paths:
         rows.extend(

@@ -290,3 +290,27 @@ def test_cli_clean_export_still_passes_fail_on_warning(tmp_path):
     """The gate must fire on real QA, not on every run."""
     res = _run_export(tmp_path, [_one_row()], "--fail-on", "warning")
     assert res.exit_code == 0, res.output
+
+
+def test_cli_rejects_a_report_path_inside_the_out_dir(tmp_path):
+    """--report naming an artifact replaced the regulatory submission with the
+    QA report and still exited 0 (found by review of the #460 fix: adding
+    @qa_report_options is what put a second writer on that directory)."""
+    out = tmp_path / "wqx"
+    res = _run_export(tmp_path, [_one_row()],
+                      "--report", str(out / "wqx_submission.csv"))
+    assert res.exit_code != 0
+    assert "outside the package directory" in res.output
+    # And it refused BEFORE writing, so no half-built export is left behind.
+    assert not out.exists()
+
+
+def test_cli_report_beside_the_out_dir_is_still_allowed(tmp_path):
+    """The guard must reject aliasing, not every nearby path."""
+    report = tmp_path / "qa.json"
+    res = _run_export(tmp_path, [_one_row()], "--report", str(report))
+    assert res.exit_code == 0, res.output
+    assert report.exists()
+    submission = (tmp_path / "wqx" / "wqx_submission.csv").read_text(
+        encoding="utf-8")
+    assert "Benzene" in submission
