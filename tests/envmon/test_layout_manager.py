@@ -178,3 +178,111 @@ def test_update_layout_text_without_arcpy_is_clean_guard(tmp_path):
     ])
     assert result.exit_code != 0
     assert "arcpy" in result.output.lower() or "ArcGIS Pro" in result.output
+
+
+# --- prepare_figure_aprx: the shared ExportFigures chain (#459, #462) ---
+
+def _chain_recorder(monkeypatch):
+    """Replace every arcpy-touching step with a recorder.
+
+    The defect under test is wiring, not arcpy: the .pyt and the CLI carried
+    separate copies of this chain and had drifted apart (#462), and both
+    selected layouts with a spec key that does not exist (#459).
+    """
+    from autogis.core.envmon import layout_manager as lm
+
+    calls = []
+
+    def rec(name, ret=None):
+        def _f(*a, **kw):
+            calls.append((name, a, kw))
+            return ret
+        return _f
+
+    work = Path("/work/fig.aprx")
+    monkeypatch.setattr(lm, "copy_template_aprx", rec("copy", work))
+    monkeypatch.setattr(lm, "update_aprx_data_sources", rec("repath"))
+    monkeypatch.setattr(lm, "apply_figure_definition_queries", rec("defquery"))
+    monkeypatch.setattr(lm, "set_layer_visibility", rec("visibility"))
+    monkeypatch.setattr(lm, "update_layout_text", rec("text"))
+    monkeypatch.setattr(lm, "zoom_to_boundary", rec("zoom"))
+    return calls, work
+
+
+def _spec(**over):
+    from autogis.core.common.config import FigureSpec
+    data = {
+        "figure_spec_id": "FS1", "layout_name": "GW Analytical Layout",
+        "layer_definition_queries": {"Env_CalloutBoxes": "1=1"},
+        "visible_layers": ["MonitoringWells"], "hidden_layers": ["Parcels"],
+        "layout_text": {"FigureTitle": "T"},
+        "extent_boundary_layer": "SiteBoundary", "extent_buffer_pct": 7,
+    }
+    data.update(over)
+    return FigureSpec(data=data)
+
+
+def test_prepare_figure_aprx_runs_every_step_of_the_chain(monkeypatch):
+    """gen-map-series silently omitted visibility, layout text and extent —
+    figures shipped with the template's defaults and no title (#462)."""
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    calls, work = _chain_recorder(monkeypatch)
+    got, layout_names = prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
+        "H281", "2026-06-15", _spec(), QACollector())
+
+    assert got == work
+    assert [c[0] for c in calls] == [
+        "copy", "repath", "defquery", "visibility", "text", "zoom"]
+
+
+def test_prepare_figure_aprx_selects_the_specs_layout(monkeypatch):
+    """Both call sites read spec['layouts'], a key no figure spec defines, so
+    layout_names was always None and export_layouts fell through its filter —
+    exporting EVERY layout in the APRX, unconfigured (#459)."""
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    _chain_recorder(monkeypatch)
+    _, layout_names = prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
+        "H281", "2026-06-15", _spec(), QACollector())
+    assert layout_names == ["GW Analytical Layout"]
+
+
+def test_prepare_figure_aprx_layout_names_is_none_without_a_layout_name(monkeypatch):
+    """No layout_name -> no filter, the pre-existing export-everything
+    behavior. Kept explicit so the fallback is a decision, not an accident."""
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    _chain_recorder(monkeypatch)
+    _, layout_names = prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
+        "H281", "2026-06-15", _spec(layout_name=None), QACollector())
+    assert layout_names is None
+
+
+def test_prepare_figure_aprx_layout_text_merges_site_defaults(monkeypatch):
+    """Site defaults < spec layout_text < the event date stamped last."""
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    calls, _ = _chain_recorder(monkeypatch)
+    prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
+        "H281", "2026-06-15", _spec(), QACollector(),
+        layout_text={"FigureTitle": "site default", "Client": "Acme"})
+
+    text = next(c for c in calls if c[0] == "text")[1][2]
+    assert text == {"FigureTitle": "T", "Client": "Acme",
+                    "EventDate": "2026-06-15"}
+
+
+def test_prepare_figure_aprx_skips_zoom_without_a_boundary_layer(monkeypatch):
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    calls, _ = _chain_recorder(monkeypatch)
+    prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
+        "H281", "2026-06-15", _spec(extent_boundary_layer=None),
+        QACollector())
+    assert "zoom" not in [c[0] for c in calls]

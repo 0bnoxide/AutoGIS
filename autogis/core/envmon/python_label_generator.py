@@ -131,13 +131,11 @@ def build_exceedance_callout_expression(
 
 def _build_nd_callout_expression(
     value_field: str,
-    units_field: str,
     *,
     nd_text: str = "ND",
 ) -> str:
     """Return Esri Python label-expression source showing 'ND' label only (no
-    numeric value shown). `units_field` is accepted for signature parity with the
-    Arcade builder but unused, same as that builder.
+    numeric value shown).
     """
     return (
         f'def FindLabel ( [{value_field}] ):\n'
@@ -215,7 +213,7 @@ def generate_python_labels(
             value_field=fields.value_field,
             units_field=fields.units_field,
             sl_field=None,
-            expression=_build_nd_callout_expression(fields.value_field, fields.units_field),
+            expression=_build_nd_callout_expression(fields.value_field),
         ))
 
         specs.append(PythonLabelSpec(

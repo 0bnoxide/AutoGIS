@@ -75,24 +75,56 @@ def test_event_status_partial_lab_results_not_received():
     assert rows[0]["LabReceived"] == 0  # partial -> not fully received
 
 
+# Prior rows come from Env_WaterLevels, whose elevation column is
+# GroundwaterElevation_ft — NOT the Env_CurrentWaterLevelEvent spelling
+# (GWE_ft) the current rows use. These fixtures deliberately use the real
+# source spelling: written with GWE_ft they agreed with #466 and passed while
+# the production path produced NULL deltas and "Unknown" trends everywhere.
+_PRIOR_GWE = "GroundwaterElevation_ft"
+
+
+def test_prior_column_name_matches_env_waterlevels_schema():
+    """Pin the fixture spelling to the schema so this cannot drift back."""
+    from autogis.core.envmon.gdb_schema import TABLE_SCHEMAS
+    assert _PRIOR_GWE in {c[0] for c in TABLE_SCHEMAS["Env_WaterLevels"]}
+    assert "GWE_ft" not in {c[0] for c in TABLE_SCHEMAS["Env_WaterLevels"]}
+
+
 def test_well_status_delta():
     cur = [{"LocationID": "MW-01", "GWE_ft": 100.5, "Status": "measured"}]
-    prior = [{"LocationID": "MW-01", "GWE_ft": 100.0}]
+    prior = [{"LocationID": "MW-01", _PRIOR_GWE: 100.0}]
     rows = build_dash_well_status(cur, prior, "H281", "2026Q2")
     assert abs(rows[0]["GWEDelta_ft"] - 0.5) < 1e-9
 
 
 def test_gw_level_summary_rising_trend():
     cur = [{"LocationID": "MW-01", "GWE_ft": 100.5}]
-    prior = [{"LocationID": "MW-01", "GWE_ft": 100.0}]
+    prior = [{"LocationID": "MW-01", _PRIOR_GWE: 100.0}]
     rows = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")
     assert rows[0]["Trend"] == "Rising"
     assert abs(rows[0]["Delta_ft"] - 0.5) < 1e-9
 
 
+def test_prior_water_levels_flow_from_selector_to_delta():
+    """End-to-end at the real seam: Env_WaterLevels rows -> selector ->
+    builder. The selector renames nothing, so the builder must read the
+    source table's own column name (#466)."""
+    cur = [{"LocationID": "MW-01", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-01", "EventDate": "2026-03-15", _PRIOR_GWE: 100.0},
+        {"LocationID": "MW-01", "EventDate": "2025-12-15", _PRIOR_GWE: 99.0},
+    ]
+    prior = select_prior_water_levels(all_wl, cur)
+    rows = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")
+    assert rows[0]["PriorGWE_ft"] == 100.0
+    assert abs(rows[0]["Delta_ft"] - 0.5) < 1e-9
+    assert rows[0]["Trend"] == "Rising"
+
+
 def test_gw_level_summary_falling_and_stable():
     cur = [{"LocationID": "A", "GWE_ft": 99.0}, {"LocationID": "B", "GWE_ft": 100.05}]
-    prior = [{"LocationID": "A", "GWE_ft": 100.0}, {"LocationID": "B", "GWE_ft": 100.0}]
+    prior = [{"LocationID": "A", _PRIOR_GWE: 100.0},
+             {"LocationID": "B", _PRIOR_GWE: 100.0}]
     rows = {r["LocationID"]: r for r in
             build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")}
     assert rows["A"]["Trend"] == "Falling"

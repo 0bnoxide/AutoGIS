@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..common.logging import get_logger
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
@@ -203,6 +203,64 @@ def update_layout_text(
     if not dry_run:
         aprx.save()
     del aprx
+
+
+def prepare_figure_aprx(
+    template: Path,
+    working_dir: Path,
+    tag: str,
+    gdb: Path,
+    site_id: str,
+    event: str,
+    spec,
+    qa: QACollector,
+    *,
+    layout_text: Optional[Dict[str, str]] = None,
+) -> Tuple[Path, Optional[List[str]]]:
+    """Run the full figure-preparation chain on a copy of ``template``.
+
+    Copies the template APRX, repaths its data sources to ``gdb``, applies the
+    spec's definition queries, sets layer visibility, stamps layout text and
+    zooms to the boundary layer. Returns ``(working_aprx, layout_names)`` where
+    ``layout_names`` is ready to hand to
+    :func:`~autogis.core.envmon.export_figures.export_layouts`.
+
+    This exists so ``ExportFigures`` (.pyt) and ``gen-map-series`` (CLI) share
+    one chain. They previously carried separate copies of it and had drifted:
+    the CLI omitted visibility, layout text and extent entirely (#462), and
+    *both* selected layouts with ``spec["layouts"]`` — a key no figure spec
+    defines — so ``layout_names`` was always ``None`` and every export emitted
+    every layout in the APRX, unconfigured, colliding on one filename stem
+    (#459). The schema key is the singular ``layout_name``, which is in
+    ``FIGURE_REQUIRED``; resolving it here keeps that fix in one place.
+
+    ``spec`` is duck-typed on ``.get()`` / ``.figure_spec_id`` (a
+    ``FigureSpec``) so this module keeps no config dependency.
+    """
+    work = copy_template_aprx(template, working_dir, tag)
+    update_aprx_data_sources(work, gdb, qa)
+
+    lq = spec.get("layer_definition_queries", {})
+    if lq:
+        apply_figure_definition_queries(
+            work, site_id, event, spec.figure_spec_id,
+            spec.get("map_type", "GW_ANALYTICAL"), lq, qa)
+
+    set_layer_visibility(work, spec.get("visible_layers", []),
+                         spec.get("hidden_layers", []), qa)
+
+    layout_name = spec.get("layout_name")
+    text = dict(layout_text or {})
+    text.update(spec.get("layout_text", {}))
+    text.setdefault("EventDate", event)
+    update_layout_text(work, layout_name, text, qa)
+
+    boundary = spec.get("extent_boundary_layer")
+    if boundary:
+        zoom_to_boundary(work, layout_name, boundary,
+                         float(spec.get("extent_buffer_pct", 5)), qa)
+
+    return work, ([layout_name] if layout_name else None)
 
 
 def zoom_to_boundary(aprx_path: Path, layout_name: Optional[str],

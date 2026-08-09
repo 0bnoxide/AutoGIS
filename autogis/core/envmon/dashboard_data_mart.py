@@ -169,12 +169,33 @@ def build_dash_event_status(samples: List[dict], results: List[dict],
     }]
 
 
+def _prior_gwe_by_location(
+    prior_water_level_events: List[dict],
+) -> Dict[str, Optional[float]]:
+    """Map LocationID -> prior groundwater elevation, accepting either name.
+
+    The two source tables spell the same quantity differently:
+    ``Env_WaterLevels`` (where prior rows come from, via
+    :func:`select_prior_water_levels`) stores ``GroundwaterElevation_ft``,
+    while ``Env_CurrentWaterLevelEvent`` stores ``GWE_ft``. Reading only the
+    latter made every prior lookup ``None`` — so ``Delta_ft`` was always NULL
+    and ``Trend`` always "Unknown" on the delivered dashboard (#466).
+    Resolved here, once, rather than at each consumer.
+    """
+    out: Dict[str, Optional[float]] = {}
+    for p in prior_water_level_events:
+        v = p.get("GroundwaterElevation_ft")
+        if v is None:
+            v = p.get("GWE_ft")
+        out[p.get("LocationID", "")] = _num(v)
+    return out
+
+
 def build_dash_well_status(water_level_events: List[dict],
                            prior_water_level_events: List[dict],
                            site_id: str, event_id: str) -> List[dict]:
     """Dash_WellStatus ← Env_CurrentWaterLevelEvent (+ prior for delta)."""
-    prior = {p.get("LocationID", ""): _num(p.get("GWE_ft"))
-             for p in prior_water_level_events}
+    prior = _prior_gwe_by_location(prior_water_level_events)
     out = []
     for e in water_level_events:
         loc = e.get("LocationID", "")
@@ -203,8 +224,7 @@ def build_dash_gw_level_summary(water_level_events: List[dict],
                                 prior_water_level_events: List[dict],
                                 site_id: str, event_id: str) -> List[dict]:
     """Dash_GWLevelSummary ← two-event water-level join with trend."""
-    prior = {p.get("LocationID", ""): _num(p.get("GWE_ft"))
-             for p in prior_water_level_events}
+    prior = _prior_gwe_by_location(prior_water_level_events)
     out = []
     for e in water_level_events:
         loc = e.get("LocationID", "")

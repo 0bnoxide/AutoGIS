@@ -2801,14 +2801,18 @@ def lab_qa_trends_cmd(qc_paths, thresholds_path, out_path, report, fail_on):
               type=click.Path(file_okay=False),
               help="Output dir for wqx_submission.csv, wqx_rejections.csv, "
                    "wqx_provenance.json.")
-def export_wqx_cmd(results_paths, locations_path, config_path, out_dir):
+@qa_report_options
+def export_wqx_cmd(results_paths, locations_path, config_path, out_dir,
+                   report, fail_on):
     """Phase 8: outbound WQX/regulatory submission mapping (headless).
 
     Maps canonical result rows to WQX submission columns, validating
     identifiers, coordinates, units, methods, and (optionally) qualifiers.
     Valid rows -> wqx_submission.csv; invalid rows -> wqx_rejections.csv with a
-    reason (nothing silently disappears); source/config provenance ->
-    wqx_provenance.json. DRAFT: not certified against the agency validator.
+    reason; source/config provenance -> wqx_provenance.json. Mapping QA
+    (unmapped matrix codes, rejection summary) goes to the QA report, so
+    --fail-on can gate an outbound submission. DRAFT: not certified against
+    the agency validator.
     """
     import csv as _csv
     import json as _json
@@ -2866,6 +2870,7 @@ def export_wqx_cmd(results_paths, locations_path, config_path, out_dir):
                f"{len(result.rejections)} rejected of {len(rows)} row(s)")
     if result.rejections:
         click.echo(f"  see {rej_path.name} for rejection reasons")
+    _render_qa(qa, report, fail_on)
 
 
 @envmon.command("build-fieldmaps")
@@ -4472,9 +4477,14 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
 
     Headless path (--dry-run): expand the site x event x figure-spec matrix
     via plan_map_series() and print the ordered job list — no arcpy. LOCAL
-    path: guard for arcpy, then replay the proven ExportFigures chain per job
-    (repath data sources, apply definition queries, export layouts, register
-    exports in Env_FigureRegistry).
+    path: guard for arcpy, then run the same preparation chain ExportFigures
+    uses (layout_manager.prepare_figure_aprx: repath data sources, apply
+    definition queries, set layer visibility, stamp layout text, zoom to the
+    boundary), export the spec's layout, and register exports in
+    Env_FigureRegistry.
+
+    Output names come from the packet plan, not the spec's
+    output_filename_pattern — the mode's grouping/ordering lives in the name.
     """
     from autogis.core.common.config import FigureSpec
     from autogis.core.common.qa import QACollector
@@ -4504,9 +4514,7 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
     _guard("gen-map-series")
     from autogis.core.envmon.export_figures import (
         export_layouts, register_exports)
-    from autogis.core.envmon.layout_manager import (
-        apply_figure_definition_queries, copy_template_aprx,
-        update_aprx_data_sources)
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
 
     qa = QACollector()
     gdb_path = Path(gdb)
@@ -4519,16 +4527,12 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
         if not template.is_absolute():
             template = spec.path.parent / template
         stem = Path(job.out_name).stem
-        work = copy_template_aprx(template, export_dir / "_working", stem)
-        update_aprx_data_sources(work, gdb_path, qa)
-        lq = spec.get("layer_definition_queries", {})
-        if lq:
-            apply_figure_definition_queries(
-                work, job.site_id, job.event, job.figure_spec,
-                spec.get("map_type", "GW_ANALYTICAL"), lq, qa)
+        work, layout_names = prepare_figure_aprx(
+            template, export_dir / "_working", stem,
+            gdb_path, job.site_id, job.event, spec, qa)
         written = export_layouts(
             work, export_dir, "{stem}", {"stem": stem}, qa,
-            layout_names=spec.get("layouts"),
+            layout_names=layout_names,
             formats=[job.out_format.upper()], dpi=dpi,
             required_layers=spec.get("required_layers", []))
         register_exports(gdb_path, written, job.site_id, job.event,

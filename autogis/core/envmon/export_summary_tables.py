@@ -107,8 +107,7 @@ def _build_soil_by_depth(
     return headers, rows, exceedance_coords
 
 
-def _apply_sheet_style(ws, exceedance_coords: Set[Tuple[int, int]],
-                       header_row: int = 1) -> None:
+def _apply_sheet_style(ws, exceedance_coords: Set[Tuple[int, int]]) -> None:
     """Bold header, freeze panes at A2, auto-column width, red exceedance cells.
 
     exceedance_coords are 0-based (row_idx, col_idx) into data rows.

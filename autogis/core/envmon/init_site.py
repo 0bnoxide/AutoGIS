@@ -115,6 +115,35 @@ def _render(text: str, site_id: str, site_name: str) -> str:
     return _SENTINEL_RE.sub(lambda m: repl[m.group(0)], text)
 
 
+_TEMPLATE_ID_RE = re.compile(r"^(\s*template_id:).*$", re.MULTILINE)
+
+
+def render_figure_spec_template(site_id: str = "_TODO_SITE_ID",
+                                site_name: str = "_TODO Site Name",
+                                callout_template_id: str = "") -> str:
+    """Render the shipped figure-spec skeleton, optionally pinning the callout
+    template id.
+
+    Exists so there is exactly ONE figure-spec skeleton. ``init-site`` (CLI)
+    and ``LoadFigureSpec`` (.pyt) both render this file. The .pyt previously
+    carried a second, hardcoded copy that had drifted from it: that copy
+    omitted ``figure_title`` (a FIGURE_REQUIRED key) and offered
+    ``analyte_set_name``, which is the name of a Python parameter on
+    ``analyte_list()``, not a config key. So everything the tool wrote was
+    rejected by ``FigureSpec.load`` while the tool reported "Template
+    written" — the operator only found out one tool later (#461).
+
+    Raises ValueError on an unsafe identity, same as ``plan_site_skeleton``.
+    """
+    check_site_id(site_id)
+    check_site_name(site_name)
+    text = _render(_read_template("figure_spec.yaml"), site_id, site_name)
+    if callout_template_id:
+        text = _TEMPLATE_ID_RE.sub(
+            lambda m: f"{m.group(1)} {callout_template_id}", text, count=1)
+    return text
+
+
 def plan_site_skeleton(site_id: str, site_name: str,
                        dest: Path) -> List[SkeletonFile]:
     """Render every family template to a target path. No writes — drives both

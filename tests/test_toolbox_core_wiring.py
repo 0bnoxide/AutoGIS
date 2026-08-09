@@ -179,3 +179,100 @@ def test_no_pyt_tool_declares_a_parameter_its_body_never_reads():
             orphans[cls.name] = sorted(unread)
     assert not orphans, (
         f".pyt parameters declared but never read by the tool body: {orphans}")
+
+
+# ------------------- #459/#461/#462 figure-spec keys and the .pyt skeleton
+#
+# The scopes that read a FigureSpec on the export path. Named explicitly so
+# `spec.get(...)` on an unrelated dict (generate-job-queue's manifest) is not
+# swept in as a false positive.
+_FIGURE_SPEC_SCOPES = {
+    ("toolbox.pyt", "execute"),          # ExportFigures
+    ("cli.py", "gen_map_series_cmd"),
+    ("layout_manager.py", "prepare_figure_aprx"),
+}
+
+# `template_aprx` is the schema key; `aprx_template` is its documented
+# fallback alias, read as `spec.get("template_aprx") or spec.get(...)`.
+_FIGURE_SPEC_ALIASES = {"aprx_template"}
+
+
+def _shipped_figure_spec_keys():
+    import yaml
+    cfg = pathlib.Path(autogis.__file__).parent / "config"
+    keys = set()
+    for p in list((cfg / "figure_specs").glob("*.y*ml")) + [
+            cfg / "_templates" / "site_skeleton" / "figure_spec.yaml"]:
+        keys |= set(yaml.safe_load(p.read_text(encoding="utf-8")) or {})
+    return keys
+
+
+def _spec_get_keys(path: pathlib.Path):
+    """Every `spec.get("KEY")` inside a scope that holds a FigureSpec."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if (path.name, fn.name) not in _FIGURE_SPEC_SCOPES:
+            continue
+        for n in ast.walk(fn):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr == "get"
+                    and isinstance(n.func.value, ast.Name)
+                    and n.func.value.id == "spec"
+                    and n.args and isinstance(n.args[0], ast.Constant)):
+                found.add(n.args[0].value)
+    return found
+
+
+def test_every_figure_spec_key_read_on_the_export_path_exists():
+    """Both export call sites read `spec["layouts"]` — a key defined by no
+    spec, no template and no doc — so layout_names was always None,
+    export_layouts fell through its filter and every APRX layout was exported
+    unconfigured under one colliding filename stem (#459). The same class as
+    #443 (`contours`) and the dead `combined_pdf_name` (#463).
+
+    A key that reads as authoritative and resolves to nothing is the bug; this
+    asserts every key read is one a spec can actually supply.
+    """
+    from autogis.core.common.config import FIGURE_REQUIRED
+
+    adapters = pathlib.Path(autogis.__file__).parent / "adapters"
+    envmon = pathlib.Path(autogis.__file__).parent / "core" / "envmon"
+    read = set()
+    for p in (PYT, adapters / "cli.py", envmon / "layout_manager.py"):
+        read |= _spec_get_keys(p)
+    # The scopes must actually have been found, or this passes vacuously.
+    assert "layout_name" in read and "required_layers" in read
+
+    known = (set(FIGURE_REQUIRED) | _shipped_figure_spec_keys()
+             | _FIGURE_SPEC_ALIASES)
+    assert not (read - known), (
+        f"figure-spec keys read but defined nowhere: {sorted(read - known)}")
+
+
+def test_pyt_figure_spec_skeleton_loads_through_figure_spec_load(tmp_path):
+    """LoadFigureSpec's only output was rejected by FigureSpec.load — it
+    omitted the required `figure_title` and offered `analyte_set_name`, a
+    Python parameter name rather than a config key. The tool reported
+    "Template written" anyway (#461)."""
+    from autogis.core.envmon.init_site import render_figure_spec_template
+
+    out = tmp_path / "fs.yaml"
+    out.write_text(render_figure_spec_template(callout_template_id="CKG_GW"),
+                   encoding="utf-8")
+    spec = FigureSpec.load(out)          # raises ConfigError if it regresses
+    assert spec.get("callout_template")["template_id"] == "CKG_GW"
+    assert spec.get("figure_title")
+    assert "analyte_set_name" not in spec.data
+    # analyte_list() must resolve, i.e. the skeleton offers the keys it reads.
+    assert spec.analyte_list({})
+
+
+def test_pyt_load_figure_spec_does_not_carry_its_own_skeleton():
+    """One skeleton, rendered from the shipped template. The second hardcoded
+    copy is exactly what drifted into being unloadable (#461)."""
+    src = PYT.read_text(encoding="utf-8")
+    assert "render_figure_spec_template" in src
+    assert "analyte_set_name" not in src

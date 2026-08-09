@@ -237,3 +237,56 @@ def test_cli_multi_event(tmp_path):
     assert res.exit_code == 0, res.output
     sub = list(csv.DictReader((out / "wqx_submission.csv").open(encoding="utf-8")))
     assert len(sub) == 2
+
+
+# --- #460: the QA channel was constructed and then dropped on the floor ---
+
+def _one_row(matrix="GW", location="MW-1"):
+    return {
+        "SiteID": "S", "LocationID": location, "SampleDate": "2026-01-15",
+        "Matrix": matrix, "SampleID": f"{location}-A",
+        "AnalyteCanonicalName": "Benzene", "ResultNumeric": 5.0,
+        "Units": "ug/L", "MethodID": "8260", "IsNonDetect": 0,
+    }
+
+
+def _run_export(tmp_path, rows, *extra):
+    results = tmp_path / "results.csv"
+    _write_canonical_results(results, rows)
+    locs = tmp_path / "locations.csv"
+    write_records_csv(_LOC, locs, record_class=MonitoringLocation)
+    out = tmp_path / "wqx"
+    return CliRunner().invoke(autogis, [
+        "envmon", "export-wqx", "--results", str(results),
+        "--locations", str(locs), "--out-dir", str(out), *extra])
+
+
+def test_cli_writes_the_qa_report(tmp_path):
+    """map_to_wqx's records had nowhere to go: an unmapped matrix code is not
+    a rejected row, so it appeared in neither wqx_rejections.csv nor any
+    report — on a regulatory submission path (#460)."""
+    report = tmp_path / "qa.json"
+    res = _run_export(tmp_path, [_one_row(matrix="ZZZ")],
+                      "--report", str(report))
+    assert res.exit_code == 0, res.output
+    assert report.exists(), "export-wqx accepted --report and wrote nothing"
+    categories = json.loads(
+        report.read_text(encoding="utf-8"))["counts_by_category"]
+    assert "WARNING/wqx_out_unmapped_matrix" in categories
+    assert "INFO/wqx_out_summary" in categories
+    # ...and to the console, like every sibling command.
+    assert "wqx_out_unmapped_matrix" in res.output
+
+
+def test_cli_fail_on_warning_gates_the_submission(tmp_path):
+    """Without @qa_report_options the command exited 0 regardless, so no CI
+    gate or scheduled run could stop a bad outbound submission (#460)."""
+    res = _run_export(tmp_path, [_one_row(matrix="ZZZ")],
+                      "--fail-on", "warning")
+    assert res.exit_code != 0, res.output
+
+
+def test_cli_clean_export_still_passes_fail_on_warning(tmp_path):
+    """The gate must fire on real QA, not on every run."""
+    res = _run_export(tmp_path, [_one_row()], "--fail-on", "warning")
+    assert res.exit_code == 0, res.output

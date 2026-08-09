@@ -52,8 +52,19 @@ def preexport_qa(aprx_path: Path, required_layers: Sequence[str],
                                     "features under the current definition "
                                     "query.",
                         ))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # "We could not check" must not read as "we checked and it
+                    # was fine" — a bare pass here silently skipped the
+                    # empty-required-layer gate and still returned ok (#463).
+                    qa.add(QARecord(
+                        severity=SEV_WARNING, category="required_layer_uncheckable",
+                        message=f"Could not count features on required layer "
+                                f"{lyr.name!r} ({type(exc).__name__}: {exc}); "
+                                "the empty-layer check did not run for it.",
+                        recommended_action="Open the APRX and confirm the "
+                                           "layer draws features before "
+                                           "trusting this figure.",
+                    ))
     del aprx
     return ok
 
