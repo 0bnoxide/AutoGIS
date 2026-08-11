@@ -107,7 +107,9 @@ def _row_gwe(row: dict):
     absent, not as a value.
     """
     v = row.get("GroundwaterElevation_ft")
-    if v in (None, ""):
+    if _num(v) is None:
+        # _num, not a presence test: with "N/A" under the first spelling, a
+        # presence test kept the junk and discarded a usable GWE_ft.
         v = row.get("GWE_ft")
     return v
 
@@ -133,22 +135,6 @@ def select_prior_water_levels(
     by_loc: Dict[str, dict] = {}
     skipped: Dict[str, str] = {}
     for r in all_water_levels:
-        if _num(_row_gwe(r)) is None:
-            # A row with no USABLE elevation cannot produce a delta, and taking
-            # it as "the prior" hides the last row that could. Reachable since
-            # #464 gave Survey123 water levels a real EventDate: those rows
-            # carry a DTW but no TOC, so they out-date the workbook row and
-            # collapsed every Delta_ft to NULL and every Trend to "Unknown" --
-            # the exact symptom #466 fixed, re-entering by a different door.
-            # Tested with _num, not `in (None, "")`: "N/A"/"ND"/"   " are
-            # present but unusable, and the presence test let them through --
-            # and _prior_gwe_by_location already funnels through _num, so the
-            # two seams would disagree about what counts as an elevation.
-            sk = r.get("LocationID", "")
-            ed_sk = _event_date_str(r.get("EventDate"))
-            if ed_sk > skipped.get(sk, ""):
-                skipped[sk] = ed_sk
-            continue
         loc = r.get("LocationID", "")
         ed = _event_date_str(r.get("EventDate"))
         if explicit:
@@ -158,6 +144,22 @@ def select_prior_water_levels(
             cur = current_date.get(loc)
             if cur is not None and not (ed and ed < cur):
                 continue  # keep only measurements strictly before the current one
+        # Only NOW is this row a real prior candidate. Testing usability first
+        # recorded the CURRENT event's own DTW-only row as a "shadowed prior"
+        # -- which post-#464 is every well, every run -- so the disclosure
+        # below was wrong by default, and a channel that cries wolf is worse
+        # than the gap it discloses.
+        if _num(_row_gwe(r)) is None:
+            # No USABLE elevation: cannot produce a delta, and taking it as
+            # "the prior" hides the last row that could. Reachable since #464
+            # gave Survey123 water levels a real EventDate -- those rows carry
+            # a DTW but no TOC. _num, not a presence test: "N/A"/"ND"/"   "
+            # are present but unusable, and _prior_gwe_by_location already
+            # funnels through _num, so a presence test here would leave the
+            # two seams disagreeing about what counts as an elevation.
+            if ed > skipped.get(loc, ""):
+                skipped[loc] = ed
+            continue
         prev = by_loc.get(loc)
         if prev is None or ed > _event_date_str(prev.get("EventDate")):
             by_loc[loc] = r

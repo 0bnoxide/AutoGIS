@@ -208,6 +208,28 @@ skipped candidate is newer than the chosen prior. A `PriorEventDate` column on
 `Dash_GWLevelSummary` would close it properly and is deliberately **not** in
 this batch (schema change, separate decision).
 
+**15. The disclosure log is filtered by candidacy, and the layout-text
+unification narrows rather than widens.** Round 4's own additions needed both.
+The `[prior-water-level]` skip was recorded *before* the candidate filter, so
+the current event's own DTW-only row was announced as a "shadowed prior" -- 
+post-ADR-0126 that is every well, every run. Reordering the two independent
+`continue` predicates costs nothing and leaves `by_loc` identical. And
+`_as_text_map` originally unified the two layout-text grammars by teaching the
+*figure spec* the values file's list form -- new surface area no shipped spec
+uses and no schema mentions. It now shares only the mapping rule both sides
+genuinely have; the list form stays in the hand-written file format's loader.
+One grammar per file kind is still one grammar.
+
+**A note on the shape of this batch.** Four review rounds. Round 1 fixed the
+six filed issues, and those fixes have held unchanged through every subsequent
+round. Rounds 2-4 found nothing wrong with them -- every later finding was in
+*defensive code this batch added while fixing the previous round's finding*,
+which is a real cost of centralizing two divergent paths: each collapse makes a
+latent disagreement load-bearing for the first time, and each guard written to
+absorb one is itself a new thing that can be half-right. The guards are worth
+keeping (the crashes and inverted extents were real), but the honest lesson is
+that the hardening, not the fixes, is what earned three rounds of review.
+
 **New QA categories in this batch:** `required_layer_uncheckable`,
 `layout_name_missing`, `bad_extent_buffer_pct`, `spec_value_not_a_mapping`,
 `spec_value_not_a_list`, and a `layout_missing` record from `zoom_to_boundary`.

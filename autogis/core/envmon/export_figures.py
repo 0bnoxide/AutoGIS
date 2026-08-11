@@ -80,6 +80,34 @@ def _versioned(path: Path, overwrite: bool) -> Path:
         i += 1
 
 
+def _filter_layouts(layouts, layout_names, qa: QACollector) -> List:
+    """Select the requested layouts and report any the APRX does not have.
+
+    ``layout_names is None`` means "no filter"; an explicitly EMPTY list means
+    "no layout resolved, export nothing" and must not be read as the former --
+    that read is #459. First spelling wins and insertion order is kept, so two
+    requests differing only by case report once, deterministically, in the
+    order the caller listed them; and the record names the caller's spelling,
+    not the lowered lookup key.
+
+    Extracted because ``export_layouts`` was already past this repo's
+    complexity threshold before this batch added another branch to it.
+    """
+    if layout_names is None:
+        return layouts
+    wanted: Dict[str, str] = {}
+    for n in layout_names:
+        wanted.setdefault(str(n).lower(), str(n))
+    selected = [l for l in layouts if l.name.lower() in wanted]
+    found = {l.name.lower() for l in selected}
+    for key, original in wanted.items():
+        if key not in found:
+            qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
+                            message=f"Requested layout {original!r} not in "
+                                    "APRX."))
+    return selected
+
+
 def export_layouts(
     aprx_path: Path,
     export_dir: Path,
@@ -107,28 +135,7 @@ def export_layouts(
 
     export_dir.mkdir(parents=True, exist_ok=True)
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
-    layouts = aprx.listLayouts()
-    # `is not None`, not truthiness: an explicitly EMPTY selection means "no
-    # layout resolved, export nothing" and must not be read as "no filter,
-    # export everything" -- that read is #459.
-    if layout_names is not None:
-        # Keep the caller's spelling: reporting the lowered key told operators
-        # their spec said 'wrong name' when it said "Wrong Name", and collapsed
-        # two requested names differing only by case into one record.
-        # First spelling wins and insertion order is kept, so two requests
-        # differing only by case report once, deterministically, in the order
-        # the caller listed them -- a dict comprehension here made the surviving
-        # spelling depend on list order.
-        wanted: Dict[str, str] = {}
-        for n in layout_names:
-            wanted.setdefault(str(n).lower(), str(n))
-        layouts = [l for l in layouts if l.name.lower() in wanted]
-        found = {l.name.lower() for l in layouts}
-        for key, original in wanted.items():
-            if key not in found:
-                qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
-                                message=f"Requested layout {original!r} not in "
-                                        "APRX."))
+    layouts = _filter_layouts(aprx.listLayouts(), layout_names, qa)
     written: List[Path] = []
     pdfs: List[Path] = []
     for lay in layouts:

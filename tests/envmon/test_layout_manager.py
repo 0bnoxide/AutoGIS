@@ -465,18 +465,38 @@ def test_extent_buffer_pct_accepts_a_real_number():
     assert qa.records == []
 
 
-def test_figure_spec_layout_text_accepts_the_values_file_list_form():
-    """One grammar for layout text. load_layout_text_yaml accepted a list of
-    {element_name, text} dicts while the figure spec rejected every list —
-    two rules for one concept, in one module, which is the drift this batch
-    exists to remove."""
+def test_figure_spec_layout_text_is_not_widened_to_the_values_file_list_form():
+    """The two sides shared no rule for layout text, which was the drift to
+    remove — but unifying by WIDENING the spec to accept a list form that no
+    shipped spec uses, no schema mentions and nobody asked for is new surface
+    area, not deduplication. The mapping rule is shared; the list form stays
+    where the hand-written file format needs it."""
     from autogis.core.envmon.layout_manager import _text_map
 
     qa = QACollector()
     got = _text_map([{"element_name": "FigureTitle", "text": "GW Results"}],
                     "figure layout_text", qa)
-    assert got == {"FigureTitle": "GW Results"}
-    assert qa.records == []
+    assert got == {}
+    assert [r.category for r in qa.records] == ["spec_value_not_a_mapping"]
+    # ...and the message stays operator-readable: no raw exception repr.
+    assert "TypeError" not in qa.records[0].message
+    assert "Error" not in qa.records[0].message
+
+
+def test_values_file_still_accepts_the_list_form(tmp_path):
+    """The affordance the file format actually needs is untouched."""
+    p = _yaml(tmp_path, "- element_name: Title\n  text: Report Title\n")
+    assert load_layout_text_yaml(p) == {"Title": "Report Title"}
+
+
+def test_both_layout_text_sides_share_the_mapping_rule(tmp_path):
+    """One rule for the shape they DO share, so they cannot drift again."""
+    from autogis.core.envmon.layout_manager import _text_map
+
+    mapping = {"FigureTitle": "GW Results", "FigureNumber": 2}
+    p = _yaml(tmp_path, "FigureTitle: GW Results\nFigureNumber: 2\n")
+    assert load_layout_text_yaml(p) == _text_map(
+        mapping, "figure layout_text", QACollector())
 
 
 def test_figure_spec_layout_text_warns_on_a_shape_neither_form_accepts():
@@ -485,3 +505,16 @@ def test_figure_spec_layout_text_warns_on_a_shape_neither_form_accepts():
     qa = QACollector()
     assert _text_map(["just a string"], "figure layout_text", qa) == {}
     assert [r.category for r in qa.records] == ["spec_value_not_a_mapping"]
+
+
+@pytest.mark.parametrize("yaml_bool", [True, False])
+def test_extent_buffer_pct_rejects_a_yaml_boolean(yaml_bool):
+    """`extent_buffer_pct: yes` is True, and float(True) is 1.0 — a silent 1%
+    pad; `no` silently disabled padding. _name_list already treats a YAML bool
+    as a first-class hazard; hardening one helper and not its sibling in the
+    same commit is the half-done-helper pattern."""
+    from autogis.core.envmon.layout_manager import _buffer_pct
+
+    qa = QACollector()
+    assert _buffer_pct(yaml_bool, qa) == 5.0
+    assert [r.category for r in qa.records] == ["bad_extent_buffer_pct"]

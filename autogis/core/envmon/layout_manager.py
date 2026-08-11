@@ -135,7 +135,7 @@ def _name_list(value, field: str, qa: QACollector) -> List[str]:
     """
     if value is None:
         return []
-    if not isinstance(value, (list, tuple, set)):
+    if not isinstance(value, (list, tuple)):
         qa.add(QARecord(
             severity=SEV_WARNING, category="spec_value_not_a_list",
             message=f"Figure spec {field} is the single value {value!r} "
@@ -147,29 +147,25 @@ def _name_list(value, field: str, qa: QACollector) -> List[str]:
 
 
 def _as_text_map(raw) -> Dict[str, str]:
-    """Coerce a layout-text block to ``{element_name: text}``.
+    """Mapping form of a layout-text block -> ``{element_name: text}``.
 
-    ONE grammar for layout text, shared by the Tool 5.8 values file
-    (:func:`load_layout_text_yaml`) and a figure spec's ``layout_text:``.
-    They had drifted to different rules inside this one module -- the values
-    file accepted a list of ``{element_name, text}`` dicts and the figure spec
-    rejected every list -- which is the drift this batch exists to remove.
+    Shared by the Tool 5.8 values file (:func:`load_layout_text_yaml`) and a
+    figure spec's ``layout_text:``, which had drifted to different rules inside
+    this one module. The values file ALSO accepts a list of
+    ``{element_name, text}`` dicts; that is an affordance of a hand-written
+    file format and stays in its loader rather than widening the figure spec to
+    a shape no shipped spec uses. One grammar per file kind is still one
+    grammar.
 
-    Raises ValueError naming the shape problem; callers decide whether that is
-    fatal (the values file) or a QA warning (the figure spec).
+    Raises ValueError naming the shape; callers decide whether that is fatal
+    (the values file) or a QA warning (the figure spec).
     """
     if raw is None:
         return {}
     if isinstance(raw, dict):
         return {str(k): str(v) for k, v in raw.items()}
-    if isinstance(raw, list):
-        try:
-            return {str(e["element_name"]): str(e["text"]) for e in raw}
-        except (KeyError, TypeError) as exc:
-            raise ValueError("list form needs 'element_name' and 'text' keys "
-                             f"on every entry ({exc!r})")
-    raise ValueError("expected a mapping {ElementName: text} or a list of "
-                     f"{{element_name, text}} dicts, got {type(raw).__name__}")
+    raise ValueError(
+        f"expected a mapping {{ElementName: text}}, got {type(raw).__name__}")
 
 
 def _text_map(value, field: str, qa: QACollector) -> Dict[str, str]:
@@ -193,10 +189,15 @@ def _buffer_pct(value, qa: QACollector) -> float:
     to crash the CLI with a raw TypeError/ValueError at this trust boundary."""
     if value is None:
         return 5.0
-    try:
-        pct = float(value)
-    except (TypeError, ValueError):
-        pct = None
+    pct = None
+    # bool before float(): YAML `yes`/`no` are True/False, and float(True) is
+    # 1.0 -- a silent 1% pad, or 0% for `no`. _name_list already treats a YAML
+    # bool as a first-class hazard; both helpers must.
+    if not isinstance(value, bool):
+        try:
+            pct = float(value)
+        except (TypeError, ValueError):
+            pct = None
     # float() happily accepts nan/inf, and a negative pads inward: -100 makes
     # XMin_new == XMax_old, an inverted extent and a silently garbage figure.
     if pct is None or not math.isfinite(pct) or pct < 0:
@@ -247,10 +248,19 @@ def load_layout_text_yaml(path: Path) -> Dict[str, str]:
     import yaml
 
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if isinstance(raw, list):
+        try:
+            return {str(e["element_name"]): str(e["text"]) for e in raw}
+        except (KeyError, TypeError) as exc:
+            raise ValueError(
+                f"List-form values YAML {path} needs 'element_name' and "
+                f"'text' keys on every entry ({exc!r}).") from exc
     try:
         return _as_text_map(raw)
     except ValueError as exc:
-        raise ValueError(f"Unexpected YAML structure in {path}: {exc}.") from None
+        raise ValueError(
+            f"Unexpected YAML structure in {path}: {exc}, or a list of "
+            "{element_name, text} dicts.") from None
 
 
 def update_layout_text(

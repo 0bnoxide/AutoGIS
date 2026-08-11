@@ -346,3 +346,48 @@ def test_shadowed_newer_prior_is_disclosed(caplog):
         select_prior_water_levels(all_wl, cur)
     assert "prior-water-level" in caplog.text
     assert "2026-05-01" in caplog.text and "2024-01-01" in caplog.text
+
+
+def test_no_disclosure_for_a_row_that_was_never_a_prior_candidate(caplog):
+    """The skip was recorded BEFORE the candidate filter, so the current
+    event's own DTW-only row was announced as a "shadowed prior" — which
+    post-#464 is every well, every run. A disclosure channel that is wrong by
+    default trains operators to ignore it, which is worse than the gap it
+    discloses."""
+    import logging
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 99.0},
+        {"LocationID": "MW-1", "EventDate": "2026-06-15", _PRIOR_GWE: None},
+    ]
+    with caplog.at_level(logging.INFO):
+        prior = select_prior_water_levels(all_wl, cur)
+    assert [p["EventDate"] for p in prior] == ["2026-03-15"]
+    assert "prior-water-level" not in caplog.text
+
+
+def test_no_disclosure_for_a_skip_outside_an_explicit_prior_date(caplog):
+    """Same rule on the explicit-date branch: a skipped row on an unrelated
+    date was never a candidate for the date the caller named."""
+    import logging
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 99.0},
+        {"LocationID": "MW-1", "EventDate": "2026-05-01", _PRIOR_GWE: None},
+    ]
+    with caplog.at_level(logging.INFO):
+        select_prior_water_levels(all_wl, cur, prior_event_id="2026-03-15")
+    assert "prior-water-level" not in caplog.text
+
+
+def test_usable_gwe_ft_survives_a_junk_primary_spelling():
+    """_row_gwe fell back only when the primary was absent, so junk under
+    GroundwaterElevation_ft discarded a usable GWE_ft — the two-seams-disagree
+    problem closed at the caller and left open in the helper."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [{"LocationID": "MW-1", "EventDate": "2026-03-15",
+               _PRIOR_GWE: "N/A", "GWE_ft": 99.0}]
+    prior = select_prior_water_levels(all_wl, cur)
+    assert len(prior) == 1
+    row = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")[0]
+    assert row["PriorGWE_ft"] == 99.0
