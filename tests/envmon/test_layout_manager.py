@@ -228,7 +228,7 @@ def test_prepare_figure_aprx_runs_every_step_of_the_chain(monkeypatch):
     from autogis.core.envmon.layout_manager import prepare_figure_aprx
 
     calls, work = _chain_recorder(monkeypatch)
-    got, layout_names = prepare_figure_aprx(
+    got, _ = prepare_figure_aprx(
         Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
         "H281", "2026-06-15", _spec(), QACollector())
 

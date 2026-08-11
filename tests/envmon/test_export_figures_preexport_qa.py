@@ -10,8 +10,6 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING
 from autogis.core.envmon import export_figures
 
