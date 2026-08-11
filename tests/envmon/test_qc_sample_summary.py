@@ -68,7 +68,16 @@ def test_compute_rpd():
 
 
 def test_compute_rpd_zero_denominator():
-    assert compute_rpd(0.0, 0.0) == 0.0
+    """#436 -- a 0/0 pair is not calculable, not 'perfect agreement'.
+
+    Must agree with the sibling implementations, which return None; reporting
+    0.0 here would show a 0/0 duplicate pair as a passing 0.0% RPD.
+    """
+    from autogis.core.envmon.evaluate_rpd_qa import _rpd as _rpd_eval
+    from autogis.core.envmon.normalize_rpd import _rpd as _rpd_norm
+
+    assert compute_rpd(0.0, 0.0) is None
+    assert _rpd_eval(0.0, 0.0) is None and _rpd_norm(0.0, 0.0) is None
 
 
 def test_suffix_inference_mb():
