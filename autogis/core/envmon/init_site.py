@@ -123,10 +123,12 @@ def check_callout_template_id(value: str) -> None:
     trust boundary as ``site_name``. Raises ValueError."""
     try:
         check_site_name(value)
-    except ValueError:
+    except ValueError as exc:
+        # Re-raise under this field's name, keeping the ORIGINAL reason -- the
+        # sentinel rejection and the printable/quote rejection are different
+        # problems and a single fixed message misreports one of them.
         raise ValueError(
-            "callout template id must be printable text without "
-            "double-quotes or backslashes") from None
+            f"callout template id rejected: {exc}") from None
 
 
 def render_figure_spec_template(site_id: str = "_TODO_SITE_ID",
@@ -155,11 +157,14 @@ def render_figure_spec_template(site_id: str = "_TODO_SITE_ID",
         # YAML read "NO"/"on"/"123" as bool/int rather than the id the operator
         # picked, and a value carrying a newline would inject a sibling key
         # into callout_template.
+        # No count= : subn must report EXACTLY one match. With count=1 it
+        # returns 1 on the first hit however many exist, so a second
+        # template_id: block added above this one would be silently missed.
         text, n = _TEMPLATE_ID_RE.subn(
-            lambda m: f'{m.group(1)} "{callout_template_id}"', text, count=1)
+            lambda m: f'{m.group(1)} "{callout_template_id}"', text)
         if n != 1:
             raise ValueError(
-                "figure-spec template has no template_id: line to set")
+                f"figure-spec template has {n} template_id: lines, expected 1")
     return text
 
 

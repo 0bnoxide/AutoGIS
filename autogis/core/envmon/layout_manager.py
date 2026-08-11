@@ -107,12 +107,79 @@ def apply_figure_definition_queries(
     del aprx
 
 
+def _select_layouts(aprx, layout_name: Optional[str]) -> List:
+    """Layouts matching ``layout_name``, compared case-insensitively.
+
+    One rule for every consumer of a resolved layout name. ``export_layouts``
+    has always lowercased; this module compared exactly. That only became
+    reachable once ``prepare_figure_aprx`` started passing a real name to both
+    -- a case-mismatched spec then EXPORTED the layout while silently skipping
+    its text and extent, shipping an unconfigured figure alongside an ERROR
+    claiming the layout was not in the APRX.
+    """
+    if not layout_name:
+        return aprx.listLayouts()
+    want = layout_name.lower()
+    return [l for l in aprx.listLayouts() if l.name.lower() == want]
+
+
+def _name_list(value, field: str, qa: QACollector) -> List[str]:
+    """Coerce a spec list-of-names to a real list.
+
+    A bare YAML scalar (``visible_layers: Wells``) is a string, and iterating
+    it yields characters -- which produced one 'layer missing' QA record per
+    letter and toggled nothing.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        qa.add(QARecord(
+            severity=SEV_WARNING, category="spec_value_not_a_list",
+            message=f"Figure spec {field} is the single value {value!r}, not a "
+                    "list; treating it as a one-item list.",
+            recommended_action=f"Write {field} as a YAML list."))
+        return [value]
+    return [str(v) for v in value]
+
+
+def _text_map(value, field: str, qa: QACollector) -> Dict[str, str]:
+    """Coerce a layout-text block to a mapping. A YAML list here raised a raw
+    `ValueError: dictionary update sequence element #0` out of the CLI."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        qa.add(QARecord(
+            severity=SEV_WARNING, category="spec_value_not_a_mapping",
+            message=f"{field} is not a name -> text mapping "
+                    f"({type(value).__name__}); ignored.",
+            recommended_action=f"Write {field} as a YAML mapping of layout "
+                               "element name to text."))
+        return {}
+    return {str(k): str(v) for k, v in value.items()}
+
+
+def _buffer_pct(value, qa: QACollector) -> float:
+    """Coerce extent_buffer_pct. Neither it nor layout_text is FIGURE_REQUIRED,
+    so a spec carrying `extent_buffer_pct:` (null) or "5%" loads clean and used
+    to crash the CLI with a raw TypeError/ValueError at this trust boundary."""
+    if value is None:
+        return 5.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        qa.add(QARecord(
+            severity=SEV_WARNING, category="bad_extent_buffer_pct",
+            message=f"extent_buffer_pct {value!r} is not a number; using 5.",
+            recommended_action="Set extent_buffer_pct to a plain number."))
+        return 5.0
+
+
 def set_layer_visibility(aprx_path: Path, visible: Sequence[str],
                          hidden: Sequence[str], qa: QACollector) -> None:
     arcpy = _arcpy()
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
-    vis = {v.lower(): v for v in visible}
-    hid = {h.lower(): h for h in hidden}
+    vis = {v.lower(): v for v in _name_list(visible, "visible_layers", qa)}
+    hid = {h.lower(): h for h in _name_list(hidden, "hidden_layers", qa)}
     matched = set()
     for m in aprx.listMaps():
         for lyr in m.listLayers():
@@ -176,8 +243,7 @@ def update_layout_text(
     template tokens visible). ``dry_run`` reports without saving the APRX."""
     arcpy = _arcpy()
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
-    layouts = ([l for l in aprx.listLayouts() if l.name == layout_name]
-               if layout_name else aprx.listLayouts())
+    layouts = _select_layouts(aprx, layout_name)
     if not layouts:
         qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
                         message=f"Layout {layout_name!r} not found in APRX."))
@@ -216,7 +282,7 @@ def prepare_figure_aprx(
     qa: QACollector,
     *,
     layout_text: Optional[Dict[str, str]] = None,
-) -> Tuple[Path, Optional[List[str]]]:
+) -> Tuple[Path, List[str]]:
     """Run the full figure-preparation chain on a copy of ``template``.
 
     Copies the template APRX, repaths its data sources to ``gdb``, applies the
@@ -263,18 +329,23 @@ def prepare_figure_aprx(
                     "layout to configure and export.",
             recommended_action="Set layout_name in the figure spec to the "
                                "template APRX layout to export."))
+        # Short-circuit: with no layout resolved, configuring means stamping
+        # text on and saving EVERY layout in the working APRX -- work whose
+        # output is then never exported, plus placeholder warnings for layouts
+        # that cannot ship.
+        return work, []
 
-    text = dict(layout_text or {})
-    text.update(spec.get("layout_text", {}))
+    text = _text_map(layout_text, "site default_layout_text", qa)
+    text.update(_text_map(spec.get("layout_text"), "figure layout_text", qa))
     text.setdefault("EventDate", event)
-    update_layout_text(work, layout_name or None, text, qa)
+    update_layout_text(work, layout_name, text, qa)
 
     boundary = spec.get("extent_boundary_layer")
     if boundary:
-        zoom_to_boundary(work, layout_name or None, boundary,
-                         float(spec.get("extent_buffer_pct", 5)), qa)
+        zoom_to_boundary(work, layout_name, boundary,
+                         _buffer_pct(spec.get("extent_buffer_pct"), qa), qa)
 
-    return work, ([layout_name] if layout_name else [])
+    return work, [layout_name]
 
 
 def zoom_to_boundary(aprx_path: Path, layout_name: Optional[str],
@@ -282,8 +353,15 @@ def zoom_to_boundary(aprx_path: Path, layout_name: Optional[str],
                      qa: QACollector) -> None:
     arcpy = _arcpy()
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
-    layouts = ([l for l in aprx.listLayouts() if l.name == layout_name]
-               if layout_name else aprx.listLayouts())
+    layouts = _select_layouts(aprx, layout_name)
+    if not layouts:
+        # An empty list here used to be a silent no-op: the figure shipped with
+        # the template's saved extent and nothing said so.
+        qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
+                        message=f"Layout {layout_name!r} not found in APRX; "
+                                "extent not zoomed to the site boundary."))
+        del aprx
+        return
     for lay in layouts:
         for mf in lay.listElements("MAPFRAME_ELEMENT"):
             target = None

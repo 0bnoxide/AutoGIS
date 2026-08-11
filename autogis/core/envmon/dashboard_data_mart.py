@@ -99,6 +99,19 @@ def _event_date_str(v) -> str:
     return str(v or "")
 
 
+def _row_gwe(row: dict):
+    """Groundwater elevation off a water-level row, under either table's name.
+
+    ``Env_WaterLevels`` stores ``GroundwaterElevation_ft``;
+    ``Env_CurrentWaterLevelEvent`` stores ``GWE_ft`` (#466). ``""`` counts as
+    absent, not as a value.
+    """
+    v = row.get("GroundwaterElevation_ft")
+    if v in (None, ""):
+        v = row.get("GWE_ft")
+    return v
+
+
 def select_prior_water_levels(
     all_water_levels: List[dict],
     current_water_levels: List[dict],
@@ -119,6 +132,14 @@ def select_prior_water_levels(
                     for r in current_water_levels}
     by_loc: Dict[str, dict] = {}
     for r in all_water_levels:
+        if _row_gwe(r) in (None, ""):
+            # A row with no elevation cannot produce a delta, and taking it as
+            # "the prior" hides the last row that could. Reachable since #464
+            # gave Survey123 water levels a real EventDate: those rows carry a
+            # DTW but no TOC, so they out-date the workbook row and collapsed
+            # every Delta_ft to NULL and every Trend to "Unknown" -- the exact
+            # symptom #466 fixed, re-entering by a different door.
+            continue
         loc = r.get("LocationID", "")
         ed = _event_date_str(r.get("EventDate"))
         if explicit:
@@ -182,15 +203,8 @@ def _prior_gwe_by_location(
     and ``Trend`` always "Unknown" on the delivered dashboard (#466).
     Resolved here, once, rather than at each consumer.
     """
-    out: Dict[str, Optional[float]] = {}
-    for p in prior_water_level_events:
-        v = p.get("GroundwaterElevation_ft")
-        if v in (None, ""):
-            # "" is the ordinary empty-cell shape from any CSV-backed caller;
-            # treating only None as absent silently yielded no prior value.
-            v = p.get("GWE_ft")
-        out[p.get("LocationID", "")] = _num(v)
-    return out
+    return {p.get("LocationID", ""): _num(_row_gwe(p))
+            for p in prior_water_level_events}
 
 
 def build_dash_well_status(water_level_events: List[dict],

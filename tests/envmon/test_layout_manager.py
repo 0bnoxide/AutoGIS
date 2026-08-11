@@ -307,3 +307,109 @@ def test_prepare_figure_aprx_skips_zoom_without_a_boundary_layer(monkeypatch):
         "H281", "2026-06-15", _spec(extent_boundary_layer=None),
         QACollector())
     assert "zoom" not in [c[0] for c in calls]
+
+
+# --- one match rule across every consumer of a resolved layout name ---
+
+def test_prepare_figure_aprx_short_circuits_when_layout_name_is_missing(monkeypatch):
+    """With no layout resolved, configuring means stamping text on and saving
+    EVERY layout in the working APRX — output that is then never exported."""
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    calls, _ = _chain_recorder(monkeypatch)
+    prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
+        "H281", "2026-06-15", _spec(layout_name=None), QACollector())
+    assert [c[0] for c in calls] == ["copy", "repath", "defquery", "visibility"]
+
+
+def _aprx_with_layouts(*names):
+    arcpy = MagicMock()
+    aprx = MagicMock()
+    aprx.listLayouts.return_value = [
+        types.SimpleNamespace(name=n, listElements=lambda _k: []) for n in names]
+    arcpy.mp.ArcGISProject.return_value = aprx
+    return arcpy, aprx
+
+
+@pytest.mark.parametrize("spec_name", [
+    "GW Analytical Layout", "gw analytical layout", "GW ANALYTICAL LAYOUT"])
+def test_update_layout_text_matches_the_layout_case_insensitively(
+        monkeypatch, spec_name):
+    """export_layouts has always lowercased; this module compared exactly. Once
+    prepare_figure_aprx fed a real name to both, a case-mismatched spec
+    EXPORTED the layout while silently skipping its text and extent — an
+    unconfigured figure, beside an ERROR claiming the layout wasn't there."""
+    from autogis.core.envmon import layout_manager as lm
+
+    arcpy, _ = _aprx_with_layouts("GW Analytical Layout")
+    monkeypatch.setattr(lm, "_arcpy", lambda: arcpy)
+    qa = QACollector()
+    lm.update_layout_text(Path("p.aprx"), spec_name, {"T": "x"}, qa)
+    assert qa.records == []          # found it, whatever the casing
+
+
+def test_zoom_to_boundary_reports_an_unmatched_layout(monkeypatch):
+    """An empty layout list here was a silent no-op: the figure shipped with
+    the template's saved extent and nothing said so."""
+    from autogis.core.envmon import layout_manager as lm
+
+    arcpy, _ = _aprx_with_layouts("GW Analytical Layout")
+    monkeypatch.setattr(lm, "_arcpy", lambda: arcpy)
+    qa = QACollector()
+    lm.zoom_to_boundary(Path("p.aprx"), "No Such Layout", "SiteBoundary", 5, qa)
+    assert [r.category for r in qa.records] == ["layout_missing"]
+
+
+# --- config values at the trust boundary must not raise raw ---
+
+@pytest.mark.parametrize("value", [None, "5%", "wide", [5]])
+def test_bad_extent_buffer_pct_warns_and_defaults(monkeypatch, value):
+    """Not FIGURE_REQUIRED, so such a spec loads clean; float() then raised a
+    raw TypeError/ValueError out of the CLI."""
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    calls, _ = _chain_recorder(monkeypatch)
+    qa = QACollector()
+    prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"), "H281",
+        "2026-06-15", _spec(extent_buffer_pct=value), qa)
+
+    assert next(c for c in calls if c[0] == "zoom")[1][3] == 5.0
+    if value is not None:
+        assert "bad_extent_buffer_pct" in [r.category for r in qa.records]
+
+
+def test_non_mapping_layout_text_warns_instead_of_raising(monkeypatch):
+    """`layout_text: [a]` raised `dictionary update sequence element #0`."""
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    calls, _ = _chain_recorder(monkeypatch)
+    qa = QACollector()
+    prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"), "H281",
+        "2026-06-15", _spec(layout_text=["a"]), qa)
+
+    assert next(c for c in calls if c[0] == "text")[1][2] == {
+        "EventDate": "2026-06-15"}
+    assert "spec_value_not_a_mapping" in [r.category for r in qa.records]
+
+
+def test_scalar_visible_layers_is_not_iterated_per_character(monkeypatch):
+    """`visible_layers: Wells` is a string; iterating it emitted one
+    'layer missing' record per LETTER and toggled nothing."""
+    from autogis.core.envmon import layout_manager as lm
+
+    arcpy = MagicMock()
+    aprx = MagicMock()
+    a_map = MagicMock()
+    a_map.listLayers.return_value = [types.SimpleNamespace(name="Wells",
+                                                           visible=False)]
+    aprx.listMaps.return_value = [a_map]
+    arcpy.mp.ArcGISProject.return_value = aprx
+    monkeypatch.setattr(lm, "_arcpy", lambda: arcpy)
+
+    qa = QACollector()
+    lm.set_layer_visibility(Path("p.aprx"), "Wells", [], qa)
+    assert [r.category for r in qa.records] == ["spec_value_not_a_list"]
+    assert a_map.listLayers.return_value[0].visible is True

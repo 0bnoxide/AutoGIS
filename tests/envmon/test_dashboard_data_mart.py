@@ -273,3 +273,35 @@ def test_export_dashboard_json_rejects_stale_dash_file(tmp_path):
 
     assert stale.read_text(encoding="utf-8") == "[]\n"
     assert not (tmp_path / "Dash_SiteStatus.json").exists()
+
+
+def test_prior_selection_skips_rows_with_no_elevation():
+    """#464 gave Survey123 water levels a real EventDate. Those rows carry a
+    DTW but no TOC, so they out-date the workbook row and won the prior
+    lookup — collapsing every Delta_ft to NULL and every Trend to "Unknown",
+    the exact symptom #466 fixed, re-entering by a different door. Neither
+    change is wrong alone; git could not see the interaction."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 100.0},
+        {"LocationID": "MW-1", "EventDate": "2026-04-15",
+         _PRIOR_GWE: None, "DepthToWater_ft": 12.5},   # Survey123, no TOC
+    ]
+    prior = select_prior_water_levels(all_wl, cur)
+    assert [p["EventDate"] for p in prior] == ["2026-03-15"]
+
+    row = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")[0]
+    assert row["PriorGWE_ft"] == 100.0
+    assert abs(row["Delta_ft"] - 0.5) < 1e-9
+    assert row["Trend"] == "Rising"
+
+
+def test_prior_selection_yields_nothing_when_no_row_has_an_elevation():
+    """Genuinely no prior elevation -> no prior. Unknown is the right answer
+    here, so the skip must not invent one."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [{"LocationID": "MW-1", "EventDate": "2026-04-15",
+               _PRIOR_GWE: None}]
+    assert select_prior_water_levels(all_wl, cur) == []
+    row = build_dash_gw_level_summary(cur, [], "H281", "2026Q2")[0]
+    assert row["Trend"] == "Unknown"

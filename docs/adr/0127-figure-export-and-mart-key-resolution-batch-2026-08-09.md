@@ -131,6 +131,57 @@ shipped spec. This is the *third* instance of the class (#443 `contours`, #459
 `layouts`, #463 `combined_pdf_name`); the fixes alone would not have stopped a
 fourth.
 
+## Amendments from cold review (2026-08-11)
+
+Two review passes ran against this batch. Both found real defects **introduced
+by the centralization above**, which is worth recording rather than quietly
+patching -- the pattern is that collapsing two divergent paths into one makes
+their disagreements load-bearing for the first time.
+
+**9. `export_layouts(layout_names=[])` means "export nothing" -- a contract
+change to a public core seam.** `FIGURE_REQUIRED` is a key-*presence* check, so
+a spec carrying `layout_name:` (YAML null) or `""` loads clean. Returning
+`None` for those reproduced #459 exactly, with no QA record. Now
+`prepare_figure_aprx` emits a `layout_name_missing` **ERROR**, short-circuits
+(configuring nothing, since nothing will be exported), and returns `[]`; and
+`export_layouts` narrows `if layout_names:` to `if layout_names is not None:`.
+Callers passing `[]` previously got "no filter, export everything" and now get
+"export nothing" -- in-tree there are none, but it is a behavior change to a
+library function, not an internal detail.
+
+**10. One layout-name match rule, case-insensitive, for every consumer.**
+`export_layouts` has always lowercased; `update_layout_text` and
+`zoom_to_boundary` compared exactly. While `layout_names` was permanently
+`None` the two rules never had to agree. Once `prepare_figure_aprx` fed one
+resolved name to all three, a case-mismatched spec **exported** the layout
+while silently skipping its text and extent -- an unconfigured figure shipped
+beside an ERROR claiming the layout was not in the APRX. `_select_layouts()` is
+now the single rule, and `zoom_to_boundary` reports an unmatched layout instead
+of returning silently.
+
+**11. Figure-spec values are coerced at the trust boundary, not `float()`-ed.**
+`extent_buffer_pct` and `layout_text` are not `FIGURE_REQUIRED`, so
+`extent_buffer_pct:` (null) or `"5%"` loads clean and used to raise a raw
+`TypeError`/`ValueError` out of the CLI -- a new crash surface, since
+`gen-map-series` did not read either key before this batch. Both now coerce
+with a WARNING and a default, matching `_load_json_option`'s stated convention
+("usage mistakes at the CLI trust boundary, not crashes"). `visible_layers`
+given as a bare scalar is normalized rather than iterated per character.
+
+**12. The prior-water-level selector skips rows with no elevation.** Not a
+figure-export issue at all -- a *semantic* conflict with ADR-0126 that a clean
+textual merge could not surface. ADR-0126 gave Survey123 water levels a real
+`EventDate`; those rows carry a DTW but no TOC, so post-merge they out-date the
+workbook row, won `select_prior_water_levels`, and collapsed every `Delta_ft`
+to NULL and every `Trend` to "Unknown" -- the precise symptom decision 3 above
+claims to have fixed, re-entering through a different door. Neither change is
+wrong alone. The selector now skips candidates with no usable elevation, so it
+returns the latest prior that can actually produce a delta.
+
+**New QA categories in this batch:** `required_layer_uncheckable`,
+`layout_name_missing`, `bad_extent_buffer_pct`, `spec_value_not_a_mapping`,
+`spec_value_not_a_list`, and a `layout_missing` record from `zoom_to_boundary`.
+
 ## Consequences
 
 ### Positive
