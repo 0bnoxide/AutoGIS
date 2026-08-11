@@ -76,8 +76,13 @@ def test_compute_rpd_zero_denominator():
     from autogis.core.envmon.evaluate_rpd_qa import _rpd as _rpd_eval
     from autogis.core.envmon.normalize_rpd import _rpd as _rpd_norm
 
-    assert compute_rpd(0.0, 0.0) is None
-    assert _rpd_eval(0.0, 0.0) is None and _rpd_norm(0.0, 0.0) is None
+    # Both shapes that make the mean zero: the all-zero pair and the
+    # sign-cancelling pair. The latter is not hypothetical -- a negative
+    # result value is how a lab reports some blank-corrected measurements.
+    for pair in [(0.0, 0.0), (-5.0, 5.0)]:
+        assert compute_rpd(*pair) is None, pair
+        assert _rpd_eval(*pair) is None, pair
+        assert _rpd_norm(*pair) is None, pair
 
 
 def test_suffix_inference_mb():
