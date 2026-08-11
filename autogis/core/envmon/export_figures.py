@@ -112,11 +112,23 @@ def export_layouts(
     # layout resolved, export nothing" and must not be read as "no filter,
     # export everything" -- that read is #459.
     if layout_names is not None:
-        wanted = {n.lower() for n in layout_names}
+        # Keep the caller's spelling: reporting the lowered key told operators
+        # their spec said 'wrong name' when it said "Wrong Name", and collapsed
+        # two requested names differing only by case into one record.
+        # First spelling wins and insertion order is kept, so two requests
+        # differing only by case report once, deterministically, in the order
+        # the caller listed them -- a dict comprehension here made the surviving
+        # spelling depend on list order.
+        wanted: Dict[str, str] = {}
+        for n in layout_names:
+            wanted.setdefault(str(n).lower(), str(n))
         layouts = [l for l in layouts if l.name.lower() in wanted]
-        for n in wanted - {l.name.lower() for l in layouts}:
-            qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
-                            message=f"Requested layout {n!r} not in APRX."))
+        found = {l.name.lower() for l in layouts}
+        for key, original in wanted.items():
+            if key not in found:
+                qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
+                                message=f"Requested layout {original!r} not in "
+                                        "APRX."))
     written: List[Path] = []
     pdfs: List[Path] = []
     for lay in layouts:

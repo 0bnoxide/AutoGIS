@@ -305,3 +305,44 @@ def test_prior_selection_yields_nothing_when_no_row_has_an_elevation():
     assert select_prior_water_levels(all_wl, cur) == []
     row = build_dash_gw_level_summary(cur, [], "H281", "2026Q2")[0]
     assert row["Trend"] == "Unknown"
+
+
+@pytest.mark.parametrize("unusable", ["N/A", "ND", "   ", "not measured"])
+def test_prior_selection_skips_present_but_unparseable_elevations(unusable):
+    """A presence test (`in (None, "")`) let "N/A"/"ND"/whitespace through, so
+    the symptom returned. _prior_gwe_by_location already funnels through _num,
+    so the two seams would disagree about what counts as an elevation."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 100.0},
+        {"LocationID": "MW-1", "EventDate": "2026-04-15", _PRIOR_GWE: unusable},
+    ]
+    prior = select_prior_water_levels(all_wl, cur)
+    assert [p["EventDate"] for p in prior] == ["2026-03-15"]
+    assert build_dash_gw_level_summary(
+        cur, prior, "H281", "2026Q2")[0]["Trend"] == "Rising"
+
+
+def test_prior_selection_keeps_a_datum_relative_zero():
+    """0.0 is a physically possible elevation; the skip must not eat it."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 0.5}]
+    all_wl = [{"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 0.0}]
+    prior = select_prior_water_levels(all_wl, cur)
+    assert len(prior) == 1
+    assert build_dash_gw_level_summary(
+        cur, prior, "H281", "2026Q2")[0]["PriorGWE_ft"] == 0.0
+
+
+def test_shadowed_newer_prior_is_disclosed(caplog):
+    """The delta can now span a different pair of events than the two most
+    recent, and Dash_* has no prior-date column to show it."""
+    import logging
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2024-01-01", _PRIOR_GWE: 90.0},
+        {"LocationID": "MW-1", "EventDate": "2026-05-01", _PRIOR_GWE: None},
+    ]
+    with caplog.at_level(logging.INFO):
+        select_prior_water_levels(all_wl, cur)
+    assert "prior-water-level" in caplog.text
+    assert "2026-05-01" in caplog.text and "2024-01-01" in caplog.text

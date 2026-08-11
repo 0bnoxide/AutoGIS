@@ -58,11 +58,18 @@ def check_site_name(site_name: str) -> None:
     """site_name lands in double-quoted YAML scalars: reject the scalar
     metacharacters ('"', '\\') and any non-printable (control/DEL/C1/line &
     paragraph separators, via str.isprintable()). Raises ValueError."""
-    if '"' in site_name or "\\" in site_name or not site_name.isprintable():
-        raise ValueError("site name must be printable text without "
+    _check_yaml_scalar(site_name, "site name")
+
+
+def _check_yaml_scalar(value: str, field: str) -> None:
+    """Shared guard for any operator string landing in a double-quoted YAML
+    scalar. ``field`` names the offending input, so the message is right
+    whichever caller rejected it."""
+    if '"' in value or "\\" in value or not value.isprintable():
+        raise ValueError(f"{field} must be printable text without "
                          "double-quotes or backslashes")
-    if any(tok in site_name for tok in _SENTINELS):
-        raise ValueError("site name must not contain the substitution tokens "
+    if any(tok in value for tok in _SENTINELS):
+        raise ValueError(f"{field} must not contain the substitution tokens "
                          "__SITE_ID__ / __SITE_NAME__")
 
 
@@ -121,14 +128,7 @@ _TEMPLATE_ID_RE = re.compile(r"^(\s*template_id:).*$", re.MULTILINE)
 def check_callout_template_id(value: str) -> None:
     """The callout template id lands in a double-quoted YAML scalar, same
     trust boundary as ``site_name``. Raises ValueError."""
-    try:
-        check_site_name(value)
-    except ValueError as exc:
-        # Re-raise under this field's name, keeping the ORIGINAL reason -- the
-        # sentinel rejection and the printable/quote rejection are different
-        # problems and a single fixed message misreports one of them.
-        raise ValueError(
-            f"callout template id rejected: {exc}") from None
+    _check_yaml_scalar(value, "callout template id")
 
 
 def render_figure_spec_template(site_id: str = "_TODO_SITE_ID",

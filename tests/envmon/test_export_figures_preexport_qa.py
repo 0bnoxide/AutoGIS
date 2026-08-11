@@ -171,3 +171,24 @@ def test_combine_pdf_merges_the_exported_pdfs(monkeypatch, tmp_path):
     pdoc.saveAndClose.assert_called_once()
     assert written[-1].name == "Packet.pdf"
     assert [r.category for r in qa.records] == ["combined_pdf"]
+
+
+def test_layout_missing_reports_the_name_the_operator_typed(monkeypatch, tmp_path):
+    """The record iterated the lowered lookup key, so a spec saying
+    "Wrong Name" produced "Requested layout 'wrong name' not in APRX." — and
+    two names differing only by case collapsed into one record."""
+    written, qa = _export(monkeypatch, tmp_path, ["Wrong Name", "WRONG NAME"])
+    assert written == []
+    # Matching is case-insensitive, so those two ARE one request: reported
+    # once, with the first spelling, not the lowered key and not last-wins.
+    assert [r.message for r in qa.records] == [
+        "Requested layout 'Wrong Name' not in APRX."]
+
+
+def test_layout_missing_reports_each_distinct_name_in_caller_order(
+        monkeypatch, tmp_path):
+    written, qa = _export(monkeypatch, tmp_path, ["Zulu", "Alpha"])
+    assert written == []
+    assert [r.message for r in qa.records] == [
+        "Requested layout 'Zulu' not in APRX.",
+        "Requested layout 'Alpha' not in APRX."]

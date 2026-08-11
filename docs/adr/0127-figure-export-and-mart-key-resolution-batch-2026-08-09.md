@@ -178,6 +178,36 @@ claims to have fixed, re-entering through a different door. Neither change is
 wrong alone. The selector now skips candidates with no usable elevation, so it
 returns the latest prior that can actually produce a delta.
 
+**13. Coercion helpers test for what is ACCEPTED, not for what is rejected.**
+Round 2 added `_name_list`/`_text_map`/`_buffer_pct` and round 3 found all
+three half-done: `_name_list` special-cased `str`, so every other scalar still
+raised and a mapping silently iterated as its KEYS; `_buffer_pct` coerced the
+type but not the value, so `nan`/`inf`/`-100` passed and a negative pad
+inverts the extent. Each now tests for the shape it accepts
+(`isinstance(value, (list, tuple, set))`, `math.isfinite and >= 0`) rather
+than enumerating the shapes it rejects — an enumeration is a list that is
+wrong the moment YAML produces a type nobody listed.
+
+**14. One grammar for layout text.** `_text_map` was a *second* answer to a
+question `load_layout_text_yaml` already answered in the same module: the
+values file accepted a list of `{element_name, text}` dicts, the figure spec
+rejected every list. Both now route through `_as_text_map()`; the values file
+raises, the figure spec warns. Adding a divergent second rule while removing
+duplication elsewhere is the same defect this batch is about, committed inside
+the fix for it.
+
+## Negative consequences of decision 12 (prior-row skip)
+
+Skipping elevation-less prior rows means `Delta_ft` can span a **different**
+pair of events than the two most recent, and `Dash_GWLevelSummary` has no
+prior-date column to show which. The span can therefore change between runs as
+new field rounds land, with nothing in the delivered table saying so. The skip
+is still the right call — the alternative is a NULL delta — but it is a
+disclosure gap, mitigated only by a `[prior-water-level]` INFO log when a
+skipped candidate is newer than the chosen prior. A `PriorEventDate` column on
+`Dash_GWLevelSummary` would close it properly and is deliberately **not** in
+this batch (schema change, separate decision).
+
 **New QA categories in this batch:** `required_layer_uncheckable`,
 `layout_name_missing`, `bad_extent_buffer_pct`, `spec_value_not_a_mapping`,
 `spec_value_not_a_list`, and a `layout_missing` record from `zoom_to_boundary`.

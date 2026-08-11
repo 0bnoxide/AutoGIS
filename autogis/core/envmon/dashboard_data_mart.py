@@ -131,14 +131,23 @@ def select_prior_water_levels(
     current_date = {r.get("LocationID", ""): _event_date_str(r.get("EventDate"))
                     for r in current_water_levels}
     by_loc: Dict[str, dict] = {}
+    skipped: Dict[str, str] = {}
     for r in all_water_levels:
-        if _row_gwe(r) in (None, ""):
-            # A row with no elevation cannot produce a delta, and taking it as
-            # "the prior" hides the last row that could. Reachable since #464
-            # gave Survey123 water levels a real EventDate: those rows carry a
-            # DTW but no TOC, so they out-date the workbook row and collapsed
-            # every Delta_ft to NULL and every Trend to "Unknown" -- the exact
-            # symptom #466 fixed, re-entering by a different door.
+        if _num(_row_gwe(r)) is None:
+            # A row with no USABLE elevation cannot produce a delta, and taking
+            # it as "the prior" hides the last row that could. Reachable since
+            # #464 gave Survey123 water levels a real EventDate: those rows
+            # carry a DTW but no TOC, so they out-date the workbook row and
+            # collapsed every Delta_ft to NULL and every Trend to "Unknown" --
+            # the exact symptom #466 fixed, re-entering by a different door.
+            # Tested with _num, not `in (None, "")`: "N/A"/"ND"/"   " are
+            # present but unusable, and the presence test let them through --
+            # and _prior_gwe_by_location already funnels through _num, so the
+            # two seams would disagree about what counts as an elevation.
+            sk = r.get("LocationID", "")
+            ed_sk = _event_date_str(r.get("EventDate"))
+            if ed_sk > skipped.get(sk, ""):
+                skipped[sk] = ed_sk
             continue
         loc = r.get("LocationID", "")
         ed = _event_date_str(r.get("EventDate"))
@@ -152,6 +161,17 @@ def select_prior_water_levels(
         prev = by_loc.get(loc)
         if prev is None or ed > _event_date_str(prev.get("EventDate")):
             by_loc[loc] = r
+    # The delta can now span a different pair of events than the two most
+    # recent, and the Dash_* schema has no prior-date column to show it. Say so
+    # rather than letting the span change silently between runs -- same
+    # disclosure channel the orchestrator uses for its canonical-read drops.
+    for sk, ed_sk in sorted(skipped.items()):
+        chosen = by_loc.get(sk)
+        if chosen is not None and ed_sk > _event_date_str(
+                chosen.get("EventDate")):
+            LOG.info("[prior-water-level] %s: skipped a newer %s reading with "
+                     "no usable elevation; delta is against %s instead.",
+                     sk, ed_sk, _event_date_str(chosen.get("EventDate")))
     return list(by_loc.values())
 
 

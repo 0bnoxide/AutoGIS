@@ -7,6 +7,7 @@ then used for export.
 
 from __future__ import annotations
 
+import math
 import re
 import shutil
 from pathlib import Path
@@ -126,36 +127,64 @@ def _select_layouts(aprx, layout_name: Optional[str]) -> List:
 def _name_list(value, field: str, qa: QACollector) -> List[str]:
     """Coerce a spec list-of-names to a real list.
 
-    A bare YAML scalar (``visible_layers: Wells``) is a string, and iterating
-    it yields characters -- which produced one 'layer missing' QA record per
-    letter and toggled nothing.
+    Tests for a list rather than enumerating scalar types, so every shape a
+    YAML scalar can produce takes the warned single-value path. Special-casing
+    ``str`` alone left `visible_layers: 2026` and `: no` (bool) raising a raw
+    TypeError, and a mapping silently iterating as its KEYS -- which happens to
+    work until the keys are not layer names.
     """
     if value is None:
         return []
-    if isinstance(value, str):
+    if not isinstance(value, (list, tuple, set)):
         qa.add(QARecord(
             severity=SEV_WARNING, category="spec_value_not_a_list",
-            message=f"Figure spec {field} is the single value {value!r}, not a "
-                    "list; treating it as a one-item list.",
+            message=f"Figure spec {field} is the single value {value!r} "
+                    f"({type(value).__name__}), not a list; treating it as a "
+                    "one-item list.",
             recommended_action=f"Write {field} as a YAML list."))
-        return [value]
+        return [str(value)]
     return [str(v) for v in value]
 
 
-def _text_map(value, field: str, qa: QACollector) -> Dict[str, str]:
-    """Coerce a layout-text block to a mapping. A YAML list here raised a raw
-    `ValueError: dictionary update sequence element #0` out of the CLI."""
-    if value is None:
+def _as_text_map(raw) -> Dict[str, str]:
+    """Coerce a layout-text block to ``{element_name: text}``.
+
+    ONE grammar for layout text, shared by the Tool 5.8 values file
+    (:func:`load_layout_text_yaml`) and a figure spec's ``layout_text:``.
+    They had drifted to different rules inside this one module -- the values
+    file accepted a list of ``{element_name, text}`` dicts and the figure spec
+    rejected every list -- which is the drift this batch exists to remove.
+
+    Raises ValueError naming the shape problem; callers decide whether that is
+    fatal (the values file) or a QA warning (the figure spec).
+    """
+    if raw is None:
         return {}
-    if not isinstance(value, dict):
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    if isinstance(raw, list):
+        try:
+            return {str(e["element_name"]): str(e["text"]) for e in raw}
+        except (KeyError, TypeError) as exc:
+            raise ValueError("list form needs 'element_name' and 'text' keys "
+                             f"on every entry ({exc!r})")
+    raise ValueError("expected a mapping {ElementName: text} or a list of "
+                     f"{{element_name, text}} dicts, got {type(raw).__name__}")
+
+
+def _text_map(value, field: str, qa: QACollector) -> Dict[str, str]:
+    """Figure-spec side of :func:`_as_text_map`: a bad shape is a QA warning,
+    not a crash. A YAML list here used to raise a raw
+    `ValueError: dictionary update sequence element #0` out of the CLI."""
+    try:
+        return _as_text_map(value)
+    except ValueError as exc:
         qa.add(QARecord(
             severity=SEV_WARNING, category="spec_value_not_a_mapping",
-            message=f"{field} is not a name -> text mapping "
-                    f"({type(value).__name__}); ignored.",
+            message=f"{field}: {exc}; ignored.",
             recommended_action=f"Write {field} as a YAML mapping of layout "
                                "element name to text."))
         return {}
-    return {str(k): str(v) for k, v in value.items()}
 
 
 def _buffer_pct(value, qa: QACollector) -> float:
@@ -165,13 +194,19 @@ def _buffer_pct(value, qa: QACollector) -> float:
     if value is None:
         return 5.0
     try:
-        return float(value)
+        pct = float(value)
     except (TypeError, ValueError):
+        pct = None
+    # float() happily accepts nan/inf, and a negative pads inward: -100 makes
+    # XMin_new == XMax_old, an inverted extent and a silently garbage figure.
+    if pct is None or not math.isfinite(pct) or pct < 0:
         qa.add(QARecord(
             severity=SEV_WARNING, category="bad_extent_buffer_pct",
-            message=f"extent_buffer_pct {value!r} is not a number; using 5.",
-            recommended_action="Set extent_buffer_pct to a plain number."))
+            message=f"extent_buffer_pct {value!r} is not a finite "
+                    "non-negative number; using 5.",
+            recommended_action="Set extent_buffer_pct to a plain number >= 0."))
         return 5.0
+    return pct
 
 
 def set_layer_visibility(aprx_path: Path, visible: Sequence[str],
@@ -212,21 +247,10 @@ def load_layout_text_yaml(path: Path) -> Dict[str, str]:
     import yaml
 
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    if raw is None:
-        return {}
-    if isinstance(raw, dict):
-        return {str(k): str(v) for k, v in raw.items()}
-    if isinstance(raw, list):
-        try:
-            return {str(e["element_name"]): str(e["text"]) for e in raw}
-        except (KeyError, TypeError) as exc:
-            raise ValueError(
-                f"List-form values YAML {path} needs 'element_name' and "
-                f"'text' keys on every entry ({exc!r}).")
-    raise ValueError(
-        f"Unexpected YAML structure in {path}: expected a mapping "
-        f"{{ElementName: text}} or a list of {{element_name, text}} dicts, "
-        f"got {type(raw).__name__}.")
+    try:
+        return _as_text_map(raw)
+    except ValueError as exc:
+        raise ValueError(f"Unexpected YAML structure in {path}: {exc}.") from None
 
 
 def update_layout_text(
@@ -238,7 +262,8 @@ def update_layout_text(
     dry_run: bool = False,
 ) -> None:
     """Set layout text elements by element name; then substitute any
-    {{placeholder}} tokens in remaining text elements. Unresolved
+    {{placeholder}} tokens in remaining text elements. ``layout_name`` is
+    matched case-insensitively (``None`` = every layout). Unresolved
     placeholders raise a QA warning (the figure should not ship with
     template tokens visible). ``dry_run`` reports without saving the APRX."""
     arcpy = _arcpy()

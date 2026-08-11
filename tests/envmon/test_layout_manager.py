@@ -413,3 +413,75 @@ def test_scalar_visible_layers_is_not_iterated_per_character(monkeypatch):
     lm.set_layer_visibility(Path("p.aprx"), "Wells", [], qa)
     assert [r.category for r in qa.records] == ["spec_value_not_a_list"]
     assert a_map.listLayers.return_value[0].visible is True
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("Wells", ["Wells"]),          # bare scalar
+    (2026, ["2026"]),              # YAML int   -- used to raise TypeError
+    (False, ["False"]),            # `no` in YAML -- used to raise TypeError
+    (2.5, ["2.5"]),                # YAML float -- used to raise TypeError
+    ({"Wells": 1}, None),          # mapping -- used to iterate as KEYS, silently
+])
+def test_non_list_layer_names_warn_instead_of_raising_or_iterating(
+        value, expected):
+    """Special-casing `str` alone left every other scalar raising a raw
+    TypeError, and a mapping silently iterating as its keys — an accident that
+    works until the keys are not layer names."""
+    from autogis.core.envmon.layout_manager import _name_list
+
+    qa = QACollector()
+    got = _name_list(value, "visible_layers", qa)
+    assert [r.category for r in qa.records] == ["spec_value_not_a_list"]
+    if expected is not None:
+        assert got == expected
+    else:
+        assert got == [str(value)]      # NOT ["Wells"] from iterating keys
+
+
+def test_list_layer_names_pass_through_without_a_warning():
+    from autogis.core.envmon.layout_manager import _name_list
+
+    qa = QACollector()
+    assert _name_list(["A", "B"], "visible_layers", qa) == ["A", "B"]
+    assert qa.records == []
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -100, "-1"])
+def test_extent_buffer_pct_rejects_non_finite_and_negative(bad):
+    """float() accepts nan/inf, and a negative pads INWARD: -100 makes
+    XMin_new == XMax_old — an inverted extent and a silently garbage figure."""
+    from autogis.core.envmon.layout_manager import _buffer_pct
+
+    qa = QACollector()
+    assert _buffer_pct(bad, qa) == 5.0
+    assert [r.category for r in qa.records] == ["bad_extent_buffer_pct"]
+
+
+def test_extent_buffer_pct_accepts_a_real_number():
+    from autogis.core.envmon.layout_manager import _buffer_pct
+
+    qa = QACollector()
+    assert _buffer_pct("7.5", qa) == 7.5
+    assert qa.records == []
+
+
+def test_figure_spec_layout_text_accepts_the_values_file_list_form():
+    """One grammar for layout text. load_layout_text_yaml accepted a list of
+    {element_name, text} dicts while the figure spec rejected every list —
+    two rules for one concept, in one module, which is the drift this batch
+    exists to remove."""
+    from autogis.core.envmon.layout_manager import _text_map
+
+    qa = QACollector()
+    got = _text_map([{"element_name": "FigureTitle", "text": "GW Results"}],
+                    "figure layout_text", qa)
+    assert got == {"FigureTitle": "GW Results"}
+    assert qa.records == []
+
+
+def test_figure_spec_layout_text_warns_on_a_shape_neither_form_accepts():
+    from autogis.core.envmon.layout_manager import _text_map
+
+    qa = QACollector()
+    assert _text_map(["just a string"], "figure layout_text", qa) == {}
+    assert [r.category for r in qa.records] == ["spec_value_not_a_mapping"]
