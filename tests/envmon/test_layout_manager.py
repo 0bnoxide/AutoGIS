@@ -250,16 +250,37 @@ def test_prepare_figure_aprx_selects_the_specs_layout(monkeypatch):
     assert layout_names == ["GW Analytical Layout"]
 
 
-def test_prepare_figure_aprx_layout_names_is_none_without_a_layout_name(monkeypatch):
-    """No layout_name -> no filter, the pre-existing export-everything
-    behavior. Kept explicit so the fallback is a decision, not an accident."""
+@pytest.mark.parametrize("bad", [None, "", "   "])
+def test_prepare_figure_aprx_blocks_when_layout_name_is_empty(monkeypatch, bad):
+    """FIGURE_REQUIRED is a key-PRESENCE check, so `layout_name:` (YAML null)
+    or an empty string loads clean. Returning None for those would restore
+    #459 exactly -- no filter, every layout exported under one colliding stem,
+    and no QA record to show for it. An empty selection must block instead."""
+    from autogis.core.common.qa import SEV_ERROR
+    from autogis.core.envmon.layout_manager import prepare_figure_aprx
+
+    _chain_recorder(monkeypatch)
+    qa = QACollector()
+    _, layout_names = prepare_figure_aprx(
+        Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
+        "H281", "2026-06-15", _spec(layout_name=bad), qa)
+
+    assert layout_names == []           # NOT None -- see export_layouts
+    assert [r.category for r in qa.records] == ["layout_name_missing"]
+    assert qa.records[0].severity == SEV_ERROR
+
+
+def test_prepare_figure_aprx_strips_and_coerces_the_layout_name(monkeypatch):
+    """A YAML scalar can arrive padded or non-str (`layout_name: 123`);
+    export_layouts lowercases it, so it must be a stripped str by here."""
     from autogis.core.envmon.layout_manager import prepare_figure_aprx
 
     _chain_recorder(monkeypatch)
     _, layout_names = prepare_figure_aprx(
         Path("t.aprx"), Path("/w"), "tag", Path("/g.gdb"),
-        "H281", "2026-06-15", _spec(layout_name=None), QACollector())
-    assert layout_names is None
+        "H281", "2026-06-15", _spec(layout_name="  Padded Layout  "),
+        QACollector())
+    assert layout_names == ["Padded Layout"]
 
 
 def test_prepare_figure_aprx_layout_text_merges_site_defaults(monkeypatch):

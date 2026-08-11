@@ -37,10 +37,12 @@ Every member produces a confident, wrong deliverable and no error:
   equivalent, but carried its *own* copy of the ExportFigures chain — one that
   had lost `set_layer_visibility`, `update_layout_text` and `zoom_to_boundary`
   entirely. `map_series_plan`'s module docstring asserted it "replays the
-  proven ExportFigures chain". Seven figure-spec keys (`visible_layers`,
+  proven ExportFigures chain". Six figure-spec keys (`visible_layers`,
   `hidden_layers`, `layout_text`, `default_layout_text`,
-  `extent_boundary_layer`, `extent_buffer_pct`, `figure_number`) were inert on
-  the only batch-figure path that exists.
+  `extent_boundary_layer`, `extent_buffer_pct`) were inert on the only
+  batch-figure path that exists. (`figure_number` is a seventh key the CLI
+  does not read, but it feeds `output_filename_pattern` only — decision 2
+  below keeps the packet name, so it stays inert there deliberately.)
 - **#466** `build_dash_well_status` / `build_dash_gw_level_summary` read prior
   water levels as `GWE_ft`. Prior rows come from `Env_WaterLevels`, whose
   column is `GroundwaterElevation_ft`; `GWE_ft` is the

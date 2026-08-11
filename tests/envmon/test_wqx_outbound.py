@@ -280,10 +280,17 @@ def test_cli_writes_the_qa_report(tmp_path):
 
 def test_cli_fail_on_warning_gates_the_submission(tmp_path):
     """Without @qa_report_options the command exited 0 regardless, so no CI
-    gate or scheduled run could stop a bad outbound submission (#460)."""
+    gate or scheduled run could stop a bad outbound submission (#460).
+
+    Asserts exit 1 and the FAIL status specifically, NOT just non-zero: on the
+    unfixed command `--fail-on` is an unknown option, so click exits 2 and a
+    bare `!= 0` passes for entirely the wrong reason without ever reaching the
+    gate this test claims to pin.
+    """
     res = _run_export(tmp_path, [_one_row(matrix="ZZZ")],
                       "--fail-on", "warning")
-    assert res.exit_code != 0, res.output
+    assert res.exit_code == 1, res.output
+    assert "Status: FAIL" in res.output
 
 
 def test_cli_clean_export_still_passes_fail_on_warning(tmp_path):

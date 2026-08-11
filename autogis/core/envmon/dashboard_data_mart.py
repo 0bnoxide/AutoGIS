@@ -185,7 +185,9 @@ def _prior_gwe_by_location(
     out: Dict[str, Optional[float]] = {}
     for p in prior_water_level_events:
         v = p.get("GroundwaterElevation_ft")
-        if v is None:
+        if v in (None, ""):
+            # "" is the ordinary empty-cell shape from any CSV-backed caller;
+            # treating only None as absent silently yielded no prior value.
             v = p.get("GWE_ft")
         out[p.get("LocationID", "")] = _num(v)
     return out

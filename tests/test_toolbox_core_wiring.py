@@ -183,13 +183,15 @@ def test_no_pyt_tool_declares_a_parameter_its_body_never_reads():
 
 # ------------------- #459/#461/#462 figure-spec keys and the .pyt skeleton
 #
-# The scopes that read a FigureSpec on the export path. Named explicitly so
-# `spec.get(...)` on an unrelated dict (generate-job-queue's manifest) is not
-# swept in as a false positive.
+# The scopes that read a FigureSpec on the export path, as
+# (filename, enclosing class or None, function). Scoped this precisely because
+# `spec` names an unrelated dict elsewhere -- generate-job-queue's manifest --
+# and because EVERY .pyt tool class has an `execute`, so matching on the
+# function name alone would sweep in all of them.
 _FIGURE_SPEC_SCOPES = {
-    ("toolbox.pyt", "execute"),          # ExportFigures
-    ("cli.py", "gen_map_series_cmd"),
-    ("layout_manager.py", "prepare_figure_aprx"),
+    ("toolbox.pyt", "ExportFigures", "execute"),
+    ("cli.py", None, "gen_map_series_cmd"),
+    ("layout_manager.py", None, "prepare_figure_aprx"),
 }
 
 # `template_aprx` is the schema key; `aprx_template` is its documented
@@ -210,11 +212,18 @@ def _shipped_figure_spec_keys():
 def _spec_get_keys(path: pathlib.Path):
     """Every `spec.get("KEY")` inside a scope that holds a FigureSpec."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    found = set()
-    for fn in ast.walk(tree):
-        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if (path.name, fn.name) not in _FIGURE_SPEC_SCOPES:
+    found, scopes = set(), set()
+    # (enclosing class or None, function) for every function in the module.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for m in node.body:
+                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    scopes.add((node.name, m))
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            scopes.add((None, node))
+    for cls_name, fn in scopes:
+        if (path.name, cls_name, fn.name) not in _FIGURE_SPEC_SCOPES:
             continue
         for n in ast.walk(fn):
             if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
@@ -276,3 +285,44 @@ def test_pyt_load_figure_spec_does_not_carry_its_own_skeleton():
     src = PYT.read_text(encoding="utf-8")
     assert "render_figure_spec_template" in src
     assert "analyte_set_name" not in src
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("CKG_GW", "CKG_GW"),
+    ("NO", "NO"),        # unquoted, YAML 1.1 would read this as the bool False
+    ("ZT42_SOIL", "ZT42_SOIL"),
+])
+def test_figure_spec_template_quotes_the_callout_template_id(value, expected):
+    """The id lands in a YAML scalar. Unquoted, `NO`/`on`/`123` come back as
+    bool/int rather than the id the operator picked in the .pyt dropdown."""
+    import yaml
+    from autogis.core.envmon.init_site import render_figure_spec_template
+
+    data = yaml.safe_load(render_figure_spec_template(callout_template_id=value))
+    assert data["callout_template"]["template_id"] == expected
+
+
+@pytest.mark.parametrize("bad", [
+    'X"quote', "X\\backslash", "X\n  base_font_points: 999", "X\ttab",
+])
+def test_figure_spec_template_rejects_an_unsafe_callout_template_id(bad):
+    """render_figure_spec_template is core API now, not just the .pyt dropdown:
+    a newline injects a sibling key into callout_template, and a quote breaks
+    out of the scalar. Same trust boundary site_name already guards."""
+    from autogis.core.envmon.init_site import render_figure_spec_template
+
+    with pytest.raises(ValueError, match="callout template id"):
+        render_figure_spec_template(callout_template_id=bad)
+
+
+def test_figure_spec_template_leaves_the_other_template_values_intact():
+    """The substitution must hit template_id and nothing else in the block."""
+    import yaml
+    from autogis.core.envmon.init_site import render_figure_spec_template
+
+    ct = yaml.safe_load(
+        render_figure_spec_template(callout_template_id="CKG_GW")
+    )["callout_template"]
+    assert ct["base_font_points"] == 6
+    assert ct["standoff_points"] == 18
+    assert ct["point_buffer_points"] == 10

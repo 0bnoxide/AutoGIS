@@ -108,7 +108,10 @@ def export_layouts(
     export_dir.mkdir(parents=True, exist_ok=True)
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
     layouts = aprx.listLayouts()
-    if layout_names:
+    # `is not None`, not truthiness: an explicitly EMPTY selection means "no
+    # layout resolved, export nothing" and must not be read as "no filter,
+    # export everything" -- that read is #459.
+    if layout_names is not None:
         wanted = {n.lower() for n in layout_names}
         layouts = [l for l in layouts if l.name.lower() in wanted]
         for n in wanted - {l.name.lower() for l in layouts}:

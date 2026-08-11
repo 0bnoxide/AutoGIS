@@ -249,18 +249,32 @@ def prepare_figure_aprx(
     set_layer_visibility(work, spec.get("visible_layers", []),
                          spec.get("hidden_layers", []), qa)
 
-    layout_name = spec.get("layout_name")
+    # FIGURE_REQUIRED is a key-PRESENCE check (config._require), so a spec with
+    # `layout_name:` (YAML null) or an empty string loads clean. Returning None
+    # for those would put us straight back in #459 -- no filter, every layout in
+    # the APRX exported under one colliding stem -- with no QA record at all.
+    # An empty selection blocks the export the same way a wrong name does.
+    raw = spec.get("layout_name")
+    layout_name = str(raw).strip() if raw is not None else ""
+    if not layout_name:
+        qa.add(QARecord(
+            severity=SEV_ERROR, category="layout_name_missing",
+            message="Figure spec declares no layout_name; cannot choose which "
+                    "layout to configure and export.",
+            recommended_action="Set layout_name in the figure spec to the "
+                               "template APRX layout to export."))
+
     text = dict(layout_text or {})
     text.update(spec.get("layout_text", {}))
     text.setdefault("EventDate", event)
-    update_layout_text(work, layout_name, text, qa)
+    update_layout_text(work, layout_name or None, text, qa)
 
     boundary = spec.get("extent_boundary_layer")
     if boundary:
-        zoom_to_boundary(work, layout_name, boundary,
+        zoom_to_boundary(work, layout_name or None, boundary,
                          float(spec.get("extent_buffer_pct", 5)), qa)
 
-    return work, ([layout_name] if layout_name else None)
+    return work, ([layout_name] if layout_name else [])
 
 
 def zoom_to_boundary(aprx_path: Path, layout_name: Optional[str],

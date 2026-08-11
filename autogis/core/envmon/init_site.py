@@ -118,6 +118,17 @@ def _render(text: str, site_id: str, site_name: str) -> str:
 _TEMPLATE_ID_RE = re.compile(r"^(\s*template_id:).*$", re.MULTILINE)
 
 
+def check_callout_template_id(value: str) -> None:
+    """The callout template id lands in a double-quoted YAML scalar, same
+    trust boundary as ``site_name``. Raises ValueError."""
+    try:
+        check_site_name(value)
+    except ValueError:
+        raise ValueError(
+            "callout template id must be printable text without "
+            "double-quotes or backslashes") from None
+
+
 def render_figure_spec_template(site_id: str = "_TODO_SITE_ID",
                                 site_name: str = "_TODO Site Name",
                                 callout_template_id: str = "") -> str:
@@ -139,8 +150,16 @@ def render_figure_spec_template(site_id: str = "_TODO_SITE_ID",
     check_site_name(site_name)
     text = _render(_read_template("figure_spec.yaml"), site_id, site_name)
     if callout_template_id:
-        text = _TEMPLATE_ID_RE.sub(
-            lambda m: f"{m.group(1)} {callout_template_id}", text, count=1)
+        check_callout_template_id(callout_template_id)
+        # Quoted, like the template's own site_id: an unquoted scalar makes
+        # YAML read "NO"/"on"/"123" as bool/int rather than the id the operator
+        # picked, and a value carrying a newline would inject a sibling key
+        # into callout_template.
+        text, n = _TEMPLATE_ID_RE.subn(
+            lambda m: f'{m.group(1)} "{callout_template_id}"', text, count=1)
+        if n != 1:
+            raise ValueError(
+                "figure-spec template has no template_id: line to set")
     return text
 
 
