@@ -391,3 +391,31 @@ def test_usable_gwe_ft_survives_a_junk_primary_spelling():
     assert len(prior) == 1
     row = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")[0]
     assert row["PriorGWE_ft"] == 99.0
+
+
+def test_null_location_id_among_skipped_rows_does_not_crash(caplog):
+    """LocationID is nullable and a SearchCursor yields NULL as None, so one
+    NULL beside one real id made the disclosure's bare sorted() raise
+    "'<' not supported between NoneType and str" — aborting the entire mart
+    build. A crash this batch introduced, in a column the schema allows."""
+    import logging
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2024-01-01", _PRIOR_GWE: 90.0},
+        {"LocationID": "MW-1", "EventDate": "2026-05-01", _PRIOR_GWE: None},
+        {"LocationID": None, "EventDate": "2026-05-01", _PRIOR_GWE: None},
+    ]
+    with caplog.at_level(logging.INFO):
+        prior = select_prior_water_levels(all_wl, cur)   # must not raise
+    assert [p["EventDate"] for p in prior] == ["2024-01-01"]
+    assert "prior-water-level" in caplog.text
+
+
+def test_explicit_prior_date_with_a_null_location_id_does_not_crash():
+    """Same shape on the explicit-date branch, which is where it first bit."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: None},
+        {"LocationID": None, "EventDate": "2026-03-15", _PRIOR_GWE: None},
+    ]
+    assert select_prior_water_levels(all_wl, cur, "2026-03-15") == []

@@ -133,7 +133,10 @@ def select_prior_water_levels(
     current_date = {r.get("LocationID", ""): _event_date_str(r.get("EventDate"))
                     for r in current_water_levels}
     by_loc: Dict[str, dict] = {}
-    skipped: Dict[str, str] = {}
+    # Keys are raw LocationID values, so Optional: a NULL LocationID
+    # arrives from the SearchCursor as None (the column is nullable and
+    # nothing enforces otherwise at write time).
+    skipped: Dict[Optional[str], str] = {}
     for r in all_water_levels:
         loc = r.get("LocationID", "")
         ed = _event_date_str(r.get("EventDate"))
@@ -157,7 +160,10 @@ def select_prior_water_levels(
             # are present but unusable, and _prior_gwe_by_location already
             # funnels through _num, so a presence test here would leave the
             # two seams disagreeing about what counts as an elevation.
-            if ed > skipped.get(loc, ""):
+            # Not on the explicit branch: every candidate there shares one
+            # date, so the disclosure below can never fire and this would be
+            # pure bookkeeping.
+            if not explicit and ed > skipped.get(loc, ""):
                 skipped[loc] = ed
             continue
         prev = by_loc.get(loc)
@@ -167,7 +173,11 @@ def select_prior_water_levels(
     # recent, and the Dash_* schema has no prior-date column to show it. Say so
     # rather than letting the span change silently between runs -- same
     # disclosure channel the orchestrator uses for its canonical-read drops.
-    for sk, ed_sk in sorted(skipped.items()):
+    # str() key: LocationID is nullable, so one NULL beside one real id makes
+    # a bare sorted() raise `'<' not supported between NoneType and str` and
+    # abort the whole mart build -- a crash this batch introduced with the
+    # disclosure, in a column the schema explicitly allows to be NULL.
+    for sk, ed_sk in sorted(skipped.items(), key=lambda kv: str(kv[0])):
         chosen = by_loc.get(sk)
         if chosen is not None and ed_sk > _event_date_str(
                 chosen.get("EventDate")):
