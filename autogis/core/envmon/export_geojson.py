@@ -1,4 +1,9 @@
-"""Export analytical results to GeoJSON FeatureCollection (Tool 10.3).
+"""Export analytical results to GeoJSON FeatureCollection.
+
+Post-roadmap extra tool — not a numbered roadmap tool. Roadmap 10.3 is the
+unrelated "Schema Migration Tool" (UpgradeEnvMonitoringGDBSchema,
+`envmon upgrade-schema`) — see issue #458.
+
 
 No arcpy dependency. Pure stdlib: csv, collections. (The FeatureCollection is a
 plain dict; JSON serialization happens at the CLI/caller boundary.)

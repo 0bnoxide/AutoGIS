@@ -18,7 +18,7 @@ from autogis.core.envmon.import_rtk_survey import _EXTRA_COLUMN_VOCAB
 from autogis.core.envmon.opentopo import DEFAULT_DATASET, DEM_DATASETS
 from autogis.core.envmon.soil_interval_selector import IntervalTier
 from autogis.core.envmon.synthetic_workbook import MESSINESS
-from autogis.runtime.capabilities import TOOL_REGISTRY
+from autogis.runtime.capabilities import RUNTIME_CLASSES, TOOL_REGISTRY
 from autogis.runtime.sessions import agol_from_profile
 
 
@@ -928,7 +928,7 @@ def process_level_loop_cmd(observations_csv, run_id, site_id, survey_date,
               default="error")
 def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
                          report, fail_on):
-    """Tool 5.1: per-well GW level/DTW/trend summary from elevation history."""
+    """Per-well GW level/DTW/trend summary from elevation history."""
     import csv as _csv
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
@@ -1128,7 +1128,7 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
               help="Output summary CSV path.")
 @qa_report_options
 def run_history_report_cmd(results_csv, output, report, fail_on):
-    """Tool 10.1: per-location per-analyte history summary across events."""
+    """Per-location per-analyte history summary across events."""
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
@@ -1150,7 +1150,7 @@ def run_history_report_cmd(results_csv, output, report, fail_on):
               help="CSV with AnalyteCanonicalName column; optional.")
 @qa_report_options
 def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
-    """Tool 10.2: validate monitoring schedule YAML structure and analyte names."""
+    """Validate monitoring schedule YAML structure and analyte names."""
     import csv as _csv
     import yaml as _yaml
     from autogis.core.common.qa import QACollector
@@ -1186,7 +1186,7 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
 @qa_report_options
 def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
                         report, fail_on):
-    """Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless)."""
+    """Re-evaluate ExceedsScreeningLevel on result records (headless)."""
     import yaml as _yaml
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import read_records_csv, write_records_csv
@@ -1363,7 +1363,7 @@ def rtk_control_check_cmd(
 @click.option("--fail-on", type=click.Choice(["error", "warning"]), default="error",
               show_default=True)
 def export_geojson_cmd(results_csv, coords_csv, output, indent, report, fail_on):
-    """Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless)."""
+    """Export analytical results to GeoJSON FeatureCollection (headless)."""
     import json as _json
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.export_geojson import build_geojson, load_well_coords
@@ -3066,7 +3066,7 @@ def fieldmaps_preflight_cmd(item_id, layer_index, profile, spec_path,
                             local_csv, manifest_path, since, key_field,
                             max_replica_age_days, output, fmt,
                             fail_on_findings):
-    """Tool 7.5: read-only Field Maps sync preflight report (Phase 9).
+    """Read-only Field Maps sync preflight report (Production Phase 9).
 
     Reports pending hosted edits, replica/offline-area age, schema drift,
     attachment staleness, duplicate identities, and conflict candidates for
@@ -5556,7 +5556,7 @@ def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
 
 @envmon.command("list-tools")
 @click.option("--runtime", "runtime_filter", default=None,
-              type=click.Choice(["CLOUD", "HYBRID", "LOCAL", "DRAFT"],
+              type=click.Choice(sorted(RUNTIME_CLASSES),
                                 case_sensitive=False))
 @click.option("--domain", default=None,
               type=click.Choice(sorted({t.domain for t in TOOL_REGISTRY}),
@@ -5716,7 +5716,7 @@ def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft,
 @click.option("--fail-on", type=click.Choice(["error", "warning"]),
               default="error", show_default=True)
 def export_comparison_excel_cmd(comparison_csv, output, overwrite, report, fail_on):
-    """Tool 4.8: export comparison results to a formatted Excel workbook (headless)."""
+    """Export comparison results to a formatted Excel workbook (headless)."""
     import csv as _csv
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.export_comparison_excel import export_comparison_excel
