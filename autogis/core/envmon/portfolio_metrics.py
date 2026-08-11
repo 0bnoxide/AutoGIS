@@ -13,7 +13,7 @@ from typing import List, Optional
 
 from ..common.qa import QACollector, SEV_INFO
 from ..common.run_history import RunHistory
-from .evaluate_readiness import evaluate_readiness
+from .evaluate_readiness import evaluate_readiness, latest_run
 
 
 @dataclasses.dataclass
@@ -62,7 +62,12 @@ def build_portfolio_metrics(
 
         missing = []
         for tool in required_tools:
-            latest = run_history.latest(tool, site_id)
+            # Same lookup evaluate_readiness uses (site-less widening included,
+            # #412) — recomputed independently per ADR-0032, but it has to
+            # recompute the SAME question or the drift guard below fires on
+            # every site with a site-less required tool and the delivered row
+            # reads `ready=True` beside `missing_tools=validate-db`.
+            latest, _ = latest_run(run_history, tool, site_id)
             if latest is None or latest.status != "success":
                 missing.append(tool)
 

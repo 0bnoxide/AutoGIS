@@ -81,7 +81,7 @@ from autogis.core.envmon.upgrade_schema import (  # noqa: E402
 
 
 def test_schema_version_constant():
-    assert SCHEMA_VERSION == "2.7"
+    assert SCHEMA_VERSION == "2.8"
 
 
 def test_table_upgrade_status_attributes():

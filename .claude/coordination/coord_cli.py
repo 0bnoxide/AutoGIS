@@ -133,24 +133,66 @@ def run(argv, reg_path, cwd=None, env=None, branch_func=None):
     return 1
 
 
+def _own_tree():
+    """The checkout coord_cli.py itself lives in. For a pinned/worktree session
+    invoking the shared script, this is the *main* tree, not the caller's."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+
+
+def _git_toplevel(cwd):
+    """Working-tree root of `cwd` (the *worktree*, not the main tree). "" if
+    git is unavailable — callers fall back to coord_cli's own tree."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, timeout=3)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def _adr_scan_base(cwd):
     """Max ADR number already used by local files + open PRs, via the new-adr
     skill's own scanner. 0 if it can't be imported (keeps reserve-adr working
     off reservations alone).
 
-    Resolve the skill + docs/adr from THIS checkout (coord_cli's own tree), not
-    registry.repo_root() — that points at the shared *main* tree, but the ADRs
-    to count (and the skill script itself) live in the worktree this command
-    runs from.
+    Scan BOTH trees, because either can be ahead of the other:
+
+    * coord_cli's own checkout — which is where the skill script lives, and for
+      a pinned/worktree session is the shared *main* tree; and
+    * the caller's worktree, resolved from `cwd`.
+
+    Scanning only coord_cli's tree handed out a number the caller's worktree had
+    already used, whenever main was behind the branch being reserved for (#425).
     """
-    tree = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    tree = _own_tree()
     sys.path.insert(0, os.path.join(tree, ".claude", "skills", "new-adr"))
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     try:
         import next_adr_number
         from pathlib import Path
-        return next_adr_number._scan_max(Path(tree))
     except Exception:
         return 0
+    # Each tree's scan gets its OWN try: a failure in either must not discard
+    # the floor the other can still compute. Folding both into one try made a
+    # git or registry hiccup return 0 — strictly less safe for reservation
+    # than before the #425 fix (review N1 caught the caller-side half; the
+    # own-tree scan gets the same treatment for the same reason).
+    base = 0
+    try:
+        base = next_adr_number._scan_max(Path(tree))
+    except Exception:
+        pass
+    try:
+        import registry
+        caller = _git_toplevel(cwd)
+        if caller and not registry.samepath(caller, tree):
+            base = max(base, next_adr_number._local_max(
+                Path(caller) / "docs" / "adr"))
+    except Exception:
+        pass
+    return base
 
 
 def _reg_path():

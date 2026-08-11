@@ -93,13 +93,23 @@ def normalize_survey123_submission(
     if dtw_raw is not None:
         try:
             dtw = float(dtw_raw)
+            # Schema field names, NOT invented ones. This dict is written
+            # straight into Env_WaterLevels by route-survey123, and
+            # append_records_idempotent projects onto TABLE_SCHEMAS — so a key
+            # the table does not carry is dropped with no error. This block
+            # used MeasurementDate / DTW_ft / GWE_ft, none of which exist, so
+            # every routed water level landed with no date and no measurement,
+            # and (EventDate being part of the unique key) every event after
+            # the first collapsed onto one key and was skipped as a duplicate
+            # (#457). WaterLevelRecord is the canonical shape.
             water_levels.append({
                 "ImportBatchID": batch_id,
                 "SiteID": site_id,
                 "LocationID": str(well_id),
-                "MeasurementDate": dt,
-                "DTW_ft": dtw,
-                "GWE_ft": None,  # computed when TOC elevation is available
+                "EventDate": dt,
+                "DepthToWater_ft": dtw,
+                # Computed when TOC elevation is available.
+                "GroundwaterElevation_ft": None,
                 "MeasuredBy": sampled_by,
                 "MeasurementMethod": "Survey123",
             })

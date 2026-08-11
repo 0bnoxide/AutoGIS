@@ -1,4 +1,4 @@
-"""Drone GCP checkpoint accuracy QA (Tool 11.1).
+"""Drone GCP checkpoint accuracy QA (Tool 8.7).
 
 Reads a checkpoint CSV and evaluates horizontal and vertical RMS errors
 against configurable thresholds. No arcpy dependency.
