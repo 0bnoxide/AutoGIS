@@ -340,3 +340,235 @@ def test_unscoped_replace_still_deletes_all_four_tables(monkeypatch):
                               "Env_AnalyticalResults", "Env_RPDResults"}
     assert not [r for r in qa.records
                if r.category == "replace_skipped_unscopable_table"]
+
+
+# --- #420: silent projection loss on insert ---------------------------------
+#
+# append_records_idempotent projects each record onto TABLE_SCHEMAS
+# (`[d.get(f) for f in field_names]`), so a key with no column is discarded
+# with no exception and no QA record. The Survey123 normalizer emitted
+# COCNumber / SampledBy / SampleSource on every sample; Env_Samples had no
+# such columns, and the operator's COC number vanished between the field and
+# the GDB.
+
+def test_survey123_provenance_keys_have_columns_on_env_samples():
+    """The data-loss half: the three dropped keys now exist in the schema."""
+    from autogis.core.envmon.gdb_schema import TABLE_SCHEMAS
+    cols = {f[0] for f in TABLE_SCHEMAS["Env_Samples"]}
+    assert {"COCNumber", "SampledBy", "SampleSource"} <= cols
+
+
+def test_normalized_survey123_sample_has_no_unmapped_fields():
+    """Producer/consumer reachability at the real seam: every key the
+    Survey123 normalizer emits must map to a column, or it is dropped.
+
+    Drives the actual normalizer, like its water-level twin below, rather than
+    regex-scraping the source for the emitted dict literal — the scrape broke
+    on any refactor of the literal and could silently read the wrong keys."""
+    from autogis.core.envmon.normalize_survey123 import (
+        normalize_survey123_submission)
+    _wl, samples = normalize_survey123_submission(
+        {"WellID": "MW-1", "SamplingDate": "2026-01-15", "Matrix": "GW",
+         "SampledBy": "AB", "COCNumber": "COC-1", "DepthToWater_ft": 12.5,
+         "Notes": ""},
+        "H281", "B1", QACollector())
+    assert samples, "normalizer produced no sample for a valid payload"
+    assert import_to_gdb.unmapped_record_fields(samples, "Env_Samples") == []
+
+
+def test_unmapped_record_fields_names_every_dropped_key():
+    recs = [{"SiteID": "H281", "NotAColumn": 1},
+            {"SiteID": "H281", "AlsoMissing": 2, "SampleID": "S1"}]
+    assert import_to_gdb.unmapped_record_fields(recs, "Env_Samples") == [
+        "AlsoMissing", "NotAColumn"]
+
+
+def test_unmapped_record_fields_quiet_when_everything_maps():
+    assert import_to_gdb.unmapped_record_fields(
+        [{"SiteID": "H281", "SampleID": "S1"}], "Env_Samples") == []
+
+
+class _RecordingCursor:
+    def __init__(self):
+        self.rows = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def insertRow(self, row):
+        self.rows.append(row)
+
+
+def _fake_arcpy(monkeypatch, cursor):
+    monkeypatch.setattr(import_to_gdb, "_existing_key_set", lambda *a: set())
+    monkeypatch.setattr(
+        import_to_gdb, "_arcpy",
+        lambda: SimpleNamespace(
+            da=SimpleNamespace(InsertCursor=lambda *a: cursor)))
+
+
+def test_append_warns_once_naming_the_keys_it_will_not_store(
+        monkeypatch, tmp_path):
+    cursor = _RecordingCursor()
+    _fake_arcpy(monkeypatch, cursor)
+    qa = QACollector()
+
+    inserted, skipped = import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples",
+        [{"SiteID": "H281", "SampleID": "S1", "LegacyField": "x"},
+         {"SiteID": "H281", "SampleID": "S2", "LegacyField": "y"}],
+        qa, "B1")
+
+    warn = [r for r in qa.records
+            if r.category == "record_fields_not_in_schema"]
+    assert len(warn) == 1, "one warning per append, not one per row"
+    assert "LegacyField" in warn[0].message
+    assert warn[0].severity == "WARNING"
+    # Non-blocking: the rows still land.
+    assert (inserted, skipped) == (2, 0)
+    assert len(cursor.rows) == 2
+
+
+def test_append_stays_quiet_when_every_key_maps(monkeypatch, tmp_path):
+    """The guard must not turn every healthy import noisy."""
+    cursor = _RecordingCursor()
+    _fake_arcpy(monkeypatch, cursor)
+    qa = QACollector()
+
+    import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples",
+        [{"SiteID": "H281", "SampleID": "S1", "COCNumber": "COC-1",
+          "SampledBy": "AB", "SampleSource": "Survey123"}],
+        qa, "B1")
+
+    assert not [r for r in qa.records
+                if r.category == "record_fields_not_in_schema"]
+
+
+# --- #457: the same projection loss on Env_WaterLevels ----------------------
+#
+# Strictly worse than #420: the normalizer used MeasurementDate / DTW_ft /
+# GWE_ft, none of which exist on Env_WaterLevels, so every routed water level
+# landed with no date and no measurement. EventDate is part of the unique key,
+# so with it always NULL every event for a well collapsed onto one key and each
+# one after the first was skipped as a duplicate at INFO severity.
+
+def _normalized_water_level():
+    from autogis.core.envmon.normalize_survey123 import (
+        normalize_survey123_submission)
+    from autogis.core.common.qa import QACollector as _QA
+    wl, _samp = normalize_survey123_submission(
+        {"WellID": "MW-1", "SamplingDate": "2026-01-15", "Matrix": "GW",
+         "SampledBy": "AB", "COCNumber": "COC-1", "DepthToWater_ft": 12.5,
+         "Notes": ""},
+        "H281", "B1", _QA())
+    assert wl, "normalizer produced no water level for a valid DTW"
+    return wl[0]
+
+
+def test_normalized_water_level_has_no_unmapped_fields():
+    assert import_to_gdb.unmapped_record_fields(
+        [_normalized_water_level()], "Env_WaterLevels") == []
+
+
+def test_normalized_water_level_carries_the_measurement():
+    wl = _normalized_water_level()
+    assert wl["DepthToWater_ft"] == 12.5
+    assert wl["EventDate"] is not None
+
+
+def test_water_level_unique_key_separates_two_events_at_one_well():
+    """The compounding half: with EventDate populated, two gauging rounds at
+    the same well must NOT collapse onto one key."""
+    from autogis.core.envmon.gdb_schema import compute_unique_key
+    jan = dict(_normalized_water_level(), EventDate="2026-01-15")
+    jun = dict(_normalized_water_level(), EventDate="2026-06-15")
+    assert (compute_unique_key(jan, "Env_WaterLevels")
+            != compute_unique_key(jun, "Env_WaterLevels"))
+
+
+# --- PR #464 cold-review follow-ups -----------------------------------------
+
+def test_unmapped_record_fields_reads_dataclass_records():
+    """Real callers pass dataclasses, not just dicts. The guard reads field
+    NAMES (dataclasses.fields) rather than asdict()-ing every record, so the
+    dataclass path needs its own pin."""
+    from autogis.core.envmon.gdb_schema import WaterLevelRecord
+    rec = WaterLevelRecord(
+        ImportBatchID="B1", SiteID="H281", LocationID="MW-1",
+        EventDate=None, SampleDateRaw="", MonitoringPointElevation_ft=None,
+        DepthToWater_ft=1.0, GroundwaterElevation_ft=None,
+        GroundwaterElevationRawText="", IsDry=0, IsMeasured=1,
+        MeasurementStatus="", UseForContour=1, ExclusionReason="",
+        SourceWorkbook="", SourceSheet="", SourceRow=1)
+    assert import_to_gdb.unmapped_record_fields([rec], "Env_WaterLevels") == []
+
+
+def test_generator_records_are_not_consumed_before_the_insert_loop(
+        monkeypatch, tmp_path):
+    """The guard added a second pass over `records`. A generator would be
+    exhausted by it, and the insert loop would write nothing while returning
+    (0, 0) — zero rows reported as a clean run."""
+    cursor = _RecordingCursor()
+    _fake_arcpy(monkeypatch, cursor)
+    gen = (d for d in [{"SiteID": "H281", "SampleID": "S1"},
+                       {"SiteID": "H281", "SampleID": "S2"}])
+
+    inserted, _ = import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples", gen, QACollector(), "B1")
+
+    assert inserted == 2
+    assert len(cursor.rows) == 2
+
+
+def test_dropped_field_message_is_capped_for_the_512_char_qa_column(
+        monkeypatch, tmp_path):
+    """The name-list cap keeps the message readable on its own; the TEXT(512)
+    fit is guaranteed separately by write_qa_to_gdb's clamp (tested below)."""
+    _fake_arcpy(monkeypatch, _RecordingCursor())
+    qa = QACollector()
+    rec = {"SiteID": "H281"}
+    rec.update({f"Bogus{i:03d}": 1 for i in range(60)})
+    import_to_gdb.append_records_idempotent(
+        tmp_path / "site.gdb", "Env_Samples", [rec], qa, "B1")
+    msg = next(r.message for r in qa.records
+               if r.category == "record_fields_not_in_schema")
+    assert "60 field(s)" in msg          # the true count is still reported
+    assert "more)" in msg                # but the name list is capped
+    assert len(msg) <= 512
+
+
+def test_write_qa_to_gdb_clamps_text_to_the_declared_column_widths(
+        monkeypatch, tmp_path):
+    """An overlong QA message must not lose the WHOLE batch's QA.
+
+    Env_ImportQA.Message is TEXT(512) and write_qa_to_gdb wrote it raw, so one
+    long free-text message (a dropped-field list, a path, an exception string)
+    made the InsertCursor raise and discarded every QA record for the batch.
+    Clamping is driven by TABLE_SCHEMAS, so it covers every category and every
+    text column rather than only the producer that happened to be long.
+    """
+    from autogis.core.envmon.gdb_schema import TABLE_SCHEMAS, T
+    widths = {f[0]: f[2] for f in TABLE_SCHEMAS["Env_ImportQA"]
+              if f[1] is T and f[2]}
+    cursor = _RecordingCursor()
+    monkeypatch.setattr(
+        import_to_gdb, "_arcpy",
+        lambda: SimpleNamespace(
+            da=SimpleNamespace(InsertCursor=lambda *a: cursor)))
+
+    qa = QACollector()
+    qa.add("WARNING", "x" * 200, "m" * 2000,
+           recommended_action="a" * 900, site_id="s" * 100)
+    assert import_to_gdb.write_qa_to_gdb(tmp_path / "site.gdb", qa, "B1") == 1
+
+    fields = [f[0] for f in TABLE_SCHEMAS["Env_ImportQA"]]
+    row = dict(zip(fields, cursor.rows[0]))
+    too_long = {f: len(v) for f, v in row.items()
+                if isinstance(v, str) and len(v) > widths.get(f, 10 ** 9)}
+    assert not too_long, f"values exceed their column width: {too_long}"
+    assert row["Message"].startswith("mmm")   # clamped, not blanked
+    assert row["Message"].endswith("…")       # truncation is marked, not silent

@@ -42,7 +42,7 @@ TOOLS: dict[str, Runtime] = {
     "validate-schedule": Runtime.CLOUD,   # tool 10.2
     "apply-screening": Runtime.CLOUD,     # tool 3.5
     "compare-schedule-vs-actual": Runtime.CLOUD,  # tool 10.x
-    "drone-checkpoint-qa": Runtime.CLOUD,  # tool 11.1
+    "drone-checkpoint-qa": Runtime.CLOUD,  # tool 8.7
     "export-geojson": Runtime.CLOUD,  # tool 10.3
     "generate-arcade-labels": Runtime.CLOUD,  # tool 5.4
     "generate-python-labels": Runtime.CLOUD,  # tool 5.4b
@@ -287,7 +287,7 @@ _REGISTRY_SEED = [
      "matrix with per-sample outcomes and zero-residual balance"),
     ("process-level-loop", "ProcessLevelLoop", "8.1", "CLOUD", "stable",
      "field", "Process a differential level loop"),
-    ("drone-checkpoint-qa", "DroneGCPCheckpointQA", "11.1", "CLOUD", "stable",
+    ("drone-checkpoint-qa", "DroneGCPCheckpointQA", "8.7", "CLOUD", "stable",
      "field", "QA drone GCP/checkpoint residuals"),
     ("generate-trend-charts", "GenerateWellTrendCharts", "4.6", "CLOUD",
      "stable", "reporting",
