@@ -210,7 +210,7 @@ def test_staging_csv_feeds_the_existing_normalizer(tmp_path):
     assert not any(r.severity == SEV_ERROR for r in qa.records)
     assert len(samples) == 1 and len(water_levels) == 1
     assert samples[0]["SampleID"].startswith("MW-1-20260701")
-    assert water_levels[0]["DTW_ft"] == 12.5
+    assert water_levels[0]["DepthToWater_ft"] == 12.5
 
 
 # -- CLI -----------------------------------------------------------------------

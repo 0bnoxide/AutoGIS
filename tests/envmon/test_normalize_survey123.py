@@ -29,7 +29,10 @@ def test_minimal_payload_returns_water_level():
     wl, samp = normalize_survey123_submission(_PAYLOAD, "H281", "B1", qa)
     assert len(wl) == 1
     assert wl[0]["LocationID"] == "MW-01"
-    assert wl[0]["DTW_ft"] == 12.5
+    # Schema field names, not invented ones: this dict goes straight into
+    # Env_WaterLevels, which has no DTW_ft column (#457).
+    assert wl[0]["DepthToWater_ft"] == 12.5
+    assert wl[0]["EventDate"] is not None
 
 
 def test_minimal_payload_returns_sample_record():
@@ -256,6 +259,7 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
     from click.testing import CliRunner
     from autogis.adapters import cli as cli_mod
     from autogis.core.envmon import import_to_gdb
+    from autogis.core.envmon import gdb_schema
     from autogis.runtime import sessions
 
     payload = tmp_path / "submission.json"
@@ -273,9 +277,11 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
             return False
 
         def insertRow(self, row):
+            order.append("batch_row_insert")
             batch_rows.append(row)
 
     outcomes = []
+    order = []
     monkeypatch.setattr(cli_mod, "_guard", lambda tool: None)
     monkeypatch.setattr(
         sessions, "arcpy_env",
@@ -290,6 +296,12 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
         lambda *a, **k: outcomes.append(a[-1]))
     monkeypatch.setattr(import_to_gdb, "write_qa_to_gdb",
                         lambda *a, **k: 0)
+    # route-survey123 self-heals the schema before the batch row (its siblings
+    # already did); stub that arcpy seam like every other one here, and record
+    # the call so the ORDER can be asserted -- deleting the self-heal must not
+    # leave the suite green (#464 review).
+    monkeypatch.setattr(gdb_schema, "create_or_update_gdb_schema",
+                        lambda *a, **k: order.append("schema_selfheal"))
 
     result = CliRunner().invoke(
         cli_mod.autogis,
@@ -301,12 +313,16 @@ def test_route_rejects_ambiguous_duplicate_before_partial_insert(
     assert result.exit_code != 0
     assert batch_rows
     assert outcomes == ["BLOCKED_BY_QA"]
+    # The point of the self-heal is that it lands BEFORE the batch row: raising
+    # after that row is written orphans an IN_PROGRESS batch with no QA.
+    assert order[:2] == ["schema_selfheal", "batch_row_insert"]
 
 
 def test_route_late_insert_error_finalizes_blocked(tmp_path, monkeypatch):
     from click.testing import CliRunner
     from autogis.adapters import cli as cli_mod
     from autogis.core.envmon import import_to_gdb
+    from autogis.core.envmon import gdb_schema
     from autogis.runtime import sessions
 
     payload = tmp_path / "submission.json"
@@ -343,6 +359,10 @@ def test_route_late_insert_error_finalizes_blocked(tmp_path, monkeypatch):
         lambda *a, **k: outcomes.append(a[-1]))
     monkeypatch.setattr(import_to_gdb, "write_qa_to_gdb",
                         lambda *a, **k: 0)
+    # route-survey123 self-heals the schema before the batch row (its siblings
+    # already did); stub that arcpy seam like every other one here.
+    monkeypatch.setattr(gdb_schema, "create_or_update_gdb_schema",
+                        lambda *a, **k: None)
 
     result = CliRunner().invoke(
         cli_mod.autogis,

@@ -1269,7 +1269,7 @@ def compare_schedule_vs_actual_cmd(
 def drone_checkpoint_qa_cmd(
     checkpoints_csv, hrms_threshold, vrms_threshold, output, report, fail_on
 ):
-    """Tool 11.1: evaluate GCP checkpoint accuracy (headless)."""
+    """Tool 8.7: evaluate GCP checkpoint accuracy (headless)."""
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.drone_checkpoint_qa import (
         evaluate_gcp_checkpoints,
@@ -4878,6 +4878,7 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
         normalize_survey123_submission, load_survey123_csv_submissions)
     from autogis.core.envmon.import_to_gdb import (
         append_records_idempotent, finalize_batch, write_qa_to_gdb)
+    from autogis.core.envmon.gdb_schema import create_or_update_gdb_schema
     from autogis.runtime.sessions import arcpy_env
 
     bid = batch_id or f"S123-{uuid.uuid4().hex[:8].upper()}"
@@ -4897,6 +4898,21 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
             raise click.ClickException(f"--input: {exc}")
 
     arcpy = arcpy_env()
+    # Self-heal the schema BEFORE the batch row, as run_import
+    # (import_to_gdb.py) and the EDD path (edd_importer.py) do. Without it, a
+    # pre-2.8 GDB raises inside append_records_idempotent on the new
+    # Env_Samples / Env_WaterLevels columns -- after the IN_PROGRESS batch row
+    # is already written, so finalize_batch and write_qa_to_gdb never run and
+    # the operator is left with an orphan batch and no QA. Additive and
+    # idempotent, so it is a no-op on a current GDB.
+    #
+    # No `qa=` -- deliberately the EDD path's contract, not run_import's.
+    # Passing the collector routes create_or_update_gdb_schema's blocking
+    # missing_required_map_layer ERROR into has_blocking() below, which would
+    # discard an otherwise valid field submission because the GDB lacks a
+    # placeholder map layer. Preventing the crash is this call's job; adding a
+    # new gate is not.
+    create_or_update_gdb_schema(gdb)
     batch_fields = ["ImportBatchID", "SiteID", "SiteName", "SourceWorkbook",
                     "SourceWorkbookHash", "ImportDateTime", "ImportedBy",
                     "ParserProfile", "ImportMode", "QAStatus", "SourceSheets"]

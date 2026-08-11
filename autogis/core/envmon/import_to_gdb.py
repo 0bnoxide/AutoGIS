@@ -19,7 +19,7 @@ import datetime as _dt
 import hashlib
 import json
 import uuid
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, fields as dc_fields, is_dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -27,7 +27,7 @@ from ..common.logging import get_logger
 from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
 from ..common.config import ParserProfile, SiteConfig, load_analyte_dictionary, load_screening_levels
 from .excel_profile_reader import ProfileWorkbookReader
-from .gdb_schema import TABLE_SCHEMAS, UNIQUE_KEYS, create_or_update_gdb_schema, compute_unique_key, _norm_key_part
+from .gdb_schema import T, TABLE_SCHEMAS, UNIQUE_KEYS, create_or_update_gdb_schema, compute_unique_key, _norm_key_part
 from .normalize_groundwater import normalize_gw_table_2
 from .normalize_soil import normalize_soil_table
 from .normalize_metals import normalize_metals_table
@@ -111,6 +111,31 @@ def _existing_key_set(table_path: str, key_fields: Sequence[str]) -> set:
     return keys
 
 
+def unmapped_record_fields(records: Sequence, table_name: str) -> List[str]:
+    """Record keys with no column in ``TABLE_SCHEMAS[table_name]``, sorted.
+
+    The insert path projects every record onto the target schema
+    (``[d.get(f) for f in field_names]``), so a key the schema does not carry is
+    discarded with no error, no exception and no QA record. That is how the
+    Survey123 normalizer's ``COCNumber`` / ``SampledBy`` / ``SampleSource``
+    reached ``Env_Samples`` and vanished (#420).
+
+    Pure and arcpy-free, so the whole silent-projection class is testable off
+    Pro rather than only observable as missing data in a delivered GDB.
+    """
+    known = {f[0] for f in TABLE_SCHEMAS[table_name]}
+    seen: set = set()
+    for rec in records:
+        # Field NAMES only — never _as_dict() here. asdict() is a recursive
+        # deep copy, and this pass runs in addition to the insert loop's own
+        # conversion, so using it doubled the pure-Python cost of every large
+        # import (measured 2.8s on 50k records) to learn something available
+        # without copying anything.
+        seen |= (rec.keys() if isinstance(rec, dict)
+                 else {f.name for f in dc_fields(rec)})
+    return sorted(seen - known)
+
+
 def append_records_idempotent(
     gdb: Path,
     table_name: str,
@@ -125,11 +150,39 @@ def append_records_idempotent(
     duplicate sample is blocking because it defeats the paired QC check.
     """
     arcpy = _arcpy()
+    # Materialize before the two passes below. The unmapped-field scan added a
+    # second traversal, so a generator argument would be exhausted by it and
+    # the insert loop would quietly write nothing while reporting (0, 0) — the
+    # zero-rows-as-clean-PASS shape this module's docstring exists to prevent.
+    records = list(records)
     if not records:
         return 0, 0
     field_names = [f[0] for f in TABLE_SCHEMAS[table_name]]
     table_path = str(gdb / table_name)
     key_fields = UNIQUE_KEYS[table_name]
+
+    # WARNING, not ERROR: the rows still land, and a producer that legitimately
+    # carries scratch keys should not be blocked from importing. But it must not
+    # be silent — every caller of this function shares the projection, so one
+    # guard here covers all of them.
+    dropped = unmapped_record_fields(records, table_name)
+    if dropped:
+        # Readability only — keep a 60-key dump from burying the count. The
+        # TEXT(512) guarantee is NOT here (a count cap bounds names, not
+        # characters); write_qa_to_gdb clamps every text column to its declared
+        # width, which is the one place that can promise it for every category.
+        shown = ", ".join(dropped[:10])
+        if len(dropped) > 10:
+            shown += f", … (+{len(dropped) - 10} more)"
+        qa.add(SEV_WARNING, "record_fields_not_in_schema",
+               f"{table_name}: {len(dropped)} field(s) on the incoming records "
+               f"have no column in the target schema and are NOT stored: "
+               f"{shown}.",
+               recommended_action="Add the column(s) to "
+                                  "gdb_schema.TABLE_SCHEMAS and run 'autogis "
+                                  "envmon upgrade-schema', or stop emitting "
+                                  "them upstream.",
+               import_batch_id=batch_id)
 
     existing = (set() if allow_duplicate_records
                 else _existing_key_set(table_path, key_fields))
@@ -251,15 +304,34 @@ def create_edd_import_batch(
 
 def write_qa_to_gdb(gdb: Path, qa: QACollector, batch_id: str) -> int:
     arcpy = _arcpy()
-    fields = [f[0] for f in TABLE_SCHEMAS["Env_ImportQA"]]
+    schema = TABLE_SCHEMAS["Env_ImportQA"]
+    fields = [f[0] for f in schema]
+    # Clamp every TEXT value to its declared width, taken from the schema
+    # itself. A QA message is free text — a dropped-field list, a file path,
+    # an exception string — and Message is only TEXT(512). An overlong value
+    # makes the InsertCursor raise, which loses EVERY QA record for the batch:
+    # the entire report discarded because one line was long. One clamp here
+    # covers every category and every text column, which is why the producers
+    # do not each need their own. The sibling writers above already clamp the
+    # same way (`str(edd_path)[:255]`, `operator[:64]`).
+    widths = {f[0]: f[2] for f in schema if f[1] is T and f[2]}
     n = 0
     with arcpy.da.InsertCursor(str(gdb / "Env_ImportQA"), fields) as cur:
         for rec in qa.records:
             d = rec.as_gdb_row()
             d["ImportBatchID"] = d.get("ImportBatchID") or batch_id
-            cur.insertRow([d.get(f) for f in fields])
+            cur.insertRow([_clamp(d.get(f), widths.get(f)) for f in fields])
             n += 1
     return n
+
+
+def _clamp(value, width):
+    """Truncate an overlong string to `width`, ending in "…" so a clamped
+    value is distinguishable from one that fit exactly. Anything else passes
+    through untouched."""
+    if width and isinstance(value, str) and len(value) > width:
+        return value[:width - 1] + "…"
+    return value
 
 
 def run_import(
