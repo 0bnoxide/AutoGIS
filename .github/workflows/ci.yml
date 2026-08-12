@@ -19,6 +19,11 @@ jobs:
     # invariant, and those extras are Pro-conda-only anyway. gui + real-file
     # tests self-skip (pytest.importorskip("PySide6"), skipif not path.exists()).
     runs-on: windows-2022
+    # Bound the job well under GitHub's 360-min ceiling. Without this a hung
+    # step ran to that ceiling on PR #464 and reported a *passing* suite as
+    # "cancelled", billing ~6 h of windows-2022 minutes at 2x (#469). The suite
+    # itself is ~5-6 min; #388 documents the slow Matplotlib render.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -41,7 +46,14 @@ jobs:
       # artifact. Neither buys anything, and running scan-after-tests also
       # stops a red suite from publishing metrics. Skipped for fork PRs, which
       # cannot read SONAR_TOKEN. See issue #452.
+      # The scanner hung here indefinitely on PR #464 after the UCFG cache
+      # restore. A step-level cap is the load-bearing half of #469: it turns a
+      # silent multi-hour hang into a fast, clearly-attributed step failure,
+      # after the suite's own result is already recorded. Healthy scans run
+      # ~3 min. Whether a Sonar failure *should* fail this check at all
+      # (continue-on-error) revisits ADR-0110 and is left as an owner call.
       - name: SonarQube Scan
+        timeout-minutes: 10
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:

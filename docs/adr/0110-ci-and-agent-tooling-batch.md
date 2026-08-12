@@ -110,6 +110,33 @@ gate showed 0.0%.
   rather than excluded, so it is still analyzed for issues — it is just not
   held to a coverage threshold it cannot meet by construction.
 
+### Amendment — the in-job scan is now time-bounded (2026-08-11)
+
+Resolves the bounded half of issue #469. The amendment above moved the scan
+into the `pytest` job for sound reasons, but had an unrecorded consequence: the
+`pytest` check's conclusion became hostage to SonarScanner's reliability, and
+nothing capped how long a hang could run. Both landed on PR #464 — the scanner
+hung after its UCFG cache restore, the job ran to GitHub's 360-minute ceiling,
+and a suite that had **passed** (`3008 passed, 15 skipped`) reported
+`cancelled`. At windows-2022's 2× billing that single hang cost roughly what
+~70 healthy runs of this job cost, silently.
+
+- **`timeout-minutes: 30` on the `pytest` job.** The suite runs ~5-6 min; #388
+  documents the slow Matplotlib render that dominates the tail.
+- **`timeout-minutes: 10` on the SonarQube Scan step.** This is the
+  load-bearing half: a step-level cap turns a silent multi-hour hang into a
+  fast, clearly-attributed step failure, *after* the suite's own result is
+  recorded. Healthy scans take ~3 min.
+- **`continue-on-error` on the scan is deliberately NOT adopted here.**
+  Decoupling the test verdict from Sonar's reliability would fix the
+  false-`cancelled` reporting outright, but it also lets a genuinely broken
+  scan pass unnoticed, and it reverses this ADR's own in-job placement
+  rationale. That is an owner call; #469 stays open for it.
+- **Ceiling.** A timeout cannot be proven to fire without reproducing the hang,
+  which is intermittent by nature (the run immediately before #464's completed
+  the identical scan in 2 min 48 s). The evidence here is the workflow parsing
+  and running green, not an observed timeout.
+
 ## Consequences
 
 ### Positive consequences
