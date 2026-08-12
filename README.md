@@ -82,11 +82,11 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [FigureSpecTemplate](autogis/core/common/config.py) | 10 | `envmon figure-spec` | Tool 10: load and validate a figure spec (headless) |
 | [ValidateEnvConfig](autogis/core/envmon/validate_config.py) | 10.2 | `envmon validate-config` | Tool: validate a per-site config bundle (headless) |
 | [ManageAnalyteDictionary](autogis/core/envmon/manage_analyte_dict.py) | 3.3 | `envmon manage-analyte-dict` | Tool: validate / inspect the analyte dictionary (read-only, headless) |
-| [ManageScreeningLevels](autogis/core/envmon/manage_screening_levels.py) | 3.x | `envmon manage-screening-levels` *(DRAFT pre-production stub — see `envmon list-tools`)* | Validate and inspect the screening levels YAML (headless) |
+| [ManageScreeningLevels](autogis/core/envmon/manage_screening_levels.py) | 3.4 | `envmon manage-screening-levels` *(DRAFT pre-production stub — see `envmon list-tools`)* | Validate and inspect the screening levels YAML (headless) |
 | [ReconcileSampleLocations](autogis/core/envmon/reconcile_locations.py) | 3.2 | `envmon reconcile-locations` *(HYBRID)* | Tool: pre-flight check that workbook location IDs match the well layer |
 | [ValidateAndConvertUnits](autogis/core/envmon/validate_units.py) | 3.5 | `envmon validate-units` | Tool: validate analyte/screening units for convertibility (headless) |
 | [EvaluateDuplicateRPD](autogis/core/envmon/evaluate_rpd_qa.py) | 3.6 | `envmon evaluate-rpd-qa` / `envmon evaluate-rpd` | Tool: compute RPD for EDD duplicate samples and emit QA records |
-| [ApplyScreeningLevels](autogis/core/envmon/apply_screening.py) | 3.x | `envmon apply-screening` | Tool 3.5: re-evaluate ExceedsScreeningLevel on result records (headless) |
+| [ApplyScreeningLevels](autogis/core/envmon/apply_screening.py) | — | `envmon apply-screening` | Re-evaluate ExceedsScreeningLevel on result records (headless) |
 | [CompareMonitoringEvents](autogis/core/envmon/compare_events.py) | 4.7 | `envmon compare-events` | Tool 4.7: compare current vs previous monitoring event per location/analyte |
 | [IdentifyMonitoringDataGaps](autogis/core/envmon/data_gaps.py) | 4.10 | `envmon identify-data-gaps` | Tool 4.10: report missing wells/analytes vs an expected schedule |
 | [CompareScheduleVsActual](autogis/core/envmon/schedule_vs_actual.py) | — | `envmon compare-schedule-vs-actual` | Compare scheduled monitoring wells/analytes vs actual results (headless) |
@@ -102,9 +102,9 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [EvaluateReportReadiness](autogis/core/envmon/evaluate_readiness.py) | 9.0b | `envmon evaluate-readiness` | Tool: report-readiness gate — checks required tools ran successfully |
 | [ExportAnalyticalSummaryTables](autogis/core/envmon/export_summary_tables.py) | 9.1 | `envmon export-report-format-summary-tables` / `envmon export-summary` | Tool: export Env_AnalyticalResults to formatted report-appendix tables |
 | [GenerateMonitoringEventReport](autogis/core/envmon/generate_event_report.py) | — | `envmon generate-event-report` | Assemble a monitoring event report (Markdown or `--format html`, ADR-0083) from CSV tool outputs (post-roadmap extra) |
-| [ExportGeoJSONResults](autogis/core/envmon/export_geojson.py) | — | `envmon export-geojson` | Tool 10.3: export analytical results to GeoJSON FeatureCollection (headless) |
-| [ValidateScheduleYAML](autogis/core/envmon/validate_schedule.py) | — | `envmon validate-schedule` | Tool 10.2: validate monitoring schedule YAML structure and analyte names |
-| [RunHistoryReport / Query](autogis/core/envmon/history_report.py) | 10.1 | `envmon run-history-report` / `envmon run-history` | Tool 10.1: per-location per-analyte history summary across events |
+| [ExportGeoJSONResults](autogis/core/envmon/export_geojson.py) | — | `envmon export-geojson` | Export analytical results to GeoJSON FeatureCollection (headless) |
+| [ValidateScheduleYAML](autogis/core/envmon/validate_schedule.py) | — | `envmon validate-schedule` | Validate monitoring schedule YAML structure and analyte names |
+| [RunHistoryReport / Query](autogis/core/envmon/history_report.py) | — | `envmon run-history-report` / `envmon run-history` | Per-location per-analyte history summary across events |
 | WriteRunHistory | 10.5 | generically wired at the CLI adapter seam — every `RecordingCommand`/`RecordingGroup` invocation (`cli.py`) writes a `RunRecord` via `RunHistory.write()`, not just `agol promote`'s hand-wired call (see ADR-0054, ADR-0017 status update) | — |
 | [PublishEnvironmentalLayersToAGOL](autogis/core/agol/publish.py) | 6.1 | `agol publish-layer` | Publish or overwrite a hosted AGOL feature service |
 | [BuildGroundwaterElevationEvent](autogis/core/envmon/build_gwe_event.py) | 4.1 | `envmon build-gwe-event` | Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags |
@@ -155,7 +155,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | Tool | CLI command | What it does |
 |------|-------------|--------------|
 | [VerifyReportPackage](autogis/core/envmon/report_package_verifier.py) | `envmon verify-report-package` | Verify package paths and SHA-256 manifest hashes; detect missing, modified, extra, duplicate, non-portable, named-stream, hard-link, traversal, and reparse-link entries (headless) |
-| [GWLevelSummary](autogis/core/envmon/gw_level_summary.py) | `envmon gw-level-summary` | Tool 5.1: per-well GW level/DTW/trend summary from elevation history |
+| [GWLevelSummary](autogis/core/envmon/gw_level_summary.py) | `envmon gw-level-summary` | Per-well GW level/DTW/trend summary from elevation history |
 | [BuildComplianceSummaryTable](autogis/core/envmon/compliance_summary.py) | `envmon build-compliance-table` | Build cross-event compliance summary matrix + detail workbook (headless) |
 | [ExportEnvDataToGeoPackage](autogis/core/envmon/geopackage_exporter.py) | `envmon export-geopackage` | Export envmon data to OGC GeoPackage (stdlib sqlite3, headless) |
 | [ExportLabAnalyticalRequest](autogis/core/envmon/lab_request_exporter.py) | `envmon export-lab-request` | Generate lab analytical request workbook from sampling event plan (headless) |
@@ -168,7 +168,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ValidateFieldDataCompleteness](autogis/core/envmon/field_completeness_validator.py) | `envmon validate-field-completeness` | Compare sampling plan vs. lab results for completeness (headless) |
 | [InitSite](autogis/core/envmon/init_site.py) | `envmon init-site` | Production-roadmap Phase 3: scaffold a new site's config skeleton (site/event/parser/figure) from versioned templates, flagging unverified anchors and missing regulatory content (headless, ADR-0102) |
 | [NewFlightYaml](autogis/core/envmon/register_drone_flight.py) | `envmon new-flight-yaml` | Tool 8.6a: write a ready-to-edit drone flight inventory YAML for `register-drone-flight` (headless, ADR-0100) |
-| [ExportComparisonExcel](autogis/core/envmon/export_comparison_excel.py) | `envmon export-comparison-excel` | Tool 4.8: export comparison results to a formatted Excel workbook (headless) |
+| [ExportComparisonExcel](autogis/core/envmon/export_comparison_excel.py) | `envmon export-comparison-excel` | Export comparison results to a formatted Excel workbook (headless) |
 | [DraftParserProfileFromWorkbook](autogis/core/envmon/excel_workbook_inspector.py) | `envmon draft-parser-profile` | Tool 2.1: inspect a workbook and write a draft parser profile YAML (headless) |
 | [DraftEDDProfile](autogis/core/envmon/edd_profile_draft.py) | `envmon draft-edd-profile` | Tool 2.3a: inspect a sample lab EDD and write a draft LabEDD profile YAML (headless) |
 | [ValidateLabProfile](autogis/core/envmon/edd_profile.py) | `envmon validate-lab-profile` | Tool 2.3b: validate a LabEDD profile YAML is well-formed (headless) |
@@ -184,7 +184,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ChainOfCustodyLifecycle](autogis/core/envmon/custody.py) | `envmon coc` (`generate` / `advance` / `reconcile` / `status`) | Production Phase 6: electronic chain-of-custody state machine (draft → released → lab-received → reconciled) with a per-transition audit trail and planned-vs-received reconcile (headless, ADR-0107) |
 | [LongitudinalLabQATrends](autogis/core/envmon/lab_qa_trends.py) | `envmon lab-qa-trends` | Production Phase 7: longitudinal laboratory-QA trending (recovery + blank) across events, with cited, configurable thresholds (headless, ADR-0108) |
 | [OutboundWQXExport](autogis/core/envmon/wqx_outbound.py) | `envmon export-wqx` (DRAFT) | Production Phase 8: map canonical analytical results to a WQX/regulatory submission, with a rejections file and provenance (headless, DRAFT — inherits `wqx.yaml`'s draft status, ADR-0109) |
-| [FieldMapsSyncPreflight](autogis/core/agol/fieldmaps_preflight.py) | `agol fieldmaps-preflight` | Tool 7.5 / Production Phase 9: read-only Field Maps sync preflight report — surfaces conflicts and schema drift before a sync (headless, ADR-0111) |
+| [FieldMapsSyncPreflight](autogis/core/agol/fieldmaps_preflight.py) | `agol fieldmaps-preflight` | Production Phase 9: read-only Field Maps sync preflight report — surfaces conflicts and schema drift before a sync (headless, ADR-0111) |
 
 </details>
 
@@ -196,7 +196,7 @@ Post-roadmap extras (not counted in the 79-tool catalog):
 | [ImportLabEDD](autogis/core/envmon/edd_importer.py) | 2.3 | `envmon import-edd` | Tool 2.3: import a lab EDD CSV/XLSX into the envmon GDB (needs ArcGIS Pro); profile-driven formats include EQuIS (`equis_xls`, ADR-0082) and WQX (`wqx_csv`, ADR-0080) alongside the original layout |
 | [ImportToGDB](autogis/core/envmon/import_to_gdb.py) | 2/3 | `envmon import-gdb` | Tool 2: import a workbook into the file geodatabase (ArcGIS Pro) |
 | [BuildCurrentEvent](autogis/core/envmon/build_current_event.py) | 4 | `envmon build-event` | Tool 3: build the current-event feature data (ArcGIS Pro) |
-| [BuildAnalyticalCallouts](autogis/core/envmon/build_figure_dataset.py) | 5.1 | `envmon build-callouts` | Tool 4: generate callout feature classes (ArcGIS Pro) |
+| [BuildAnalyticalCallouts](autogis/core/envmon/build_figure_dataset.py) | 5.1 | `envmon build-callouts` | Generate callout feature classes (ArcGIS Pro) |
 | [OptimizeCalloutPlacement](autogis/core/envmon/callout_collision.py) | 5.2 | `envmon optimize-callouts` (honest alias for `build-callouts --use-hull-collision`, ADR-0070) | Tool 5.2: hull-collision callout placement, folded into BuildCallouts (ArcGIS Pro) |
 | [ManageCalloutPlacementOverrides](autogis/core/envmon/manage_callout_overrides.py) | 5.3 | `envmon manage-callout-overrides` (list/clear/lock/unlock) | Tool 5.3: CRUD for locked/preferred callout placement overrides (ArcGIS Pro) |
 | [GenerateDraftGWContours](autogis/core/envmon/groundwater_contours.py) | 4.2 | `envmon gw-contours` | Tool 5: build groundwater contours (ArcGIS Pro) |

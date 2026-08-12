@@ -1,4 +1,9 @@
-"""Summarise per-location per-analyte history across events (Tool 10.1)."""
+"""Summarise per-location per-analyte history across events.
+
+Post-roadmap extra tool — not a numbered roadmap tool. Roadmap 10.1 is the
+unrelated "Tool Registry Viewer" (ListAvailableEnvTools, `envmon list-tools`)
+— see issue #458.
+"""
 from __future__ import annotations
 import dataclasses
 import statistics

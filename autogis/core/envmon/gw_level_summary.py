@@ -1,4 +1,9 @@
-"""Groundwater level summary from ElevationHistory (Tool 5.1).
+"""Groundwater level summary from ElevationHistory.
+
+Post-roadmap extra tool — not a numbered roadmap tool. Roadmap 5.1 is the
+unrelated "Analytical Callout Builder" (BuildAnalyticalCallouts,
+`envmon build-callouts`) — see issue #458.
+
 
 Headless precursor to the arcpy contour tool: reads approved elevation
 records and produces per-well water-level elevation, depth-to-water (DTW)

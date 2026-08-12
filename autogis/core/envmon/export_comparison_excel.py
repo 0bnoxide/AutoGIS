@@ -1,4 +1,9 @@
-"""Export ComparisonRecord CSV to a formatted Excel workbook (Tool 4.8).
+"""Export ComparisonRecord CSV to a formatted Excel workbook.
+
+Post-roadmap extra tool — not a numbered roadmap tool. Roadmap 4.8 is the
+unrelated "Soil Sample Interval Selector" (SelectSoilIntervalsForMapping,
+`envmon select-soil-intervals`) — see issue #458.
+
 
 Reads comparison records (output of Tool 4.7 ``compare-events``) and writes a
 two-sheet workbook: ``AllResults`` (all records, TrendClass colour-coded) and

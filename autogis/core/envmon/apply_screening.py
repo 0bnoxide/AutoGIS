@@ -1,4 +1,9 @@
-"""Re-evaluate ExceedsScreeningLevel on existing records (Tool 3.5)."""
+"""Re-evaluate ExceedsScreeningLevel on existing records.
+
+Post-roadmap extra tool — not a numbered roadmap tool. Roadmap 3.5 is the
+unrelated "Unit Normalization and Conversion Validator" (ValidateAndConvertUnits,
+`envmon validate-units`) — see issue #458.
+"""
 from __future__ import annotations
 import dataclasses
 from typing import List

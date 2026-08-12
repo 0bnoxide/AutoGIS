@@ -1,4 +1,9 @@
-"""Validate a monitoring schedule YAML (Tool 10.2 extension)."""
+"""Validate a monitoring schedule YAML.
+
+Post-roadmap extra tool — not a numbered roadmap tool. Roadmap 10.2 is the
+unrelated "Config Validator" (ValidateEnvConfig, `envmon validate-config`)
+— see issue #458.
+"""
 from __future__ import annotations
 from typing import Dict, Any, Optional, Set
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING, SEV_ERROR

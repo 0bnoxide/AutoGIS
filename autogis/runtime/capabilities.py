@@ -26,7 +26,7 @@ TOOLS: dict[str, Runtime] = {
     "validate-units": Runtime.CLOUD,
     "reconcile-locations": Runtime.HYBRID,
     "import-edd": Runtime.LOCAL,      # writes to GDB — needs arcpy
-    "upgrade-schema": Runtime.LOCAL,   # phase 1.4
+    "upgrade-schema": Runtime.LOCAL,   # tool 10.3
     "export-snapshot": Runtime.LOCAL,
     "evaluate-rpd": Runtime.CLOUD,
     "manage-screening-levels": Runtime.CLOUD,
@@ -38,21 +38,21 @@ TOOLS: dict[str, Runtime] = {
     "compare-events": Runtime.CLOUD,   # tool 4.7
     "process-level-loop": Runtime.CLOUD,  # tool 8.1
     "identify-data-gaps": Runtime.CLOUD,  # tool 4.10
-    "run-history-report": Runtime.CLOUD,  # tool 10.1
-    "validate-schedule": Runtime.CLOUD,   # tool 10.2
-    "apply-screening": Runtime.CLOUD,     # tool 3.5
+    "run-history-report": Runtime.CLOUD,  # post-roadmap extra
+    "validate-schedule": Runtime.CLOUD,   # post-roadmap extra
+    "apply-screening": Runtime.CLOUD,     # post-roadmap extra
     "compare-schedule-vs-actual": Runtime.CLOUD,  # tool 10.x
     "drone-checkpoint-qa": Runtime.CLOUD,  # tool 8.7
-    "export-geojson": Runtime.CLOUD,  # tool 10.3
+    "export-geojson": Runtime.CLOUD,  # post-roadmap extra
     "generate-arcade-labels": Runtime.CLOUD,  # tool 5.4
     "generate-python-labels": Runtime.CLOUD,  # tool 5.4b
     "generate-event-changelog": Runtime.CLOUD,  # tool 9.3
-    "export-lab-request": Runtime.CLOUD,  # tool 2.11 headless
+    "export-lab-request": Runtime.CLOUD,  # post-roadmap extra, headless
     "coc": Runtime.CLOUD,  # Phase 6 chain-of-custody lifecycle (headless group)
     "lab-qa-trends": Runtime.CLOUD,  # Phase 7 longitudinal lab-QA (headless)
     "export-wqx": Runtime.CLOUD,  # Phase 8 outbound WQX submission (headless)
-    "generate-event-report": Runtime.CLOUD,  # tool 10.5
-    "run-history": Runtime.CLOUD,  # tool 10.1b (query CLI)
+    "generate-event-report": Runtime.CLOUD,  # post-roadmap extra
+    "run-history": Runtime.CLOUD,  # post-roadmap extra (query CLI)
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
     "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
     "sync-survey123": Runtime.CLOUD,     # S123 Phase 2 live read-only pull (arcgis via lazy provider)
@@ -60,7 +60,7 @@ TOOLS: dict[str, Runtime] = {
     "generate-trend-charts": Runtime.CLOUD,  # tool 4.6 headless openpyxl charts
     "ingest-reviewer-comments": Runtime.CLOUD,  # tool 9.4 headless parser
     "select-soil-intervals": Runtime.CLOUD,  # tool headless stdlib tiering
-    "export-comparison-excel": Runtime.CLOUD,  # tool 4.8 headless openpyxl
+    "export-comparison-excel": Runtime.CLOUD,  # post-roadmap extra, openpyxl
     "generate-job-queue": Runtime.CLOUD,  # tool 10.4 headless JSON manifest
     "register-source-doc": Runtime.CLOUD,      # tool 2.5 headless registry
     "validate-boring-logs": Runtime.CLOUD,     # tool 8.0b headless validate
@@ -115,9 +115,14 @@ def requires_arcpy(name: str) -> bool:
 # `envmon list-tools` command. It deliberately does NOT replace TOOLS /
 # requires_arcpy above (those drive the runtime guard and must stay stable).
 # `runtime` here is a display string (CLOUD = headless, HYBRID = headless with
-# an arcpy-guarded branch, LOCAL = needs arcpy, DRAFT = pre-production stub)
-# and may differ in spelling from the Runtime enum.
+# an arcpy-guarded branch, LOCAL = needs arcpy) and may differ in spelling
+# from the Runtime enum. Pre-production tools are marked by
+# ToolCapability.status == "draft", never by the runtime column (#468).
 from dataclasses import dataclass as _dataclass
+
+# The only legal values of ToolCapability.runtime — derived from the Runtime
+# enum so the display vocabulary cannot drift from the one the guard enforces.
+RUNTIME_CLASSES: tuple[str, ...] = tuple(r.name for r in Runtime)
 
 
 @_dataclass
@@ -126,7 +131,7 @@ class ToolCapability:
     command: str
     name: str = ""
     roadmap_id: str = ""
-    runtime: str = "CLOUD"     # CLOUD | HYBRID | LOCAL | DRAFT
+    runtime: str = "CLOUD"     # CLOUD | HYBRID | LOCAL (see RUNTIME_CLASSES)
     status: str = "stable"     # stable | draft | planned | deprecated
     domain: str = ""           # intake|qa|analysis|cartography|field|agol|reporting|admin
     description: str = ""
@@ -141,7 +146,7 @@ _REGISTRY_SEED = [
      "Read/validate a parser profile workbook"),
     ("figure-spec", "FigureSpec", "10", "CLOUD", "stable", "cartography",
      "Load and validate a figure spec"),
-    ("validate-config", "ValidateEnvConfig", "", "CLOUD", "stable", "admin",
+    ("validate-config", "ValidateEnvConfig", "10.2", "CLOUD", "stable", "admin",
      "Validate env config + filename patterns"),
     ("init-site", "InitSite", "", "CLOUD", "stable", "admin",
      "Scaffold a new site's config skeleton (site/event/parser/figure) from templates"),
@@ -151,9 +156,9 @@ _REGISTRY_SEED = [
      "Run a saved workflow recipe headlessly, step by step (Phase 5)"),
     ("manage-analyte-dict", "ManageAnalyteDict", "", "CLOUD", "stable", "admin",
      "Inspect/edit the analyte dictionary"),
-    ("manage-screening-levels", "ManageScreeningLevels", "", "DRAFT", "draft",
+    ("manage-screening-levels", "ManageScreeningLevels", "3.4", "CLOUD", "draft",
      "admin", "Manage screening levels (DRAFT pre-production stub)"),
-    ("validate-units", "ValidateUnits", "", "CLOUD", "stable", "qa",
+    ("validate-units", "ValidateUnits", "3.5", "CLOUD", "stable", "qa",
      "Validate and convert result units"),
     ("reconcile-locations", "ReconcileSampleLocations", "", "HYBRID", "stable",
      "qa", "Reconcile sample location IDs against the well list"),
@@ -177,13 +182,13 @@ _REGISTRY_SEED = [
      "reporting", "Export analytical summary CSV"),
     ("export-report-format-summary-tables", "ExportSummaryTables", "", "CLOUD",
      "stable", "reporting", "Export formatted summary-table workbook"),
-    ("export-geojson", "ExportGeoJSON", "10.3", "CLOUD", "stable", "reporting",
+    ("export-geojson", "ExportGeoJSON", "", "CLOUD", "stable", "reporting",
      "Export results to GeoJSON"),
     ("export-geopackage", "ExportEnvGeoPackage", "", "CLOUD", "stable",
      "reporting", "Export env data to a GeoPackage"),
     ("export-snapshot", "ExportEventSnapshot", "", "LOCAL", "stable",
      "reporting", "Export an event snapshot"),
-    ("generate-event-report", "GenerateMonitoringEventReport", "10.5", "CLOUD",
+    ("generate-event-report", "GenerateMonitoringEventReport", "", "CLOUD",
      "stable", "reporting", "Generate a monitoring event report"),
     ("generate-reg-tables", "GenerateRegulatoryTables", "", "CLOUD", "stable",
      "reporting", "Build regulatory comparison tables"),
@@ -195,15 +200,15 @@ _REGISTRY_SEED = [
      "reporting", "Verify report-package paths and SHA-256 manifest hashes"),
     ("build-report-appendix", "BuildMonitoringReportAppendix", "9.2", "CLOUD",
      "stable", "reporting", "Build multi-sheet analytical appendix workbook"),
-    ("run-history-report", "RunHistorySummaryReport", "10.1", "CLOUD", "stable",
+    ("run-history-report", "RunHistorySummaryReport", "", "CLOUD", "stable",
      "admin", "Summarize run history"),
-    ("run-history", "RunHistoryQuery", "10.1b", "CLOUD", "stable", "admin",
+    ("run-history", "RunHistoryQuery", "", "CLOUD", "stable", "admin",
      "Query the run-history log"),
-    ("validate-schedule", "ValidateScheduleYAML", "10.2", "CLOUD", "stable",
+    ("validate-schedule", "ValidateScheduleYAML", "", "CLOUD", "stable",
      "admin", "Validate a monitoring schedule YAML"),
     ("compare-events", "CompareMonitoringEvents", "4.7", "CLOUD", "stable",
      "analysis", "Compare two monitoring events"),
-    ("apply-screening", "ApplyScreening", "3.5", "CLOUD", "stable", "analysis",
+    ("apply-screening", "ApplyScreening", "", "CLOUD", "stable", "analysis",
      "Apply screening levels to normalized results"),
     ("build-max-result-dataset", "BuildMaxResultDataset", "", "CLOUD", "stable",
      "analysis", "Build cross-event max-detected dataset"),
@@ -218,7 +223,7 @@ _REGISTRY_SEED = [
      "stable", "analysis", "Build dashboard mart tables and refresh JSON"),
     ("estimate-gw-flow-direction", "EstimateGWFlowDirection", "", "CLOUD",
      "stable", "analysis", "Estimate groundwater flow direction from 3+ wells"),
-    ("gw-level-summary", "BuildGroundwaterLevelSummary", "5.1", "CLOUD",
+    ("gw-level-summary", "BuildGroundwaterLevelSummary", "", "CLOUD",
      "stable", "analysis",
      "Per-well GW level/DTW/trend summary from elevation history"),
     ("build-gwe-event", "BuildGroundwaterElevationEvent", "4.1", "CLOUD",
@@ -236,13 +241,13 @@ _REGISTRY_SEED = [
      "Import lab EDD CSV/XLSX into the GDB"),
     ("import-gdb", "ImportToGDB", "2", "LOCAL", "stable", "intake",
      "Import normalized tables into a file GDB"),
-    ("export-lab-request", "ExportLabAnalyticalRequest", "2.11", "CLOUD",
+    ("export-lab-request", "ExportLabAnalyticalRequest", "", "CLOUD",
      "stable", "intake", "Export a lab analytical request workbook"),
-    ("upgrade-schema", "UpgradeGDBSchema", "1.4", "LOCAL", "stable", "admin",
+    ("upgrade-schema", "UpgradeGDBSchema", "10.3", "LOCAL", "stable", "admin",
      "Additive upgrade of the GDB schema"),
     ("build-event", "BuildCurrentEvent", "3", "LOCAL", "stable", "cartography",
      "Build the wide current-event table"),
-    ("build-callouts", "BuildCallouts", "4", "LOCAL", "stable", "cartography",
+    ("build-callouts", "BuildCallouts", "5.1", "LOCAL", "stable", "cartography",
      "Build analytical callout boxes"),
     ("optimize-callouts", "BuildCalloutsHullCollision", "5.2", "LOCAL", "deprecated",
      "cartography",
@@ -295,10 +300,10 @@ _REGISTRY_SEED = [
     ("ingest-reviewer-comments", "IngestReviewerMapComments", "9.4", "CLOUD",
      "stable", "reporting",
      "Ingest reviewer markups (CSV/GeoJSON/XLSX) into a tracked comment table"),
-    ("select-soil-intervals", "SelectSoilIntervalsForMapping", "", "CLOUD",
+    ("select-soil-intervals", "SelectSoilIntervalsForMapping", "4.8", "CLOUD",
      "stable", "cartography",
      "Assign HOTSPOT/DETECT/ND/NO_DATA tiers to soil intervals for mapping"),
-    ("export-comparison-excel", "ExportComparisonResultsToExcel", "4.8", "CLOUD",
+    ("export-comparison-excel", "ExportComparisonResultsToExcel", "", "CLOUD",
      "stable", "reporting",
      "Export compare-events records to a trend-coloured Excel workbook"),
     ("generate-job-queue", "GenerateRunJobQueue", "10.4", "CLOUD", "stable",
@@ -375,7 +380,7 @@ _REGISTRY_SEED = [
     ("agol create-views", "CreateHostedViewsForStakeholders", "6.11", "CLOUD",
      "stable", "agol", "Create/update audience-specific hosted views "
      "(sensitive-field leak is blocking)"),
-    ("agol fieldmaps-preflight", "FieldMapsSyncPreflight", "7.5", "CLOUD",
+    ("agol fieldmaps-preflight", "FieldMapsSyncPreflight", "", "CLOUD",
      "stable", "field", "Read-only Field Maps sync preflight report "
      "(pending edits, replica age, drift, attachments, duplicates, "
      "conflicts)"),

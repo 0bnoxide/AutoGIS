@@ -34,9 +34,12 @@ import click
 import autogis
 from autogis.adapters import cli
 from autogis.adapters.gui.reachability import UNREACHABLE
-from autogis.runtime.capabilities import _REGISTRY_SEED, TOOLS, Runtime
+from autogis.runtime.capabilities import (
+    _REGISTRY_SEED, RUNTIME_CLASSES, TOOLS, Runtime)
 
 PYT_PATH = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
+ROADMAP_PATH = Path(autogis.__file__).parent.parent / "docs" / \
+    "envmon-feature-roadmap.md"
 
 
 # --- shared fixtures (plain helpers; cheap enough to recompute) -------------
@@ -120,21 +123,49 @@ def test_every_local_tool_is_guarded():
 
 def test_runtime_class_agrees_between_tools_and_seed():
     """TOOLS (drives the guard) and the seed (drives `list-tools` display)
-    must agree on runtime class. Seed 'DRAFT' is a documented display state
-    (capabilities.py: 'may differ in spelling from the Runtime enum').
-    Group-qualified seed commands ("agol sync-to-gdb") map to their bare
-    TOOLS key (last token) so agol entries stay covered. Was LOCAL-ness-only
-    until issue #346 (seed said CLOUD for the HYBRID reconcile-locations)."""
+    must agree on runtime class. Group-qualified seed commands
+    ("agol sync-to-gdb") map to their bare TOOLS key (last token) so agol
+    entries stay covered. Was LOCAL-ness-only until issue #346 (seed said
+    CLOUD for the HYBRID reconcile-locations).
+
+    Until #468 this test carved out `seed_rt == "DRAFT"` as "a documented
+    display state", which is what let manage-screening-levels sit in the
+    runtime column with a value that is not a runtime class -- invisible to
+    `list-tools --runtime CLOUD` while RUNTIME_MAP said CLOUD. Draft-ness is
+    the `status` field's job; the carve-out is gone."""
     seed_rt = {c.split()[-1]: rt for (c, _n, _rid, rt, *_rest) in _REGISTRY_SEED}
     conflicts = [
         f"{c}: TOOLS={TOOLS[c].value} seed={seed_rt[c]}"
         for c in sorted(set(seed_rt) & set(TOOLS))
-        if seed_rt[c] != "DRAFT"
-        and seed_rt[c] != TOOLS[c].value.upper()
+        if seed_rt[c] != TOOLS[c].value.upper()
     ]
     assert not conflicts, (
         "runtime class drift between capabilities.TOOLS and _REGISTRY_SEED:\n"
         + "\n".join(conflicts))
+
+
+def test_seed_runtime_values_are_real_runtime_classes():
+    """The runtime column may only hold a Runtime enum name (#468). A row
+    holding anything else is silently dropped by `filter_tools`, which
+    compares `t.runtime.upper()` against the requested class -- so
+    `list-tools --runtime CLOUD`, the question "what runs without ArcGIS
+    Pro", answers with every CLOUD tool but that one. The sibling test above
+    only covers commands present in TOOLS; this one covers all 130 rows."""
+    off_vocab = sorted(f"{c}: {rt!r}"
+                       for (c, _n, _rid, rt, *_rest) in _REGISTRY_SEED
+                       if rt not in RUNTIME_CLASSES)
+    assert not off_vocab, (
+        f"_REGISTRY_SEED runtime values outside {sorted(RUNTIME_CLASSES)}: "
+        f"{off_vocab}")
+
+
+def test_runtime_filter_choice_offers_exactly_the_real_classes():
+    """`list-tools --runtime` must not offer a value no row can legally hold.
+    DRAFT was an explicit Choice, which is what made the bad seed row read as
+    intentional rather than as the typo it was (#468)."""
+    opt = next(p for p in cli.envmon.commands["list-tools"].params
+               if p.name == "runtime_filter")
+    assert set(opt.type.choices) == set(RUNTIME_CLASSES)
 
 
 def test_seed_status_values_match_the_documented_vocabulary():
@@ -143,8 +174,8 @@ def test_seed_status_values_match_the_documented_vocabulary():
     tuples, so nothing enforced it: export-wqx shipped 'DRAFT' (uppercase),
     the only row of 130 off-vocabulary. `filter_tools` lowercases both sides,
     so the row was still findable -- but it rendered a status no other row
-    used, and the runtime column's separate, *deliberate* 'DRAFT' spelling
-    (see the test above) is what makes that easy to mistake for intent."""
+    used. The runtime column's own stray 'DRAFT' (#468) is what made that
+    spelling easy to mistake for intent; both are pinned now."""
     allowed = {"stable", "draft", "planned", "deprecated"}
     off_vocab = sorted(f"{c}: {st!r}"
                        for (c, _n, _rid, _rt, st, *_rest) in _REGISTRY_SEED
@@ -203,3 +234,105 @@ def test_cli_redirect_messages_name_real_pyt_tools():
     assert not missing, (
         f"cli.py redirect messages point at .pyt tools that are not "
         f"registered in Toolbox.tools: {missing}")
+
+
+# ---------------------------------------------------------------------------
+# roadmap_id <-> the 79-tool catalog (issue #458)
+# ---------------------------------------------------------------------------
+# `docs/envmon-feature-roadmap.md` is the authority for `Tool N.N` numbers;
+# each catalog section declares its owner with a `**Tool name:**` line. Six
+# shipped tools carried a number the catalog assigns to a *different* tool,
+# and the wrong value was mirrored into the cli.py docstring (so it reached
+# users via --help), the core module docstring and the README -- all four
+# surfaces agreeing, none contradicting.
+
+def _catalog_sections() -> dict[str, set[str]]:
+    """{'10.3': {'UpgradeEnvMonitoringGDBSchema'}} from the roadmap catalog."""
+    sections: dict[str, set[str]] = {}
+    num = None
+    for line in ROADMAP_PATH.read_text(encoding="utf-8").splitlines():
+        head = re.match(r'^#{2,4}\s+(\d+\.\d[0-9A-Za-z]*)\s+\S', line)
+        if head:
+            num = head.group(1)
+            sections.setdefault(num, set())
+            continue
+        tool = re.match(r'\*\*Tool name:\*\*\s*`?([A-Za-z0-9_]+)`?', line.strip())
+        if tool and num:
+            sections[num].add(tool.group(1))
+    assert len(sections) > 50, f"catalog parse found only {len(sections)} sections"
+    return sections
+
+
+def _dotted_seed_ids() -> list[tuple[str, str, str]]:
+    """(command, name, roadmap_id) for seed rows using catalog N.N numbering.
+
+    Bare integers ('2') are the original ten-tool numbering and 'S123-*' is
+    the Survey123 add-on's own vocabulary -- neither indexes this catalog.
+    """
+    return [(c, n, rid) for (c, n, rid, *_r) in _REGISTRY_SEED
+            if re.fullmatch(r'\d+\.\d[0-9A-Za-z]*', rid or "")]
+
+
+def test_every_roadmap_id_resolves_to_a_catalog_section():
+    """A dotted roadmap_id that resolves to nothing is a dangling citation:
+    `list-tools --verbose` prints a spec section the reader cannot open.
+    Caught upgrade-schema='1.4', export-lab-request='2.11' and
+    fieldmaps-preflight='7.5'. A trailing letter marks a sub-tool of a real
+    section (2.3a, 5.4b, 8.0b), so it is stripped before lookup."""
+    sections = _catalog_sections()
+    dangling = [f"{c}: {rid!r}" for c, _n, rid in _dotted_seed_ids()
+                if rid.rstrip("abc") not in sections and rid not in sections]
+    assert not dangling, (
+        "roadmap_id values with no matching '### N.N' heading in "
+        f"{ROADMAP_PATH.name}: {dangling}")
+
+
+def test_no_two_tools_claim_one_catalog_section():
+    """Two tools under one number means at least one is pointing at another
+    tool's spec. `run-history-report` and `list-tools` both claimed 10.1;
+    `list-tools` is the catalog's ListAvailableEnvTools, so the report tool
+    was the wrong one -- and `envmon list-tools --verbose` printed both under
+    10.1 with no indication either was wrong.
+
+    Rows sharing a *name* are one tool reached by a command pair (the
+    validate+import boring-log and drone-product pairs) and are fine.
+    """
+    claims: dict[str, set[str]] = {}
+    for _c, name, rid in _dotted_seed_ids():
+        claims.setdefault(rid, set()).add(name)
+    # 8.2 is a defect in the catalog, not the registry: the doc carries two
+    # '### 8.2' headings (Update Well Elevations / Create Civil 3D Contour
+    # Support Files) and each tool matches one. Renumbering a spec section is
+    # an owner call -- tracked separately, exempted here so this test pins
+    # the registry-side shape it exists for.
+    collisions = {rid: sorted(ns) for rid, ns in claims.items()
+                  if len(ns) > 1 and rid != "8.2"}
+    assert not collisions, f"multiple tools claim one catalog section: {collisions}"
+
+
+def test_post_roadmap_extras_claim_no_catalog_number():
+    """The seven tools of #458 appear nowhere in the 79-tool catalog -- they
+    are post-roadmap extras, and every number they carried belonged to a
+    named catalog tool that ships separately. Empty is the honest value.
+
+    Curated by necessity: the catalog and the registry use different names
+    for the same tool in eleven legitimate cases (BuildCalloutsHullCollision
+    vs OptimizeCalloutPlacement, and so on), so no name-matching rule can
+    separate a wrong number from a renamed tool. This pins the seven that
+    were verified absent from the catalog.
+    """
+    extras = {
+        "ApplyScreening", "ExportComparisonResultsToExcel",
+        "BuildGroundwaterLevelSummary", "RunHistorySummaryReport",
+        "RunHistoryQuery", "ValidateScheduleYAML", "ExportGeoJSON",
+        "GenerateMonitoringEventReport",
+    }
+    catalog = ROADMAP_PATH.read_text(encoding="utf-8")
+    still_absent = sorted(n for n in extras if n in catalog)
+    assert not still_absent, (
+        "these are listed as post-roadmap extras but now appear in the "
+        f"catalog -- give them their number instead: {still_absent}")
+    numbered = sorted(f"{c}: {rid!r}" for (c, n, rid, *_r) in _REGISTRY_SEED
+                      if n in extras and rid)
+    assert not numbered, (
+        f"post-roadmap extras must carry roadmap_id='': {numbered}")
