@@ -67,10 +67,16 @@ def _parse_float(v: str) -> Optional[float]:
         return None
 
 
-def compute_rpd(val1: float, val2: float) -> float:
+def compute_rpd(val1: float, val2: float) -> Optional[float]:
+    """Relative percent difference, or None when the pair mean is zero.
+
+    A 0/0 pair is *not calculable*, not "0.0% -- perfect agreement". Matches the
+    sibling implementations in evaluate_rpd_qa._rpd and normalize_rpd._rpd,
+    which have always returned None here (#436).
+    """
     denom = (val1 + val2) / 2
     if denom == 0:
-        return 0.0
+        return None
     return abs(val1 - val2) / denom * 100
 
 

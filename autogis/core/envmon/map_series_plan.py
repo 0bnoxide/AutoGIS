@@ -2,8 +2,15 @@
 
 Expands a site x event x figure-spec matrix into an ordered, deterministically
 named job list. The arcpy export loop lives in the ``gen-map-series`` CLI
-command (adapters/cli.py), which replays the proven ExportFigures chain per
-job — this module stays pure stdlib.
+command (adapters/cli.py), which runs the shared ExportFigures preparation
+chain (``layout_manager.prepare_figure_aprx``) per job — this module stays
+pure stdlib.
+
+One deliberate departure from the .pyt: the figure spec's
+``output_filename_pattern`` is *not* applied. ``out_name`` below is the
+packet name, and it is what carries the mode's grouping and ordering
+(``Appendix_001_...`` and friends); letting the per-figure pattern win would
+collapse every mode onto the same names. See #462.
 
 Spec: docs/superpowers/specs/2026-06-28-generate-site-map-series-design.md
 """

@@ -179,3 +179,150 @@ def test_no_pyt_tool_declares_a_parameter_its_body_never_reads():
             orphans[cls.name] = sorted(unread)
     assert not orphans, (
         f".pyt parameters declared but never read by the tool body: {orphans}")
+
+
+# ------------------- #459/#461/#462 figure-spec keys and the .pyt skeleton
+#
+# The scopes that read a FigureSpec on the export path, as
+# (filename, enclosing class or None, function). Scoped this precisely because
+# `spec` names an unrelated dict elsewhere -- generate-job-queue's manifest --
+# and because EVERY .pyt tool class has an `execute`, so matching on the
+# function name alone would sweep in all of them.
+_FIGURE_SPEC_SCOPES = {
+    ("toolbox.pyt", "ExportFigures", "execute"),
+    ("cli.py", None, "gen_map_series_cmd"),
+    ("layout_manager.py", None, "prepare_figure_aprx"),
+}
+
+# `template_aprx` is the schema key; `aprx_template` is its documented
+# fallback alias, read as `spec.get("template_aprx") or spec.get(...)`.
+_FIGURE_SPEC_ALIASES = {"aprx_template"}
+
+
+def _shipped_figure_spec_keys():
+    import yaml
+    cfg = pathlib.Path(autogis.__file__).parent / "config"
+    keys = set()
+    for p in list((cfg / "figure_specs").glob("*.y*ml")) + [
+            cfg / "_templates" / "site_skeleton" / "figure_spec.yaml"]:
+        keys |= set(yaml.safe_load(p.read_text(encoding="utf-8")) or {})
+    return keys
+
+
+def _spec_get_keys(path: pathlib.Path):
+    """Every `spec.get("KEY")` inside a scope that holds a FigureSpec."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found, scopes = set(), set()
+    # (enclosing class or None, function) for every function in the module.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for m in node.body:
+                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    scopes.add((node.name, m))
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            scopes.add((None, node))
+    for cls_name, fn in scopes:
+        if (path.name, cls_name, fn.name) not in _FIGURE_SPEC_SCOPES:
+            continue
+        for n in ast.walk(fn):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr == "get"
+                    and isinstance(n.func.value, ast.Name)
+                    and n.func.value.id == "spec"
+                    and n.args and isinstance(n.args[0], ast.Constant)):
+                found.add(n.args[0].value)
+    return found
+
+
+def test_every_figure_spec_key_read_on_the_export_path_exists():
+    """Both export call sites read `spec["layouts"]` — a key defined by no
+    spec, no template and no doc — so layout_names was always None,
+    export_layouts fell through its filter and every APRX layout was exported
+    unconfigured under one colliding filename stem (#459). The same class as
+    #443 (`contours`) and the dead `combined_pdf_name` (#463).
+
+    A key that reads as authoritative and resolves to nothing is the bug; this
+    asserts every key read is one a spec can actually supply.
+    """
+    from autogis.core.common.config import FIGURE_REQUIRED
+
+    adapters = pathlib.Path(autogis.__file__).parent / "adapters"
+    envmon = pathlib.Path(autogis.__file__).parent / "core" / "envmon"
+    read = set()
+    for p in (PYT, adapters / "cli.py", envmon / "layout_manager.py"):
+        read |= _spec_get_keys(p)
+    # The scopes must actually have been found, or this passes vacuously.
+    assert "layout_name" in read and "required_layers" in read
+
+    known = (set(FIGURE_REQUIRED) | _shipped_figure_spec_keys()
+             | _FIGURE_SPEC_ALIASES)
+    assert not (read - known), (
+        f"figure-spec keys read but defined nowhere: {sorted(read - known)}")
+
+
+def test_pyt_figure_spec_skeleton_loads_through_figure_spec_load(tmp_path):
+    """LoadFigureSpec's only output was rejected by FigureSpec.load — it
+    omitted the required `figure_title` and offered `analyte_set_name`, a
+    Python parameter name rather than a config key. The tool reported
+    "Template written" anyway (#461)."""
+    from autogis.core.envmon.init_site import render_figure_spec_template
+
+    out = tmp_path / "fs.yaml"
+    out.write_text(render_figure_spec_template(callout_template_id="CKG_GW"),
+                   encoding="utf-8")
+    spec = FigureSpec.load(out)          # raises ConfigError if it regresses
+    assert spec.get("callout_template")["template_id"] == "CKG_GW"
+    assert spec.get("figure_title")
+    assert "analyte_set_name" not in spec.data
+    # analyte_list() must resolve, i.e. the skeleton offers the keys it reads.
+    assert spec.analyte_list({})
+
+
+def test_pyt_load_figure_spec_does_not_carry_its_own_skeleton():
+    """One skeleton, rendered from the shipped template. The second hardcoded
+    copy is exactly what drifted into being unloadable (#461)."""
+    src = PYT.read_text(encoding="utf-8")
+    assert "render_figure_spec_template" in src
+    assert "analyte_set_name" not in src
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("CKG_GW", "CKG_GW"),
+    ("NO", "NO"),        # unquoted, YAML 1.1 would read this as the bool False
+    ("ZT42_SOIL", "ZT42_SOIL"),
+])
+def test_figure_spec_template_quotes_the_callout_template_id(value, expected):
+    """The id lands in a YAML scalar. Unquoted, `NO`/`on`/`123` come back as
+    bool/int rather than the id the operator picked in the .pyt dropdown."""
+    import yaml
+    from autogis.core.envmon.init_site import render_figure_spec_template
+
+    data = yaml.safe_load(render_figure_spec_template(callout_template_id=value))
+    assert data["callout_template"]["template_id"] == expected
+
+
+@pytest.mark.parametrize("bad", [
+    'X"quote', "X\\backslash", "X\n  base_font_points: 999", "X\ttab",
+])
+def test_figure_spec_template_rejects_an_unsafe_callout_template_id(bad):
+    """render_figure_spec_template is core API now, not just the .pyt dropdown:
+    a newline injects a sibling key into callout_template, and a quote breaks
+    out of the scalar. Same trust boundary site_name already guards."""
+    from autogis.core.envmon.init_site import render_figure_spec_template
+
+    with pytest.raises(ValueError, match="callout template id"):
+        render_figure_spec_template(callout_template_id=bad)
+
+
+def test_figure_spec_template_leaves_the_other_template_values_intact():
+    """The substitution must hit template_id and nothing else in the block."""
+    import yaml
+    from autogis.core.envmon.init_site import render_figure_spec_template
+
+    ct = yaml.safe_load(
+        render_figure_spec_template(callout_template_id="CKG_GW")
+    )["callout_template"]
+    assert ct["base_font_points"] == 6
+    assert ct["standoff_points"] == 18
+    assert ct["point_buffer_points"] == 10

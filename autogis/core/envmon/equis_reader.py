@@ -301,7 +301,7 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
         _compose_dilution_key(row, run_token)
         _route_limits(row, qa, row_num)
         _synthesize_reportable(row)
-        _attach_batches(row, batch_index, batch_rows, sample_id, profile,
+        _attach_batches(row, batch_index, batch_rows, sample_id,
                         qa, row_num, join_date)
         out.append(row)
     return out
@@ -432,7 +432,7 @@ def _synthesize_reportable(row: dict) -> None:
 
 
 def _attach_batches(row: dict, batch_index: dict, batch_rows: list[dict],
-                    sample_id: str, profile, qa: QACollector,
+                    sample_id: str, qa: QACollector,
                     row_num: int, join_date: bool = False) -> None:
     if not batch_rows:
         _attach_inline_batch(row, qa, row_num)

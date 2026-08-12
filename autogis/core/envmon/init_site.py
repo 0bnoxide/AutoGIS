@@ -58,11 +58,18 @@ def check_site_name(site_name: str) -> None:
     """site_name lands in double-quoted YAML scalars: reject the scalar
     metacharacters ('"', '\\') and any non-printable (control/DEL/C1/line &
     paragraph separators, via str.isprintable()). Raises ValueError."""
-    if '"' in site_name or "\\" in site_name or not site_name.isprintable():
-        raise ValueError("site name must be printable text without "
+    _check_yaml_scalar(site_name, "site name")
+
+
+def _check_yaml_scalar(value: str, field: str) -> None:
+    """Shared guard for any operator string landing in a double-quoted YAML
+    scalar. ``field`` names the offending input, so the message is right
+    whichever caller rejected it."""
+    if '"' in value or "\\" in value or not value.isprintable():
+        raise ValueError(f"{field} must be printable text without "
                          "double-quotes or backslashes")
-    if any(tok in site_name for tok in _SENTINELS):
-        raise ValueError("site name must not contain the substitution tokens "
+    if any(tok in value for tok in _SENTINELS):
+        raise ValueError(f"{field} must not contain the substitution tokens "
                          "__SITE_ID__ / __SITE_NAME__")
 
 
@@ -113,6 +120,52 @@ def _render(text: str, site_id: str, site_name: str) -> str:
     # the render correct by construction.
     repl = {"__SITE_ID__": site_id, "__SITE_NAME__": site_name}
     return _SENTINEL_RE.sub(lambda m: repl[m.group(0)], text)
+
+
+_TEMPLATE_ID_RE = re.compile(r"^(\s*template_id:).*$", re.MULTILINE)
+
+
+def check_callout_template_id(value: str) -> None:
+    """The callout template id lands in a double-quoted YAML scalar, same
+    trust boundary as ``site_name``. Raises ValueError."""
+    _check_yaml_scalar(value, "callout template id")
+
+
+def render_figure_spec_template(site_id: str = "_TODO_SITE_ID",
+                                site_name: str = "_TODO Site Name",
+                                callout_template_id: str = "") -> str:
+    """Render the shipped figure-spec skeleton, optionally pinning the callout
+    template id.
+
+    Exists so there is exactly ONE figure-spec skeleton. ``init-site`` (CLI)
+    and ``LoadFigureSpec`` (.pyt) both render this file. The .pyt previously
+    carried a second, hardcoded copy that had drifted from it: that copy
+    omitted ``figure_title`` (a FIGURE_REQUIRED key) and offered
+    ``analyte_set_name``, which is the name of a Python parameter on
+    ``analyte_list()``, not a config key. So everything the tool wrote was
+    rejected by ``FigureSpec.load`` while the tool reported "Template
+    written" — the operator only found out one tool later (#461).
+
+    Raises ValueError on an unsafe identity, same as ``plan_site_skeleton``.
+    """
+    check_site_id(site_id)
+    check_site_name(site_name)
+    text = _render(_read_template("figure_spec.yaml"), site_id, site_name)
+    if callout_template_id:
+        check_callout_template_id(callout_template_id)
+        # Quoted, like the template's own site_id: an unquoted scalar makes
+        # YAML read "NO"/"on"/"123" as bool/int rather than the id the operator
+        # picked, and a value carrying a newline would inject a sibling key
+        # into callout_template.
+        # No count= : subn must report EXACTLY one match. With count=1 it
+        # returns 1 on the first hit however many exist, so a second
+        # template_id: block added above this one would be silently missed.
+        text, n = _TEMPLATE_ID_RE.subn(
+            lambda m: f'{m.group(1)} "{callout_template_id}"', text)
+        if n != 1:
+            raise ValueError(
+                f"figure-spec template has {n} template_id: lines, expected 1")
+    return text
 
 
 def plan_site_skeleton(site_id: str, site_name: str,

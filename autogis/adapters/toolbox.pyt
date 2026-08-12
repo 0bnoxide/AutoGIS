@@ -229,30 +229,13 @@ class LoadFigureSpec(object):
 
     @toolbox_core.record_pyt_run("figure-spec", site_config_param=None)
     def execute(self, parameters, messages):
+        # Renders the SAME shipped skeleton `envmon init-site` writes. This
+        # tool used to carry its own copy, which had drifted into something
+        # FigureSpec.load rejects outright (#461).
+        from autogis.core.envmon.init_site import render_figure_spec_template
         out = Path(parameters[0].valueAsText)
         kind = parameters[1].valueAsText
-        skeleton = f"""# Figure spec template — fill in every _TODO
-figure_spec_id: _TODO_unique_id
-site_id: _TODO
-matrix: GW            # GW | SOIL
-map_type: GW_ANALYTICAL
-figure_number: _TODO
-reference_scale: 1200
-analyte_set_name: petroleum_six_pack   # or custom_list: [...]
-sample_selection_rule: latest_per_location
-duplicate_handling_rule: prefer_parent
-callout_template:
-  template_id: {kind}
-  base_font_points: 6
-  standoff_points: 18
-  point_buffer_points: 10
-template_aprx: ../../templates/aprx/_TODO.aprx
-layout_name: _TODO
-extent_boundary_layer: SiteBoundary
-output_filename_pattern: "{{site_id}}_{{figure_number}}_{{event_date}}"
-layer_definition_queries:
-  Env_CalloutBoxes: "SiteID = '{{site_id}}' AND FigureSpecID = '{{figure_spec_id}}' AND EventDate = '{{event_date}}'"
-"""
+        skeleton = render_figure_spec_template(callout_template_id=kind)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(skeleton, encoding="utf-8")
         messages.addMessage(f"Template written: {out}")
@@ -779,11 +762,7 @@ class ExportFigures(object):
         from autogis.core.envmon.export_figures import (
             export_layouts, register_exports,
         )
-        from autogis.core.envmon.layout_manager import (
-            copy_template_aprx, update_aprx_data_sources,
-            apply_figure_definition_queries, set_layer_visibility,
-            update_layout_text, zoom_to_boundary,
-        )
+        from autogis.core.envmon.layout_manager import prepare_figure_aprx
         qa = QACollector()
         p = {q.name: q for q in parameters}
         gdb = Path(p["gdb"].valueAsText)
@@ -795,24 +774,11 @@ class ExportFigures(object):
         template = Path(spec.get("template_aprx") or spec.get("aprx_template") or "")
         if not template.is_absolute():
             template = Path(p["figure_spec"].valueAsText).parent / template
-        work = copy_template_aprx(template, export_dir / "_working",
-                                  f"{site.site_id}_{spec.figure_spec_id}_{ev}")
-        update_aprx_data_sources(work, gdb, qa)
-        lq = spec.get("layer_definition_queries", {})
-        if lq:
-            apply_figure_definition_queries(
-                work, site.site_id, ev, spec.figure_spec_id,
-                spec.get("map_type", "GW_ANALYTICAL"), lq, qa)
-        set_layer_visibility(work, spec.get("visible_layers", []),
-                             spec.get("hidden_layers", []), qa)
-        text = dict(site.get("default_layout_text", {}))
-        text.update(spec.get("layout_text", {}))
-        text.setdefault("EventDate", ev)
-        update_layout_text(work, spec.get("layout_name"), text, qa)
-        b = spec.get("extent_boundary_layer")
-        if b:
-            zoom_to_boundary(work, spec.get("layout_name"), b,
-                             float(spec.get("extent_buffer_pct", 5)), qa)
+        work, layout_names = prepare_figure_aprx(
+            template, export_dir / "_working",
+            f"{site.site_id}_{spec.figure_spec_id}_{ev}",
+            gdb, site.site_id, ev, spec, qa,
+            layout_text=site.get("default_layout_text", {}))
 
         written = export_layouts(
             work, export_dir,
@@ -822,12 +788,11 @@ class ExportFigures(object):
              "figure_number": spec.get("figure_number", "Fig"),
              "figure_spec_id": spec.figure_spec_id},
             qa,
-            layout_names=spec.get("layouts"),
+            layout_names=layout_names,
             formats=[f.strip() for f in
                      (p["formats"].valueAsText or "PDF").split(";")],
             dpi=int(p["dpi"].value or 300),
             required_layers=spec.get("required_layers", []),
-            combine_pdf=spec.get("combined_pdf_name"),
             dry_run=bool(p["dry_run"].value),
         )
         register_exports(gdb, written, site.site_id, ev,
