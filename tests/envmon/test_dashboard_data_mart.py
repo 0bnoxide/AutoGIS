@@ -75,24 +75,56 @@ def test_event_status_partial_lab_results_not_received():
     assert rows[0]["LabReceived"] == 0  # partial -> not fully received
 
 
+# Prior rows come from Env_WaterLevels, whose elevation column is
+# GroundwaterElevation_ft — NOT the Env_CurrentWaterLevelEvent spelling
+# (GWE_ft) the current rows use. These fixtures deliberately use the real
+# source spelling: written with GWE_ft they agreed with #466 and passed while
+# the production path produced NULL deltas and "Unknown" trends everywhere.
+_PRIOR_GWE = "GroundwaterElevation_ft"
+
+
+def test_prior_column_name_matches_env_waterlevels_schema():
+    """Pin the fixture spelling to the schema so this cannot drift back."""
+    from autogis.core.envmon.gdb_schema import TABLE_SCHEMAS
+    assert _PRIOR_GWE in {c[0] for c in TABLE_SCHEMAS["Env_WaterLevels"]}
+    assert "GWE_ft" not in {c[0] for c in TABLE_SCHEMAS["Env_WaterLevels"]}
+
+
 def test_well_status_delta():
     cur = [{"LocationID": "MW-01", "GWE_ft": 100.5, "Status": "measured"}]
-    prior = [{"LocationID": "MW-01", "GWE_ft": 100.0}]
+    prior = [{"LocationID": "MW-01", _PRIOR_GWE: 100.0}]
     rows = build_dash_well_status(cur, prior, "H281", "2026Q2")
     assert abs(rows[0]["GWEDelta_ft"] - 0.5) < 1e-9
 
 
 def test_gw_level_summary_rising_trend():
     cur = [{"LocationID": "MW-01", "GWE_ft": 100.5}]
-    prior = [{"LocationID": "MW-01", "GWE_ft": 100.0}]
+    prior = [{"LocationID": "MW-01", _PRIOR_GWE: 100.0}]
     rows = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")
     assert rows[0]["Trend"] == "Rising"
     assert abs(rows[0]["Delta_ft"] - 0.5) < 1e-9
 
 
+def test_prior_water_levels_flow_from_selector_to_delta():
+    """End-to-end at the real seam: Env_WaterLevels rows -> selector ->
+    builder. The selector renames nothing, so the builder must read the
+    source table's own column name (#466)."""
+    cur = [{"LocationID": "MW-01", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-01", "EventDate": "2026-03-15", _PRIOR_GWE: 100.0},
+        {"LocationID": "MW-01", "EventDate": "2025-12-15", _PRIOR_GWE: 99.0},
+    ]
+    prior = select_prior_water_levels(all_wl, cur)
+    rows = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")
+    assert rows[0]["PriorGWE_ft"] == 100.0
+    assert abs(rows[0]["Delta_ft"] - 0.5) < 1e-9
+    assert rows[0]["Trend"] == "Rising"
+
+
 def test_gw_level_summary_falling_and_stable():
     cur = [{"LocationID": "A", "GWE_ft": 99.0}, {"LocationID": "B", "GWE_ft": 100.05}]
-    prior = [{"LocationID": "A", "GWE_ft": 100.0}, {"LocationID": "B", "GWE_ft": 100.0}]
+    prior = [{"LocationID": "A", _PRIOR_GWE: 100.0},
+             {"LocationID": "B", _PRIOR_GWE: 100.0}]
     rows = {r["LocationID"]: r for r in
             build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")}
     assert rows["A"]["Trend"] == "Falling"
@@ -241,3 +273,149 @@ def test_export_dashboard_json_rejects_stale_dash_file(tmp_path):
 
     assert stale.read_text(encoding="utf-8") == "[]\n"
     assert not (tmp_path / "Dash_SiteStatus.json").exists()
+
+
+def test_prior_selection_skips_rows_with_no_elevation():
+    """#464 gave Survey123 water levels a real EventDate. Those rows carry a
+    DTW but no TOC, so they out-date the workbook row and won the prior
+    lookup — collapsing every Delta_ft to NULL and every Trend to "Unknown",
+    the exact symptom #466 fixed, re-entering by a different door. Neither
+    change is wrong alone; git could not see the interaction."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 100.0},
+        {"LocationID": "MW-1", "EventDate": "2026-04-15",
+         _PRIOR_GWE: None, "DepthToWater_ft": 12.5},   # Survey123, no TOC
+    ]
+    prior = select_prior_water_levels(all_wl, cur)
+    assert [p["EventDate"] for p in prior] == ["2026-03-15"]
+
+    row = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")[0]
+    assert row["PriorGWE_ft"] == 100.0
+    assert abs(row["Delta_ft"] - 0.5) < 1e-9
+    assert row["Trend"] == "Rising"
+
+
+def test_prior_selection_yields_nothing_when_no_row_has_an_elevation():
+    """Genuinely no prior elevation -> no prior. Unknown is the right answer
+    here, so the skip must not invent one."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [{"LocationID": "MW-1", "EventDate": "2026-04-15",
+               _PRIOR_GWE: None}]
+    assert select_prior_water_levels(all_wl, cur) == []
+    row = build_dash_gw_level_summary(cur, [], "H281", "2026Q2")[0]
+    assert row["Trend"] == "Unknown"
+
+
+@pytest.mark.parametrize("unusable", ["N/A", "ND", "   ", "not measured"])
+def test_prior_selection_skips_present_but_unparseable_elevations(unusable):
+    """A presence test (`in (None, "")`) let "N/A"/"ND"/whitespace through, so
+    the symptom returned. _prior_gwe_by_location already funnels through _num,
+    so the two seams would disagree about what counts as an elevation."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 100.0},
+        {"LocationID": "MW-1", "EventDate": "2026-04-15", _PRIOR_GWE: unusable},
+    ]
+    prior = select_prior_water_levels(all_wl, cur)
+    assert [p["EventDate"] for p in prior] == ["2026-03-15"]
+    assert build_dash_gw_level_summary(
+        cur, prior, "H281", "2026Q2")[0]["Trend"] == "Rising"
+
+
+def test_prior_selection_keeps_a_datum_relative_zero():
+    """0.0 is a physically possible elevation; the skip must not eat it."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 0.5}]
+    all_wl = [{"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 0.0}]
+    prior = select_prior_water_levels(all_wl, cur)
+    assert len(prior) == 1
+    assert build_dash_gw_level_summary(
+        cur, prior, "H281", "2026Q2")[0]["PriorGWE_ft"] == 0.0
+
+
+def test_shadowed_newer_prior_is_disclosed(caplog):
+    """The delta can now span a different pair of events than the two most
+    recent, and Dash_* has no prior-date column to show it."""
+    import logging
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2024-01-01", _PRIOR_GWE: 90.0},
+        {"LocationID": "MW-1", "EventDate": "2026-05-01", _PRIOR_GWE: None},
+    ]
+    with caplog.at_level(logging.INFO):
+        select_prior_water_levels(all_wl, cur)
+    assert "prior-water-level" in caplog.text
+    assert "2026-05-01" in caplog.text and "2024-01-01" in caplog.text
+
+
+def test_no_disclosure_for_a_row_that_was_never_a_prior_candidate(caplog):
+    """The skip was recorded BEFORE the candidate filter, so the current
+    event's own DTW-only row was announced as a "shadowed prior" — which
+    post-#464 is every well, every run. A disclosure channel that is wrong by
+    default trains operators to ignore it, which is worse than the gap it
+    discloses."""
+    import logging
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 99.0},
+        {"LocationID": "MW-1", "EventDate": "2026-06-15", _PRIOR_GWE: None},
+    ]
+    with caplog.at_level(logging.INFO):
+        prior = select_prior_water_levels(all_wl, cur)
+    assert [p["EventDate"] for p in prior] == ["2026-03-15"]
+    assert "prior-water-level" not in caplog.text
+
+
+def test_no_disclosure_for_a_skip_outside_an_explicit_prior_date(caplog):
+    """Same rule on the explicit-date branch: a skipped row on an unrelated
+    date was never a candidate for the date the caller named."""
+    import logging
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: 99.0},
+        {"LocationID": "MW-1", "EventDate": "2026-05-01", _PRIOR_GWE: None},
+    ]
+    with caplog.at_level(logging.INFO):
+        select_prior_water_levels(all_wl, cur, prior_event_id="2026-03-15")
+    assert "prior-water-level" not in caplog.text
+
+
+def test_usable_gwe_ft_survives_a_junk_primary_spelling():
+    """_row_gwe fell back only when the primary was absent, so junk under
+    GroundwaterElevation_ft discarded a usable GWE_ft — the two-seams-disagree
+    problem closed at the caller and left open in the helper."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [{"LocationID": "MW-1", "EventDate": "2026-03-15",
+               _PRIOR_GWE: "N/A", "GWE_ft": 99.0}]
+    prior = select_prior_water_levels(all_wl, cur)
+    assert len(prior) == 1
+    row = build_dash_gw_level_summary(cur, prior, "H281", "2026Q2")[0]
+    assert row["PriorGWE_ft"] == 99.0
+
+
+def test_null_location_id_among_skipped_rows_does_not_crash(caplog):
+    """LocationID is nullable and a SearchCursor yields NULL as None, so one
+    NULL beside one real id made the disclosure's bare sorted() raise
+    "'<' not supported between NoneType and str" — aborting the entire mart
+    build. A crash this batch introduced, in a column the schema allows."""
+    import logging
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2024-01-01", _PRIOR_GWE: 90.0},
+        {"LocationID": "MW-1", "EventDate": "2026-05-01", _PRIOR_GWE: None},
+        {"LocationID": None, "EventDate": "2026-05-01", _PRIOR_GWE: None},
+    ]
+    with caplog.at_level(logging.INFO):
+        prior = select_prior_water_levels(all_wl, cur)   # must not raise
+    assert [p["EventDate"] for p in prior] == ["2024-01-01"]
+    assert "prior-water-level" in caplog.text
+
+
+def test_explicit_prior_date_with_a_null_location_id_does_not_crash():
+    """Same shape on the explicit-date branch, which is where it first bit."""
+    cur = [{"LocationID": "MW-1", "EventDate": "2026-06-15", "GWE_ft": 100.5}]
+    all_wl = [
+        {"LocationID": "MW-1", "EventDate": "2026-03-15", _PRIOR_GWE: None},
+        {"LocationID": None, "EventDate": "2026-03-15", _PRIOR_GWE: None},
+    ]
+    assert select_prior_water_levels(all_wl, cur, "2026-03-15") == []

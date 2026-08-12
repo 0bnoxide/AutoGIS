@@ -99,6 +99,21 @@ def _event_date_str(v) -> str:
     return str(v or "")
 
 
+def _row_gwe(row: dict):
+    """Groundwater elevation off a water-level row, under either table's name.
+
+    ``Env_WaterLevels`` stores ``GroundwaterElevation_ft``;
+    ``Env_CurrentWaterLevelEvent`` stores ``GWE_ft`` (#466). ``""`` counts as
+    absent, not as a value.
+    """
+    v = row.get("GroundwaterElevation_ft")
+    if _num(v) is None:
+        # _num, not a presence test: with "N/A" under the first spelling, a
+        # presence test kept the junk and discarded a usable GWE_ft.
+        v = row.get("GWE_ft")
+    return v
+
+
 def select_prior_water_levels(
     all_water_levels: List[dict],
     current_water_levels: List[dict],
@@ -118,6 +133,10 @@ def select_prior_water_levels(
     current_date = {r.get("LocationID", ""): _event_date_str(r.get("EventDate"))
                     for r in current_water_levels}
     by_loc: Dict[str, dict] = {}
+    # Keys are raw LocationID values, so Optional: a NULL LocationID
+    # arrives from the SearchCursor as None (the column is nullable and
+    # nothing enforces otherwise at write time).
+    skipped: Dict[Optional[str], str] = {}
     for r in all_water_levels:
         loc = r.get("LocationID", "")
         ed = _event_date_str(r.get("EventDate"))
@@ -128,9 +147,43 @@ def select_prior_water_levels(
             cur = current_date.get(loc)
             if cur is not None and not (ed and ed < cur):
                 continue  # keep only measurements strictly before the current one
+        # Only NOW is this row a real prior candidate. Testing usability first
+        # recorded the CURRENT event's own DTW-only row as a "shadowed prior"
+        # -- which post-#464 is every well, every run -- so the disclosure
+        # below was wrong by default, and a channel that cries wolf is worse
+        # than the gap it discloses.
+        if _num(_row_gwe(r)) is None:
+            # No USABLE elevation: cannot produce a delta, and taking it as
+            # "the prior" hides the last row that could. Reachable since #464
+            # gave Survey123 water levels a real EventDate -- those rows carry
+            # a DTW but no TOC. _num, not a presence test: "N/A"/"ND"/"   "
+            # are present but unusable, and _prior_gwe_by_location already
+            # funnels through _num, so a presence test here would leave the
+            # two seams disagreeing about what counts as an elevation.
+            # Not on the explicit branch: every candidate there shares one
+            # date, so the disclosure below can never fire and this would be
+            # pure bookkeeping.
+            if not explicit and ed > skipped.get(loc, ""):
+                skipped[loc] = ed
+            continue
         prev = by_loc.get(loc)
         if prev is None or ed > _event_date_str(prev.get("EventDate")):
             by_loc[loc] = r
+    # The delta can now span a different pair of events than the two most
+    # recent, and the Dash_* schema has no prior-date column to show it. Say so
+    # rather than letting the span change silently between runs -- same
+    # disclosure channel the orchestrator uses for its canonical-read drops.
+    # str() key: LocationID is nullable, so one NULL beside one real id makes
+    # a bare sorted() raise `'<' not supported between NoneType and str` and
+    # abort the whole mart build -- a crash this batch introduced with the
+    # disclosure, in a column the schema explicitly allows to be NULL.
+    for sk, ed_sk in sorted(skipped.items(), key=lambda kv: str(kv[0])):
+        chosen = by_loc.get(sk)
+        if chosen is not None and ed_sk > _event_date_str(
+                chosen.get("EventDate")):
+            LOG.info("[prior-water-level] %s: skipped a newer %s reading with "
+                     "no usable elevation; delta is against %s instead.",
+                     sk, ed_sk, _event_date_str(chosen.get("EventDate")))
     return list(by_loc.values())
 
 
@@ -169,12 +222,28 @@ def build_dash_event_status(samples: List[dict], results: List[dict],
     }]
 
 
+def _prior_gwe_by_location(
+    prior_water_level_events: List[dict],
+) -> Dict[str, Optional[float]]:
+    """Map LocationID -> prior groundwater elevation, accepting either name.
+
+    The two source tables spell the same quantity differently:
+    ``Env_WaterLevels`` (where prior rows come from, via
+    :func:`select_prior_water_levels`) stores ``GroundwaterElevation_ft``,
+    while ``Env_CurrentWaterLevelEvent`` stores ``GWE_ft``. Reading only the
+    latter made every prior lookup ``None`` — so ``Delta_ft`` was always NULL
+    and ``Trend`` always "Unknown" on the delivered dashboard (#466).
+    Resolved here, once, rather than at each consumer.
+    """
+    return {p.get("LocationID", ""): _num(_row_gwe(p))
+            for p in prior_water_level_events}
+
+
 def build_dash_well_status(water_level_events: List[dict],
                            prior_water_level_events: List[dict],
                            site_id: str, event_id: str) -> List[dict]:
     """Dash_WellStatus ← Env_CurrentWaterLevelEvent (+ prior for delta)."""
-    prior = {p.get("LocationID", ""): _num(p.get("GWE_ft"))
-             for p in prior_water_level_events}
+    prior = _prior_gwe_by_location(prior_water_level_events)
     out = []
     for e in water_level_events:
         loc = e.get("LocationID", "")
@@ -203,8 +272,7 @@ def build_dash_gw_level_summary(water_level_events: List[dict],
                                 prior_water_level_events: List[dict],
                                 site_id: str, event_id: str) -> List[dict]:
     """Dash_GWLevelSummary ← two-event water-level join with trend."""
-    prior = {p.get("LocationID", ""): _num(p.get("GWE_ft"))
-             for p in prior_water_level_events}
+    prior = _prior_gwe_by_location(prior_water_level_events)
     out = []
     for e in water_level_events:
         loc = e.get("LocationID", "")

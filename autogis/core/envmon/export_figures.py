@@ -52,8 +52,19 @@ def preexport_qa(aprx_path: Path, required_layers: Sequence[str],
                                     "features under the current definition "
                                     "query.",
                         ))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # "We could not check" must not read as "we checked and it
+                    # was fine" — a bare pass here silently skipped the
+                    # empty-required-layer gate and still returned ok (#463).
+                    qa.add(QARecord(
+                        severity=SEV_WARNING, category="required_layer_uncheckable",
+                        message=f"Could not count features on required layer "
+                                f"{lyr.name!r} ({type(exc).__name__}: {exc}); "
+                                "the empty-layer check did not run for it.",
+                        recommended_action="Open the APRX and confirm the "
+                                           "layer draws features before "
+                                           "trusting this figure.",
+                    ))
     del aprx
     return ok
 
@@ -67,6 +78,34 @@ def _versioned(path: Path, overwrite: bool) -> Path:
         if not cand.exists():
             return cand
         i += 1
+
+
+def _filter_layouts(layouts, layout_names, qa: QACollector) -> List:
+    """Select the requested layouts and report any the APRX does not have.
+
+    ``layout_names is None`` means "no filter"; an explicitly EMPTY list means
+    "no layout resolved, export nothing" and must not be read as the former --
+    that read is #459. First spelling wins and insertion order is kept, so two
+    requests differing only by case report once, deterministically, in the
+    order the caller listed them; and the record names the caller's spelling,
+    not the lowered lookup key.
+
+    Extracted because ``export_layouts`` was already past this repo's
+    complexity threshold before this batch added another branch to it.
+    """
+    if layout_names is None:
+        return layouts
+    wanted: Dict[str, str] = {}
+    for n in layout_names:
+        wanted.setdefault(str(n).lower(), str(n))
+    selected = [l for l in layouts if l.name.lower() in wanted]
+    found = {l.name.lower() for l in selected}
+    for key, original in wanted.items():
+        if key not in found:
+            qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
+                            message=f"Requested layout {original!r} not in "
+                                    "APRX."))
+    return selected
 
 
 def export_layouts(
@@ -96,13 +135,7 @@ def export_layouts(
 
     export_dir.mkdir(parents=True, exist_ok=True)
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
-    layouts = aprx.listLayouts()
-    if layout_names:
-        wanted = {n.lower() for n in layout_names}
-        layouts = [l for l in layouts if l.name.lower() in wanted]
-        for n in wanted - {l.name.lower() for l in layouts}:
-            qa.add(QARecord(severity=SEV_ERROR, category="layout_missing",
-                            message=f"Requested layout {n!r} not in APRX."))
+    layouts = _filter_layouts(aprx.listLayouts(), layout_names, qa)
     written: List[Path] = []
     pdfs: List[Path] = []
     for lay in layouts:

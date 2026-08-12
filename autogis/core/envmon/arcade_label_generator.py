@@ -89,7 +89,6 @@ def build_exceedance_callout_expression(
 
 def _build_nd_callout_expression(
     value_field: str,
-    units_field: str,
     *,
     nd_text: str = "ND",
 ) -> str:
@@ -174,7 +173,7 @@ def generate_arcade_labels(
             value_field=value_field,
             units_field=units_field,
             sl_field=None,
-            expression=_build_nd_callout_expression(value_field, units_field),
+            expression=_build_nd_callout_expression(value_field),
         ))
 
         # 4. WELL_ID_ONLY (well-ID-only label; emitted per analyte since each
