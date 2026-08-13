@@ -60,3 +60,59 @@ def write_points_geojson(records: list[PhotoRecord], path: Path) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(fc, indent=2), encoding="utf-8")
     return len(pts)
+
+
+from xml.sax.saxutils import escape
+
+
+def _kml_placemark(r: PhotoRecord, thumb_name: str | None) -> str:
+    name = escape(Path(r.saved_path).name)
+    lines = [f"Group: {r.group}", f"Source: {r.source_table} OID {r.objectid}"]
+    if r.taken_at:
+        lines.append(f"Taken: {r.taken_at}")
+    if r.heading_deg is not None:
+        ref = " (magnetic)" if r.heading_ref == "M" else ""
+        lines.append(f"Direction: {r.heading_deg:.0f}°{ref}")
+    if r.camera:
+        lines.append(f"Camera: {r.camera}")
+    img = (f'<img src="{thumb_name}" width="400"/><br/>'
+           if thumb_name else "")
+    body = img + "<br/>".join(escape(s) for s in lines)
+    heading = (f"<Style><IconStyle><heading>{r.heading_deg:g}</heading>"
+               f"</IconStyle></Style>" if r.heading_deg is not None else "")
+    return (f"<Placemark><name>{name}</name>{heading}"
+            f"<description><![CDATA[{body}]]></description>"
+            f"<Point><coordinates>{r.exif_lon:g},{r.exif_lat:g},0"
+            f"</coordinates></Point></Placemark>")
+
+
+def write_kmz(records: list[PhotoRecord], path: Path, *,
+              thumb_px: int = 800) -> int:
+    """Google Earth KMZ: one placemark per GPS-bearing photo, thumbnail in
+    the description (skipped when the file is missing or undecodable)."""
+    import zipfile
+
+    from autogis.core.envmon.well_inspection_photo_report import (
+        prepare_image_bytes)
+
+    pts = gps_records(records)
+    placemarks, thumbs = [], []
+    for i, r in enumerate(pts):
+        data = (prepare_image_bytes(Path(r.saved_path), (thumb_px, thumb_px))
+                if Path(r.saved_path).is_file() else None)
+        thumb_name = None
+        if data is not None:
+            thumb_name = f"files/thumb_{i}.jpg"
+            thumbs.append((thumb_name, data))
+        placemarks.append(_kml_placemark(r, thumb_name))
+    kml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+           f'<name>Harvest photos</name>{"".join(placemarks)}'
+           "</Document></kml>")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("doc.kml", kml)
+        for name, data in thumbs:
+            zf.writestr(name, data)
+    return len(pts)

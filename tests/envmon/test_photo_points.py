@@ -52,3 +52,46 @@ def test_points_geojson_empty(tmp_path):
     out = tmp_path / "points.geojson"
     assert write_points_geojson([], out) == 0
     assert json.loads(out.read_text(encoding="utf-8"))["features"] == []
+
+
+import xml.etree.ElementTree as ET
+import zipfile
+
+import pytest
+
+from autogis.core.envmon.photo_points import write_kmz
+
+_KMLNS = "{http://www.opengis.net/kml/2.2}"
+
+
+def test_kmz_placemarks_and_thumbnails(tmp_path, make_photo_jpeg):
+    p = make_photo_jpeg(name="spring.jpg", directory=tmp_path / "G")
+    out = tmp_path / "photos.kmz"
+    n = write_kmz([_rec(saved_path=str(p)),
+                   _rec(exif_lat=None, exif_lon=None)], out)
+    assert n == 1
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert "doc.kml" in names and "files/thumb_0.jpg" in names
+        root = ET.fromstring(zf.read("doc.kml"))
+    pms = root.findall(f".//{_KMLNS}Placemark")
+    assert len(pms) == 1
+    coords = pms[0].find(f".//{_KMLNS}coordinates").text.strip()
+    assert coords.startswith("-103.487,45.874")
+    assert pms[0].find(f".//{_KMLNS}heading").text == "231.5"
+    assert "files/thumb_0.jpg" in pms[0].find(f".//{_KMLNS}description").text
+
+
+def test_kmz_missing_photo_file_placemark_without_image(tmp_path):
+    out = tmp_path / "photos.kmz"
+    n = write_kmz([_rec(saved_path=str(tmp_path / "gone.jpg"))], out)
+    assert n == 1
+    with zipfile.ZipFile(out) as zf:
+        assert [n2 for n2 in zf.namelist() if n2.startswith("files/")] == []
+
+
+def test_kmz_empty(tmp_path):
+    out = tmp_path / "photos.kmz"
+    assert write_kmz([], out) == 0
+    with zipfile.ZipFile(out) as zf:
+        ET.fromstring(zf.read("doc.kml"))  # valid, just no placemarks
