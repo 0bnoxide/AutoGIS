@@ -1,17 +1,24 @@
+import hashlib
+import json as _json
+import math
 import os
+from datetime import datetime, timezone
+
 import pytest
 from autogis.core.models import HarvestConfig
 from autogis.core import harvester
 
 
 class FakeFeature:
-    def __init__(self, attributes):
+    def __init__(self, attributes, geometry=None):
         self.attributes = attributes
+        self.geometry = geometry
 
 
 class FakeQueryResult:
-    def __init__(self, features):
+    def __init__(self, features, spatial_reference=None):
         self.features = features
+        self.spatial_reference = spatial_reference
 
 
 class FakeAttachmentMgr:
@@ -43,6 +50,7 @@ class FakeLayer:
 
     def query(self, where, out_fields, return_geometry):
         self.last_where = where
+        self.last_return_geometry = return_geometry
         return FakeQueryResult(self._features)
 
 
@@ -67,6 +75,7 @@ def test_harvest_downloads_and_groups(tmp_path):
     assert (tmp_path / "Open" / "2_b.jpg").exists()
     assert (tmp_path / "manifest.csv").exists()
     assert (tmp_path / "manifest.json").exists()
+    assert layer.last_return_geometry is True
 
 
 def test_harvest_skips_existing(tmp_path):
@@ -344,3 +353,87 @@ def test_incremental_does_not_advance_state_on_failure(tmp_path):
                                 layer=layer, now_ms=999, sleep=lambda s: None)
     assert summary.failed == 1
     assert state.read_last_run(str(tmp_path)) == 500
+
+
+def test_harvest_fills_geometry_checksum_editdate(tmp_path):
+    # Web Mercator x/y computed in-test with the FORWARD projection formula;
+    # the harvester implements the INVERSE — a genuine round-trip, not a
+    # mirror of the implementation.
+    lat, lon = 45.874, -103.487
+    r_earth = 6378137.0
+    x = r_earth * math.radians(lon)
+    y = r_earth * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+    edit_ms = int(datetime(2026, 5, 5, 14, 37, 36,
+                           tzinfo=timezone.utc).timestamp() * 1000)
+    features = [FakeFeature(
+        {"OBJECTID": 1, "Status": "Done", "EditDate": edit_ms},
+        geometry={"x": x, "y": y,
+                  "spatialReference": {"wkid": 102100, "latestWkid": 3857}})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing, props={
+        "hasAttachments": True,
+        "editFieldsInfo": {"editDateField": "EditDate"}})
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    r = summary.results[0]
+    geom = _json.loads(r.geometry)
+    assert geom["lat"] == pytest.approx(45.874, abs=1e-5)
+    assert geom["lon"] == pytest.approx(-103.487, abs=1e-5)
+    assert r.algorithm == "sha256"
+    assert r.checksum == hashlib.sha256(b"x").hexdigest()
+    assert r.feature_edited_at == "2026-05-05T14:37:36+00:00"
+    # geometry survives the manifest round-trip as a JSON string
+    rows = _json.loads((tmp_path / "manifest.json").read_text())
+    assert _json.loads(rows[0]["geometry"])["lat"] == geom["lat"]
+
+
+def test_harvest_geometry_wgs84_passthrough_and_centroid(tmp_path):
+    features = [FakeFeature(
+        {"OBJECTID": 1, "Status": "Done"},
+        geometry={"rings": [[[10.0, 40.0], [12.0, 40.0], [12.0, 42.0],
+                             [10.0, 42.0], [10.0, 40.0]]],
+                  "spatialReference": {"wkid": 4326}})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    geom = _json.loads(summary.results[0].geometry)
+    assert geom == {"lat": pytest.approx(40.8), "lon": pytest.approx(10.8)}
+
+
+def test_harvest_unknown_wkid_leaves_geometry_null(tmp_path, caplog):
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"},
+                            geometry={"x": 1.0, "y": 2.0,
+                                      "spatialReference": {"wkid": 26913}})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    with caplog.at_level("WARNING"):
+        summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                    now_ms=1, sleep=lambda s: None)
+    assert summary.results[0].geometry is None
+    assert any("spatial reference" in m for m in caplog.messages)
+
+
+def test_harvest_skipped_existing_file_still_hashed(tmp_path):
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    target = tmp_path / "Done" / "1_a.jpg"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"old")
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    r = summary.results[0]
+    assert r.status == "skipped"
+    assert r.checksum == hashlib.sha256(b"old").hexdigest()
+
+
+def test_harvest_no_geometry_attr_stays_null(tmp_path):
+    # Old-style feature (no .geometry): everything still works, columns null.
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    r = summary.results[0]
+    assert r.geometry is None and r.feature_edited_at is None

@@ -1,5 +1,10 @@
+import hashlib
+import json
+import logging
+import math
 import os
 import time
+from datetime import datetime, timezone
 
 from .models import AttachmentResult, RunSummary, summary_counts
 from ..common.config import ConfigError
@@ -7,6 +12,8 @@ from .manifest import Manifest
 from .templates import render_path_component, sanitize
 from .download import download_one
 from .state import read_last_run, write_last_run
+
+logger = logging.getLogger(__name__)
 
 def _feature_layer_cls():
     """Import ``arcgis.features.FeatureLayer`` on demand, or return None.
@@ -100,14 +107,84 @@ def _effective_where(config, layer):
     return where
 
 
+_WEB_MERCATOR_WKIDS = {3857, 102100}
+_R = 6378137.0
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _vertices(geom):
+    if geom.get("x") is not None and geom.get("y") is not None:
+        return [(geom["x"], geom["y"])]
+    parts = geom.get("paths") or geom.get("rings") or []
+    return [(x, y) for part in parts for x, y, *_ in part]
+
+
+def _rep_point_wgs84(geom, result):
+    """Representative point of an Esri geometry dict as (lat, lon) WGS84.
+
+    Returns None for absent/empty geometry (silent — normal for tables) or
+    the sentinel string "unsupported" when geometry exists but its spatial
+    reference is missing or not convertible (caller warns once per layer).
+    ponytail: 4326 + web-mercator only; extend when another SR shows up.
+    """
+    if not isinstance(geom, dict):
+        return None
+    verts = _vertices(geom)
+    if not verts:
+        return None
+    x = sum(v[0] for v in verts) / len(verts)
+    y = sum(v[1] for v in verts) / len(verts)
+    sr = geom.get("spatialReference") or getattr(
+        result, "spatial_reference", None) or {}
+    wkid = (sr.get("latestWkid") or sr.get("wkid")) if isinstance(sr, dict) \
+        else None
+    if wkid == 4326:
+        return (y, x)
+    if wkid in _WEB_MERCATOR_WKIDS:
+        lon = math.degrees(x / _R)
+        lat = math.degrees(2 * math.atan(math.exp(y / _R)) - math.pi / 2)
+        return (lat, lon)
+    return "unsupported"
+
+
+def _edit_date_field(layer):
+    info = _prop(layer.properties, "editFieldsInfo")
+    return _prop(info, "editDateField") if info else None
+
+
+def _iso_utc(ms):
+    try:
+        return datetime.fromtimestamp(
+            int(ms) / 1000, tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return None
+
+
 def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
     """Query ONE layer/table and accumulate its attachments into the shared
     manifest, rooting destination paths at ``base_dir``."""
     where = _effective_where(config, layer)
-    result = layer.query(where=where, out_fields="*", return_geometry=False)
+    result = layer.query(where=where, out_fields="*", return_geometry=True)
+    edit_field = _edit_date_field(layer)
+    unsupported_sr = 0
     for feature in result.features:
         attrs = feature.attributes
         objectid = attrs.get("OBJECTID")
+        rep = _rep_point_wgs84(getattr(feature, "geometry", None), result)
+        if rep == "unsupported":
+            unsupported_sr += 1
+            rep = None
+        geometry_json = (json.dumps(
+            {"lat": round(rep[0], 7), "lon": round(rep[1], 7)})
+            if rep else None)
+        edited_at = _iso_utc(attrs.get(edit_field)) if edit_field else None
         for att in layer.attachments.get_list(oid=objectid):
             att_id, name, size = att["id"], att["name"], att.get("size")
             group = render_path_component(config.group_template, attrs)
@@ -118,18 +195,28 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
             if config.skip_existing and os.path.exists(dest):
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, dest, size, "skipped",
-                    disposition="skipped", source_table=source_table))
+                    disposition="skipped", source_table=source_table,
+                    checksum=_sha256(dest), algorithm="sha256",
+                    geometry=geometry_json, feature_edited_at=edited_at))
                 continue
             try:
                 download_one(layer, objectid, att_id, dest,
                              config.retries, config.backoff_seconds, sleep=sleep)
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, dest, size, "downloaded",
-                    disposition="downloaded", source_table=source_table))
+                    disposition="downloaded", source_table=source_table,
+                    checksum=_sha256(dest), algorithm="sha256",
+                    geometry=geometry_json, feature_edited_at=edited_at))
             except Exception as exc:  # resilience: never kill the run
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, None, size, "failed", str(exc),
-                    disposition="failed", source_table=source_table))
+                    disposition="failed", source_table=source_table,
+                    geometry=geometry_json, feature_edited_at=edited_at))
+    if unsupported_sr:
+        logger.warning(
+            "%s: %d feature(s) in an unsupported spatial reference — "
+            "manifest geometry left null (supported: WGS84, Web Mercator)",
+            source_table, unsupported_sr)
 
 
 def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):

@@ -29,6 +29,9 @@ class AttachmentResult:
     geometry: str | None = None
     source_table: str | None = None
     relationship_id: str | None = None
+    # ISO8601 UTC editor-tracking EditDate of the source feature, when the
+    # layer has editFieldsInfo; enables photo-vs-feature date QA downstream.
+    feature_edited_at: str | None = None
 
 
 def summary_counts(results) -> dict:
