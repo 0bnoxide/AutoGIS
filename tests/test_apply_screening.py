@@ -1,4 +1,4 @@
-"""Unit tests for apply_screening (Tool 3.5)."""
+"""Unit tests for apply_screening."""
 import dataclasses
 from datetime import date
 from autogis.core.common.qa import QACollector

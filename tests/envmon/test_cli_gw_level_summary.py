@@ -1,4 +1,4 @@
-"""CLI test for the headless gw-level-summary command (Tool 5.1)."""
+"""CLI test for the headless gw-level-summary command."""
 from datetime import date
 
 from click.testing import CliRunner

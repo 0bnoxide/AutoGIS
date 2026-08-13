@@ -1,4 +1,4 @@
-"""Tool 7.5 FieldMapsSyncPreflight — pure-check tests (headless, no arcgis)."""
+"""FieldMapsSyncPreflight — pure-check tests (headless, no arcgis)."""
 from datetime import date
 
 from autogis.core.agol.audit_schema import diff_schema

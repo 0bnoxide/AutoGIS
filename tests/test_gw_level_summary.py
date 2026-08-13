@@ -1,4 +1,4 @@
-"""Unit tests for gw_level_summary (Tool 5.1)."""
+"""Unit tests for gw_level_summary."""
 from datetime import date
 
 import pytest

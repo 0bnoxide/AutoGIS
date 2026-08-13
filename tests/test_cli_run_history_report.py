@@ -1,4 +1,4 @@
-"""CLI tests for run-history-report (Tool 10.1)."""
+"""CLI tests for run-history-report."""
 import csv
 import pytest
 from click.testing import CliRunner
