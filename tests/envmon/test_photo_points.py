@@ -67,7 +67,7 @@ _KMLNS = "{http://www.opengis.net/kml/2.2}"
 def test_kmz_placemarks_and_thumbnails(tmp_path, make_photo_jpeg):
     p = make_photo_jpeg(name="spring.jpg", directory=tmp_path / "G")
     out = tmp_path / "photos.kmz"
-    n = write_kmz([_rec(saved_path=str(p)),
+    n = write_kmz([_rec(saved_path=str(p), exif_lat=45.8741234, exif_lon=-103.4871234),
                    _rec(exif_lat=None, exif_lon=None)], out)
     assert n == 1
     with zipfile.ZipFile(out) as zf:
@@ -77,7 +77,9 @@ def test_kmz_placemarks_and_thumbnails(tmp_path, make_photo_jpeg):
     pms = root.findall(f".//{_KMLNS}Placemark")
     assert len(pms) == 1
     coords = pms[0].find(f".//{_KMLNS}coordinates").text.strip()
-    assert coords.startswith("-103.487,45.874")
+    lon_str, lat_str, _ = coords.split(",")
+    assert float(lon_str) == pytest.approx(-103.4871234, abs=1e-7)
+    assert float(lat_str) == pytest.approx(45.8741234, abs=1e-7)
     assert pms[0].find(f".//{_KMLNS}heading").text == "231.5"
     assert "files/thumb_0.jpg" in pms[0].find(f".//{_KMLNS}description").text
 

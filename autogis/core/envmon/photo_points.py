@@ -82,7 +82,7 @@ def _kml_placemark(r: PhotoRecord, thumb_name: str | None) -> str:
                f"</IconStyle></Style>" if r.heading_deg is not None else "")
     return (f"<Placemark><name>{name}</name>{heading}"
             f"<description><![CDATA[{body}]]></description>"
-            f"<Point><coordinates>{r.exif_lon:g},{r.exif_lat:g},0"
+            f"<Point><coordinates>{r.exif_lon:.7f},{r.exif_lat:.7f},0"
             f"</coordinates></Point></Placemark>")
 
 
