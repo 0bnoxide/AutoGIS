@@ -163,7 +163,7 @@ def _iso_utc(ms):
     try:
         return datetime.fromtimestamp(
             int(ms) / 1000, tz=timezone.utc).isoformat()
-    except (TypeError, ValueError, OSError):
+    except (TypeError, ValueError, OSError, OverflowError):
         return None
 
 
@@ -177,7 +177,15 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
     for feature in result.features:
         attrs = feature.attributes
         objectid = attrs.get("OBJECTID")
-        rep = _rep_point_wgs84(getattr(feature, "geometry", None), result)
+        try:
+            rep = _rep_point_wgs84(getattr(feature, "geometry", None), result)
+        except (ValueError, TypeError, OverflowError):
+            # Malformed vertex data (e.g. a curve-encoded ring segment with
+            # too few coords) or an out-of-range projection input must not
+            # abort the whole layer -- degrade this row's geometry to null
+            # and keep going, same "never kill the run" stance as everywhere
+            # else in this function.
+            rep = None
         if rep == "unsupported":
             unsupported_sr += 1
             rep = None
@@ -193,10 +201,18 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
             dest = os.path.join(base_dir, group, fname)
 
             if config.skip_existing and os.path.exists(dest):
+                try:
+                    checksum, algorithm = _sha256(dest), "sha256"
+                except OSError:
+                    # File locked (AV/indexer) or deleted between the
+                    # exists() check above and the read -- record the row
+                    # anyway with a null checksum rather than losing this
+                    # and every already-downloaded row's manifest entry.
+                    checksum, algorithm = None, None
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, dest, size, "skipped",
                     disposition="skipped", source_table=source_table,
-                    checksum=_sha256(dest), algorithm="sha256",
+                    checksum=checksum, algorithm=algorithm,
                     geometry=geometry_json, feature_edited_at=edited_at))
                 continue
             try:

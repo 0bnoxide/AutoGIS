@@ -437,3 +437,47 @@ def test_harvest_no_geometry_attr_stays_null(tmp_path):
                                 now_ms=1, sleep=lambda s: None)
     r = summary.results[0]
     assert r.geometry is None and r.feature_edited_at is None
+
+
+def test_harvest_skip_branch_hash_failure_still_records_row(tmp_path):
+    # dest exists (passes the skip_existing check) but is a directory, not a
+    # file -- open(dest, "rb") inside _sha256 raises OSError, simulating an
+    # AV/indexer lock or a delete-after-exists-check race. The row must
+    # still be recorded (checksum null) and the manifest must still get
+    # written, not abort the whole run.
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    target = tmp_path / "Done" / "1_a.jpg"
+    target.mkdir(parents=True)
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    r = summary.results[0]
+    assert r.status == "skipped"
+    assert r.checksum is None and r.algorithm is None
+    assert (tmp_path / "manifest.json").exists()
+
+
+def test_harvest_malformed_geometry_leaves_geometry_null_and_continues(tmp_path):
+    # A ring vertex with only 1 coordinate can't unpack as (x, y, *_) --
+    # _vertices raises ValueError. Must degrade this row's geometry to null
+    # rather than aborting the run (which would also strand the just-
+    # downloaded file with zero manifest record).
+    features = [FakeFeature(
+        {"OBJECTID": 1, "Status": "Done"},
+        geometry={"rings": [[[5.0]]], "spatialReference": {"wkid": 4326}})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    r = summary.results[0]
+    assert r.status == "downloaded"
+    assert r.geometry is None
+    assert (tmp_path / "manifest.json").exists()
+
+
+def test_iso_utc_overflow_magnitude_returns_none():
+    # 10**25 ms overflows the platform time_t datetime.fromtimestamp uses --
+    # confirmed empirically to raise OverflowError (not OSError/ValueError,
+    # which were already caught).
+    assert harvester._iso_utc(10**25) is None
