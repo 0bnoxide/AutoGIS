@@ -100,7 +100,24 @@ def apply_figure_definition_queries(
     # TypeError comparing str to int, out of the CLI and the Pro tool with no
     # QA record (#474). Coercing at the boundary fixes both halves at once,
     # and is the rule _name_list already applies to the sibling spec fields.
-    layer_queries = {str(k): v for k, v in (layer_queries or {}).items()}
+    raw_queries = layer_queries or {}
+    layer_queries = {str(k): v for k, v in raw_queries.items()}
+    if len(layer_queries) < len(raw_queries):
+        # `2026:` and `"2026":` in one mapping survive YAML as distinct keys
+        # and collapse under str(). Report rather than drop silently -- that
+        # last-writer-wins collapse is the same failure this batch refuses for
+        # a duplicate figure_spec_id (#470), and here the operator would
+        # otherwise get a figure whose def query is simply not the one the
+        # spec's last line asked for.
+        kept = set(layer_queries)
+        collapsed = sorted({str(k) for k in raw_queries
+                            if str(k) in kept and not isinstance(k, str)})
+        qa.add(QARecord(
+            severity=SEV_WARNING, category="defquery_key_collision",
+            message=f"Figure spec layer_definition_queries has keys that "
+                    f"collide once coerced to text ({', '.join(collapsed)}); "
+                    "only the last query for each survived.",
+            recommended_action="Quote the layer names so each appears once."))
     applied = set()
     for m in aprx.listMaps():
         for lyr in m.listLayers():

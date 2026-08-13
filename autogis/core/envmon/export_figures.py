@@ -182,6 +182,12 @@ def export_layouts(
 
     if combine_pdf and pdfs and not dry_run:
         combined = versioned_path(export_dir / combine_pdf, overwrite)
+        # unlink after versioned_path, not instead of it: with overwrite=True
+        # that helper hands back the OCCUPIED path, and Esri's own
+        # PDFDocumentCreate example os.remove()s an existing file before
+        # creating -- so overwrite would have failed at the one call it exists
+        # to serve. A no-op when versioning already chose a free name.
+        combined.unlink(missing_ok=True)
         pdoc = arcpy.mp.PDFDocumentCreate(str(combined))
         for p in pdfs:
             pdoc.appendPages(str(p))

@@ -79,17 +79,36 @@ Two members are CI/config rather than code:
 
 ## Decisions
 
-1. **A tie gets a total order, and the tie itself gets disclosed.**
-   `_prior_pick_key` orders candidates by `(EventDate, ImportBatchID,
-   SourceRow, elevation)`. `EventDate` first, so the latest measurement still
-   wins exactly as before and the tiebreak only ever decides a tie;
-   `ImportBatchID` sorts lexically by timestamp in this schema, making "last
-   import wins" the rule — defensible and explainable to an operator. Every
-   component is coerced to a sortable type because all four columns are
-   nullable and a `None` beside a `str` aborts the whole mart build. A tie
-   also emits a `LOG.warning` naming the well, the date and both elevations:
-   a duplicated measurement date is itself something a reviewer should see,
-   so resolving it silently would leave half the defect in place.
+1. **A tie gets a total order, the order is honestly labelled arbitrary, and
+   the tie itself gets disclosed.** `_prior_pick_key` orders candidates by
+   `(EventDate, SourceRow, elevation)`. `EventDate` first, so the latest
+   measurement still wins exactly as before and the tiebreak only ever decides
+   a tie. Both remaining components are coerced to a sortable type because
+   each column is nullable and a `None` beside a float aborts the whole mart
+   build.
+
+   **This is #473's option 2 (a stable arbitrary key), not its option 1 ("last
+   import wins"), because option 1 is not reachable from this seam** — a
+   correction to that issue's premise, caught by the Codex review of PR #494.
+   `create_import_batch` / `create_edd_import_batch` mint `ImportBatchID` as
+   `uuid.uuid4().hex[:16].upper()`, so ordering it lexically is a coin flip
+   with respect to import time: deterministic, but arbitrary while *reading*
+   as provenance. It is therefore excluded from the key entirely rather than
+   left in to dress a coin flip up as a policy — and a regression pins that
+   swapping two rows' batch ids cannot move the answer. The genuinely
+   chronological `ImportDateTime` lives on `Env_ImportBatch`;
+   `Env_WaterLevels` carries only the batch id and this function is handed
+   water-level rows with no join, so the upgrade path (join in the
+   orchestrator's read, pass `ImportDateTime` through on the row) is recorded
+   as a `ponytail:` comment rather than guessed at here.
+
+   The disclosure is **counted over the whole candidate set**, not compared
+   pairwise against the running best: pairwise, a duplicated date later
+   superseded by a newer reading was reported for `[A1, A2, B]` and silent for
+   `[A1, B, A2]` — reporting that depends on cursor order is the exact defect
+   being fixed (caught by the Gitar review of PR #494). The message names the
+   well, the count and the date, says the resolution was arbitrary, and says
+   whether that date is the one the delta actually uses.
 
 2. **Refuse a duplicate `figure_spec_id` rather than pick one.** The two
    files are typically *different* figures whose id survived a copy-paste, and
@@ -104,20 +123,35 @@ Two members are CI/config rather than code:
    call site was doc-verified: `PDFDocumentCreate(pdf_path)` is unchanged and
    not deprecated at the Pro 3.5 compliance floor or at latest, and Esri's own
    example `os.remove()`s an existing file before creating — confirming the
-   path must be free, which is what `versioned_path` guarantees.
+   path must be free.
+
+   That last detail is load-bearing in the *opposite* direction from how it
+   first read, and the Codex review of PR #494 caught it: with
+   `overwrite=True` `versioned_path` deliberately returns the **occupied**
+   path, so `--overwrite` would have failed at the one call it exists to
+   serve. Both combine seams therefore `unlink(missing_ok=True)` immediately
+   before `PDFDocumentCreate` — a no-op when versioning already chose a free
+   name. Fixed at both sites rather than only the new one, because
+   `export_layouts(overwrite=True, combine_pdf=…)` carries the identical
+   shape and is reachable today.
 
 4. **Completeness is per authentication mode, not username-only.** A profile
    counts when it has `url` plus one of: `username`, `key_file` + `cert_file`,
    or `client_id`. `url` alone still fails — that is the half-written section
    a failed `store_credential` leaves behind, with nothing to log in with.
 
-5. **Coerce YAML mapping keys at the boundary.** `str(k)` on
-   `layer_definition_queries` fixes both halves of #474.1 at once — the query
-   now lands *and* a genuinely-absent layer is still reported — and it is the
-   rule `_name_list` already applies to the sibling spec fields. A parse error
-   is wrapped in `ValueError` naming the file, so one file and one class of
-   mistake get one kind of answer (the `_load_json_option` trust-boundary
-   convention).
+5. **Coerce YAML mapping keys at the boundary — and report the collapse the
+   coercion can cause.** `str(k)` on `layer_definition_queries` fixes both
+   halves of #474.1 at once — the query now lands *and* a genuinely-absent
+   layer is still reported — and it is the rule `_name_list` already applies
+   to the sibling spec fields. Coercion introduces one new way to lose data:
+   `2026:` and `"2026":` survive YAML as distinct keys and collapse to one, so
+   a post-coercion length drop raises a `defquery_key_collision` QA warning
+   naming the colliding keys (Gitar review of PR #494). Dropping one silently
+   would have been the same last-writer-wins collapse decision 2 refuses two
+   items above. A parse error is wrapped in `ValueError` naming the file, so
+   one file and one class of mistake get one kind of answer (the
+   `_load_json_option` trust-boundary convention).
 
 6. **Populate only ids the catalog can answer, and pin the direction.**
    Eleven `roadmap_id`s were verified one at a time against

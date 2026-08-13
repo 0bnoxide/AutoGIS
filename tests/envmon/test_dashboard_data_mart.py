@@ -53,6 +53,33 @@ def test_select_prior_explicit_event_date_restricts_candidates():
     assert prior[0]["EventDate"] == "2025-12-15"
 
 
+def _captured_warnings(fn):
+    """Run `fn`, returning the module logger's WARNING text.
+
+    Not caplog: `get_logger` sets `propagate = False` (#433), so capture via
+    the root logger is at the mercy of pytest-internal behaviour for
+    non-propagating loggers. Attaching to the logger under test is what the
+    assertion actually means.
+    """
+    import logging
+
+    from autogis.core.envmon import dashboard_data_mart as mart
+
+    records = []
+
+    class _Grab(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    handler = _Grab(level=logging.WARNING)
+    mart.LOG.addHandler(handler)
+    try:
+        result = fn()
+    finally:
+        mart.LOG.removeHandler(handler)
+    return result, "\n".join(records)
+
+
 def test_select_prior_same_date_tie_is_order_independent():
     """Two rows for one well on one date must not be settled by cursor order.
 
@@ -63,16 +90,40 @@ def test_select_prior_same_date_tie_is_order_independent():
     current = [{"LocationID": "MW-2", "EventDate": "2026-06-01", "GWE_ft": 50.0}]
     all_wl = [
         {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 49.0,
-         "ImportBatchID": "2026-02-01T08:00:00"},
+         "SourceRow": 11},
         {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 48.0,
-         "ImportBatchID": "2026-03-09T17:30:00"},
+         "SourceRow": 42},
     ]
     forward = select_prior_water_levels(all_wl, current)
     reverse = select_prior_water_levels(list(reversed(all_wl)), current)
     assert len(forward) == len(reverse) == 1
     assert forward[0]["GWE_ft"] == reverse[0]["GWE_ft"]
-    # last import wins: the 2026-03-09 batch, not whichever row arrived first
-    assert forward[0]["GWE_ft"] == 48.0
+    # The rule is deliberately arbitrary-but-fixed (highest SourceRow, then
+    # highest elevation) -- NOT "last import wins", which this seam cannot
+    # implement: ImportBatchID is a uuid4 hex with no chronology, and the
+    # chronological ImportDateTime lives on a table this function never sees.
+    # Pinned so the arbitrary choice cannot drift unnoticed.
+    assert forward[0]["SourceRow"] == 42
+
+
+def test_prior_pick_key_does_not_rest_on_importbatchid():
+    """ImportBatchID is `uuid.uuid4().hex[:16].upper()` — lexical order over
+    it is a coin flip with respect to import time. Reading it as provenance
+    would dress that coin flip up as a policy, so it must not move the
+    answer."""
+    current = [{"LocationID": "MW-2", "EventDate": "2026-06-01", "GWE_ft": 50.0}]
+    base = [
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 49.0,
+         "SourceRow": 11, "ImportBatchID": "FFFFFFFFFFFFFFFF"},
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 48.0,
+         "SourceRow": 42, "ImportBatchID": "0000000000000000"},
+    ]
+    # swapping the batch ids must not change which row is chosen
+    swapped = [dict(base[0], ImportBatchID="0000000000000000"),
+               dict(base[1], ImportBatchID="FFFFFFFFFFFFFFFF")]
+    assert (select_prior_water_levels(base, current)[0]["SourceRow"]
+            == select_prior_water_levels(swapped, current)[0]["SourceRow"]
+            == 42)
 
 
 def test_select_prior_tie_without_provenance_is_still_stable():
@@ -88,17 +139,36 @@ def test_select_prior_tie_without_provenance_is_still_stable():
     assert forward[0]["GWE_ft"] == reverse[0]["GWE_ft"]
 
 
-def test_select_prior_tie_is_disclosed(caplog):
+def test_select_prior_tie_is_disclosed():
     """A duplicated measurement date is itself something a reviewer should
-    see — resolving it silently is half the defect (#473)."""
+    see — resolving it silently is half the defect (#473). The message must
+    also not claim a provenance rule the seam cannot implement."""
     current = [{"LocationID": "MW-2", "EventDate": "2026-06-01", "GWE_ft": 50.0}]
     all_wl = [
         {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 49.0},
         {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 48.0},
     ]
-    with caplog.at_level("WARNING"):
-        select_prior_water_levels(all_wl, current)
-    assert "MW-2" in caplog.text and "2026-02-01" in caplog.text
+    _, text = _captured_warnings(
+        lambda: select_prior_water_levels(all_wl, current))
+    assert "MW-2" in text and "2026-02-01" in text
+    assert "arbitrary" in text        # says what it is, not "last import wins"
+    assert "import" not in text.lower()
+
+
+def test_select_prior_tie_disclosure_is_itself_order_independent():
+    """A duplicated date that is later superseded must be disclosed either
+    way. Compared pairwise against the running best, [A1, A2, B] warned and
+    [A1, B, A2] did not — reporting that depends on cursor order is the exact
+    defect this function stopped having (gitar review, PR #494)."""
+    current = [{"LocationID": "MW-2", "EventDate": "2026-06-01", "GWE_ft": 50.0}]
+    a1 = {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 49.0}
+    a2 = {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 48.0}
+    b = {"LocationID": "MW-2", "EventDate": "2026-03-01", "GWE_ft": 47.0}
+    for order in ([a1, a2, b], [a1, b, a2], [b, a1, a2]):
+        prior, text = _captured_warnings(
+            lambda o=order: select_prior_water_levels(o, current))
+        assert prior[0]["EventDate"] == "2026-03-01"   # B still wins
+        assert "2026-02-01" in text, f"tie not disclosed for {order}"
 
 
 def test_select_prior_latest_date_still_beats_a_newer_import():

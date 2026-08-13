@@ -4661,6 +4661,12 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
         # latest tool reference, ADR-0077).
         combined = versioned_path(export_dir / "Appendix_Combined.pdf",
                                   overwrite)
+        # With --overwrite, versioned_path hands back the OCCUPIED path and
+        # PDFDocumentCreate needs a free one (Esri's example removes it
+        # first), so the flag would have failed at the only call it serves.
+        # No-op when versioning already chose a free name. Same two lines as
+        # export_layouts' combine, because it is the same policy.
+        combined.unlink(missing_ok=True)
         pdoc = arcpy.mp.PDFDocumentCreate(str(combined))
         for p in written_all:
             pdoc.appendPages(str(p))

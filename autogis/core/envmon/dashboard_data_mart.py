@@ -118,17 +118,33 @@ def _prior_pick_key(row: dict, event_date: str) -> tuple:
     """Total order over prior-water-level candidates for one well.
 
     ``EventDate`` first, so the latest measurement still wins exactly as
-    before. The rest only ever decides a tie, and exists because there was no
-    tiebreak at all: ``ImportBatchID`` sorts lexically by timestamp in this
-    schema, so "last import wins" -- defensible and explainable to an operator
-    -- then ``SourceRow`` and the elevation itself as a stable arbitrary
-    fallback for rows carrying neither. Every component is coerced to a
-    sortable type: all four columns are nullable, and a None beside a str
-    raises `'<' not supported`, aborting the whole mart build.
+    before; the rest only ever decides a tie, and exists because there was no
+    tiebreak at all (#473). That remainder is **deliberately a stable
+    arbitrary key, not a meaningful one** -- issue #473's option 2, taken
+    because its option 1 is not reachable from this seam:
+
+    - "Last import wins" would need chronology, and ``ImportBatchID`` has
+      none. ``create_import_batch`` / ``create_edd_import_batch`` mint it as
+      ``uuid.uuid4().hex[:16].upper()``, so comparing it lexically is a coin
+      flip with respect to import time -- deterministic, but arbitrary while
+      *reading* as provenance. Keeping it here would have dressed a coin flip
+      up as a policy, so it is not in the key at all.
+    - The chronological value, ``ImportDateTime``, lives on
+      ``Env_ImportBatch``; ``Env_WaterLevels`` carries only the batch id, and
+      this function is handed water-level rows with no join.
+
+    So: highest ``SourceRow``, then highest elevation. The direction is
+    arbitrary and fixed -- what matters is that it never changes between runs.
+    Every component is coerced to a sortable type: both columns are nullable,
+    and a None beside a float raises `'<' not supported`, aborting the whole
+    mart build.
+
+    ponytail: stable-arbitrary tiebreak. For a genuinely chronological "last
+    import wins", join Env_ImportBatch on ImportBatchID in the orchestrator's
+    read and pass ImportDateTime through on the row.
     """
     gwe = _num(_row_gwe(row))
     return (event_date,
-            str(row.get("ImportBatchID") or ""),
             _num(row.get("SourceRow")) or 0.0,
             gwe if gwe is not None else float("-inf"))
 
@@ -158,6 +174,8 @@ def select_prior_water_levels(
     # arrives from the SearchCursor as None (the column is nullable and
     # nothing enforces otherwise at write time).
     skipped: Dict[Optional[str], str] = {}
+    # {(LocationID, EventDate): usable-candidate count} -- the tie disclosure.
+    dupes: Dict[tuple, int] = {}
     for r in all_water_levels:
         loc = r.get("LocationID", "")
         ed = _event_date_str(r.get("EventDate"))
@@ -187,27 +205,35 @@ def select_prior_water_levels(
             if not explicit and ed > skipped.get(loc, ""):
                 skipped[loc] = ed
             continue
+        # Count every usable candidate per (well, date). Counting -- rather
+        # than comparing each row against the running best -- is what makes
+        # the disclosure order-independent too: pairwise, a duplicated date
+        # later superseded by a newer reading was reported for [A1, A2, B] and
+        # silent for [A1, B, A2], because once B is the best the second A row
+        # is never compared with its own duplicate. Reporting that depends on
+        # cursor order is the exact defect this function stopped having.
+        dupes[(loc, ed)] = dupes.get((loc, ed), 0) + 1
         prev = by_loc.get(loc)
         key = _prior_pick_key(r, ed)
-        if prev is None:
+        if prev is None or key > _prior_pick_key(
+                prev, _event_date_str(prev.get("EventDate"))):
             by_loc[loc] = r
+    # A duplicated measurement date is itself something a reviewer should see,
+    # whether or not it is the date the delta ends up using -- resolving it
+    # silently would leave half of #473 in place. Sorted on str() keys for the
+    # same reason the skipped loop below is: LocationID is nullable, and one
+    # NULL beside one real id makes a bare sorted() raise.
+    for (dloc, ded), n in sorted(dupes.items(), key=lambda kv: (str(kv[0][0]),
+                                                               kv[0][1])):
+        if n < 2:
             continue
-        prev_key = _prior_pick_key(prev, _event_date_str(prev.get("EventDate")))
-        if key[0] == prev_key[0]:
-            # Same well, same date, two readings. A bare `ed > prev_ed` let the
-            # row the SearchCursor happened to yield first win, so PriorGWE_ft
-            # / Delta_ft / Trend could swing between runs over unchanged data
-            # (#473). Ordinary since #457/ADR-0126 gave Survey123 water levels
-            # a real EventDate: a field submission and a workbook import for
-            # the same well and day now collide. Disclose it -- a duplicated
-            # measurement date is itself something a reviewer should see --
-            # and let the key below settle it the same way every run.
-            LOG.warning("[prior-water-level] %s: two prior readings share "
-                        "EventDate %s (%s ft vs %s ft); keeping the "
-                        "later-imported one.", loc, ed,
-                        _row_gwe(r), _row_gwe(prev))
-        if key > prev_key:
-            by_loc[loc] = r
+        chosen = by_loc.get(dloc)
+        used = chosen is not None and _event_date_str(
+            chosen.get("EventDate")) == ded
+        LOG.warning("[prior-water-level] %s: %d readings share EventDate %s; "
+                    "resolved by a fixed arbitrary rule, so review which is "
+                    "correct%s.", dloc, n, ded,
+                    "" if used else " (a newer date supplies the delta)")
     # The delta can now span a different pair of events than the two most
     # recent, and the Dash_* schema has no prior-date column to show it. Say so
     # rather than letting the span change silently between runs -- same

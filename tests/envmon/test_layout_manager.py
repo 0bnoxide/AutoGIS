@@ -91,6 +91,32 @@ def test_non_string_defquery_key_applies_and_reports(tmp_path):
     assert "Absent_Layer" in qa.records[0].message
 
 
+def test_defquery_keys_colliding_under_str_are_reported(tmp_path):
+    """`2026:` and `"2026":` survive YAML as distinct keys and collapse under
+    str(). Dropping one silently is the same last-writer-wins collapse this
+    batch refuses for a duplicate figure_spec_id (gitar review, PR #494)."""
+    from autogis.core.envmon.layout_manager import (
+        apply_figure_definition_queries)
+
+    lyr = types.SimpleNamespace(name="2026", definitionQuery="",
+                                supports=lambda _cap: True)
+    arcpy = MagicMock()
+    aprx = MagicMock()
+    a_map = MagicMock()
+    a_map.listLayers.return_value = [lyr]
+    aprx.listMaps.return_value = [a_map]
+    arcpy.mp.ArcGISProject.return_value = aprx
+    qa = QACollector()
+    with patch("autogis.core.envmon.layout_manager._arcpy", return_value=arcpy):
+        apply_figure_definition_queries(
+            tmp_path / "x.aprx", "H281", "2026-07-02", "SPEC", "GW",
+            {2026: "SiteID = '{site_id}'", "2026": "1=1"}, qa)
+    collisions = [r for r in qa.records
+                  if r.category == "defquery_key_collision"]
+    assert len(collisions) == 1
+    assert "2026" in collisions[0].message
+
+
 # --- update_layout_text (arcpy mocked, same pattern as
 #     test_manage_callout_overrides) ---
 
