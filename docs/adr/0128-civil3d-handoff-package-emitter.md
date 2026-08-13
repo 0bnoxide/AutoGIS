@@ -153,6 +153,13 @@ this repository's tests.
   emission time — the cost of the no-self-validation rule.
 - When a caller genuinely lacks a vertical datum, a zero-warning package is
   unreachable by design; the fix is upstream data, never fabrication.
+- The producer echoes the declared EPSG code without resolving it against a
+  CRS database (the base install has none, and pyproj was rejected — see
+  Alternatives): the manifest's `kind: "projected"` claim rests on the
+  source declaring linear LandXML Units, so a source whose `epsgCode`
+  contradicts its own Units block (e.g. a geographic code) is trusted, not
+  detected. Verifying projectedness would require the CRS database the
+  base install deliberately lacks.
 
 ## Alternatives considered
 
