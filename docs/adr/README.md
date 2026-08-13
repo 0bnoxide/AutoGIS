@@ -147,6 +147,7 @@ Each ADR follows this structure:
 | [126](0126-unmatchable-records-and-unguarded-numbers-2026-08-08.md) | Unmatchable records and unguarded numbers (2026-08-08) — make the degraded answer tell you it is degraded | Proposed | 2026-08-08 |
 | [127](0127-figure-export-and-mart-key-resolution-batch-2026-08-09.md) | Figure-export and dashboard-mart key-resolution batch (2026-08-09) — one chain, one key, one place | Proposed | 2026-08-09 |
 | [128](0128-civil3d-handoff-package-emitter.md) | `autogis handoff` — contract-v1 Civil 3D handoff package emitter (AutoGIS-Civil3D Phase 3 producer obligations): single top-level command, flat `core/handoff.py`, writer-path re-emission via `parse_landxml_surface`→`write_landxml_surface`, never-infer metadata (horizontal CRS/unit from source declarations only; vertical unit always explicit; datum known-trio or declared unknown), `__version__` constant drift-pinned to pyproject, no vendored schema/self-validation — conformance proven solely by the consumer repo's validator; judgment calls audited in `logs/2026-08-12-agent-decisions.md` | Proposed | 2026-08-12 |
+| [129](0129-registry-metadata-vocabularies.md) | Registry metadata vocabularies — `roadmap_id` only from the catalog's `**Tool name:**` lines, `runtime` only from `RUNTIME_CLASSES` (records the #458/#468 decisions PR #475 shipped; `--runtime DRAFT` breaking change) | Accepted | 2026-08-13 |
 
 ## File naming
 
