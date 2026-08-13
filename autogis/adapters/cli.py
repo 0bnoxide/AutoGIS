@@ -19,7 +19,7 @@ from autogis.core.envmon.opentopo import DEFAULT_DATASET, DEM_DATASETS
 from autogis.core.envmon.soil_interval_selector import IntervalTier
 from autogis.core.envmon.synthetic_workbook import MESSINESS
 from autogis.runtime.capabilities import RUNTIME_CLASSES, TOOL_REGISTRY
-from autogis.runtime.sessions import agol_from_profile
+from autogis.runtime.sessions import agol_from_profile, list_connection_profiles
 
 
 def qa_report_options(func):
@@ -40,6 +40,32 @@ def qa_report_options(func):
         help="Write QA report to PATH (.md/.json/.csv by extension).",
     )(func)
     return func
+
+
+# ponytail: profile names snapshotted once at import. A CLI run is a fresh
+# process so it's always current; the long-running GUI won't see a profile
+# added mid-session until restart -- acceptable for a rarely-changing store.
+# ``None`` when the box has no profile store, so the option stays plain text
+# rather than an empty dropdown (keeps introspect's "choice fields carry
+# choices" guard intact).
+_CONNECTION_PROFILE_TYPE = (SuggestedChoice(_names) if (_names := list_connection_profiles())
+                            else None)
+
+
+def connection_profile_option(func):
+    """Attach the shared AGOL ``--profile`` option (an ArcGIS API for Python
+    connection profile) to a command.
+
+    One home for the connection-profile contract: ``default=None`` (anonymous
+    ``GIS`` when omitted) plus a ``SuggestedChoice`` of the locally-registered
+    profile names, so the GUI renders an editable dropdown while the CLI still
+    accepts any typed name. With no profiles registered the type is ``None``
+    (plain text) -- a headless box may have no profile store at all.
+    """
+    return click.option(
+        "--profile", default=None, type=_CONNECTION_PROFILE_TYPE,
+        help="ArcGIS API for Python profile name.",
+    )(func)
 
 
 def _reject_report_path_in_artifact(report, artifact_dir) -> None:
@@ -2999,7 +3025,7 @@ def agol():
 
 
 @agol.command("publish-layer")
-@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@connection_profile_option
 @click.option("--title", required=True, help="Hosted service title")
 @click.option("--source", required=True, type=click.Path(exists=True),
               help="Zip of FGDB or shapefiles, or GeoJSON, to publish")
@@ -3039,8 +3065,7 @@ def publish_layer(profile, title, source, tags, folder, share_with, no_overwrite
               help="AGOL item ID (use with --layer-index when item has multiple layers).")
 @click.option("--layer-index", type=click.IntRange(min=0), default=0, show_default=True,
               help="Layer index within the item (0-based).")
-@click.option("--profile", default=None,
-              help="ArcGIS API for Python profile name.")
+@connection_profile_option
 @click.option("--output", default=None, type=click.Path(),
               help="Write report to this file path (stdout if omitted).")
 @click.option("--format", "fmt",
@@ -3107,8 +3132,7 @@ def audit_schema_cmd(spec_path, layer_url, item_id, layer_index, profile,
               help="AGOL item ID of the hosted feature service.")
 @click.option("--layer-index", type=click.IntRange(min=0), default=0, show_default=True,
               help="Sublayer id within the item (REST id).")
-@click.option("--profile", default=None,
-              help="ArcGIS API for Python profile name.")
+@connection_profile_option
 @click.option("--spec", "spec_path", default=None,
               type=click.Path(exists=True),
               help="Local layer schema spec (YAML/JSON) for the drift check.")
@@ -3225,7 +3249,7 @@ def fieldmaps_preflight_cmd(item_id, layer_index, profile, spec_path,
 
 @agol.command("audit-dependencies")
 @click.option("--item-id", required=True, help="AGOL item ID to audit.")
-@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@connection_profile_option
 @click.option("--max-depth", type=click.IntRange(min=0), default=2, show_default=True,
               help="Maximum dependency-walk depth.")
 @click.option("--output", default=None, type=click.Path(),
@@ -3267,7 +3291,7 @@ def audit_dependencies_cmd(item_id, profile, max_depth, output, fmt):
 
 
 @agol.command("refresh-dashboard")
-@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@connection_profile_option
 @click.option("--mart-dir", required=True, type=click.Path(exists=True, file_okay=False),
               help="Directory of per-table mart dumps, one <TableName>.json "
                    "(list of row dicts) per Dash_* table.")
@@ -3320,7 +3344,7 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
 
 
 @agol.command("publish-dashboard")
-@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@connection_profile_option
 @click.option("--spec", required=True, type=click.Path(exists=True),
               help="Dashboard spec YAML (title, web-map item, cards, charts, selectors, ...)")
 @click.option("--dry-run", is_flag=True, default=False,
@@ -3348,7 +3372,7 @@ def publish_dashboard_cmd(profile, spec, dry_run, report):
 
 
 @agol.command("promote")
-@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@connection_profile_option
 @click.option("--stage-map", "stage_map_path", required=True, type=click.Path(exists=True),
               help="YAML mapping: layer -> {dev,qa,prod: item_id}")
 @click.option("--layer", required=True, help="Logical layer name (key in the stage map)")
@@ -3387,7 +3411,7 @@ def promote_cmd(profile, stage_map_path, layer, from_stage, to_stage,
 
 
 @agol.command("update-webmap")
-@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@connection_profile_option
 @click.option("--webmap-item", "webmap_item_id", required=True, help="Web map item ID")
 @click.option("--figure-spec", "figure_spec_path", required=True,
               type=click.Path(exists=True), help="Figure spec YAML (canonical FigureSpec)")
@@ -3408,7 +3432,7 @@ def update_webmap_cmd(profile, webmap_item_id, figure_spec_path, event_date, dry
 
 
 @agol.command("create-views")
-@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@connection_profile_option
 @click.option("--view-spec", "view_spec_path", required=True, type=click.Path(exists=True),
               help="YAML: views: [{name, source_layer, allow_fields|deny_fields, "
                    "definition_query, sensitive_fields}]")
@@ -3430,7 +3454,7 @@ def create_views_cmd(profile, view_spec_path, report):
 
 
 @agol.command("sync-to-gdb")
-@click.option("--profile", default=None, help="ArcGIS API for Python profile name")
+@connection_profile_option
 @click.option("--layer-url", default=None,
               help="Full AGOL FeatureLayer REST URL.")
 @click.option("--item-id", default=None,
@@ -5001,8 +5025,7 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
 @click.option("--out", "out_dir", required=True,
               type=click.Path(file_okay=False),
               help="Staging directory (also holds the sync checkpoint).")
-@click.option("--profile", default=None,
-              help="ArcGIS API for Python profile name.")
+@connection_profile_option
 @click.option("--since", "since_date", default=None,
               type=IsoDate(allow_time=True),
               help="Bounded replay: re-pull edits since this UTC date/time "
