@@ -1,4 +1,4 @@
-"""Tests for export_geojson module (Tool 10.3)."""
+"""Tests for export_geojson module."""
 import dataclasses
 from datetime import date
 

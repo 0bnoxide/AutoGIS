@@ -1,4 +1,4 @@
-"""FieldMapsSyncPreflight — read-only sync preflight core (Tool 7.5, Phase 9).
+"""FieldMapsSyncPreflight — read-only sync preflight core (Production Phase 9).
 
 All ``check_*`` functions plus ``build_preflight_report()`` /
 ``format_preflight_report()`` are pure — arcpy-free AND arcgis-free.  The

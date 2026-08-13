@@ -1,4 +1,4 @@
-"""Unit tests for validate_schedule (Tool 10.2)."""
+"""Unit tests for validate_schedule."""
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.validate_schedule import validate_schedule
 

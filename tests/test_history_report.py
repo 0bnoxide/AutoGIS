@@ -1,4 +1,4 @@
-"""Unit tests for history_report (Tool 10.1)."""
+"""Unit tests for history_report."""
 from datetime import date
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.history_report import build_history_report, HistorySummaryRow

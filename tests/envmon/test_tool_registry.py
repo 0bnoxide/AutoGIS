@@ -3,6 +3,7 @@
 Checklist mirrors the Approved design spec
 docs/superpowers/specs/2026-06-28-list-available-env-tools-design.md
 """
+from autogis.runtime.capabilities import RUNTIME_CLASSES
 from autogis.core.envmon.tool_registry import (
     ToolEntry,
     get_all_tools,
@@ -20,7 +21,7 @@ def test_get_all_tools_nonempty():
 def test_all_entries_have_command_and_runtime():
     for t in get_all_tools():
         assert t.command, f"empty command in {t}"
-        assert t.runtime in {"CLOUD", "HYBRID", "LOCAL", "DRAFT"}, t.runtime
+        assert t.runtime in RUNTIME_CLASSES, t.runtime
 
 
 def test_filter_by_runtime_cloud():

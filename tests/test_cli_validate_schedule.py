@@ -1,4 +1,4 @@
-"""CLI tests for validate-schedule (Tool 10.2)."""
+"""CLI tests for validate-schedule."""
 import pytest
 import yaml
 from click.testing import CliRunner
