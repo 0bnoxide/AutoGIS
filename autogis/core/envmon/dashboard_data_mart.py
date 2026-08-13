@@ -114,6 +114,25 @@ def _row_gwe(row: dict):
     return v
 
 
+def _prior_pick_key(row: dict, event_date: str) -> tuple:
+    """Total order over prior-water-level candidates for one well.
+
+    ``EventDate`` first, so the latest measurement still wins exactly as
+    before. The rest only ever decides a tie, and exists because there was no
+    tiebreak at all: ``ImportBatchID`` sorts lexically by timestamp in this
+    schema, so "last import wins" -- defensible and explainable to an operator
+    -- then ``SourceRow`` and the elevation itself as a stable arbitrary
+    fallback for rows carrying neither. Every component is coerced to a
+    sortable type: all four columns are nullable, and a None beside a str
+    raises `'<' not supported`, aborting the whole mart build.
+    """
+    gwe = _num(_row_gwe(row))
+    return (event_date,
+            str(row.get("ImportBatchID") or ""),
+            _num(row.get("SourceRow")) or 0.0,
+            gwe if gwe is not None else float("-inf"))
+
+
 def select_prior_water_levels(
     all_water_levels: List[dict],
     current_water_levels: List[dict],
@@ -124,7 +143,9 @@ def select_prior_water_levels(
     For each well, return the measurement with the latest ``EventDate`` strictly
     *before* that well's current event date — not whichever row happens to come
     last in cursor order. When ``prior_event_id`` is an explicit ISO date
-    (``YYYY-MM-DD``), candidates are restricted to that date instead.
+    (``YYYY-MM-DD``), candidates are restricted to that date instead. Two
+    candidates sharing one date are settled by ``_prior_pick_key`` and
+    disclosed, never by cursor order (#473).
 
     Pure / arcpy-free so the orchestrator's prior-selection is unit-testable.
     """
@@ -167,7 +188,25 @@ def select_prior_water_levels(
                 skipped[loc] = ed
             continue
         prev = by_loc.get(loc)
-        if prev is None or ed > _event_date_str(prev.get("EventDate")):
+        key = _prior_pick_key(r, ed)
+        if prev is None:
+            by_loc[loc] = r
+            continue
+        prev_key = _prior_pick_key(prev, _event_date_str(prev.get("EventDate")))
+        if key[0] == prev_key[0]:
+            # Same well, same date, two readings. A bare `ed > prev_ed` let the
+            # row the SearchCursor happened to yield first win, so PriorGWE_ft
+            # / Delta_ft / Trend could swing between runs over unchanged data
+            # (#473). Ordinary since #457/ADR-0126 gave Survey123 water levels
+            # a real EventDate: a field submission and a workbook import for
+            # the same well and day now collide. Disclose it -- a duplicated
+            # measurement date is itself something a reviewer should see --
+            # and let the key below settle it the same way every run.
+            LOG.warning("[prior-water-level] %s: two prior readings share "
+                        "EventDate %s (%s ft vs %s ft); keeping the "
+                        "later-imported one.", loc, ed,
+                        _row_gwe(r), _row_gwe(prev))
+        if key > prev_key:
             by_loc[loc] = r
     # The delta can now span a different pair of events than the two most
     # recent, and the Dash_* schema has no prior-date column to show it. Say so

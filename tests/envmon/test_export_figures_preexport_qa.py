@@ -125,6 +125,19 @@ def _export(monkeypatch, tmp_path, layout_names, in_aprx=("Fig A", "Fig B")):
     return written, qa
 
 
+def test_versioned_path_is_public_and_versions(tmp_path):
+    """`gen-map-series` writes its cross-APRX combined appendix outside this
+    module and bypassed the no-silent-overwrite policy, so it versioned every
+    intermediate figure and destroyed the delivered appendix (#471). The
+    policy is one public function now — pin both branches."""
+    p = tmp_path / "Appendix_Combined.pdf"
+    assert export_figures.versioned_path(p, overwrite=False) == p  # free path
+    p.write_text("x", encoding="utf-8")
+    assert export_figures.versioned_path(p, overwrite=False).name == \
+        "Appendix_Combined_v2.pdf"
+    assert export_figures.versioned_path(p, overwrite=True) == p
+
+
 def test_none_layout_names_exports_every_layout(monkeypatch, tmp_path):
     """The pre-existing 'no filter' contract, pinned so the change below is
     visibly a narrowing of `None` only."""

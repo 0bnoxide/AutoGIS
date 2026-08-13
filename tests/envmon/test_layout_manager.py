@@ -53,6 +53,44 @@ def test_load_list_missing_keys_raises(tmp_path):
         load_layout_text_yaml(_yaml(tmp_path, "- text: no name here\n"))
 
 
+def test_malformed_yaml_raises_valueerror_not_parsererror(tmp_path):
+    """A wrong *shape* got a message naming the file; a wrong *character*
+    escaped as a raw yaml.ParserError traceback out of the CLI (#474). One
+    file, one class of mistake, one kind of answer."""
+    p = _yaml(tmp_path, 'Title: "unclosed\nEventDate: [1, 2\n')
+    with pytest.raises(ValueError, match="Could not parse values YAML"):
+        load_layout_text_yaml(p)
+
+
+def test_non_string_defquery_key_applies_and_reports(tmp_path):
+    """`layer_definition_queries: {2026: ...}` is an ordinary YAML mistake --
+    an unquoted layer name arrives as an int. The int could never equal
+    lyr.name, so the query was silently never applied, and then sorted(missing)
+    -- the reporting that exists to catch exactly that -- raised TypeError
+    comparing str to int, out of the CLI with no QA record (#474)."""
+    from autogis.core.envmon.layout_manager import (
+        apply_figure_definition_queries)
+
+    lyr = types.SimpleNamespace(name="2026", definitionQuery="",
+                                supports=lambda _cap: True)
+    arcpy = MagicMock()
+    aprx = MagicMock()
+    a_map = MagicMock()
+    a_map.listLayers.return_value = [lyr]
+    aprx.listMaps.return_value = [a_map]
+    arcpy.mp.ArcGISProject.return_value = aprx
+    qa = QACollector()
+    with patch("autogis.core.envmon.layout_manager._arcpy", return_value=arcpy):
+        apply_figure_definition_queries(
+            tmp_path / "x.aprx", "H281", "2026-07-02", "SPEC", "GW",
+            {2026: "SiteID = '{site_id}'", "Absent_Layer": "1=1"}, qa)
+    # the coerced key matches the layer, so the query actually lands...
+    assert lyr.definitionQuery == "SiteID = 'H281'"
+    # ...and the genuinely-absent layer is reported, not swallowed by a crash
+    assert [r.category for r in qa.records] == ["defquery_layer_missing"]
+    assert "Absent_Layer" in qa.records[0].message
+
+
 # --- update_layout_text (arcpy mocked, same pattern as
 #     test_manage_callout_overrides) ---
 

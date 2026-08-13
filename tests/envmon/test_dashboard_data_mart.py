@@ -53,6 +53,68 @@ def test_select_prior_explicit_event_date_restricts_candidates():
     assert prior[0]["EventDate"] == "2025-12-15"
 
 
+def test_select_prior_same_date_tie_is_order_independent():
+    """Two rows for one well on one date must not be settled by cursor order.
+
+    `arcpy.da.SearchCursor` guarantees no ordering, so a strict `>` tie-break
+    let PriorGWE_ft / Delta_ft / Trend swing between runs over identical data
+    (#473). Same input set, both orders, same answer.
+    """
+    current = [{"LocationID": "MW-2", "EventDate": "2026-06-01", "GWE_ft": 50.0}]
+    all_wl = [
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 49.0,
+         "ImportBatchID": "2026-02-01T08:00:00"},
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 48.0,
+         "ImportBatchID": "2026-03-09T17:30:00"},
+    ]
+    forward = select_prior_water_levels(all_wl, current)
+    reverse = select_prior_water_levels(list(reversed(all_wl)), current)
+    assert len(forward) == len(reverse) == 1
+    assert forward[0]["GWE_ft"] == reverse[0]["GWE_ft"]
+    # last import wins: the 2026-03-09 batch, not whichever row arrived first
+    assert forward[0]["GWE_ft"] == 48.0
+
+
+def test_select_prior_tie_without_provenance_is_still_stable():
+    """No ImportBatchID / SourceRow anywhere: the answer must still not depend
+    on input order. All four key components are nullable in Env_WaterLevels."""
+    current = [{"LocationID": "MW-2", "EventDate": "2026-06-01", "GWE_ft": 50.0}]
+    all_wl = [
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 49.0},
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 48.0},
+    ]
+    forward = select_prior_water_levels(all_wl, current)
+    reverse = select_prior_water_levels(list(reversed(all_wl)), current)
+    assert forward[0]["GWE_ft"] == reverse[0]["GWE_ft"]
+
+
+def test_select_prior_tie_is_disclosed(caplog):
+    """A duplicated measurement date is itself something a reviewer should
+    see — resolving it silently is half the defect (#473)."""
+    current = [{"LocationID": "MW-2", "EventDate": "2026-06-01", "GWE_ft": 50.0}]
+    all_wl = [
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 49.0},
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 48.0},
+    ]
+    with caplog.at_level("WARNING"):
+        select_prior_water_levels(all_wl, current)
+    assert "MW-2" in caplog.text and "2026-02-01" in caplog.text
+
+
+def test_select_prior_latest_date_still_beats_a_newer_import():
+    """The tiebreak must only ever decide ties: an older EventDate imported
+    later must not displace the genuinely-latest prior reading."""
+    current = [{"LocationID": "MW-2", "EventDate": "2026-06-01", "GWE_ft": 50.0}]
+    all_wl = [
+        {"LocationID": "MW-2", "EventDate": "2026-02-01", "GWE_ft": 49.0,
+         "ImportBatchID": "2026-05-01T00:00:00"},
+        {"LocationID": "MW-2", "EventDate": "2026-03-01", "GWE_ft": 47.0,
+         "ImportBatchID": "2026-03-02T00:00:00"},
+    ]
+    prior = select_prior_water_levels(all_wl, current)
+    assert prior[0]["EventDate"] == "2026-03-01"
+
+
 def test_site_status_active_events_counts_wide_rows():
     wide = [{"LocationID": "MW-01"}, {"LocationID": "MW-02"},
             {"LocationID": "MW-03"}]

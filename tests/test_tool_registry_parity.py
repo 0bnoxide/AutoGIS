@@ -336,3 +336,91 @@ def test_post_roadmap_extras_claim_no_catalog_number():
                       if n in extras and rid)
     assert not numbered, (
         f"post-roadmap extras must carry roadmap_id='': {numbered}")
+
+
+# ---------------------------------------------------------------------------
+# roadmap_id <-> the README's `Roadmap #` column (issue #477)
+# ---------------------------------------------------------------------------
+# #458 was six tools carrying the *wrong* number. This is the inverse and the
+# last direction of the same drift: thirteen tools whose number the README
+# already knew while `list-tools --verbose` -- the in-product answer to "which
+# spec section describes this tool" -- printed a blank. A blank is honest, so
+# nothing misled, but the two surfaces disagreed in the direction of silence
+# and nothing pinned it.
+
+# Rows where the README column and the seed use different vocabularies, or
+# where the catalog itself cannot answer. Each needs a reason, not a shrug:
+_ROADMAP_COLUMN_EXEMPT = {
+    # README cites the catalog section, the seed carries the original
+    # ten-tool number (the "Tool 8:"/"Tool 5:" in the same row's description).
+    # Both are right in their own vocabulary; which one the column should
+    # speak is an owner call about the README, not a registry fix.
+    "validate-db": "README 3.1 = catalog section; seed 8 = ten-tool number",
+    "gw-contours": "README 4.2 = catalog section; seed 5 = ten-tool number",
+    # Same split, and the README's '4' resolves to no `### 4.x` section at all
+    # -- BuildCurrentEvent has no catalog entry (only a passing mention at
+    # roadmap L2060). Populating it would invent a citation.
+    "build-event": "README 4 heads no catalog section; seed 3 = ten-tool number",
+    # Blocked on the catalog carrying two `### 8.3` / `### 8.4` headings
+    # each (#476). The *tool name* disambiguates -- only L1372/L1408 name
+    # these two -- but the number a reader would resolve from
+    # `list-tools --verbose` still means two things, so populating it would
+    # hand out an ambiguous citation. Delete these two once #476 renumbers.
+    "import-rtk-survey": "catalog has two `### 8.3` headings (#476)",
+    "validate-rtk-survey": "catalog has two `### 8.4` headings (#476)",
+}
+
+
+def _readme_roadmap_numbers() -> dict[str, str]:
+    """{command: README `Roadmap #` cell} for rows that carry a number."""
+    readme = (Path(autogis.__file__).resolve().parents[1] / "README.md")
+    rows: dict[str, str] = {}
+    for m in re.finditer(
+            r'^\|[^|]*\|\s*([0-9][0-9./a-zA-Z]*)\s*\|\s*`envmon ([a-z0-9-]+)`',
+            readme.read_text(encoding="utf-8"), re.M):
+        rows.setdefault(m.group(2), m.group(1))
+    assert len(rows) > 50, f"README parse found only {len(rows)} numbered rows"
+    return rows
+
+
+def test_readme_roadmap_number_implies_a_registry_roadmap_id():
+    """A number the README knows must not be blank in the registry (#477).
+
+    `envmon list-tools --verbose` exists to tie a shipped tool back to its
+    spec section; thirteen of its rows under-reported while a second
+    hand-maintained surface had the answer.
+    """
+    seed = {c: rid for (c, _n, rid, *_r) in _REGISTRY_SEED}
+    blank = sorted(f"{c} (README {num})"
+                   for c, num in _readme_roadmap_numbers().items()
+                   if c in seed and not seed[c]
+                   and c not in _ROADMAP_COLUMN_EXEMPT)
+    assert not blank, (
+        "README carries a Roadmap # but TOOL_REGISTRY.roadmap_id is empty; "
+        "verify the number against docs/envmon-feature-roadmap.md and "
+        f"populate _REGISTRY_SEED: {blank}")
+
+
+def test_readme_and_registry_agree_on_the_number_they_both_carry():
+    """The forward direction of the same parity: where both surfaces name a
+    number, it must be the same number. This is #458's failure mode, pinned
+    against the README rather than against the catalog."""
+    seed = {c: rid for (c, _n, rid, *_r) in _REGISTRY_SEED}
+    # A '2/3' cell is one tool spanning two ten-tool numbers (import-gdb);
+    # the registry names one of them, which is agreement, not drift.
+    disagree = sorted(f"{c}: README {num!r} vs registry {seed[c]!r}"
+                      for c, num in _readme_roadmap_numbers().items()
+                      if seed.get(c) and seed[c] not in num.split("/")
+                      and c not in _ROADMAP_COLUMN_EXEMPT)
+    assert not disagree, (
+        f"README `Roadmap #` disagrees with TOOL_REGISTRY: {disagree}")
+
+
+def test_roadmap_column_exemptions_are_still_live():
+    """An exemption that outlives its reason is how the next #458 hides.
+    Every exempted command must still exist and still be exempt-worthy --
+    i.e. actually appear in the README's numbered rows."""
+    numbered = _readme_roadmap_numbers()
+    stale = sorted(c for c in _ROADMAP_COLUMN_EXEMPT if c not in numbered)
+    assert not stale, (
+        f"exempted commands no longer carry a README Roadmap #: {stale}")

@@ -93,6 +93,14 @@ def apply_figure_definition_queries(
     aprx = arcpy.mp.ArcGISProject(str(aprx_path))
     fmt = dict(site_id=site_id, event_date=event_date,
                figure_spec_id=figure_spec_id, map_type=map_type)
+    # YAML mapping keys are not necessarily strings: an unquoted `2026:` or
+    # `no:` layer name arrives as int/bool. Such a key can never equal
+    # lyr.name, so the query was silently never applied -- and then
+    # sorted(missing), the reporting that exists to catch exactly that, raised
+    # TypeError comparing str to int, out of the CLI and the Pro tool with no
+    # QA record (#474). Coercing at the boundary fixes both halves at once,
+    # and is the rule _name_list already applies to the sibling spec fields.
+    layer_queries = {str(k): v for k, v in (layer_queries or {}).items()}
     applied = set()
     for m in aprx.listMaps():
         for lyr in m.listLayers():
@@ -247,7 +255,16 @@ def load_layout_text_yaml(path: Path) -> Dict[str, str]:
     """
     import yaml
 
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    try:
+        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        # A wrong *shape* already gets a message naming the file and the
+        # accepted forms; a wrong *character* escaped as a raw ParserError
+        # traceback out of `envmon update-layout-text` (#474). One file, one
+        # class of mistake, one kind of answer -- the trust-boundary
+        # convention _load_json_option sets in cli.py.
+        raise ValueError(
+            f"Could not parse values YAML {path}: {exc}") from None
     if isinstance(raw, list):
         try:
             return {str(e["element_name"]): str(e["text"]) for e in raw}
