@@ -8,6 +8,7 @@ explicitly by the caller — never inferred. Conformance is proven solely by
 the consumer repository's validator; this module never self-validates.
 """
 import json
+import os
 import re
 import uuid
 import zipfile
@@ -48,6 +49,8 @@ def build_handoff_package(
     destination = Path(output_path)
     if source.resolve() == destination.resolve():
         raise ValueError("Input and output paths must be different.")
+    if destination.exists() and os.path.samefile(source, destination):
+        raise ValueError("Input and output paths must be different.")
     if destination.exists() and not overwrite:
         raise FileExistsError(
             f"{destination} already exists; pass overwrite=True to "
@@ -59,8 +62,9 @@ def build_handoff_package(
         raise ValueError(
             f"vertical_unit must be one of {', '.join(VERTICAL_UNITS)}, "
             f"not {vertical_unit!r}.")
-    if source_commit is not None and not _SOURCE_COMMIT_RE.match(
-            source_commit):
+    if source_commit is not None and (
+            not isinstance(source_commit, str)
+            or not _SOURCE_COMMIT_RE.match(source_commit)):
         raise ValueError(
             "source_commit must be 7-64 lowercase hex characters.")
 
@@ -128,10 +132,16 @@ def build_handoff_package(
         if source_commit is not None:
             manifest["producer"]["source_commit"] = source_commit
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(
-                destination, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("handoff.json", json.dumps(manifest, indent=2))
-            zf.write(landxml_path, "surface.landxml")
+        tmp_zip = (
+            destination.parent
+            / f"{destination.name}.{manifest['package_id']}.tmp")
+        try:
+            with zipfile.ZipFile(tmp_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("handoff.json", json.dumps(manifest, indent=2))
+                zf.write(landxml_path, "surface.landxml")
+            os.replace(tmp_zip, destination)
+        finally:
+            tmp_zip.unlink(missing_ok=True)
     return manifest
 
 
@@ -146,7 +156,7 @@ def _vertical_datum(authority, code, name, note):
             raise ValueError(
                 "A datum note is only valid with an unknown datum; the "
                 "known-datum shape has no note field.")
-        if code < 1:
+        if isinstance(code, bool) or not isinstance(code, int) or code < 1:
             raise ValueError(
                 "Vertical datum code must be a positive integer.")
         return {"status": "known", "authority": authority,
@@ -158,9 +168,19 @@ def _vertical_datum(authority, code, name, note):
 
 
 def _declared_epsg(crs_candidates, source):
+    codes = []
     for candidate in crs_candidates:
         if candidate.startswith("EPSG:"):
-            return int(candidate.split(":", 1)[1])
-    raise ValueError(
-        f"{source} declares no EPSG horizontal CRS; the handoff contract "
-        "requires one and never infers it.")
+            code = int(candidate.split(":", 1)[1])
+            if code not in codes:
+                codes.append(code)
+    if len(codes) > 1:
+        raise ValueError(
+            f"{source} declares contradictory EPSG codes "
+            f"({', '.join(str(c) for c in codes)}); refusing to choose "
+            "one.")
+    if not codes:
+        raise ValueError(
+            f"{source} declares no EPSG horizontal CRS; the handoff "
+            "contract requires one and never infers it.")
+    return codes[0]

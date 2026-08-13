@@ -285,6 +285,10 @@ def parse_landxml_surface(path: Path, *, surface_name: str = "") -> LandXMLSurfa
         matched = [s for s in surfaces if s.get("name") == surface_name]
         if not matched:
             raise ValueError(f"Surface {surface_name!r} not found in {path}")
+        if len(matched) > 1:
+            raise ValueError(
+                f"{path} declares {len(matched)} surfaces named "
+                f"{surface_name!r}; surface selection is ambiguous.")
         surface = matched[0]
 
     points: dict = {}

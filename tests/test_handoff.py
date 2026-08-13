@@ -1,6 +1,7 @@
 """Tests for autogis/core/handoff.py (ADR-0128 contract-v1 emitter)."""
 import hashlib
 import json
+import os
 import tomllib
 import uuid
 import zipfile
@@ -121,6 +122,14 @@ def test_missing_epsg_rejected(tmp_path):
             vertical_unit="metre")
 
 
+def test_contradictory_epsg_declarations_rejected(tmp_path):
+    text = _METRIC.replace('name="EPSG:26913"', 'name="EPSG:2256"')
+    with pytest.raises(ValueError, match="contradictory EPSG"):
+        build_handoff_package(
+            _source(tmp_path, text), tmp_path / "pkg.zip",
+            vertical_unit="metre")
+
+
 def test_missing_units_rejected(tmp_path):
     text = _METRIC.replace(
         '  <Units>\n    <Metric linearUnit="meter" elevationUnit="meter"/>\n'
@@ -167,6 +176,18 @@ def test_identical_input_output_rejected_even_with_overwrite(tmp_path):
             src, src, vertical_unit="metre", overwrite=True)
 
 
+def test_hardlinked_output_rejected(tmp_path):
+    src = _source(tmp_path)
+    link = tmp_path / "alias.zip"
+    try:
+        os.link(src, link)
+    except OSError:
+        pytest.skip("hard links unavailable on this filesystem")
+    with pytest.raises(ValueError, match="must be different"):
+        build_handoff_package(
+            src, link, vertical_unit="metre", overwrite=True)
+
+
 def test_existing_output_needs_overwrite(tmp_path):
     out = tmp_path / "pkg.zip"
     out.write_bytes(b"old")
@@ -175,6 +196,24 @@ def test_existing_output_needs_overwrite(tmp_path):
     build_handoff_package(
         _source(tmp_path), out, vertical_unit="metre", overwrite=True)
     assert zipfile.is_zipfile(out)
+
+
+def test_failed_write_preserves_existing_package(tmp_path, monkeypatch):
+    out = tmp_path / "pkg.zip"
+    build_handoff_package(_source(tmp_path), out, vertical_unit="metre")
+    original = out.read_bytes()
+    real_write = zipfile.ZipFile.write
+
+    def exploding_write(self, *args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(zipfile.ZipFile, "write", exploding_write)
+    with pytest.raises(OSError):
+        build_handoff_package(
+            _source(tmp_path), out, vertical_unit="metre", overwrite=True)
+    monkeypatch.setattr(zipfile.ZipFile, "write", real_write)
+    assert out.read_bytes() == original
+    assert not list(tmp_path.glob("pkg.zip.*.tmp"))
 
 
 def test_bad_source_commit_rejected(tmp_path):
@@ -191,11 +230,26 @@ def test_trailing_newline_source_commit_rejected(tmp_path):
             source_commit="0123abc\n")
 
 
+def test_non_str_source_commit_rejected(tmp_path):
+    with pytest.raises(ValueError, match="lowercase hex"):
+        build_handoff_package(
+            _source(tmp_path), tmp_path / "pkg.zip", vertical_unit="metre",
+            source_commit=1234567)
+
+
 def test_nonpositive_datum_code_rejected(tmp_path):
     with pytest.raises(ValueError, match="positive integer"):
         build_handoff_package(
             _source(tmp_path), tmp_path / "pkg.zip", vertical_unit="metre",
             datum_authority="EPSG", datum_code=0, datum_name="NAVD88 height")
+
+
+def test_bool_datum_code_rejected(tmp_path):
+    with pytest.raises(ValueError, match="positive integer"):
+        build_handoff_package(
+            _source(tmp_path), tmp_path / "pkg.zip", vertical_unit="metre",
+            datum_authority="EPSG", datum_code=True,
+            datum_name="NAVD88 height")
 
 
 def test_version_matches_pyproject():

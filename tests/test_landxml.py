@@ -51,6 +51,15 @@ def test_parse_landxml_surface_unknown_name_raises(tmp_path):
         parse_landxml_surface(_write(tmp_path), surface_name="Bogus")
 
 
+def test_parse_landxml_surface_duplicate_named_selection_ambiguous(tmp_path):
+    dup = _LANDXML.replace(
+        "  </Surfaces>",
+        _LANDXML[_LANDXML.index("    <Surface"):_LANDXML.index("  </Surfaces>")]
+        + "  </Surfaces>")
+    with pytest.raises(ValueError, match="ambiguous"):
+        parse_landxml_surface(_write(tmp_path, dup), surface_name="EG")
+
+
 @pytest.mark.parametrize(("fragment", "match"), [
     ("<P id=\"1\">0 0 100</P><P id=\"1\">0 10 102</P>",
      "repeats point id 1"),
