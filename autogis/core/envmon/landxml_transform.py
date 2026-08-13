@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import math
-import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +15,7 @@ from autogis.core.common.landxml import (
     read_source_metadata,
     write_landxml_surface,
 )
+
 
 @dataclass(frozen=True)
 class LandXMLTransformResult:
