@@ -96,6 +96,7 @@ TOOLS: dict[str, Runtime] = {
     "approve-gw-model": Runtime.LOCAL,  # Phase-5 slice 1 — GW_ModelRun field edit, needs arcpy
     "build-conc-surface": Runtime.LOCAL,  # Phase-5 slice 2 — raster interpolation, needs arcpy
     "reconcile-event": Runtime.CLOUD,  # Survey123 Phase 3 five-source event reconciliation (headless)
+    "photos": Runtime.CLOUD,  # harvest photo-metadata suite (headless group, ADR-0131)
 }
 
 
@@ -438,6 +439,10 @@ _REGISTRY_SEED = [
      "Map canonical results to WQX submission columns with identifier/coordinate/"
      "unit/method/qualifier validation; valid rows -> submission CSV, invalid -> "
      "rejections CSV, plus source/config provenance (Phase 8 slice 1, DRAFT)"),
+    ("photos", "HarvestPhotoMetadataTools", "", "CLOUD", "stable", "reporting",
+     "EXIF-driven photo-metadata tools over a harvest output folder: GPS/heading "
+     "points (CSV/GeoJSON), photo<->feature distance/date QA, Google Earth KMZ, "
+     "and a photographic log appendix (xlsx/html/docx) (ADR-0131)"),
     ("generate-inspection-report", "GenerateWellInspectionPhotoReport", "7.4",
      "CLOUD", "stable", "reporting",
      "Per-well inspection photo workbook (XLSX) from harvested attachments "
