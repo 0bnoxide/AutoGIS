@@ -1,4 +1,4 @@
-# ADR-0129: Registry metadata vocabularies — roadmap ids come from the catalog, runtime from the enum
+# ADR-0130: Registry metadata vocabularies — roadmap ids come from the catalog, runtime from the enum
 
 **Status:** Accepted
 

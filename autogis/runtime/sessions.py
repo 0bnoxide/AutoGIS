@@ -13,6 +13,46 @@ nor ``arcpy`` — only *calling* a provider that needs them does.
 """
 
 
+def list_connection_profiles(path=None):
+    """Sorted names of *complete* ArcGIS API for Python connection profiles.
+
+    Reads ``~/.arcgisprofile`` (the ProfileManager store) and returns the
+    names of profiles that carry both a ``url`` and a ``username`` -- the
+    usable ones, skipping the half-written sections a failed
+    ``store_credential`` leaves behind. arcgis-free: plain stdlib
+    ``configparser``, no ``arcgis`` import, so adapters can offer a profile
+    dropdown without the heavy dependency (the password still lives in the OS
+    keyring, keyed by name -- not read here).
+
+    Fail-open: a missing or corrupt profile file yields ``[]`` rather than
+    raising, so this is safe to call at CLI import time without risking the
+    whole CLI over a malformed dotfile.
+    """
+    import configparser
+    from pathlib import Path
+
+    # interpolation=None: profile URLs legitimately contain '%' (percent-
+    # encoding), which ConfigParser's default interpolation would choke on --
+    # and it fires lazily at .get() time, outside any read() guard. Disable it.
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
+    try:
+        # Path.home() is inside the guard too: it raises RuntimeError under a
+        # service/container account with no resolvable home dir.
+        profile_file = Path(path) if path else Path.home() / ".arcgisprofile"
+        parser.read(profile_file, encoding="utf-8")
+        return sorted(
+            {name.strip() for name, section in parser.items()
+             if name != parser.default_section
+             and section.get("url") and section.get("username")}
+        )
+    except (configparser.Error, OSError, ValueError, RuntimeError):
+        # Fail-open: a missing / corrupt / mis-encoded dotfile, or an
+        # unresolvable home dir, must never break the CLI (this runs at import
+        # time). UnicodeDecodeError is a ValueError; OSError covers an
+        # unreadable file; RuntimeError covers Path.home() failing.
+        return []
+
+
 def agol_from_profile(profile=None, *, url=None, username=None, password=None,
                       gis_factory=None):
     """Return a ``GIS`` for AGOL / a portal from a profile or explicit creds.

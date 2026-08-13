@@ -13,6 +13,11 @@ def sanitize(part: str) -> str:
     return cleaned or UNKNOWN
 
 
+def template_fields(template: str) -> set[str]:
+    """Field names a template references, e.g. ``'{A}_{B}'`` -> ``{'A', 'B'}``."""
+    return set(_FIELD.findall(template))
+
+
 def render(template: str, attributes: dict) -> str:
     def repl(match):
         field = match.group(1)
