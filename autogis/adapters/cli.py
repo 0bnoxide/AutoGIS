@@ -296,6 +296,63 @@ def harvest_cmd(config_path, where, out, incremental):
     run(config_path, where, out, incremental)
 
 
+@autogis.command("handoff")
+@click.option("--input", "input_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Source LandXML file containing the TIN surface.")
+@click.option("--output", "output_path", required=True,
+              type=click.Path(dir_okay=False),
+              help="Contract-v1 package ZIP to write.")
+@click.option("--surface-name", default="",
+              help="Surface to package when the source declares several; "
+                   "default is the first surface.")
+@click.option("--vertical-unit", required=True,
+              type=click.Choice(
+                  ["metre", "international_foot", "us_survey_foot"]),
+              help="Manifest vertical unit; always explicit, checked "
+                   "against the surface's elevation-unit family "
+                   "(ADR-0128, never inferred).")
+@click.option("--vertical-datum-authority", default=None,
+              help="Vertical datum authority; with code and name this "
+                   "declares a known datum.")
+@click.option("--vertical-datum-code", type=int, default=None,
+              help="Vertical datum authority code (positive integer).")
+@click.option("--vertical-datum-name", default=None,
+              help="Vertical datum name, e.g. 'NAVD88 height'.")
+@click.option("--vertical-datum-note", default=None,
+              help="Optional note recorded with an unknown datum only.")
+@click.option("--source-commit", default=None,
+              help="Producing commit (7-64 lowercase hex), recorded "
+                   "verbatim in the manifest.")
+@click.option("--overwrite", is_flag=True, default=False,
+              help="Replace an existing output package.")
+def handoff_cmd(input_path, output_path, surface_name, vertical_unit,
+                vertical_datum_authority, vertical_datum_code,
+                vertical_datum_name, vertical_datum_note, source_commit,
+                overwrite):
+    """Emit a contract-v1 Civil 3D handoff package ZIP (ADR-0128)."""
+    from autogis.core.handoff import build_handoff_package
+    try:
+        manifest = build_handoff_package(
+            input_path, output_path,
+            vertical_unit=vertical_unit,
+            surface_name=surface_name,
+            datum_authority=vertical_datum_authority,
+            datum_code=vertical_datum_code,
+            datum_name=vertical_datum_name,
+            datum_note=vertical_datum_note,
+            source_commit=source_commit,
+            overwrite=overwrite)
+    except (ValueError, FileExistsError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    surface = manifest["surface"]
+    datum = manifest["coordinate_reference"]["vertical"]["datum"]
+    click.echo(
+        f"handoff package -> {output_path} "
+        f"({surface['point_count']} points, {surface['face_count']} faces, "
+        f"datum {datum['status']})")
+
+
 @autogis.group("envmon")
 def envmon():
     """Environmental Monitoring tools (1, 9, 10 headless; 2-8 need ArcGIS Pro).
