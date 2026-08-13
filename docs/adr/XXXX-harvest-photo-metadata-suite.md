@@ -1,8 +1,18 @@
-# ADR-0131: Harvest photo-metadata suite — EXIF core, four headless emitters, harvester column fill
+# ADR-XXXX: Harvest photo-metadata suite — EXIF core, four headless emitters, harvester column fill
 
 **Status:** Proposed
 
 **Date:** 2026-08-13
+
+> **Number assigned at merge.** Filed as an `XXXX-` placeholder per
+> `docs/adr/README.md` § File naming, because this branch may land alongside
+> other open ADR-bearing PRs — confirmed live: PR #494 is open right now with
+> its own `XXXX-open-issue-fix-batch-2026-08-13.md`, and `coord reserve-adr`
+> independently handed out a stale, already-merged number (0129) while
+> writing this ADR (issue #495), which is exactly the #492 collision this
+> convention exists to prevent. At merge: take the next free number after
+> checking both `docs/adr/` and the files of every other open PR, rename the
+> file, fix the H1, and replace the `XXXX` row in the index.
 
 ## Context
 
