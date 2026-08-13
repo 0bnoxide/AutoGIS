@@ -73,7 +73,9 @@ extras — the command works in the base install.
 - `--input` (required, existing file): source LandXML containing the TIN
   surface.
 - `--output` (required): package ZIP path; refuses to overwrite unless
-  `--overwrite`.
+  `--overwrite`, and always rejects an output that resolves to the same
+  file as `--input` (the `transform-landxml` guard,
+  `landxml_transform.py`) — `--overwrite` must never destroy the source.
 - `--surface-name` (optional): selects among multiple surfaces in the
   source; default is the first surface.
 - `--vertical-unit` (required; choice `metre` | `international_foot` |
@@ -123,7 +125,8 @@ plus a negative control.
 
 **Tests.** Pytest, arcpy-free, base-install: unit tests on
 `build_handoff_package` (manifest field values, sha256 matches the entry
-bytes, exact ZIP entry set, never-infer failure cases, datum trio rules)
+bytes, exact ZIP entry set, never-infer failure cases, datum trio rules,
+identical input/output rejection even with `--overwrite`)
 and a `CliRunner` test over `autogis handoff`. No validator dependency in
 this repository's tests.
 
