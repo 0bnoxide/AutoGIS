@@ -39,7 +39,7 @@ def test_log_html(tmp_path, make_photo_jpeg):
     html = out.read_text(encoding="utf-8")
     assert "RILEY PASS photos" in html
     assert "data:image/jpeg;base64," in html
-    assert "231" in html and "45.874" in html
+    assert "232° SW" in html and "45.874" in html
 
 
 def test_log_docx(tmp_path, make_photo_jpeg):
