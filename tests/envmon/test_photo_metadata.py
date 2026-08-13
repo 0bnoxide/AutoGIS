@@ -5,7 +5,8 @@ import pytest
 
 from autogis.core.common.qa import QACollector
 from autogis.core.envmon.photo_metadata import (
-    PhotoRecord, extract_exif, haversine_m, load_photo_records)
+    PhotoRecord, evaluate_photo_qa, extract_exif, haversine_m,
+    load_photo_records)
 
 
 def _manifest(tmp_path, rows):
@@ -115,3 +116,50 @@ def test_load_photo_records_skips_failed_and_missing(tmp_path, make_photo_jpeg):
 def test_load_photo_records_no_manifest(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_photo_records(tmp_path, QACollector())
+
+
+def _rec(**kw):
+    base = dict(objectid=1, attachment_id=1, source_table="T", group="G",
+                saved_path="G/p.jpg")
+    base.update(kw)
+    return PhotoRecord(**base)
+
+
+def test_qa_flags_offset_over_threshold():
+    recs = [_rec(exif_lat=45.0, exif_lon=-103.0, feature_lat=45.0,
+                 feature_lon=-103.0, offset_m=250.0),
+            _rec(exif_lat=45.0, exif_lon=-103.0, feature_lat=45.0,
+                 feature_lon=-103.0, offset_m=20.0)]
+    qa = QACollector()
+    s = evaluate_photo_qa(recs, qa, max_offset_m=100.0)
+    assert s["checked_offset"] == 2 and s["flagged_offset"] == 1
+    assert any(r.category == "photo_far_from_feature" for r in qa.records)
+
+
+def test_qa_flags_date_mismatch_day_level():
+    recs = [_rec(taken_at="2026-05-05T08:17:36",
+                 feature_edited_at="2026-05-09T14:00:00+00:00"),   # 4 days
+            _rec(taken_at="2026-05-05T23:59:00",
+                 feature_edited_at="2026-05-06T00:10:00+00:00")]   # ±1 ok
+    qa = QACollector()
+    s = evaluate_photo_qa(recs, qa)
+    assert s["checked_date"] == 2 and s["flagged_date"] == 1
+    assert any(r.category == "photo_date_mismatch" for r in qa.records)
+
+
+def test_qa_missing_gps_and_unreadable_inventory():
+    recs = [_rec(), _rec(exif_error="unreadable image: nope")]
+    qa = QACollector()
+    s = evaluate_photo_qa(recs, qa)
+    assert s["missing_gps"] == 1 and s["unreadable"] == 1
+    cats = {r.category for r in qa.records}
+    assert {"photo_missing_gps", "photo_unreadable"} <= cats
+
+
+def test_qa_geometryless_manifest_skips_with_info():
+    recs = [_rec(exif_lat=45.0, exif_lon=-103.0)]
+    qa = QACollector()
+    s = evaluate_photo_qa(recs, qa)
+    assert s["checked_offset"] == 0
+    assert any(r.severity == "INFO" and r.category == "geometry_checks_skipped"
+               for r in qa.records)

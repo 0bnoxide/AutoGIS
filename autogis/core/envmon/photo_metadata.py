@@ -175,3 +175,54 @@ def load_photo_records(harvest_dir: Path, qa: QACollector) -> list[PhotoRecord]:
                f"{len(non_image)} non-image attachment(s) skipped: "
                f"{', '.join(sorted(non_image)[:5])}")
     return records
+
+
+def evaluate_photo_qa(records: list[PhotoRecord], qa: QACollector, *,
+                      max_offset_m: float = 100.0) -> dict:
+    """Cross-check EXIF metadata against the manifest's feature-side data.
+
+    Distance and date checks each run only where both sides exist; a
+    manifest harvested before the geometry fill gets one INFO, not a wall
+    of failures.
+    """
+    from datetime import datetime
+
+    s = {"n_photos": len(records), "checked_offset": 0, "flagged_offset": 0,
+         "checked_date": 0, "flagged_date": 0, "missing_gps": 0,
+         "unreadable": 0}
+    any_feature_geom = any(r.feature_lat is not None for r in records)
+    for r in records:
+        name = Path(r.saved_path).name
+        if r.exif_error:
+            s["unreadable"] += 1
+            qa.add(SEV_WARNING, "photo_unreadable", f"{name}: {r.exif_error}")
+            continue
+        if r.exif_lat is None or r.exif_lon is None:
+            s["missing_gps"] += 1
+            qa.add(SEV_WARNING, "photo_missing_gps",
+                   f"{name}: no GPS in EXIF")
+        if r.offset_m is not None:
+            s["checked_offset"] += 1
+            if r.offset_m > max_offset_m:
+                s["flagged_offset"] += 1
+                qa.add(SEV_WARNING, "photo_far_from_feature",
+                       f"{name}: photo GPS is {r.offset_m:.0f} m from its "
+                       f"feature (OID {r.objectid}, limit {max_offset_m:.0f} m)")
+        if r.taken_at and r.feature_edited_at:
+            try:
+                taken = datetime.fromisoformat(r.taken_at).date()
+                edited = datetime.fromisoformat(r.feature_edited_at).date()
+            except ValueError:
+                pass
+            else:
+                s["checked_date"] += 1
+                if abs((taken - edited).days) > 1:
+                    s["flagged_date"] += 1
+                    qa.add(SEV_WARNING, "photo_date_mismatch",
+                           f"{name}: taken {taken} but feature edited "
+                           f"{edited} (OID {r.objectid})")
+    if records and not any_feature_geom:
+        qa.add(SEV_INFO, "geometry_checks_skipped",
+               "manifest has no feature geometry — distance checks skipped "
+               "(re-harvest with current AutoGIS to enable)")
+    return s
