@@ -118,6 +118,15 @@ def test_load_photo_records_no_manifest(tmp_path):
         load_photo_records(tmp_path, QACollector())
 
 
+def test_load_photo_records_corrupt_geometry_cell(tmp_path, make_photo_jpeg):
+    p = make_photo_jpeg(directory=tmp_path / "G")
+    _manifest(tmp_path, [_row(p, geometry="{not json")])
+    qa = QACollector()
+    recs = load_photo_records(tmp_path, qa)
+    assert len(recs) == 1
+    assert recs[0].feature_lat is None and recs[0].feature_lon is None
+
+
 def _rec(**kw):
     base = dict(objectid=1, attachment_id=1, source_table="T", group="G",
                 saved_path="G/p.jpg")
@@ -154,6 +163,29 @@ def test_qa_missing_gps_and_unreadable_inventory():
     assert s["missing_gps"] == 1 and s["unreadable"] == 1
     cats = {r.category for r in qa.records}
     assert {"photo_missing_gps", "photo_unreadable"} <= cats
+
+
+def test_qa_exif_error_with_valid_gps_still_checks_offset():
+    # A corrupt heading field (exif_error) alongside a valid GPS fix must
+    # not skip the offset check -- a photo far from its feature should
+    # still be flagged, not silently swallowed by the exif_error `continue`.
+    recs = [_rec(exif_error="corrupt EXIF: bad heading",
+                 exif_lat=45.0, exif_lon=-103.0,
+                 feature_lat=45.005, feature_lon=-103.0, offset_m=500.0)]
+    qa = QACollector()
+    s = evaluate_photo_qa(recs, qa, max_offset_m=100.0)
+    assert s["unreadable"] == 1
+    assert s["checked_offset"] == 1 and s["flagged_offset"] == 1
+    assert s["missing_gps"] == 0
+    cats = {r.category for r in qa.records}
+    assert {"photo_unreadable", "photo_far_from_feature"} <= cats
+
+
+def test_qa_date_check_non_str_feature_edited_at_no_crash():
+    recs = [_rec(taken_at="2026-05-05T08:17:36", feature_edited_at=20260505)]
+    qa = QACollector()
+    s = evaluate_photo_qa(recs, qa)
+    assert s["checked_date"] == 0
 
 
 def test_qa_geometryless_manifest_skips_with_info():

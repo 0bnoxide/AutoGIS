@@ -107,13 +107,16 @@ def _int(v) -> Optional[int]:
 
 
 def _geom_latlon(v) -> tuple[Optional[float], Optional[float]]:
-    if isinstance(v, str):
-        v = json.loads(v) if v.strip() else None
-    if not isinstance(v, dict):
-        return None, None
     try:
+        if isinstance(v, str):
+            v = json.loads(v) if v.strip() else None
+        if not isinstance(v, dict):
+            return None, None
         return float(v["lat"]), float(v["lon"])
     except (KeyError, TypeError, ValueError):
+        # ValueError also catches json.JSONDecodeError (its subclass), so a
+        # corrupt geometry cell degrades to (None, None) instead of raising
+        # out of load_photo_records.
         return None, None
 
 
@@ -196,7 +199,8 @@ def evaluate_photo_qa(records: list[PhotoRecord], qa: QACollector, *,
         if r.exif_error:
             s["unreadable"] += 1
             qa.add(SEV_WARNING, "photo_unreadable", f"{name}: {r.exif_error}")
-            continue
+            if r.exif_lat is None or r.exif_lon is None:
+                continue
         if r.exif_lat is None or r.exif_lon is None:
             s["missing_gps"] += 1
             qa.add(SEV_WARNING, "photo_missing_gps",
@@ -212,7 +216,7 @@ def evaluate_photo_qa(records: list[PhotoRecord], qa: QACollector, *,
             try:
                 taken = datetime.fromisoformat(r.taken_at).date()
                 edited = datetime.fromisoformat(r.feature_edited_at).date()
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
             else:
                 s["checked_date"] += 1

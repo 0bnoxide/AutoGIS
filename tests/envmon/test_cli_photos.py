@@ -81,3 +81,32 @@ def test_photos_missing_manifest_is_clean_error(tmp_path):
         "envmon", "photos", "qa", "--harvest-dir", str(tmp_path)])
     assert res.exit_code != 0
     assert "manifest" in res.output
+
+
+def test_photos_malformed_manifest_is_clean_error(tmp_path):
+    (tmp_path / "manifest.json").write_text("[{truncated", encoding="utf-8")
+    res = CliRunner().invoke(cli, [
+        "envmon", "photos", "qa", "--harvest-dir", str(tmp_path)])
+    assert res.exit_code != 0
+    # CliRunner never puts a raw traceback in .output either way (it just
+    # captures the exception object) -- "Error:" is what actually
+    # discriminates Click's clean-exception path from an uncaught exception.
+    assert "Error:" in res.output
+    assert "manifest" in res.output or "Expecting" in res.output
+
+
+def test_photos_points_rejects_manifest_overwrite(tmp_path, make_photo_jpeg):
+    h = _harvest(tmp_path, make_photo_jpeg)
+    res = CliRunner().invoke(cli, [
+        "envmon", "photos", "points", "--harvest-dir", str(h),
+        "--out-csv", str(h / "manifest.csv")])
+    assert res.exit_code != 0
+    assert "overwrite" in res.output
+
+
+def test_photos_kmz_thumb_px_zero_rejected(tmp_path, make_photo_jpeg):
+    h = _harvest(tmp_path, make_photo_jpeg)
+    res = CliRunner().invoke(cli, [
+        "envmon", "photos", "kmz", "--harvest-dir", str(h),
+        "--out", str(tmp_path / "p.kmz"), "--thumb-px", "0"])
+    assert res.exit_code == 2
