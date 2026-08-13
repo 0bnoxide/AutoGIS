@@ -45,6 +45,21 @@ def test_corrupt_file_fails_open(tmp_path):
     assert list_connection_profiles(_write(tmp_path, "garbage without header\n")) == []
 
 
+def test_non_utf8_file_fails_open(tmp_path):
+    # a mis-encoded dotfile raises UnicodeDecodeError (a ValueError) on read;
+    # must fail open, not crash the CLI at import
+    p = tmp_path / ".arcgisprofile"
+    p.write_bytes(b"[Greg]\nurl = https://x\nusername = \xff\xfe not utf-8\n")
+    assert list_connection_profiles(p) == []
+
+
+def test_percent_encoded_url_does_not_crash(tmp_path):
+    # ArcGIS profile URLs can contain '%' (percent-encoding); ConfigParser
+    # interpolation would raise InterpolationSyntaxError at .get() time
+    text = "[Greg]\nurl = https://portal.example/a%20b\nusername = greg\n"
+    assert list_connection_profiles(_write(tmp_path, text)) == ["Greg"]
+
+
 def test_duplicate_stripped_names_deduped(tmp_path):
     # a leading-space variant of an existing name collapses after strip()
     text = COMPLETE + "\n[ Greg_Work]\nurl = https://x\nusername = y\n"

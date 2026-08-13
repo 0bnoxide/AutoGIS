@@ -32,16 +32,22 @@ def list_connection_profiles(path=None):
     from pathlib import Path
 
     profile_file = Path(path) if path else Path.home() / ".arcgisprofile"
-    parser = configparser.ConfigParser(strict=False)
+    # interpolation=None: profile URLs legitimately contain '%' (percent-
+    # encoding), which ConfigParser's default interpolation would choke on --
+    # and it fires lazily at .get() time, outside any read() guard. Disable it.
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
         parser.read(profile_file, encoding="utf-8")
-    except (configparser.Error, OSError):
+        return sorted(
+            {name.strip() for name, section in parser.items()
+             if name != parser.default_section
+             and section.get("url") and section.get("username")}
+        )
+    except (configparser.Error, OSError, ValueError):
+        # Fail-open: a missing / corrupt / mis-encoded dotfile must never break
+        # the CLI (this runs at import time). UnicodeDecodeError is a
+        # ValueError; OSError covers an unreadable file.
         return []
-    return sorted(
-        {name.strip() for name, section in parser.items()
-         if name != parser.default_section
-         and section.get("url") and section.get("username")}
-    )
 
 
 def agol_from_profile(profile=None, *, url=None, username=None, password=None,
