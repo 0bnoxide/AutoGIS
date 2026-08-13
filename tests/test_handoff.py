@@ -184,6 +184,20 @@ def test_bad_source_commit_rejected(tmp_path):
             source_commit="ABCDEF1")
 
 
+def test_trailing_newline_source_commit_rejected(tmp_path):
+    with pytest.raises(ValueError, match="lowercase hex"):
+        build_handoff_package(
+            _source(tmp_path), tmp_path / "pkg.zip", vertical_unit="metre",
+            source_commit="0123abc\n")
+
+
+def test_nonpositive_datum_code_rejected(tmp_path):
+    with pytest.raises(ValueError, match="positive integer"):
+        build_handoff_package(
+            _source(tmp_path), tmp_path / "pkg.zip", vertical_unit="metre",
+            datum_authority="EPSG", datum_code=0, datum_name="NAVD88 height")
+
+
 def test_version_matches_pyproject():
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     with pyproject.open("rb") as fh:

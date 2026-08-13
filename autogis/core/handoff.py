@@ -30,7 +30,7 @@ MANIFEST_UNIT_BY_LANDXML = {
     "USSurveyFoot": "us_survey_foot",
 }
 VERTICAL_UNITS = ("metre", "international_foot", "us_survey_foot")
-_SOURCE_COMMIT_RE = re.compile(r"^[0-9a-f]{7,64}$")
+_SOURCE_COMMIT_RE = re.compile(r"^[0-9a-f]{7,64}\Z")
 
 
 def build_handoff_package(
