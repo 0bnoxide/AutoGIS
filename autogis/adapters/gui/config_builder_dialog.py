@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from autogis.core.common.config import ConfigError
+from autogis.runtime.sessions import list_connection_profiles
 
 from . import config_builder
 
@@ -89,7 +90,14 @@ class ConfigBuilderDialog(QDialog):
         outer.addLayout(form)
 
         # --- connection ---------------------------------------------------
-        self._profile = QLineEdit()
+        # Editable combo: pick a locally-registered profile or type one the
+        # box doesn't know (a fresh checkout may have no profile store). Read
+        # on each open, so a profile added since launch shows up without
+        # restart. Blank first item == anonymous access.
+        self._profile = QComboBox()
+        self._profile.setEditable(True)
+        self._profile.addItem("")
+        self._profile.addItems(list_connection_profiles())
         self._profile.setToolTip(
             "AGOL/Portal connection profile name saved via ArcGIS Pro or "
             "the ArcGIS API for Python — leave blank for anonymous access.")
@@ -97,7 +105,7 @@ class ConfigBuilderDialog(QDialog):
         form.addRow("", _help(
             "AGOL/Portal connection profile name saved via ArcGIS Pro or the "
             "ArcGIS API for Python — leave blank for anonymous access."))
-        self._profile.textChanged.connect(self._sync_fetch_enabled)
+        self._profile.currentTextChanged.connect(self._sync_fetch_enabled)
 
         # --- layer: item_id XOR url ----------------------------------------
         self._item_id = QLineEdit()
@@ -252,7 +260,7 @@ class ConfigBuilderDialog(QDialog):
 
     def _sync_fetch_enabled(self) -> None:
         self._fetch_button.setEnabled(
-            bool(self._profile.text().strip())
+            bool(self._profile.currentText().strip())
             and bool(self._item_id.text().strip())
             and not self._all_sublayers.isChecked()
             and self._worker is None)
@@ -276,7 +284,7 @@ class ConfigBuilderDialog(QDialog):
             return  # a fetch is already in flight
         self._status.setText("Fetching layers/tables…")
         self._fetch_button.setEnabled(False)
-        self._worker = _FetchWorker(self._profile.text(),
+        self._worker = _FetchWorker(self._profile.currentText(),
                                     self._item_id.text(), parent=self)
         self._worker.finished_entries.connect(self._on_fetch_done)
         self._worker.failed.connect(self._on_fetch_failed)
@@ -328,7 +336,7 @@ class ConfigBuilderDialog(QDialog):
 
     def _build_config(self) -> dict:
         return config_builder.build_config(
-            profile=self._profile.text(),
+            profile=self._profile.currentText(),
             item_id=self._item_id.text(),
             url=self._url.text(),
             where=self._where.text(),

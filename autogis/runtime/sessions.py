@@ -13,6 +13,37 @@ nor ``arcpy`` — only *calling* a provider that needs them does.
 """
 
 
+def list_connection_profiles(path=None):
+    """Sorted names of *complete* ArcGIS API for Python connection profiles.
+
+    Reads ``~/.arcgisprofile`` (the ProfileManager store) and returns the
+    names of profiles that carry both a ``url`` and a ``username`` -- the
+    usable ones, skipping the half-written sections a failed
+    ``store_credential`` leaves behind. arcgis-free: plain stdlib
+    ``configparser``, no ``arcgis`` import, so adapters can offer a profile
+    dropdown without the heavy dependency (the password still lives in the OS
+    keyring, keyed by name -- not read here).
+
+    Fail-open: a missing or corrupt profile file yields ``[]`` rather than
+    raising, so this is safe to call at CLI import time without risking the
+    whole CLI over a malformed dotfile.
+    """
+    import configparser
+    from pathlib import Path
+
+    profile_file = Path(path) if path else Path.home() / ".arcgisprofile"
+    parser = configparser.ConfigParser(strict=False)
+    try:
+        parser.read(profile_file, encoding="utf-8")
+    except (configparser.Error, OSError):
+        return []
+    return sorted(
+        {name.strip() for name, section in parser.items()
+         if name != parser.default_section
+         and section.get("url") and section.get("username")}
+    )
+
+
 def agol_from_profile(profile=None, *, url=None, username=None, password=None,
                       gis_factory=None):
     """Return a ``GIS`` for AGOL / a portal from a profile or explicit creds.
