@@ -2,22 +2,19 @@
 from __future__ import annotations
 
 import math
-import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
 from autogis.core.common.landxml import (
     LandXMLSurface,
     METERS_PER_LANDXML_UNIT,
+    authority_crs,
     linear_unit_scale,
     parse_epsg,
     parse_landxml_surface,
+    read_source_metadata,
     write_landxml_surface,
 )
-
-_AUTHORITY_CRS_RE = re.compile(
-    r"^\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(\d+)\s*$")
 
 
 @dataclass(frozen=True)
@@ -39,53 +36,6 @@ class LandXMLTransformResult:
     z_scale_mode: str
 
 
-def _authority_crs(value: str | None) -> str | None:
-    """Return a normalized authority code, treating bare numbers as EPSG."""
-    if parse_epsg(value) is not None:
-        return f"EPSG:{parse_epsg(value)}"
-    match = _AUTHORITY_CRS_RE.match(value or "")
-    if match is None:
-        return None
-    return f"{match.group(1).upper()}:{match.group(2)}"
-
-
-def _source_metadata(
-        path: Path,
-) -> tuple[tuple[str, ...], str | None, tuple[str, ...]]:
-    try:
-        root = ET.parse(path).getroot()
-    except ET.ParseError as exc:
-        raise ValueError(f"Malformed LandXML {path}: {exc}") from None
-    coordinate_system = root.find(".//{*}CoordinateSystem")
-    declared_crs: list[str] = []
-    if coordinate_system is not None:
-        epsg = parse_epsg(coordinate_system.get("epsgCode"))
-        if epsg is not None:
-            declared_crs.append(f"EPSG:{epsg}")
-        named = _authority_crs(coordinate_system.get("name"))
-        if named is not None and named not in declared_crs:
-            declared_crs.append(named)
-
-    unit_elements = [
-        element for element in (
-            root.find(".//{*}Units/{*}Metric"),
-            root.find(".//{*}Units/{*}Imperial"),
-        )
-        if element is not None
-    ]
-    if len(unit_elements) > 1:
-        raise ValueError(
-            f"{path} declares both Metric and Imperial LandXML units.")
-    declared_unit = (
-        unit_elements[0].get("linearUnit") if unit_elements else None
-    )
-    surface_names = tuple(
-        surface.get("name", "")
-        for surface in root.findall(".//{*}Surfaces/{*}Surface")
-    )
-    return tuple(declared_crs), declared_unit, surface_names
-
-
 def _load_crs(crs_text: str, *, target: bool = False):
     try:
         from pyproj import CRS
@@ -94,28 +44,28 @@ def _load_crs(crs_text: str, *, target: bool = False):
             "LandXML CRS transformation needs pyproj; install it with "
             "`pip install autogis[landxml]`.") from None
 
-    authority_crs = _authority_crs(crs_text)
-    if authority_crs is None:
+    authority_code = authority_crs(crs_text)
+    if authority_code is None:
         raise ValueError(
             f"CRS {crs_text!r} must be an authority code such as EPSG:4326 "
             "or ESRI:102700.")
-    if target and not authority_crs.startswith("EPSG:"):
+    if target and not authority_code.startswith("EPSG:"):
         raise ValueError(
             f"Target CRS {crs_text!r} must be an EPSG code so output "
             "LandXML metadata remains machine-readable.")
     try:
-        crs = CRS.from_user_input(authority_crs)
+        crs = CRS.from_user_input(authority_code)
     except Exception as exc:
         raise ValueError(
-            f"Unknown or invalid CRS {authority_crs}: {exc}") from None
+            f"Unknown or invalid CRS {authority_code}: {exc}") from None
     if target and not crs.is_projected:
         raise ValueError(
-            f"Target CRS {authority_crs} must be projected; geographic "
+            f"Target CRS {authority_code} must be projected; geographic "
             "degree coordinates cannot be written as LandXML feet/meters.")
     if not target and not (crs.is_projected or crs.is_geographic):
         raise ValueError(
-            f"Source CRS {authority_crs} must be geographic or projected.")
-    return crs, authority_crs
+            f"Source CRS {authority_code} must be geographic or projected.")
+    return crs, authority_code
 
 
 def _linear_unit(crs, crs_text: str) -> str:
@@ -388,7 +338,8 @@ def transform_landxml_surface(
         if not math.isfinite(z_scale) or z_scale <= 0:
             raise ValueError("z_scale must be a positive finite number.")
 
-    declared_crs, declared_unit, surface_names = _source_metadata(source_path)
+    declared_crs, declared_unit, _, surface_names = read_source_metadata(
+        source_path)
     surface = _select_surface(source_path, surface_names, surface_name)
     source, source_authority = _load_crs(source_crs)
     target, target_authority = _load_crs(target_crs, target=True)
