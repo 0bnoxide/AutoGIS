@@ -60,6 +60,18 @@ def test_percent_encoded_url_does_not_crash(tmp_path):
     assert list_connection_profiles(_write(tmp_path, text)) == ["Greg"]
 
 
+def test_unresolvable_home_fails_open(monkeypatch):
+    # Path.home() raises RuntimeError under a service/container account with no
+    # resolvable home dir; with path=None the helper must fail open, not crash
+    import pathlib
+
+    def _boom():
+        raise RuntimeError("no home")
+
+    monkeypatch.setattr(pathlib.Path, "home", staticmethod(_boom))
+    assert list_connection_profiles() == []
+
+
 def test_duplicate_stripped_names_deduped(tmp_path):
     # a leading-space variant of an existing name collapses after strip()
     text = COMPLETE + "\n[ Greg_Work]\nurl = https://x\nusername = y\n"
