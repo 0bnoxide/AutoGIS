@@ -1,12 +1,15 @@
+import logging
 import os
 import time
 
 from .models import AttachmentResult, RunSummary, summary_counts
 from ..common.config import ConfigError
 from .manifest import Manifest
-from .templates import render_path_component, sanitize
+from .templates import render_path_component, sanitize, template_fields
 from .download import download_one
 from .state import read_last_run, write_last_run
+
+log = logging.getLogger(__name__)
 
 def _feature_layer_cls():
     """Import ``arcgis.features.FeatureLayer`` on demand, or return None.
@@ -100,11 +103,32 @@ def _effective_where(config, layer):
     return where
 
 
+def _warn_unresolved_template_fields(config, features, source_table):
+    """Warn once per layer when a group/filename template references a field
+    absent from the layer's attributes -- usually a case mismatch (e.g.
+    ``{LOCATIONID}`` vs the real ``LocationID``). Left silent, every file or
+    folder falls back to ``unknown`` with no signal (#486). ``name`` is
+    injected by the harvester, not a layer attribute, so it never counts as
+    missing."""
+    if not features:
+        return
+    keys = set(features[0].attributes)
+    wanted = (template_fields(config.group_template)
+              | template_fields(config.filename_template))
+    missing = sorted(f for f in wanted - keys if f != "name")
+    if missing:
+        log.warning(
+            "%s: template field(s) %s not found in layer attributes; affected "
+            "files/folders will use 'unknown'. Available fields: %s",
+            source_table, ", ".join(missing), ", ".join(sorted(keys)))
+
+
 def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
     """Query ONE layer/table and accumulate its attachments into the shared
     manifest, rooting destination paths at ``base_dir``."""
     where = _effective_where(config, layer)
     result = layer.query(where=where, out_fields="*", return_geometry=False)
+    _warn_unresolved_template_fields(config, result.features, source_table)
     for feature in result.features:
         attrs = feature.attributes
         objectid = attrs.get("OBJECTID")
@@ -113,6 +137,14 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
             group = render_path_component(config.group_template, attrs)
             fname = render_path_component(
                 config.filename_template, {**attrs, "name": name})
+            # Preserve the source attachment's extension when the template
+            # omits it (e.g. "{LOCATIONID}_{OBJECTID}" -> extensionless files
+            # that won't open by association, #485). endswith (not splitext)
+            # so a dotted attribute value ("RILEY.PASS_1") still gets .jpg,
+            # while a template already ending in {name} isn't doubled.
+            ext = os.path.splitext(name)[1]
+            if ext and not fname.lower().endswith(ext.lower()):
+                fname += ext
             dest = os.path.join(base_dir, group, fname)
 
             if config.skip_existing and os.path.exists(dest):
