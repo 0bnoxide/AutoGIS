@@ -674,31 +674,44 @@ def test_repeatable_container_gets_help_text_tooltip(qapp):
 
 
 @pytest.mark.parametrize(
-    ("state", "expected_flag"),
+    ("choice", "expected_flag"),
     [
         (None, None),
-        (Qt.CheckState.Checked, "--incremental"),
-        (Qt.CheckState.Unchecked, "--no-incremental"),
+        (True, "--incremental"),
+        (False, "--no-incremental"),
     ],
 )
-def test_harvest_incremental_checkbox_state_to_argv(
-        qapp, state, expected_flag):
+def test_harvest_incremental_radio_state_to_argv(
+        qapp, choice, expected_flag):
     win = MainWindow()
     form = win._forms["harvest"]
     win._command_box.setCurrentText(form.label)
     win._field_widgets["config_path"].setText("site.yaml")
 
-    checkbox = win._field_widgets["incremental"]
-    if state is None:
-        assert checkbox.checkState() == Qt.CheckState.PartiallyChecked
-    else:
-        checkbox.setCheckState(state)
+    radios = win._field_widgets["incremental"]
+    # "use config" (None) is pre-selected; ids are None/True/False in order.
+    assert radios.value() is None
+    radios._group.button([None, True, False].index(choice)).setChecked(True)
+    assert radios.value() is choice
 
     step = build_step(form, win._raw_values())
     argv = build_argv(step.command, step.values)
     actual = {"--incremental", "--no-incremental"}.intersection(argv)
 
     assert actual == ({expected_flag} if expected_flag else set())
+
+
+def test_harvest_incremental_radio_labels_and_default(qapp):
+    win = MainWindow()
+    win._command_box.setCurrentText(win._forms["harvest"].label)
+    radios = win._field_widgets["incremental"]
+    labels = [radios._group.button(i).text() for i in range(3)]
+    assert labels == [
+        "Use my config file's setting (default)",
+        "Incremental — only harvest new or changed attachments",
+        "Full re-harvest — process every attachment",
+    ]
+    assert radios._group.checkedId() == 0  # "use config" pre-selected
 
 
 def test_ordinary_flags_stay_two_state(qapp):
