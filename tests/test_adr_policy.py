@@ -1,5 +1,7 @@
 from importlib.util import module_from_spec, spec_from_file_location
+import json
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -204,3 +206,219 @@ def test_issue_492_distinct_0129_slugs_cannot_both_pass():
         "docs/adr/0129-connection-profile.md; use XXXX or finalize after "
         "that claim changes."
     ]
+
+
+REPOSITORY = "owner/repo"
+OPEN_PULLS = f"repos/{REPOSITORY}/pulls?state=open&per_page=100"
+
+
+class FakeRunner:
+    """Offline `gh api` seam with endpoint-specific JSON or failures."""
+
+    def __init__(self, responses):
+        self.responses = responses
+        self.calls = []
+
+    def __call__(self, args, **_kwargs):
+        self.calls.append(args)
+        value = self.responses[args[2]]
+        if isinstance(value, BaseException):
+            raise value
+        return subprocess.CompletedProcess(args, 0, json.dumps(value), "")
+
+
+def _pr_files(number):
+    return f"repos/{REPOSITORY}/pulls/{number}/files?per_page=100"
+
+
+def _event(draft=False):
+    return {
+        "pull_request": {
+            "number": 488,
+            "draft": draft,
+            "base": {"sha": "1111111111111111111111111111111111111111"},
+        }
+    }
+
+
+def _policy_runner(current=None):
+    return FakeRunner(
+        {
+            _pr_files(488): [[current or {"path": "docs/adr/0130-current.md", "status": "added"}]],
+            f"repos/{REPOSITORY}/git/trees/1111111111111111111111111111111111111111?recursive=1": {
+                "truncated": False,
+                "tree": [{"path": "docs/adr/0129-base.md"}],
+            },
+            OPEN_PULLS: [[{"number": 488}, {"number": 489}]],
+            _pr_files(489): [[{"path": "docs/adr/0131-other.md", "status": "added"}]],
+        }
+    )
+
+
+def test_gh_pages_flattens_open_pull_pages_and_uses_gh_pagination(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    runner = FakeRunner({OPEN_PULLS: [[{"number": 488}], [{"number": 489}]]})
+
+    assert adr._open_pull_numbers(run=runner) == [488, 489]
+    assert runner.calls == [["gh", "api", OPEN_PULLS, "--paginate", "--slurp"]]
+
+
+def test_pull_files_flattens_pages_and_uses_gh_pagination(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    endpoint = _pr_files(488)
+    runner = FakeRunner(
+        {endpoint: [[{"path": "docs/adr/0129-a.md", "status": "added"}], [{"path": "docs/adr/0130-b.md", "status": "renamed"}]]}
+    )
+
+    assert adr._pull_files(488, run=runner) == [
+        adr.PRFile(488, "docs/adr/0129-a.md", "added"),
+        adr.PRFile(488, "docs/adr/0130-b.md", "renamed"),
+    ]
+    assert runner.calls == [["gh", "api", endpoint, "--paginate", "--slurp"]]
+
+
+@pytest.mark.parametrize("payload", [{}, [{"number": 488}], [["not-an-object"]]])
+def test_gh_pages_rejects_malformed_outer_page_and_item_shapes(monkeypatch, payload):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    with pytest.raises(adr.ADRStateUnavailable):
+        adr._gh_pages(OPEN_PULLS, run=FakeRunner({OPEN_PULLS: payload}))
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (FileNotFoundError("gh"), "FileNotFoundError"),
+        (subprocess.TimeoutExpired(["gh"], 30), "TimeoutExpired"),
+        (subprocess.CalledProcessError(17, ["gh"], output="token=never-show"), "exit 17"),
+    ],
+)
+def test_gh_reader_fails_closed_without_leaking_response_payload(monkeypatch, failure, expected):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    with pytest.raises(adr.ADRStateUnavailable) as raised:
+        adr._gh_pages(OPEN_PULLS, run=FakeRunner({OPEN_PULLS: failure}))
+    assert expected in str(raised.value)
+    assert "token=never-show" not in str(raised.value)
+
+
+def test_open_pr_max_keeps_legacy_failure_class_in_fail_soft_warning(monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    assert adr._open_pr_max(run=FakeRunner({OPEN_PULLS: FileNotFoundError("gh")})) == 0
+    assert "FileNotFoundError" in capsys.readouterr().err
+
+
+def test_open_pr_max_without_actions_repository_still_reports_missing_gh(monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+
+    def missing_gh(*_args, **_kwargs):
+        raise FileNotFoundError("gh")
+
+    assert adr._open_pr_max(run=missing_gh) == 0
+    assert "FileNotFoundError" in capsys.readouterr().err
+
+
+def test_all_open_pull_files_does_not_return_partial_results_after_later_failure(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    runner = FakeRunner(
+        {
+            OPEN_PULLS: [[{"number": 488}, {"number": 489}]],
+            _pr_files(488): [[{"path": "docs/adr/0129-a.md", "status": "added"}]],
+            _pr_files(489): subprocess.CalledProcessError(23, ["gh"], output="secret"),
+        }
+    )
+
+    with pytest.raises(adr.ADRStateUnavailable, match="exit 23"):
+        adr._all_open_pull_files(run=runner)
+
+
+def test_base_tree_rejects_truncated_response(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    endpoint = f"repos/{REPOSITORY}/git/trees/base?recursive=1"
+    with pytest.raises(adr.ADRStateUnavailable, match="truncated"):
+        adr._base_paths("base", run=FakeRunner({endpoint: {"truncated": True, "tree": []}}))
+
+
+def test_pull_files_rejects_githubs_3000_file_ceiling(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    endpoint = _pr_files(488)
+    files = [{"path": f"docs/adr/{n:04d}-x.md", "status": "added"} for n in range(3000)]
+    with pytest.raises(adr.ADRStateUnavailable, match="3,000"):
+        adr._pull_files(488, run=FakeRunner({endpoint: [files]}))
+
+
+def test_policy_check_reads_current_base_open_and_other_pull_state(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    runner = _policy_runner()
+
+    assert adr.policy_check(tmp_path, event_name="pull_request", event=_event(), run=runner) == []
+    assert [call[2] for call in runner.calls] == [
+        _pr_files(488),
+        f"repos/{REPOSITORY}/git/trees/1111111111111111111111111111111111111111?recursive=1",
+        OPEN_PULLS,
+        _pr_files(489),
+    ]
+
+
+def test_policy_check_excludes_current_pr_from_other_file_collection(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    runner = _policy_runner()
+
+    adr.policy_check(tmp_path, event_name="pull_request", event=_event(), run=runner)
+    assert [call[2] for call in runner.calls].count(_pr_files(488)) == 1
+
+
+def test_policy_check_push_only_checks_local_tree_without_github(tmp_path):
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "XXXX-unfinalized.md").write_text("")
+
+    assert adr.policy_check(
+        tmp_path,
+        event_name="push",
+        event={},
+        run=lambda *_args, **_kwargs: pytest.fail("push must not read GitHub"),
+    ) == ["docs/adr/XXXX-unfinalized.md is unfinalized; main may not contain ADR placeholders."]
+
+
+def test_main_policy_check_exit_codes_and_success_output(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps(_event()))
+
+    assert adr.main(
+        ["--policy-check", "--event-file", str(event_path)],
+        environ={"GITHUB_EVENT_NAME": "push"},
+        run=_policy_runner(),
+    ) == 0
+    assert "ADR policy check passed" in capsys.readouterr().out
+
+    assert adr.main(
+        ["--policy-check", "--event-file", str(event_path)],
+        environ={},
+        run=_policy_runner({"path": "docs/adr/XXXX-unfinalized.md", "status": "added"}),
+    ) == 1
+
+    unavailable = FakeRunner({_pr_files(488): FileNotFoundError("gh")})
+    assert adr.main(
+        ["--policy-check", "--event-file", str(event_path)], environ={}, run=unavailable
+    ) == 2
+
+    malformed = FakeRunner({_pr_files(488): {}})
+    assert adr.main(
+        ["--policy-check", "--event-file", str(event_path)], environ={}, run=malformed
+    ) == 2
+
+
+def test_event_file_overrides_environment_and_selects_pull_request_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    event_path = tmp_path / "pr-event.json"
+    event_path.write_text(json.dumps(_event()))
+    runner = _policy_runner()
+
+    assert adr.main(
+        ["--policy-check", "--event-file", str(event_path)],
+        environ={"GITHUB_EVENT_NAME": "push", "GITHUB_EVENT_PATH": "missing.json"},
+        run=runner,
+    ) == 0
+    assert _pr_files(488) in [call[2] for call in runner.calls]

@@ -18,7 +18,9 @@ Usage:
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -37,6 +39,10 @@ class PRFile(NamedTuple):
     pr_number: int
     path: str
     status: str
+
+
+class ADRStateUnavailable(RuntimeError):
+    """Authoritative GitHub ADR state could not be proven complete."""
 
 
 def _num(name: str) -> int | None:
@@ -185,6 +191,180 @@ def _pull_request_policy_errors(
     return _format_policy_records(records)
 
 
+def _repository(*, run=None, allow_discovery: bool = False) -> str:
+    """Return the GitHub owner/repository name required by REST endpoints."""
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    if repository.count("/") == 1 and all(repository.split("/")):
+        return repository
+    if not allow_discovery:
+        raise ADRStateUnavailable("GITHUB_REPOSITORY is unavailable or malformed.")
+    runner = subprocess.run if run is None else run
+    try:
+        result = runner(
+            ["gh", "repo", "view", "--json", "nameWithOwner"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        repository = json.loads(result.stdout).get("nameWithOwner", "")
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise _gh_failure("repository", exc) from exc
+    if repository.count("/") != 1 or any(not part for part in repository.split("/")):
+        raise ADRStateUnavailable("GitHub repository discovery is malformed.")
+    return repository
+
+
+def _gh_failure(endpoint: str, exc: BaseException) -> ADRStateUnavailable:
+    """Convert command/parse failures without exposing command response data."""
+    detail = type(exc).__name__
+    if isinstance(exc, subprocess.CalledProcessError):
+        detail += f" (exit {exc.returncode})"
+    return ADRStateUnavailable(f"GitHub state read failed for {endpoint}: {detail}.")
+
+
+def _gh_object(endpoint: str, *, run=None) -> dict:
+    """Read one GitHub REST object through gh api."""
+    runner = subprocess.run if run is None else run
+    try:
+        result = runner(
+            ["gh", "api", endpoint],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        data = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise _gh_failure(endpoint, exc) from exc
+    if not isinstance(data, dict):
+        raise ADRStateUnavailable(f"GitHub state read failed for {endpoint}: expected object.")
+    return data
+
+
+def _gh_pages(endpoint: str, *, run=None) -> list[dict]:
+    """Flatten gh api --paginate --slurp pages after shape validation."""
+    runner = subprocess.run if run is None else run
+    try:
+        result = runner(
+            ["gh", "api", endpoint, "--paginate", "--slurp"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        pages = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise _gh_failure(endpoint, exc) from exc
+    if not isinstance(pages, list):
+        raise ADRStateUnavailable(f"GitHub state read failed for {endpoint}: expected pages.")
+    items = []
+    for page in pages:
+        if not isinstance(page, list):
+            raise ADRStateUnavailable(f"GitHub state read failed for {endpoint}: expected page.")
+        for item in page:
+            if not isinstance(item, dict):
+                raise ADRStateUnavailable(f"GitHub state read failed for {endpoint}: expected item.")
+            items.append(item)
+    return items
+
+
+def _base_paths(ref: str, *, run=None, allow_discovery: bool = False) -> list[str]:
+    """Read an untruncated Git tree for the PR base SHA/ref."""
+    endpoint = f"repos/{_repository(run=run, allow_discovery=allow_discovery)}/git/trees/{ref}?recursive=1"
+    tree = _gh_object(endpoint, run=run)
+    if tree.get("truncated") is not False:
+        raise ADRStateUnavailable("GitHub base tree is truncated or malformed.")
+    entries = tree.get("tree")
+    if not isinstance(entries, list):
+        raise ADRStateUnavailable("GitHub base tree is malformed.")
+    paths = []
+    for entry in entries:
+        path = entry.get("path") if isinstance(entry, dict) else None
+        if not isinstance(path, str):
+            raise ADRStateUnavailable("GitHub base tree is malformed.")
+        paths.append(path)
+    return paths
+
+
+def _pull_files(pr_number: int, *, run=None, allow_discovery: bool = False) -> list[PRFile]:
+    """Read all changed-file pages; reject an unverifiable 3,000-file result."""
+    endpoint = f"repos/{_repository(run=run, allow_discovery=allow_discovery)}/pulls/{pr_number}/files?per_page=100"
+    files = _gh_pages(endpoint, run=run)
+    if len(files) >= 3_000:
+        raise ADRStateUnavailable("GitHub pull request file list reached the 3,000-file ceiling.")
+    result = []
+    for file in files:
+        path, status = file.get("path"), file.get("status")
+        if not isinstance(path, str) or not isinstance(status, str):
+            raise ADRStateUnavailable("GitHub pull request file list is malformed.")
+        result.append(PRFile(pr_number, path, status))
+    return result
+
+
+def _open_pull_numbers(*, run=None, allow_discovery: bool = False) -> list[int]:
+    """Read every open pull-request page."""
+    endpoint = f"repos/{_repository(run=run, allow_discovery=allow_discovery)}/pulls?state=open&per_page=100"
+    numbers = []
+    for pull in _gh_pages(endpoint, run=run):
+        number = pull.get("number")
+        if isinstance(number, bool) or not isinstance(number, int):
+            raise ADRStateUnavailable("GitHub open pull-request list is malformed.")
+        numbers.append(number)
+    return numbers
+
+
+def _all_open_pull_files(*, run=None, allow_discovery: bool = False) -> list[PRFile]:
+    """Read every open PR's complete file collection or fail as a unit."""
+    files = []
+    for number in _open_pull_numbers(run=run, allow_discovery=allow_discovery):
+        files.extend(_pull_files(number, run=run, allow_discovery=allow_discovery))
+    return files
+
+
+def _local_adr_paths(repo_root: Path) -> list[str]:
+    adr_dir = repo_root / "docs" / "adr"
+    return [path.relative_to(repo_root).as_posix() for path in adr_dir.glob("*.md")]
+
+
+def policy_check(
+    repo_root: Path,
+    *,
+    event_name: str,
+    event: dict,
+    run=None,
+) -> list[str]:
+    """Validate checkout plus authoritative PR/base/open-PR state."""
+    local_errors = _tree_policy_errors(
+        _local_adr_paths(repo_root), allow_placeholders=event_name == "pull_request"
+    )
+    if event_name == "push":
+        return local_errors
+    if event_name != "pull_request":
+        raise ADRStateUnavailable(f"Unsupported CI event: {event_name!r}.")
+    try:
+        pull = event["pull_request"]
+        number, draft, base = pull["number"], pull["draft"], pull["base"]
+        base_sha = base["sha"]
+    except (KeyError, TypeError) as exc:
+        raise ADRStateUnavailable(f"Pull-request event is malformed: {type(exc).__name__}.") from None
+    if isinstance(number, bool) or not isinstance(number, int) or not isinstance(draft, bool) or not isinstance(base_sha, str):
+        raise ADRStateUnavailable("Pull-request event is malformed.")
+    current_files = _pull_files(number, run=run)
+    base_paths = _base_paths(base_sha, run=run)
+    other_files = []
+    for open_number in _open_pull_numbers(run=run):
+        if open_number != number:
+            other_files.extend(_pull_files(open_number, run=run))
+    return local_errors + _pull_request_policy_errors(
+        current_pr=number,
+        draft=draft,
+        current_files=current_files,
+        base_paths=base_paths,
+        other_files=other_files,
+    )
+
+
 def _local_max(adr_dir: Path) -> int:
     return max(
         (n for p in adr_dir.glob("*.md") if (n := _num(p.name)) is not None),
@@ -200,7 +380,7 @@ _NO_GH_WARNING = (
 )
 
 
-def _open_pr_max() -> int:
+def _open_pr_max(*, strict: bool = False, run=None) -> int:
     """Max ADR number in files added by any open PR. 0 if gh is unavailable.
 
     Failing soft is right — the local scan still ran — but failing *silently*
@@ -213,22 +393,14 @@ def _open_pr_max() -> int:
     number printed on stdout.
     """
     try:
-        out = subprocess.run(
-            ["gh", "pr", "list", "--state", "open", "--limit", "200",
-             "--json", "files"],
-            capture_output=True, text=True, timeout=30, check=True,
-        ).stdout
-        prs = json.loads(out)
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-        print(_NO_GH_WARNING.format(why=type(exc).__name__), file=sys.stderr)
+        files = _all_open_pull_files(run=run, allow_discovery=True)
+    except ADRStateUnavailable as exc:
+        if strict:
+            raise
+        why = type(exc.__cause__).__name__ if exc.__cause__ else type(exc).__name__
+        print(_NO_GH_WARNING.format(why=why), file=sys.stderr)
         return 0  # fail soft — local-only scan still ran
-    best = 0
-    for pr in prs:
-        for f in pr.get("files", []):
-            n = _num(Path(f.get("path", "")).name)
-            if n is not None:
-                best = max(best, n)
-    return best
+    return max((_adr_number(file.path) or 0 for file in files), default=0)
 
 
 _NO_REMOTE_WARNING = (
@@ -348,12 +520,47 @@ def _check() -> None:
     print("next_adr_number self-check OK")
 
 
-if __name__ == "__main__":
-    if "--check" in sys.argv:
+def main(argv=None, environ=None, run=None) -> int:
+    """Run the number helper or its fail-closed CI policy check."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--check", action="store_true")
+    modes.add_argument("--base", action="store_true")
+    modes.add_argument("--policy-check", action="store_true")
+    parser.add_argument("--event-file")
+    args = parser.parse_args(argv)
+    root = Path(__file__).resolve().parents[3]
+    if args.check:
         _check()
-    elif "--base" in sys.argv:
-        # Scan floor only (local + open PRs, no reservations, no +1) — the input
-        # `coord reserve-adr` layers its atomic reservation on top of.
-        print(_scan_max(Path(__file__).resolve().parents[3]))
-    else:
+        return 0
+    if args.base:
+        print(_scan_max(root))
+        return 0
+    if not args.policy_check:
         print(f"{next_adr_number():04d}")
+        return 0
+    env = os.environ if environ is None else environ
+    event_path = args.event_file or env.get("GITHUB_EVENT_PATH")
+    event_name = "pull_request" if args.event_file else env.get("GITHUB_EVENT_NAME")
+    try:
+        if not event_path:
+            raise ADRStateUnavailable("GitHub event file is unavailable.")
+        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        if not isinstance(event, dict):
+            raise ADRStateUnavailable("GitHub event file is malformed.")
+        errors = policy_check(root, event_name=event_name, event=event, run=run)
+    except ADRStateUnavailable as exc:
+        print(f"ADR policy state unavailable: {exc}", file=sys.stderr)
+        return 2
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ADR policy state unavailable: {type(exc).__name__}.", file=sys.stderr)
+        return 2
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+    print("ADR policy check passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
