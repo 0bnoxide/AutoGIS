@@ -354,6 +354,14 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None,
     cwd = payload.get("cwd") or os.getcwd()
     tool = payload.get("tool_name", "")
     ti = payload.get("tool_input") or {}
+    pre_heartbeat_claims = None
+    if tool == "Bash" and any(
+            sub == "commit" for sub, _d, _args in _git_writes(
+                ti.get("command", ""))):
+        try:
+            pre_heartbeat_claims = registry.list_claims(reg_path)
+        except Exception:
+            pass
 
     # Best-effort: refresh this session's own heartbeat on any tool call.
     try:
@@ -448,9 +456,9 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None,
                         "Override: AUTOGIS_COORD_FORCE=1.")
                 if sub == "commit":
                     staged = (staged_func or _staged_numeric_adrs)(target)
-                    if staged is not None:
+                    if staged is not None and pre_heartbeat_claims is not None:
                         reserved = set()
-                        for claim in registry.list_claims(reg_path):
+                        for claim in pre_heartbeat_claims:
                             if (claim.get("session_id") == sid and
                                     claim.get("kind") == "adr"):
                                 try:

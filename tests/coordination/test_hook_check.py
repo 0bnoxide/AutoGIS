@@ -673,6 +673,16 @@ def test_commit_with_stale_own_adr_reservation_is_denied(tmp_path, monkeypatch):
     assert out["hookSpecificOutput"]["permissionDecisionReason"] == _ADR_DENIAL
 
 
+def test_commit_with_stale_own_adr_reservation_denied_after_real_heartbeat(
+        tmp_path):
+    p = tmp_path / "c.json"
+    now = registry._now()
+    registry.claim(p, "me", "adr", 131, ttl_sec=1,
+                   now=now - timedelta(seconds=2))
+    out = _adr_commit(p, [("0131", "docs/adr/0131-example.md")])
+    assert out["hookSpecificOutput"]["permissionDecisionReason"] == _ADR_DENIAL
+
+
 def test_commit_with_multiple_numeric_adrs_needs_each_reservation(tmp_path):
     p = tmp_path / "c.json"
     registry.claim(p, "me", "adr", 131)
