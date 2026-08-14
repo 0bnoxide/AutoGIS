@@ -74,8 +74,8 @@ class Toolbox(object):
             ReconcileSampleLocations,
             ConditionDEM,
             CompareDroneSurfaces,
-            ExportContoursForCivil3D,  # tool 8.2 TIN -> LandXML surface
-            TransformLandXMLSurface,   # tool 8.2a LandXML -> LandXML
+            ExportContoursForCivil3D,  # tool 8.10 TIN -> LandXML surface
+            TransformLandXMLSurface,   # tool 8.10a LandXML -> LandXML
             BuildCADExportPackage,   # tool 8.9
             DownloadOpenTopoDEM,     # OpenTopography DEM fetch + add-to-map
         ]
@@ -1251,10 +1251,10 @@ class BuildCADExportPackage(object):
 
 
 class ExportContoursForCivil3D(object):
-    """Tool 8.2 — export an existing ArcGIS TIN as a LandXML TIN surface."""
+    """Tool 8.10 — export an existing ArcGIS TIN as a LandXML TIN surface."""
 
     def __init__(self):
-        self.label = "8.2 Export Civil 3D TIN LandXML"
+        self.label = "8.10 Export Civil 3D TIN LandXML"
         self.description = (
             "Export an existing ArcGIS TIN to a coordinate-aware LandXML "
             "surface. Civil 3D imports the preserved triangle faces and can "
@@ -1310,10 +1310,10 @@ class ExportContoursForCivil3D(object):
 
 
 class TransformLandXMLSurface(object):
-    """Tool 8.2a — project a LandXML TIN surface and scale elevations."""
+    """Tool 8.10a — project a LandXML TIN surface and scale elevations."""
 
     def __init__(self):
-        self.label = "8.2a Transform LandXML Surface"
+        self.label = "8.10a Transform LandXML Surface"
         self.description = (
             "Project one LandXML TIN surface from a geographic or projected "
             "authority-coded CRS to a projected EPSG CRS while preserving "

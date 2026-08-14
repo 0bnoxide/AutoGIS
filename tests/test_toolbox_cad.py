@@ -308,7 +308,7 @@ def test_export_tin_landxml_rejects_unknown_z_unit(tmp_path):
 
 
 def test_export_civil3d_pyt_parameter_order():
-    """Pin Tool 8.2's public arcpy signature (PR #258 review P1).
+    """Pin Tool 8.10's public arcpy signature (PR #258 review P1).
 
     The generated tool signature is positional in getParameterInfo order, so
     an inserted parameter silently breaks every positional script/model call.
@@ -331,7 +331,7 @@ def test_export_civil3d_pyt_parameter_order():
 
 
 def test_transform_landxml_pyt_parameter_order():
-    """Keep Tool 8.2a's original positional slots and append new options."""
+    """Keep Tool 8.10a's original positional slots and append new options."""
     pyt = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
     tree = ast.parse(pyt.read_text(encoding="utf-8"), filename=str(pyt))
     cls = next(n for n in tree.body
