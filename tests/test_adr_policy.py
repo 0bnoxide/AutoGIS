@@ -43,14 +43,18 @@ def test_adr_policy_workflow_contract():
     assert job["runs-on"] == "windows-2022"
     assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
 
-    steps = job["steps"]
-    assert all("cache" not in step.get("with", {}) for step in steps)
-    assert all("install" not in step.get("run", "").lower() for step in steps)
-    enforce = next(step for step in steps if step.get("name") == "Enforce ADR allocation policy")
-    assert enforce["run"] == (
-        "python .claude/skills/new-adr/next_adr_number.py --policy-check"
-    )
-    assert enforce["env"] == {"GH_TOKEN": "${{ github.token }}"}
+    assert job["steps"] == [
+        {"uses": "actions/checkout@v7"},
+        {
+            "uses": "actions/setup-python@v7",
+            "with": {"python-version": "3.11"},
+        },
+        {
+            "name": "Enforce ADR allocation policy",
+            "env": {"GH_TOKEN": "${{ github.token }}"},
+            "run": "python .claude/skills/new-adr/next_adr_number.py --policy-check",
+        },
+    ]
 
 
 @pytest.mark.parametrize(
