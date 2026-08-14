@@ -128,6 +128,21 @@ def test_pr_policy_sorts_multiple_collisions():
     ]
 
 
+def test_pr_policy_orders_base_and_open_collisions_by_counterpart_path():
+    assert adr._pull_request_policy_errors(
+        current_pr=488,
+        draft=False,
+        current_files=[adr.PRFile(488, "docs/adr/0129-current.md", "added")],
+        base_paths=["docs/adr/0129-z.md"],
+        other_files=[adr.PRFile(487, "docs/adr/0129-a.md", "added")],
+    ) == [
+        "ADR 0129 is also added by PR #487 as docs/adr/0129-a.md; "
+        "use XXXX or finalize after that claim changes.",
+        "ADR 0129 already exists on the base branch as docs/adr/0129-z.md; "
+        "docs/adr/0129-current.md must use a different number.",
+    ]
+
+
 def test_pr_policy_ignores_same_path_modified_and_removed_files():
     assert adr._pull_request_policy_errors(
         current_pr=488,

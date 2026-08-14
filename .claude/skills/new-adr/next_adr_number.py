@@ -109,6 +109,7 @@ def _pull_request_policy_errors(
     """Return deterministic current-vs-base/current-vs-open-PR errors."""
     current_paths = [f.path for f in current_files if f.status in _CLAIM_STATUSES]
     errors = _tree_policy_errors(current_paths, allow_placeholders=True)
+    collisions: list[tuple[int, str, int, str, bool]] = []
     if not draft:
         errors.extend(
             f"{_root_adr_path(path)[0]} is unfinalized; "
@@ -140,17 +141,23 @@ def _pull_request_policy_errors(
             continue
         normalized = root_path[0]
         for base_path in sorted(base_by_number.get(number, set()) - {normalized}):
-            errors.append(
-                f"ADR {number:04d} already exists on the base branch as {base_path}; "
-                f"{normalized} must use a different number."
-            )
+            collisions.append((number, base_path, 0, normalized, True))
         for other_path, pr_number in sorted(other_by_number.get(number, set())):
             if other_path != normalized:
-                errors.append(
-                    f"ADR {number:04d} is also added by PR #{pr_number} as {other_path}; "
-                    "use XXXX or finalize after that claim changes."
-                )
-    return sorted(errors)
+                collisions.append((number, other_path, pr_number, normalized, False))
+    errors = sorted(errors)
+    for number, other_path, pr_number, current_path, on_base in sorted(collisions):
+        if on_base:
+            errors.append(
+                f"ADR {number:04d} already exists on the base branch as {other_path}; "
+                f"{current_path} must use a different number."
+            )
+        else:
+            errors.append(
+                f"ADR {number:04d} is also added by PR #{pr_number} as {other_path}; "
+                "use XXXX or finalize after that claim changes."
+            )
+    return errors
 
 
 def _local_max(adr_dir: Path) -> int:
