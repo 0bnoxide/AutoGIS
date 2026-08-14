@@ -389,11 +389,11 @@ _REGISTRY_SEED = [
      "cartography", "Export GIS layers to a DWG/DXF CAD file (arcpy Export-to-CAD, "
      "ADR-0088) with mapped CAD layer name/color/linetype on scratch copies, "
      "plus a projection note and mapping report (ADR-0089)"),
-    ("export-civil3d", "ExportContoursForCivil3D", "8.2", "CLOUD", "stable",
+    ("export-civil3d", "ExportContoursForCivil3D", "8.10", "CLOUD", "stable",
      "cartography", "Export PNEZD point CSV + projection note + LandXML CgPoints "
      "headlessly (ADR-0088), or an existing Pro TIN as a triangulated LandXML "
      "surface through the .pyt toolbox (ADR-0089)"),
-    ("transform-landxml", "TransformLandXMLSurface", "8.2a", "CLOUD", "stable",
+    ("transform-landxml", "TransformLandXMLSurface", "8.10a", "CLOUD", "stable",
      "cartography", "Project one LandXML TIN surface from a geographic or "
      "projected authority-coded CRS to a projected EPSG CRS, select or infer "
      "the geographic transformation, and scale Z while preserving faces"),

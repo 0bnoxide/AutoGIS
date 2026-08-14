@@ -6,6 +6,8 @@ reader is exercised against the exact CSV/JSON shape the harvester produces.
 import sqlite3
 from datetime import datetime
 
+import pytest
+
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING
 from autogis.core.envmon.index_field_attachments import (
     build_attachment_index,
@@ -38,6 +40,27 @@ def test_load_manifest_csv_and_json_agree(tmp_path):
     assert len(csv_rows) == len(json_rows) == 2
     assert str(csv_rows[0]["attachment_id"]) == "1"
     assert json_rows[0]["attachment_id"] == 1
+
+
+def test_load_manifest_malformed_json_raises_valueerror(tmp_path):
+    p = tmp_path / "manifest.json"
+    p.write_text('{"not json', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"Malformed manifest .*manifest\.json"):
+        load_manifest(p)
+
+
+def test_load_manifest_json_object_not_array_raises_valueerror(tmp_path):
+    p = tmp_path / "manifest.json"
+    p.write_text('{"objectid": 1}', encoding="utf-8")  # valid JSON, wrong shape (#503)
+    with pytest.raises(ValueError, match=r"Malformed manifest .*manifest\.json.*array"):
+        load_manifest(p)
+
+
+def test_load_manifest_broken_encoding_csv_raises_valueerror(tmp_path):
+    p = tmp_path / "manifest.csv"
+    p.write_bytes(b"objectid,original_name\n1,caf\xe9.jpg\n")  # cp1252, not UTF-8
+    with pytest.raises(ValueError, match=r"Malformed manifest .*manifest\.csv"):
+        load_manifest(p)
 
 
 def test_classify_attachment():

@@ -2,7 +2,7 @@
 
 The Export-to-CAD call itself is arcpy and lives in the .pyt toolbox; this
 module owns the pure mapping/validation discipline plus the projection note,
-and is reused by civil3d_points.py (Tool 8.2) for CRS handling.
+and is reused by civil3d_points.py (Tool 8.10) for CRS handling.
 """
 from __future__ import annotations
 

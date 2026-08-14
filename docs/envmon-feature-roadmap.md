@@ -1605,7 +1605,7 @@ Creates Civil 3D-ready DWG/DXF exports.
 
 ---
 
-### 8.2 Create Civil 3D Contour/Surface Support Files
+### 8.10 Create Civil 3D Contour/Surface Support Files
 
 **Tool name:** `ExportContoursForCivil3D`
 
@@ -1620,7 +1620,7 @@ Exports draft groundwater contours or surface inputs.
 
 ---
 
-### 8.3 Survey Import Validator
+### 8.11 Survey Import Validator
 
 **Tool name:** `ValidateSurveyDeliverable`
 
@@ -1638,7 +1638,7 @@ Checks survey CSV/CAD/GIS data before import.
 
 ---
 
-### 8.4 Drone Orthomosaic/DSM Registrar
+### 8.12 Drone Orthomosaic/DSM Registrar
 
 **Tool name:** `RegisterDroneSurveyProducts`
 

@@ -124,8 +124,9 @@ def run(argv, reg_path, cwd=None, env=None, branch_func=None):
         if not sid:
             print(_UNRESOLVED, file=sys.stderr)
             return 1
-        # base = highest ADR in local files + open PRs (the skill owns that
-        # scan); reserve_number atomically lifts it above any live reservation.
+        # base = highest ADR in local files + open PRs + origin/main (the skill
+        # owns that scan); reserve_number atomically lifts it above any live
+        # reservation.
         n = registry.reserve_number(reg_path, sid, "adr", _adr_scan_base(cwd))
         print("%04d" % n)
         return 0
@@ -153,9 +154,9 @@ def _git_toplevel(cwd):
 
 
 def _adr_scan_base(cwd):
-    """Max ADR number already used by local files + open PRs, via the new-adr
-    skill's own scanner. 0 if it can't be imported (keeps reserve-adr working
-    off reservations alone).
+    """Max ADR number already used by local files + open PRs + origin/main
+    (#495), via the new-adr skill's own scanner. 0 if it can't be imported
+    (keeps reserve-adr working off reservations alone).
 
     Scan BOTH trees, because either can be ahead of the other:
 

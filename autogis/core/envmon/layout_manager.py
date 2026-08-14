@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import re
 import shutil
+from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -109,9 +110,8 @@ def apply_figure_definition_queries(
         # a duplicate figure_spec_id (#470), and here the operator would
         # otherwise get a figure whose def query is simply not the one the
         # spec's last line asked for.
-        kept = set(layer_queries)
-        collapsed = sorted({str(k) for k in raw_queries
-                            if str(k) in kept and not isinstance(k, str)})
+        counts = Counter(str(k) for k in raw_queries)
+        collapsed = sorted(name for name, n in counts.items() if n > 1)
         qa.add(QARecord(
             severity=SEV_WARNING, category="defquery_key_collision",
             message=f"Figure spec layer_definition_queries has keys that "

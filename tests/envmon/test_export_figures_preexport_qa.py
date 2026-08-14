@@ -15,7 +15,9 @@ filter, not arcpy.
 """
 import types
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import DEFAULT, MagicMock
+
+import pytest
 
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_WARNING
 from autogis.core.envmon import export_figures
@@ -112,6 +114,16 @@ def _export_arcpy(monkeypatch, layout_names_in_aprx):
 
     aprx.listLayouts.return_value = [_layout(n) for n in layout_names_in_aprx]
     arcpy.mp.ArcGISProject.return_value = aprx
+
+    def _pdf_create(path):
+        # Like the real arcpy: saveAndClose materializes the file at the path
+        # PDFDocumentCreate was given (now the .tmp.pdf staging path, #500).
+        pdoc = arcpy.mp.PDFDocumentCreate.return_value
+        pdoc.saveAndClose.side_effect = (
+            lambda: Path(path).write_text("pdf", encoding="utf-8"))
+        return DEFAULT
+
+    arcpy.mp.PDFDocumentCreate.side_effect = _pdf_create
     monkeypatch.setattr(export_figures, "_arcpy", lambda: arcpy)
     return arcpy
 
@@ -184,6 +196,30 @@ def test_combine_pdf_merges_the_exported_pdfs(monkeypatch, tmp_path):
     pdoc.saveAndClose.assert_called_once()
     assert written[-1].name == "Packet.pdf"
     assert [r.category for r in qa.records] == ["combined_pdf"]
+
+
+def test_combine_failure_preserves_previous_combined_pdf(monkeypatch, tmp_path):
+    """#500: with overwrite=True the previous combined PDF was unlinked BEFORE
+    the multi-step PDFDocumentCreate/appendPages/saveAndClose build, so one
+    corrupt input destroyed the old deliverable and left nothing. The build
+    now stages to .tmp.pdf and publishes via os.replace."""
+    arcpy = _export_arcpy(monkeypatch, ("Fig A", "Fig B"))
+    pdoc = arcpy.mp.PDFDocumentCreate.return_value
+    pdoc.appendPages.side_effect = [None, RuntimeError("corrupt input PDF")]
+
+    out = tmp_path / "out"
+    out.mkdir()
+    old = out / "Packet.pdf"
+    old.write_text("previous deliverable", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="corrupt input PDF"):
+        export_figures.export_layouts(
+            tmp_path / "p.aprx", out, "{site_id}", {"site_id": "S"},
+            QACollector(), layout_names=None, combine_pdf="Packet.pdf",
+            overwrite=True)
+
+    assert old.read_text(encoding="utf-8") == "previous deliverable"
+    assert not (out / "Packet.pdf.tmp.pdf").exists()
 
 
 def test_layout_missing_reports_the_name_the_operator_typed(monkeypatch, tmp_path):

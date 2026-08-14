@@ -1,4 +1,4 @@
-"""PNEZD point CSV + projection metadata for Civil 3D surface input (Tool 8.2).
+"""PNEZD point CSV + projection metadata for Civil 3D surface input (Tool 8.10).
 
 Headless leg of ExportContoursForCivil3D: PNEZD CSV, projection note, and
 (ADR-0088) point-only LandXML CgPoints export, sharing

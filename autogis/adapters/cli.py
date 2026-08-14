@@ -1706,15 +1706,18 @@ def well_inspection_report_cmd(wells_csv, site_id, output_dir,
         raise click.UsageError("--manifest/--harvest-dir require --format html.")
 
     qa = QACollector()
-    written = build_well_inspection_reports(
-        Path(wells_csv), Path(output_dir),
-        site_id=site_id,
-        maintenance_log_csv=Path(maintenance_log_csv) if maintenance_log_csv else None,
-        fmt=fmt,
-        manifest_path=Path(manifest_path) if manifest_path else None,
-        harvest_dir=Path(harvest_dir) if harvest_dir else None,
-        qa=qa,
-    )
+    try:
+        written = build_well_inspection_reports(
+            Path(wells_csv), Path(output_dir),
+            site_id=site_id,
+            maintenance_log_csv=Path(maintenance_log_csv) if maintenance_log_csv else None,
+            fmt=fmt,
+            manifest_path=Path(manifest_path) if manifest_path else None,
+            harvest_dir=Path(harvest_dir) if harvest_dir else None,
+            qa=qa,
+        )
+    except ValueError as exc:  # malformed manifest -> clean error (#496)
+        raise click.ClickException(str(exc))
     click.echo(f"Written {len(written)} {fmt.upper()} file(s) to {output_dir}")
     _render_qa(qa, report, fail_on)
 
@@ -4114,8 +4117,11 @@ def generate_inspection_report_cmd(inspections_csv, manifest_path,
         load_inspection_records, match_photos_to_wells, write_photo_report)
     qa = QACollector()
     records = load_inspection_records(Path(inspections_csv), qa=qa)
-    photo_map = match_photos_to_wells(
-        load_manifest(Path(manifest_path)), Path(harvest_dir), qa=qa)
+    try:
+        manifest_rows = load_manifest(Path(manifest_path))
+    except ValueError as exc:  # malformed manifest -> clean error (#496)
+        raise click.ClickException(str(exc))
+    photo_map = match_photos_to_wells(manifest_rows, Path(harvest_dir), qa=qa)
     try:
         result = write_photo_report(
             records, photo_map, Path(out_path), site_id=site_id,
@@ -4150,8 +4156,11 @@ def index_field_attachments_cmd(manifest, db_path, related_table, replace,
         build_attachment_index, load_manifest, validate_attachment_index,
         write_attachment_index)
     qa = QACollector()
-    records = build_attachment_index(load_manifest(Path(manifest)),
-                                     related_table=related_table, qa=qa)
+    try:
+        rows = load_manifest(Path(manifest))
+    except ValueError as exc:  # malformed manifest -> clean error (#496)
+        raise click.ClickException(str(exc))
+    records = build_attachment_index(rows, related_table=related_table, qa=qa)
     validate_attachment_index(records, qa)
     if not qa.has_blocking(allow_warnings=True, allow_errors=False):
         n = write_attachment_index(Path(db_path), records, replace=replace)
@@ -4662,16 +4671,23 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
         # latest tool reference, ADR-0077).
         combined = versioned_path(export_dir / "Appendix_Combined.pdf",
                                   overwrite)
-        # With --overwrite, versioned_path hands back the OCCUPIED path and
-        # PDFDocumentCreate needs a free one (Esri's example removes it
-        # first), so the flag would have failed at the only call it serves.
-        # No-op when versioning already chose a free name. Same two lines as
-        # export_layouts' combine, because it is the same policy.
-        combined.unlink(missing_ok=True)
-        pdoc = arcpy.mp.PDFDocumentCreate(str(combined))
-        for p in written_all:
-            pdoc.appendPages(str(p))
-        pdoc.saveAndClose()
+        # Build beside the target, publish atomically with os.replace (same
+        # pattern as dashboard_data_mart and export_layouts' combine).
+        # PDFDocumentCreate needs a free path (Esri's example removes an
+        # existing file first), but unlinking the live target before the
+        # multi-step build meant one bad appendPages destroyed the previous
+        # deliverable with --overwrite (#500). No-op difference when
+        # versioning already chose a free name.
+        tmp = combined.with_name(combined.name + ".tmp.pdf")
+        tmp.unlink(missing_ok=True)
+        try:
+            pdoc = arcpy.mp.PDFDocumentCreate(str(tmp))
+            for p in written_all:
+                pdoc.appendPages(str(p))
+            pdoc.saveAndClose()
+            os.replace(tmp, combined)
+        finally:
+            tmp.unlink(missing_ok=True)
         click.echo(f"Combined appendix written: {combined} "
                    f"({len(written_all)} figures)")
     _render_qa(qa, report, fail_on)
@@ -6442,7 +6458,7 @@ def build_cad_package_cmd(layers, mapping, crs):
 @qa_report_options
 def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
                        report, fail_on):
-    """Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless);
+    """Tool 8.10: PNEZD point CSV + projection note for Civil 3D (headless);
     --landxml adds a headless LandXML CgPoints export. Existing Pro TINs use
     the ExportContoursForCivil3D tool in the .pyt toolbox."""
     from autogis.core.common.qa import QACollector
