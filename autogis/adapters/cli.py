@@ -6598,21 +6598,36 @@ def _reject_harvest_input_overwrite(harvest_dir, *out_paths):
     def identity(value):
         return str(value).replace("\\", "/").casefold()
 
-    inputs = {identity(p) for p in manifest_paths}
-    inputs.update(identity(p) for p in load_harvest_input_paths(root))
-    outputs = [(p, identity(Path(p).resolve(strict=False)))
+    input_paths = manifest_paths + load_harvest_input_paths(root)
+    inputs = {identity(p) for p in input_paths}
+    outputs = [(p, Path(p), identity(Path(p).resolve(strict=False)))
                for p in out_paths if p]
-    if len({key for _, key in outputs}) != len(outputs):
+    if len({key for _, _, key in outputs}) != len(outputs):
         raise click.ClickException(
             "multiple outputs resolve to the same output path")
-    for p, key in outputs:
-        target = Path(p)
+    checked_outputs = []
+    for p, target, key in outputs:
         if key in inputs:
             raise click.ClickException(
                 f"output path {p} would overwrite a harvest input")
         if target.exists() and not target.is_file():
             raise click.ClickException(
                 f"output path {p} is not a writable file target")
+        if target.exists():
+            try:
+                if any(candidate.exists()
+                       and os.path.samefile(target, candidate)
+                       for candidate in input_paths):
+                    raise click.ClickException(
+                        f"output path {p} would overwrite a harvest input")
+                if any(os.path.samefile(target, candidate)
+                       for candidate in checked_outputs):
+                    raise click.ClickException(
+                        "multiple outputs resolve to the same output file")
+            except OSError as exc:
+                raise click.ClickException(
+                    f"cannot verify output path {p}: {exc}") from exc
+            checked_outputs.append(target)
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
