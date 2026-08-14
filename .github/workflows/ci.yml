@@ -3,6 +3,7 @@ name: CI
 on:
   workflow_dispatch:   # manual "Run workflow" button / `gh workflow run`
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
 
@@ -11,6 +12,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  adr-policy:
+    name: ${{ github.event_name == 'workflow_dispatch' && 'adr-policy-manual' || 'adr-policy' }}
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Enforce ADR allocation policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .claude/skills/new-adr/next_adr_number.py --policy-check
+
   pytest:
     # arcpy-free suite. Windows, not ubuntu: the repo is Windows-native
     # (C:\ path fixtures, PowerShell + Windows-path coordination logic) and the

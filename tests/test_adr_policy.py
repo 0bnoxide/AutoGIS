@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
 
 SCRIPT = (
@@ -16,6 +17,40 @@ assert SPEC is not None and SPEC.loader is not None
 adr = module_from_spec(SPEC)
 sys.modules[SPEC.name] = adr
 SPEC.loader.exec_module(adr)
+
+
+WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+
+
+def _ci_workflow():
+    """Load workflow syntax without YAML 1.1 coercing the `on` key."""
+    return yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+
+
+def test_adr_policy_workflow_contract():
+    workflow = _ci_workflow()
+    assert workflow["on"]["pull_request"]["types"] == [
+        "opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft"
+    ]
+    assert "workflow_dispatch" in workflow["on"]
+
+    job = workflow["jobs"]["adr-policy"]
+    assert job["name"] == (
+        "${{ github.event_name == 'workflow_dispatch' && "
+        "'adr-policy-manual' || 'adr-policy' }}"
+    )
+    assert job["if"] == "github.event_name != 'workflow_dispatch'"
+    assert job["runs-on"] == "windows-2022"
+    assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
+
+    steps = job["steps"]
+    assert all("cache" not in step.get("with", {}) for step in steps)
+    assert all("install" not in step.get("run", "").lower() for step in steps)
+    enforce = next(step for step in steps if step.get("name") == "Enforce ADR allocation policy")
+    assert enforce["run"] == (
+        "python .claude/skills/new-adr/next_adr_number.py --policy-check"
+    )
+    assert enforce["env"] == {"GH_TOKEN": "${{ github.token }}"}
 
 
 @pytest.mark.parametrize(
