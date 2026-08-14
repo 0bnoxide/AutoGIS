@@ -56,6 +56,15 @@ def test_load_manifest_json_object_not_array_raises_valueerror(tmp_path):
         load_manifest(p)
 
 
+def test_load_manifest_truncated_quoted_csv_raises_valueerror(tmp_path):
+    p = tmp_path / "manifest.csv"
+    # Truncated mid-quoted-field: non-strict DictReader would silently return
+    # a partial row; strict mode raises csv.Error -> ValueError (#502 review).
+    p.write_text('objectid,original_name\n1,"trunca', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"Malformed manifest .*manifest\.csv"):
+        load_manifest(p)
+
+
 def test_load_manifest_broken_encoding_csv_raises_valueerror(tmp_path):
     p = tmp_path / "manifest.csv"
     p.write_bytes(b"objectid,original_name\n1,caf\xe9.jpg\n")  # cp1252, not UTF-8

@@ -52,7 +52,10 @@ def load_manifest(path: Path) -> list[dict]:
                     f"got {type(rows).__name__} (#503)")
             return rows
         with p.open(newline="", encoding="utf-8") as fh:
-            return list(csv.DictReader(fh))
+            # strict: a manifest truncated inside a quoted field must raise
+            # csv.Error (-> ValueError below), not yield a silent partial row
+            # (#502 review).
+            return list(csv.DictReader(fh, strict=True))
     except (json.JSONDecodeError, UnicodeDecodeError, csv.Error) as exc:
         raise ValueError(f"Malformed manifest {p}: {exc}") from exc
 
