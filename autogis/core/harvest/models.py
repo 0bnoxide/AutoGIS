@@ -23,12 +23,18 @@ class AttachmentResult:
     # Explicit outcome axis (deltas H2): downloaded/skipped/failed. Distinct
     # from `status` so the summary view groups by disposition, not QA severity.
     disposition: str | None = None
-    # Reserved provenance columns (deltas §5). Empty now; filled post-merge.
+    # Provenance columns (deltas §5). checksum/algorithm/geometry/source_table
+    # are filled at harvest time (see _harvest_layer in harvester.py);
+    # relationship_id remains reserved/unused. feature_edited_at below is the
+    # other harvest-time provenance field.
     checksum: str | None = None
     algorithm: str | None = None
     geometry: str | None = None
     source_table: str | None = None
     relationship_id: str | None = None
+    # ISO8601 UTC editor-tracking EditDate of the source feature, when the
+    # layer has editFieldsInfo; enables photo-vs-feature date QA downstream.
+    feature_edited_at: str | None = None
 
 
 def summary_counts(results) -> dict:
