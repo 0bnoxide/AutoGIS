@@ -157,26 +157,41 @@ Each ADR follows this structure:
 
 ADRs are named sequentially: `NNNN-kebab-case-title.md`
 
-**Collision-prone case (parallel branches/PRs):** git won't flag a duplicate
-ADR number if two branches each grab the "next" number with different slugs
-(this has happened repeatedly — 0034, 0061/0062). If your ADR is on a branch
-that may land alongside others, name the file `XXXX-kebab-case-title.md`
-(literal `XXXX` placeholder) instead of guessing a number. Assign the real
-next-free number at merge time, after checking both `docs/adr/` *and* the
-files of any other open PRs. `tests/test_adr_numbering.py` guards against
-duplicate real numbers on `main`; it ignores `XXXX-*.md` files since those
-are pre-merge by design.
+For a coordinated, verified session, reserve the numeric filename first:
+
+```powershell
+python .claude/coordination/coord_cli.py reserve-adr --strict --session $env:AUTOGIS_SESSION_ID
+```
+
+A successful command authorizes the printed numeric ADR. If session resolution
+or the strict GitHub scan fails, use the explicit degraded draft state:
+`XXXX-kebab-case-title.md`, `# ADR-XXXX: <Title>`, and exactly one matching
+`[XXXX](XXXX-kebab-case-title.md)` index row. The no-argument allocator is
+informational only; it never authorizes a numeric filename.
+
+A draft PR may retain `XXXX`; a ready PR and `main` may not. Before making a PR
+ready, run:
+
+```powershell
+python .claude/skills/new-adr/next_adr_number.py --finalize
+```
+
+`--finalize` rewrites the filename, H1, and index row. Review its mapping,
+stage and commit normally, and release the reservation after merge.
+`adr-policy` is the universal fail-closed merge gate for human, remote, and
+fork PRs.
 
 ## New ADRs
 
 When proposing a new ADR:
 
-1. Create a new file with the next sequential number — or, if your branch
-   may land alongside others, use an `XXXX-` placeholder (see "File naming"
-   above) and assign the real number at merge
+1. Follow the allocation state model in "File naming": a coordinated,
+   verified, reserved session uses the authorized numeric ADR; unavailable
+   session resolution or strict verification uses `XXXX`
 2. Use the [template](TEMPLATE.md)
 3. Start with **Proposed** status
-4. Submit for review/discussion
+4. Finalize any `XXXX` ADR before the PR is ready, then submit for
+   review/discussion
 5. Update status to **Accepted** or **Deprecated** after resolution
 
 ## Agent-decision logs vs ADRs
