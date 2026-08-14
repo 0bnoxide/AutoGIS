@@ -8,8 +8,11 @@ inputs:
 - a user-supplied inspection metadata CSV whose headers align with the
   sibling ``well_inspection_report.py`` maintenance-log schema:
   ``WellID, InspectionDate, Inspector, Condition, Notes`` plus optional
-  ``GPS_Lat, GPS_Lon, DepthToWaterFt``. GPS must come from this CSV — the
-  harvest manifest's ``geometry`` column is reserved and always empty.
+  ``GPS_Lat, GPS_Lon, DepthToWaterFt``. GPS is read from this CSV by design:
+  current harvests now fill the manifest's ``geometry`` column, but this
+  tool intentionally keeps the inspection CSV as its GPS source of record
+  rather than the manifest (unchanged from earlier harvests where the
+  column was always empty).
 
 PILOT ASSUMPTION (isolated in ``match_photos_to_wells``): the harvest run's
 ``group_template`` rendered a well ID, so every ``saved_path`` follows

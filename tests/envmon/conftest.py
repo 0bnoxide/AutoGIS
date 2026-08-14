@@ -141,6 +141,50 @@ def qa():
     return QACollector()
 
 
+@pytest.fixture
+def make_photo_jpeg(tmp_path):
+    """Factory: write a tiny JPEG with crafted EXIF; returns the Path.
+
+    lat/lon are decimal degrees (sign -> N/S, E/W ref); heading in degrees
+    true; dto is EXIF DateTimeOriginal ("YYYY:MM:DD HH:MM:SS"). Pass None to
+    omit a block entirely.
+    """
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    def _dms(dd):
+        dd = abs(dd)
+        d = int(dd)
+        m = int((dd - d) * 60)
+        s = (dd - d - m / 60) * 3600
+        return (float(d), float(m), round(s, 4))
+
+    def _make(name="p.jpg", lat=45.874, lon=-103.487, heading=231.5,
+              dto="2026:05:05 08:17:36", camera=("samsung", "SM-X308U"),
+              directory=None):
+        img = Image.new("RGB", (8, 6), "red")
+        exif = Image.Exif()
+        if camera:
+            exif[271], exif[272] = camera  # Make, Model
+        gps = {}
+        if lat is not None and lon is not None:
+            gps.update({1: "N" if lat >= 0 else "S", 2: _dms(lat),
+                        3: "E" if lon >= 0 else "W", 4: _dms(lon)})
+        if heading is not None:
+            gps.update({16: "T", 17: float(heading)})
+        if gps:
+            exif[0x8825] = gps  # GPSInfo IFD
+        if dto is not None:
+            exif[0x8769] = {36867: dto}  # ExifIFD: DateTimeOriginal
+        out_dir = directory or tmp_path
+        out_dir.mkdir(parents=True, exist_ok=True)
+        p = out_dir / name
+        img.save(p, format="JPEG", exif=exif)
+        return p
+
+    return _make
+
+
 class InMemoryWorkbookReader:
     """Minimal WorkbookReaderProtocol adapter for normalizer unit tests.
 

@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import math
 import os
 import sys
 import uuid
@@ -6565,6 +6566,190 @@ def transform_landxml_cmd(input_path, output_path, source_crs, target_crs,
         f"Coordinate operation: {result.operation_name}{operation_id}"
         f"{accuracy}")
     click.echo(f"LandXML surface -> {result.output_path}")
+
+
+@envmon.group("photos")
+def photos_group():
+    """Photo-metadata tools over a harvest output folder (EXIF-driven).
+
+    All headless: they read the harvest manifest + the photo files' EXIF
+    (GPS, compass heading, timestamp). Requires Pillow
+    (pip install "autogis[report]").
+    """
+
+
+def _load_photo_records_or_fail(harvest_dir, qa):
+    from autogis.core.envmon.photo_metadata import load_photo_records
+    try:
+        return load_photo_records(Path(harvest_dir), qa)
+    except (FileNotFoundError, ImportError, ValueError) as exc:
+        # ValueError also catches json.JSONDecodeError (its subclass) from a
+        # malformed manifest.json -- a clean ClickException, not a traceback.
+        raise click.ClickException(str(exc))
+
+
+def _reject_harvest_input_overwrite(harvest_dir, *out_paths):
+    """Refuse an output path that resolves onto any harvested input."""
+    from autogis.core.envmon.photo_metadata import load_harvest_input_paths
+
+    root = Path(harvest_dir).resolve(strict=False)
+    manifest_paths = tuple((root / n).resolve(strict=False)
+                           for n in ("manifest.json", "manifest.csv"))
+    def identity(value):
+        return str(value).replace("\\", "/").casefold()
+
+    input_paths = manifest_paths + load_harvest_input_paths(root)
+    inputs = {identity(p) for p in input_paths}
+    outputs = [(p, Path(p), identity(Path(p).resolve(strict=False)))
+               for p in out_paths if p]
+    if len({key for _, _, key in outputs}) != len(outputs):
+        raise click.ClickException(
+            "multiple outputs resolve to the same output path")
+    checked_outputs = []
+    for p, target, key in outputs:
+        if key in inputs:
+            raise click.ClickException(
+                f"output path {p} would overwrite a harvest input")
+        if target.exists() and not target.is_file():
+            raise click.ClickException(
+                f"output path {p} is not a writable file target")
+        if target.exists():
+            try:
+                if any(candidate.exists()
+                       and os.path.samefile(target, candidate)
+                       for candidate in input_paths):
+                    raise click.ClickException(
+                        f"output path {p} would overwrite a harvest input")
+                if any(os.path.samefile(target, candidate)
+                       for candidate in checked_outputs):
+                    raise click.ClickException(
+                        "multiple outputs resolve to the same output file")
+            except OSError as exc:
+                raise click.ClickException(
+                    f"cannot verify output path {p}: {exc}") from exc
+            checked_outputs.append(target)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                with target.open("r+b"):
+                    pass
+            else:
+                probe = target.parent / f".autogis-probe-{uuid.uuid4().hex}"
+                try:
+                    with probe.open("xb"):
+                        pass
+                finally:
+                    probe.unlink(missing_ok=True)
+        except OSError as exc:
+            raise click.ClickException(
+                f"output path {p} is not writable: {exc}") from exc
+
+
+@photos_group.command("points")
+@click.option("--harvest-dir", required=True,
+              type=click.Path(exists=True, file_okay=False),
+              help="Harvest output directory (contains manifest.csv/json).")
+@click.option("--out-csv", default=None, type=click.Path(),
+              help="Write photo points CSV here.")
+@click.option("--out-geojson", default=None, type=click.Path(),
+              help="Write photo points GeoJSON here.")
+@qa_report_options
+def photos_points_cmd(harvest_dir, out_csv, out_geojson, report, fail_on):
+    """One point per GPS-bearing photo (EXIF position + heading)."""
+    if not out_csv and not out_geojson:
+        raise click.UsageError("pass --out-csv and/or --out-geojson")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.photo_points import (
+        write_points_csv, write_points_geojson)
+    qa = QACollector()
+    records = _load_photo_records_or_fail(harvest_dir, qa)
+    _reject_harvest_input_overwrite(
+        harvest_dir, out_csv, out_geojson, report)
+    n = 0
+    if out_csv:
+        n = write_points_csv(records, Path(out_csv))
+    if out_geojson:
+        n = write_points_geojson(records, Path(out_geojson))
+    skipped = len(records) - n
+    click.echo(f"Photo points: {n} point(s) from {len(records)} photo(s)"
+               + (f" ({skipped} without GPS)" if skipped else ""))
+    _render_qa(qa, report, fail_on)
+
+
+@photos_group.command("qa")
+@click.option("--harvest-dir", required=True,
+              type=click.Path(exists=True, file_okay=False),
+              help="Harvest output directory (contains manifest.csv/json).")
+@click.option("--max-offset-m", default=100.0, show_default=True,
+              type=click.FloatRange(min=0.0),
+              help="Flag photos whose EXIF GPS is farther than this from "
+                   "their source feature.")
+@qa_report_options
+def photos_qa_cmd(harvest_dir, max_offset_m, report, fail_on):
+    """Cross-check photo EXIF against the features they are attached to."""
+    if not math.isfinite(max_offset_m):
+        raise click.BadParameter(
+            "must be finite", param_hint="--max-offset-m")
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.photo_metadata import evaluate_photo_qa
+    qa = QACollector()
+    records = _load_photo_records_or_fail(harvest_dir, qa)
+    _reject_harvest_input_overwrite(harvest_dir, report)
+    s = evaluate_photo_qa(records, qa, max_offset_m=max_offset_m)
+    click.echo(f"Photo QA: {s['n_photos']} photo(s); "
+               f"offset {s['flagged_offset']}/{s['checked_offset']} flagged; "
+               f"date {s['flagged_date']}/{s['checked_date']} flagged; "
+               f"{s['missing_gps']} missing GPS; "
+               f"{s['missing_datetime']} missing datetime; "
+               f"{s['unreadable']} unreadable")
+    _render_qa(qa, report, fail_on)
+
+
+@photos_group.command("log")
+@click.option("--harvest-dir", required=True,
+              type=click.Path(exists=True, file_okay=False),
+              help="Harvest output directory (contains manifest.csv/json).")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output file (extension need not match --format).")
+@click.option("--format", "fmt", default="xlsx", show_default=True,
+              type=click.Choice(["xlsx", "html", "docx"]))
+@click.option("--title", default="Photographic Log", show_default=True)
+@qa_report_options
+def photos_log_cmd(harvest_dir, out_path, fmt, title, report, fail_on):
+    """Photographic log appendix (thumbnail, date, direction, coordinates)."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.photo_log import write_log
+    qa = QACollector()
+    records = _load_photo_records_or_fail(harvest_dir, qa)
+    _reject_harvest_input_overwrite(harvest_dir, out_path, report)
+    try:
+        n = write_log(records, Path(out_path), fmt=fmt, title=title)
+    except ImportError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"Photo log: {n} photo(s) -> {out_path} ({fmt})")
+    _render_qa(qa, report, fail_on)
+
+
+@photos_group.command("kmz")
+@click.option("--harvest-dir", required=True,
+              type=click.Path(exists=True, file_okay=False),
+              help="Harvest output directory (contains manifest.csv/json).")
+@click.option("--out", "out_path", required=True, type=click.Path(),
+              help="Output .kmz path.")
+@click.option("--thumb-px", default=800, show_default=True,
+              type=click.IntRange(min=1),
+              help="Max thumbnail edge (pixels) embedded in the KMZ.")
+@qa_report_options
+def photos_kmz_cmd(harvest_dir, out_path, thumb_px, report, fail_on):
+    """Google Earth KMZ of GPS-bearing photos with view-direction styling."""
+    from autogis.core.common.qa import QACollector
+    from autogis.core.envmon.photo_points import write_kmz
+    qa = QACollector()
+    records = _load_photo_records_or_fail(harvest_dir, qa)
+    _reject_harvest_input_overwrite(harvest_dir, out_path, report)
+    n = write_kmz(records, Path(out_path), thumb_px=thumb_px)
+    click.echo(f"KMZ: {n} placemark(s) -> {out_path}")
+    _render_qa(qa, report, fail_on)
 
 
 # Legacy single-command entry point kept as an alias.
