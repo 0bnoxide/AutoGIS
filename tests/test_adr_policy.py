@@ -579,3 +579,229 @@ def test_strict_scan_isolates_each_authoritative_floor(
     assert [call[2] for call in runner.calls] == [
         f"repos/{REPOSITORY}", default_tree, OPEN_PULLS, _pr_files(501)
     ]
+
+
+# --- transactional XXXX finalization -----------------------------------------
+
+def _finalize_repo(tmp_path, *slugs):
+    root = tmp_path / "repo"
+    adr_dir = root / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    rows = []
+    for slug in slugs:
+        name = f"XXXX-{slug}.md"
+        (adr_dir / name).write_text(
+            "# ADR-XXXX: Example Decision\n\nBody.\n", encoding="utf-8"
+        )
+        rows.append(f"| [XXXX]({name}) | Example decision | Proposed | 2026-08-13 |")
+    (adr_dir / "README.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return root
+
+
+def _finalize_runner(branch="feature/finalize"):
+    def run(args, **_kwargs):
+        assert args[-2:] == ["branch", "--show-current"]
+        return subprocess.CompletedProcess(args, 0, branch + "\n", "")
+    return run
+
+
+def _finalize_bytes(root):
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in (root / "docs" / "adr").glob("*.md")
+    }
+
+
+def _uncoordinated(monkeypatch, floor=130):
+    monkeypatch.setattr(adr, "_scan_max", lambda *_a, **_k: floor)
+    monkeypatch.setattr(adr, "_reserved_max", lambda: 0)
+    monkeypatch.setattr(adr, "_coordination", lambda *_a, **_k: None)
+
+
+def test_finalize_one_placeholder_at_verified_floor(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+
+    mappings = adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert mappings == [adr.FinalizedADR(
+        root / "docs" / "adr" / "XXXX-example-decision.md",
+        root / "docs" / "adr" / "0131-example-decision.md",
+    )]
+    assert (root / "docs" / "adr" / "0131-example-decision.md").read_text(
+        encoding="utf-8"
+    ).startswith("# ADR-0131:")
+    assert (root / "docs" / "adr" / "README.md").read_text(encoding="utf-8") == (
+        "| [131](0131-example-decision.md) | Example decision | Proposed | 2026-08-13 |\n"
+    )
+
+
+def test_finalize_multiple_placeholders_sorts_paths_and_mappings(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "zeta", "alpha")
+    _uncoordinated(monkeypatch)
+
+    mappings = adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert [(m.old_path.name, m.new_path.name) for m in mappings] == [
+        ("XXXX-alpha.md", "0131-alpha.md"),
+        ("XXXX-zeta.md", "0132-zeta.md"),
+    ]
+    readme = (root / "docs" / "adr" / "README.md").read_text(encoding="utf-8")
+    assert "[131](0131-alpha.md)" in readme
+    assert "[132](0132-zeta.md)" in readme
+
+
+def test_finalize_uses_strict_floor_and_live_reservations(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    calls = []
+
+    def strict_floor(*_a, **kwargs):
+        calls.append(kwargs)
+        return 130
+
+    monkeypatch.setattr(adr, "_scan_max", strict_floor)
+    monkeypatch.setattr(adr, "_reserved_max", lambda: 140)
+    monkeypatch.setattr(adr, "_coordination", lambda *_a, **_k: None)
+
+    mappings = adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert calls == [{"strict": True, "run": _finalize_runner()}] or calls[0]["strict"] is True
+    assert mappings[0].new_path.name == "0141-example-decision.md"
+
+
+def test_finalize_rejects_target_and_numeric_collisions_before_writes(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    adr_dir = root / "docs" / "adr"
+    (adr_dir / "0131-already.md").write_text("# ADR-0131: Existing\n", encoding="utf-8")
+    before = _finalize_bytes(root)
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert _finalize_bytes(root) == before
+
+
+def test_finalize_releases_repeated_reservations_on_preflight_failure(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "alpha", "zeta")
+    _uncoordinated(monkeypatch)
+    released = []
+
+    class Registry:
+        def reserve_number(self, *_args):
+            return 131
+
+        def release(self, _path, _sid, kind=None, value=None):
+            released.append((kind, value))
+
+    monkeypatch.setattr(adr, "_coordination", lambda *_a, **_k: (Registry(), "claims", "s1"))
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert released == [("adr", "131"), ("adr", "131")]
+
+
+@pytest.mark.parametrize(
+    "branch, mutate",
+    [
+        ("main", lambda root: None),
+        ("", lambda root: None),
+        ("feature/x", lambda root: (root / "docs" / "adr" / "XXXX-example-decision.md").unlink()),
+        ("feature/x", lambda root: (root / "docs" / "adr" / "XXXX-example-decision.md").write_text("# ADR-XXXXBROKEN\n", encoding="utf-8")),
+        ("feature/x", lambda root: (root / "docs" / "adr" / "README.md").write_text("", encoding="utf-8")),
+        ("feature/x", lambda root: (root / "docs" / "adr" / "README.md").write_text(
+            "| [XXXX](XXXX-example-decision.md) | Example decision | Proposed | 2026-08-13 |\n"
+            "| [XXXX](XXXX-example-decision.md) | Example decision | Proposed | 2026-08-13 |\n", encoding="utf-8")),
+    ],
+)
+def test_finalize_preflight_failures_do_not_write(monkeypatch, tmp_path, branch, mutate):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    mutate(root)
+    before = _finalize_bytes(root)
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner(branch))
+
+    assert _finalize_bytes(root) == before
+
+
+def test_finalize_strict_github_failure_does_not_write(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    before = _finalize_bytes(root)
+    monkeypatch.setattr(adr, "_scan_max", lambda *_a, **_k: (_ for _ in ()).throw(
+        adr.ADRStateUnavailable("remote unavailable")
+    ))
+
+    with pytest.raises(adr.ADRStateUnavailable):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert _finalize_bytes(root) == before
+
+
+@pytest.mark.parametrize("fail_at", [2, 3])
+def test_finalize_rolls_back_bytes_after_adr_or_readme_write_failure(
+        monkeypatch, tmp_path, fail_at):
+    root = _finalize_repo(tmp_path, "alpha", "zeta")
+    _uncoordinated(monkeypatch)
+    before = _finalize_bytes(root)
+    calls = {"n": 0}
+
+    def fail_once(path, data):
+        calls["n"] += 1
+        if calls["n"] == fail_at:
+            raise OSError("injected write failure")
+        Path(path).write_bytes(data)
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner(), write_bytes=fail_once)
+
+    assert _finalize_bytes(root) == before
+
+
+def test_finalize_reservation_is_released_on_failure_and_retained_on_success(
+        monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    created, released = [], []
+
+    class Registry:
+        def reserve_number(self, _path, _sid, _kind, base):
+            created.append(base + 1)
+            return base + 1
+
+        def release(self, _path, _sid, kind=None, value=None):
+            released.append((kind, value))
+
+    _uncoordinated(monkeypatch)
+    monkeypatch.setattr(adr, "_coordination", lambda *_a, **_k: (Registry(), "claims", "s1"))
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(
+            root, run=_finalize_runner(), write_bytes=lambda *_a: (_ for _ in ()).throw(OSError())
+        )
+    assert released == [("adr", "131")]
+
+    root = _finalize_repo(tmp_path / "success", "success")
+    created.clear()
+    released.clear()
+    adr.finalize_placeholders(root, run=_finalize_runner())
+    assert created == [131]
+    assert released == []
+
+
+def test_finalize_cli_prints_sorted_mappings_and_sanitizes_errors(monkeypatch, tmp_path, capsys):
+    root = _finalize_repo(tmp_path, "zeta", "alpha")
+    _uncoordinated(monkeypatch)
+    monkeypatch.setattr(adr, "finalize_placeholders", lambda *_a, **_k: [
+        adr.FinalizedADR(Path("docs/adr/XXXX-alpha.md"), Path("docs/adr/0131-alpha.md")),
+        adr.FinalizedADR(Path("docs/adr/XXXX-zeta.md"), Path("docs/adr/0132-zeta.md")),
+    ])
+
+    assert adr.main(["--finalize"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "docs/adr/XXXX-alpha.md -> docs/adr/0131-alpha.md",
+        "docs/adr/XXXX-zeta.md -> docs/adr/0132-zeta.md",
+        "updated docs/adr/README.md",
+    ]

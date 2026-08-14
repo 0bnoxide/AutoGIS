@@ -504,6 +504,171 @@ def next_adr_number(repo_root: Path | None = None) -> int:
     return max(_scan_max(root), _reserved_max()) + 1
 
 
+class ADRFinalizeError(RuntimeError):
+    """A placeholder ADR could not be finalized safely."""
+
+
+class FinalizedADR(NamedTuple):
+    old_path: Path
+    new_path: Path
+
+
+_PLACEHOLDER_H1 = re.compile(br"^# ADR-XXXX(?![A-Z0-9])")
+
+
+def _coordination(repo_root: Path, environ):
+    """Return the local reservation seam, or None when it is not installed."""
+    coord = repo_root / ".claude" / "coordination"
+    if not (coord / "coord_cli.py").is_file() or not (coord / "registry.py").is_file():
+        return None
+    try:
+        sys.path.insert(0, str(coord))
+        import coord_cli  # type: ignore
+        import registry  # type: ignore
+        path = registry.claims_path(repo_root)
+        sid = coord_cli.resolve_sid(path, str(repo_root), environ)
+    except Exception as exc:
+        raise ADRFinalizeError("Coordination state is unavailable.") from exc
+    return (registry, path, sid) if sid else None
+
+
+def _release_reservations(coord, values):
+    if not coord:
+        return
+    registry, path, sid = coord
+    for value in values:
+        registry.release(path, sid, kind="adr", value=str(value))
+
+
+def _finalize_branch(repo_root: Path, run) -> None:
+    runner = subprocess.run if run is None else run
+    try:
+        result = runner(
+            ["git", "-C", str(repo_root), "branch", "--show-current"],
+            capture_output=True, text=True, timeout=30, check=True,
+        )
+        branch = result.stdout.strip()
+    except Exception as exc:
+        raise ADRFinalizeError("Could not determine the current branch.") from exc
+    if not branch or branch == "main":
+        raise ADRFinalizeError("Finalization requires a non-main branch.")
+
+
+def _finalize_plan(repo_root: Path, run, environ):
+    """Build every finalization write in memory, reserving only after validation."""
+    _finalize_branch(repo_root, run)
+    adr_dir = repo_root / "docs" / "adr"
+    placeholders = sorted(adr_dir.glob("XXXX-*.md"), key=lambda path: path.name)
+    if not placeholders:
+        raise ADRFinalizeError("No root ADR placeholders were found.")
+    originals = {path: path.read_bytes() for path in placeholders}
+    readme = adr_dir / "README.md"
+    originals[readme] = readme.read_bytes()
+    for path, data in originals.items():
+        if path != readme and not _PLACEHOLDER_H1.match(data):
+            raise ADRFinalizeError("Placeholder ADR heading is malformed.")
+    try:
+        readme_text = originals[readme].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ADRFinalizeError("ADR index is malformed.") from exc
+    for path in placeholders:
+        marker = f"[XXXX]({path.name})"
+        matches = [
+            line for line in readme_text.splitlines(keepends=True)
+            if line.startswith("|") and marker in line
+        ]
+        if len(matches) != 1:
+            raise ADRFinalizeError("ADR index must contain exactly one placeholder row.")
+
+    # A strict remote scan is deliberately before reservation: unknown state
+    # must never create a numeric ADR or leave a fresh claim behind.
+    floor = max(_scan_max(repo_root, strict=True, run=run), _reserved_max())
+    coord = _coordination(repo_root, os.environ if environ is None else environ)
+    reservations = []
+    try:
+        if coord:
+            registry, path, sid = coord
+            for _ in placeholders:
+                reservations.append(registry.reserve_number(path, sid, "adr", floor))
+        else:
+            reservations = list(range(floor + 1, floor + len(placeholders) + 1))
+        plans = []
+        transformed_names = {
+            path.name for path in adr_dir.glob("*.md") if path not in placeholders
+        }
+        transformed_numbers = [
+            _num(name) for name in transformed_names if _num(name) is not None
+        ]
+        for path, number in zip(placeholders, reservations):
+            new_path = path.with_name(f"{number:04d}-{path.name[5:]}")
+            if new_path.exists() or number in transformed_numbers:
+                raise ADRFinalizeError("A numeric ADR target already exists.")
+            if new_path.name in transformed_names:
+                raise ADRFinalizeError("Duplicate ADR filename after finalization.")
+            transformed_names.add(new_path.name)
+            transformed_numbers.append(number)
+            new_bytes = originals[path].replace(b"# ADR-XXXX", f"# ADR-{number:04d}".encode(), 1)
+            if not re.match(fr"^# ADR-{number:04d}(?![A-Z0-9])".encode(), new_bytes):
+                raise ADRFinalizeError("ADR heading does not match its filename.")
+            plans.append(FinalizedADR(path, new_path))
+        if len(transformed_numbers) != len(set(transformed_numbers)):
+            raise ADRFinalizeError("Duplicate numeric ADR prefixes after finalization.")
+        new_readme = readme_text
+        for mapping in plans:
+            number = int(mapping.new_path.name[:4])
+            old = f"[XXXX]({mapping.old_path.name})"
+            new = f"[{number:03d}]({mapping.new_path.name})"
+            new_readme = new_readme.replace(old, new, 1)
+        updates = {
+            mapping.new_path: originals[mapping.old_path].replace(
+                b"# ADR-XXXX", f"# ADR-{int(mapping.new_path.name[:4]):04d}".encode(), 1
+            )
+            for mapping in plans
+        }
+        updates[readme] = new_readme.encode("utf-8")
+        return plans, originals, updates, coord, reservations
+    except Exception:
+        _release_reservations(coord, reservations)
+        raise
+
+
+def finalize_placeholders(
+    repo_root: Path,
+    *,
+    environ=None,
+    run=None,
+    write_bytes=None,
+) -> list[FinalizedADR]:
+    """Strictly allocate, validate, reserve when coordinated, and rewrite XXXX ADRs."""
+    plans, originals, updates, coord, reservations = _finalize_plan(repo_root, run, environ)
+    writer = write_bytes or (lambda path, data: path.write_bytes(data))
+    try:
+        for path, data in updates.items():
+            writer(path, data)
+        for mapping in plans:
+            mapping.old_path.unlink()
+    except Exception as exc:
+        rollback_failed = False
+        for mapping in plans:
+            try:
+                mapping.new_path.unlink(missing_ok=True)
+            except OSError:
+                rollback_failed = True
+        for path, data in originals.items():
+            try:
+                path.write_bytes(data)
+            except OSError:
+                rollback_failed = True
+        try:
+            _release_reservations(coord, reservations)
+        except Exception:
+            rollback_failed = True
+        if rollback_failed:
+            raise ADRFinalizeError("ADR finalization failed; rollback is incomplete.") from exc
+        raise ADRFinalizeError("ADR finalization failed; original files were restored.") from exc
+    return plans
+
+
 def _check() -> None:
     # ponytail: the parse / max / zero-pad is the only non-trivial logic — assert it.
     assert _num("0099-foo.md") == 99
@@ -557,6 +722,7 @@ def main(argv=None, environ=None, run=None) -> int:
     modes.add_argument("--check", action="store_true")
     modes.add_argument("--base", action="store_true")
     modes.add_argument("--policy-check", action="store_true")
+    modes.add_argument("--finalize", action="store_true")
     parser.add_argument("--event-file")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[3]
@@ -565,6 +731,16 @@ def main(argv=None, environ=None, run=None) -> int:
         return 0
     if args.base:
         print(_scan_max(root))
+        return 0
+    if args.finalize:
+        try:
+            mappings = finalize_placeholders(root, environ=environ, run=run)
+        except (ADRFinalizeError, ADRStateUnavailable, OSError, subprocess.SubprocessError):
+            print("ADR finalization failed.", file=sys.stderr)
+            return 2
+        for mapping in sorted(mappings, key=lambda item: item.old_path.as_posix()):
+            print(f"{mapping.old_path.as_posix()} -> {mapping.new_path.as_posix()}")
+        print("updated docs/adr/README.md")
         return 0
     if not args.policy_check:
         print(f"{next_adr_number():04d}")
