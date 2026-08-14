@@ -78,6 +78,94 @@ def test_harvest_downloads_and_groups(tmp_path):
     assert layer.last_return_geometry is True
 
 
+def test_harvest_appends_source_extension_when_template_omits_it(tmp_path):
+    # Template with no extension (#485): the source attachment's extension is
+    # appended so files open by association instead of landing extensionless.
+    features = [FakeFeature({"OBJECTID": 1, "LocationID": "RILEY.PASS"})]
+    listing = {1: [{"id": 10, "name": "photo.JPG", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    cfg = _cfg(tmp_path, group_template="{OBJECTID}",
+               filename_template="{LocationID}_{OBJECTID}")
+    harvester.harvest(None, cfg, layer=layer, now_ms=1, sleep=lambda s: None)
+    # dotted attribute value must not swallow the extension
+    assert (tmp_path / "1" / "RILEY.PASS_1.JPG").exists()
+
+
+def test_harvest_does_not_double_extension_when_template_ends_in_name(tmp_path):
+    # Default template already ends in {name} -> extension not duplicated.
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                      now_ms=1, sleep=lambda s: None)
+    assert (tmp_path / "Done" / "1_a.jpg").exists()
+
+
+def test_harvest_warns_on_unresolved_template_field(tmp_path, caplog):
+    # Case-mismatched field ({LOCATIONID} vs real LocationID): warn instead of
+    # silently writing 'unknown' files (#486).
+    features = [FakeFeature({"OBJECTID": 1, "LocationID": "A"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    cfg = _cfg(tmp_path, group_template="{OBJECTID}",
+               filename_template="{LOCATIONID}_{OBJECTID}")
+    with caplog.at_level("WARNING"):
+        harvester.harvest(None, cfg, layer=layer, now_ms=1, sleep=lambda s: None)
+    assert "LOCATIONID" in caplog.text
+    assert "not found in layer attributes" in caplog.text
+
+
+def test_harvest_sanitizes_appended_extension(tmp_path):
+    # An illegal char in the source extension must not reach the on-disk name
+    # (#489 review): the ext is cleaned with the rest, not appended raw.
+    features = [FakeFeature({"OBJECTID": 1})]
+    listing = {1: [{"id": 10, "name": "p.jp<g", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    cfg = _cfg(tmp_path, group_template="{OBJECTID}",
+               filename_template="{OBJECTID}_{name}")
+    summary = harvester.harvest(None, cfg, layer=layer, now_ms=1,
+                                sleep=lambda s: None)
+    assert summary.downloaded == 1
+    assert (tmp_path / "1" / "1_p.jpg").exists()
+
+
+def test_harvest_does_not_double_extension_on_trailing_space_name(tmp_path):
+    # Trailing space in the source name broke the raw-ext vs sanitized-name
+    # compare and doubled the extension (#489 review); compare raw-vs-raw.
+    features = [FakeFeature({"OBJECTID": 1})]
+    listing = {1: [{"id": 10, "name": "photo.jpg ", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    cfg = _cfg(tmp_path, group_template="{OBJECTID}",
+               filename_template="{OBJECTID}_{name}")
+    harvester.harvest(None, cfg, layer=layer, now_ms=1, sleep=lambda s: None)
+    assert (tmp_path / "1" / "1_photo.jpg").exists()
+    assert not (tmp_path / "1" / "1_photo.jpg.jpg").exists()
+
+
+def test_harvest_warns_on_name_in_group_template(tmp_path, caplog):
+    # {name} is injected only for filename rendering, so {name} in the GROUP
+    # template is genuinely unresolved and must warn (#489 review).
+    features = [FakeFeature({"OBJECTID": 1})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    cfg = _cfg(tmp_path, group_template="{name}", filename_template="{OBJECTID}")
+    with caplog.at_level("WARNING"):
+        harvester.harvest(None, cfg, layer=layer, now_ms=1, sleep=lambda s: None)
+    assert "not found in layer attributes" in caplog.text
+    assert "name" in caplog.text
+
+
+def test_harvest_no_warning_when_template_fields_present(tmp_path, caplog):
+    features = [FakeFeature({"OBJECTID": 1, "LocationID": "A"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+    cfg = _cfg(tmp_path, group_template="{OBJECTID}",
+               filename_template="{LocationID}_{OBJECTID}")
+    with caplog.at_level("WARNING"):
+        harvester.harvest(None, cfg, layer=layer, now_ms=1, sleep=lambda s: None)
+    assert "not found in layer attributes" not in caplog.text
+
+
 def test_harvest_skips_existing(tmp_path):
     features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
     listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}

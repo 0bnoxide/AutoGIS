@@ -38,7 +38,7 @@ from autogis.runtime.capabilities import (
     _REGISTRY_SEED, RUNTIME_CLASSES, TOOLS, Runtime)
 
 PYT_PATH = Path(autogis.__file__).parent / "adapters" / "toolbox.pyt"
-ROADMAP_PATH = Path(autogis.__file__).parent.parent / "docs" / \
+ROADMAP_PATH = Path(__file__).resolve().parents[1] / "docs" / \
     "envmon-feature-roadmap.md"
 
 

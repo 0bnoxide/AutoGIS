@@ -48,6 +48,20 @@ def _pump_until(condition, timeout_ms=5000, step_ms=10):
     assert condition(), "timed out waiting for condition"
 
 
+def test_profile_is_editable_dropdown_of_registered_profiles(qapp, monkeypatch):
+    """The connection field offers registered profiles as a dropdown but still
+    accepts a typed name the box doesn't list (a fresh checkout has none)."""
+    monkeypatch.setattr(dialog_mod, "list_connection_profiles",
+                        lambda *a, **k: ["Greg_Personal", "Greg_Work"])
+    dlg = ConfigBuilderDialog()
+    combo = dlg._profile
+    assert combo.isEditable()
+    items = [combo.itemText(i) for i in range(combo.count())]
+    assert items == ["", "Greg_Personal", "Greg_Work"]  # blank = anonymous
+    combo.setCurrentText("typed_not_in_list")
+    assert dlg._build_config()["connection"]["profile"] == "typed_not_in_list"
+
+
 ENTRIES = [
     SublayerEntry(label="5 — Daily_Diary_Photos (Table, has attachments)",
                   url="https://x/FeatureServer/5", has_attachments=True),
@@ -91,7 +105,7 @@ def test_filling_item_id_disables_url_and_back(qapp):
 
 def test_all_sublayers_checkbox_disables_url_and_incremental(qapp):
     dlg = ConfigBuilderDialog()
-    dlg._profile.setText("corp")
+    dlg._profile.setCurrentText("corp")
     dlg._item_id.setText("abc123")
     dlg._incremental.setChecked(True)
     assert dlg._fetch_button.isEnabled()
@@ -148,7 +162,7 @@ def test_save_all_sublayers_with_url_rejected_via_load(qapp, monkeypatch, tmp_pa
 def test_fetch_disabled_until_profile_and_item_id(qapp):
     dlg = ConfigBuilderDialog()
     assert not dlg._fetch_button.isEnabled()
-    dlg._profile.setText("corp")
+    dlg._profile.setCurrentText("corp")
     dlg._item_id.setText("abc123")
     assert dlg._fetch_button.isEnabled()
     dlg._item_id.clear()
@@ -162,7 +176,7 @@ def test_fetch_enables_when_profile_filled_after_item_id(qapp):
     dlg = ConfigBuilderDialog()
     dlg._item_id.setText("abc123")
     assert not dlg._fetch_button.isEnabled()
-    dlg._profile.setText("corp")
+    dlg._profile.setCurrentText("corp")
     assert dlg._fetch_button.isEnabled()
 
 
@@ -175,7 +189,7 @@ def test_fetch_populates_combo_off_the_ui_thread(qapp, monkeypatch):
 
     monkeypatch.setattr(builder_mod, "fetch_sublayers", fake_fetch)
     dlg = ConfigBuilderDialog()
-    dlg._profile.setText("corp")
+    dlg._profile.setCurrentText("corp")
     dlg._item_id.setText("abc123")
     dlg._on_fetch()
     _pump_until(lambda: dlg._worker is None)
@@ -194,7 +208,7 @@ def test_fetch_failure_reported_inline_and_button_reenabled(qapp, monkeypatch):
 
     monkeypatch.setattr(builder_mod, "fetch_sublayers", boom)
     dlg = ConfigBuilderDialog()
-    dlg._profile.setText("corp")
+    dlg._profile.setCurrentText("corp")
     dlg._item_id.setText("abc123")
     dlg._on_fetch()
     _pump_until(lambda: dlg._worker is None)
@@ -207,7 +221,7 @@ def test_picking_sublayer_writes_url_and_clears_item_id(qapp, monkeypatch):
     monkeypatch.setattr(builder_mod, "fetch_sublayers",
                         lambda profile, item_id: list(ENTRIES))
     dlg = ConfigBuilderDialog()
-    dlg._profile.setText("corp")
+    dlg._profile.setCurrentText("corp")
     dlg._item_id.setText("abc123")
     dlg._on_fetch()
     _pump_until(lambda: dlg._worker is None)
@@ -222,7 +236,7 @@ def test_reselecting_blank_row_changes_nothing(qapp, monkeypatch):
     monkeypatch.setattr(builder_mod, "fetch_sublayers",
                         lambda profile, item_id: list(ENTRIES))
     dlg = ConfigBuilderDialog()
-    dlg._profile.setText("corp")
+    dlg._profile.setCurrentText("corp")
     dlg._item_id.setText("abc123")
     dlg._on_fetch()
     _pump_until(lambda: dlg._worker is None)
@@ -264,7 +278,7 @@ def test_save_writes_yaml_harvestconfig_can_load(qapp, monkeypatch, tmp_path):
     monkeypatch.setattr(dialog_mod, "_pick_path", lambda *a: str(dest))
     dlg = ConfigBuilderDialog()
     _fill_valid(dlg, tmp_path)
-    dlg._profile.setText("corp")
+    dlg._profile.setCurrentText("corp")
     dlg._where.setText("Status = 'Open'")
     dlg._incremental.setChecked(True)
     dlg._retries.setValue(5)

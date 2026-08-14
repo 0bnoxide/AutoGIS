@@ -1,4 +1,4 @@
-"""CLI tests for apply-screening (Tool 3.5)."""
+"""CLI tests for apply-screening."""
 import csv
 import yaml
 from click.testing import CliRunner

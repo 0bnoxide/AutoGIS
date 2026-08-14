@@ -9,11 +9,11 @@ from datetime import datetime, timezone
 from .models import AttachmentResult, RunSummary, summary_counts
 from ..common.config import ConfigError
 from .manifest import Manifest
-from .templates import render_path_component, sanitize
+from .templates import render, render_path_component, sanitize, template_fields
 from .download import download_one
 from .state import read_last_run, write_last_run
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 def _feature_layer_cls():
     """Import ``arcgis.features.FeatureLayer`` on demand, or return None.
@@ -167,11 +167,33 @@ def _iso_utc(ms):
         return None
 
 
+def _warn_unresolved_template_fields(config, features, source_table):
+    """Warn once per layer when a group/filename template references a field
+    absent from the layer's attributes -- usually a case mismatch (e.g.
+    ``{LOCATIONID}`` vs the real ``LocationID``). Left silent, every file or
+    folder falls back to ``unknown`` with no signal (#486). ``name`` (the
+    attachment filename) is injected only for FILENAME rendering, not group
+    rendering, so it is valid in the filename template but a genuine miss in
+    the group template (#489 review)."""
+    if not features:
+        return
+    keys = set(features[0].attributes)
+    missing = sorted(
+        (template_fields(config.group_template) - keys)
+        | (template_fields(config.filename_template) - keys - {"name"}))
+    if missing:
+        log.warning(
+            "%s: template field(s) %s not found in layer attributes; affected "
+            "files/folders will use 'unknown'. Available fields: %s",
+            source_table, ", ".join(missing), ", ".join(sorted(keys)))
+
+
 def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
     """Query ONE layer/table and accumulate its attachments into the shared
     manifest, rooting destination paths at ``base_dir``."""
     where = _effective_where(config, layer)
     result = layer.query(where=where, out_fields="*", return_geometry=True)
+    _warn_unresolved_template_fields(config, result.features, source_table)
     edit_field = _edit_date_field(layer)
     unsupported_sr = 0
     for feature in result.features:
@@ -196,8 +218,21 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
         for att in layer.attachments.get_list(oid=objectid):
             att_id, name, size = att["id"], att["name"], att.get("size")
             group = render_path_component(config.group_template, attrs)
-            fname = render_path_component(
-                config.filename_template, {**attrs, "name": name})
+            # Restore the source attachment's extension when the template omits
+            # it (e.g. "{LOCATIONID}_{OBJECTID}" -> extensionless files that
+            # won't open by association, #485), then sanitize the whole. Render
+            # UNSANITIZED and compare the raw ext against the raw rendered name
+            # so the endswith guard is raw-vs-raw: comparing a raw ext against
+            # an already-sanitized name mis-fired (#489 review) -- a trailing
+            # space "photo.jpg " doubled the ext, and an illegal-char ext was
+            # appended raw, bypassing sanitize. sanitize() runs once at the end,
+            # cleaning the ext with the rest (a mid-string extension dot is kept
+            # -- only leading/trailing "._ " is stripped).
+            base = render(config.filename_template, {**attrs, "name": name})
+            ext = os.path.splitext(name)[1]
+            if ext and not base.lower().endswith(ext.lower()):
+                base += ext
+            fname = sanitize(base)
             dest = os.path.join(base_dir, group, fname)
 
             if config.skip_existing and os.path.exists(dest):
@@ -238,7 +273,7 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
                 checksum=checksum, algorithm=algorithm,
                 geometry=geometry_json, feature_edited_at=edited_at))
     if unsupported_sr:
-        logger.warning(
+        log.warning(
             "%s: %d feature(s) in an unsupported spatial reference — "
             "manifest geometry left null (supported: WGS84, Web Mercator)",
             source_table, unsupported_sr)

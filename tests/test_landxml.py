@@ -2,7 +2,8 @@
 import pytest
 
 from autogis.core.common.landxml import (
-    LandXMLSurface, elevation_at, parse_landxml_surface,
+    LandXMLSurface, SourceMetadata, elevation_at, parse_landxml_surface,
+    read_source_metadata,
 )
 
 _LANDXML = """<?xml version="1.0"?>
@@ -48,6 +49,15 @@ def test_parse_landxml_surface_missing_surface_raises(tmp_path):
 def test_parse_landxml_surface_unknown_name_raises(tmp_path):
     with pytest.raises(ValueError, match="Bogus"):
         parse_landxml_surface(_write(tmp_path), surface_name="Bogus")
+
+
+def test_parse_landxml_surface_duplicate_named_selection_ambiguous(tmp_path):
+    dup = _LANDXML.replace(
+        "  </Surfaces>",
+        _LANDXML[_LANDXML.index("    <Surface"):_LANDXML.index("  </Surfaces>")]
+        + "  </Surfaces>")
+    with pytest.raises(ValueError, match="ambiguous"):
+        parse_landxml_surface(_write(tmp_path, dup), surface_name="EG")
 
 
 @pytest.mark.parametrize(("fragment", "match"), [
@@ -266,3 +276,49 @@ def test_write_landxml_surface_rejects_invalid_tin(tmp_path, surface, match):
     with pytest.raises(ValueError, match=match):
         write_landxml_surface(
             surface, tmp_path / "surface.xml", crs="EPSG:2256", linear_unit="foot")
+
+
+_LANDXML_META = """<?xml version="1.0"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2">
+  <Units>
+    <Metric linearUnit="meter" elevationUnit="meter"/>
+  </Units>
+  <CoordinateSystem name="EPSG:26913" epsgCode="26913"/>
+  <Surfaces>
+    <Surface name="EG">
+      <Definition surfType="TIN">
+        <Pnts>
+          <P id="1">0.0 0.0 100.0</P>
+          <P id="2">0.0 10.0 102.0</P>
+          <P id="3">10.0 0.0 98.0</P>
+        </Pnts>
+        <Faces>
+          <F>1 2 3</F>
+        </Faces>
+      </Definition>
+    </Surface>
+  </Surfaces>
+</LandXML>
+"""
+
+
+def test_read_source_metadata_declared_values(tmp_path):
+    meta = read_source_metadata(_write(tmp_path, _LANDXML_META))
+    assert meta.crs == ("EPSG:26913",)
+    assert meta.linear_unit == "meter"
+    assert meta.elevation_unit == "meter"
+    assert meta.surface_names == ("EG",)
+
+
+def test_read_source_metadata_absent_declarations(tmp_path):
+    meta = read_source_metadata(_write(tmp_path))
+    assert meta == SourceMetadata((), None, None, ("EG",))
+
+
+def test_read_source_metadata_both_unit_systems_raise(tmp_path):
+    text = _LANDXML_META.replace(
+        "<Metric linearUnit=\"meter\" elevationUnit=\"meter\"/>",
+        "<Metric linearUnit=\"meter\" elevationUnit=\"meter\"/>"
+        "<Imperial linearUnit=\"foot\" elevationUnit=\"feet\"/>")
+    with pytest.raises(ValueError, match="both Metric and Imperial"):
+        read_source_metadata(_write(tmp_path, text))

@@ -5,6 +5,11 @@
 **Tool:** ListAvailableEnvTools (Phase 5 / Tool 10.1)
 **Priority:** MEDIUM — discoverability; reduces "what commands exist?" friction
 
+> **Amended by #468 / PR #475:** `DRAFT` is no longer a `runtime` value — runtime
+> holds only a real runtime class (`CLOUD | HYBRID | LOCAL`, see
+> `RUNTIME_CLASSES`); draft-ness lives in `status` alone. Mentions of a `DRAFT`
+> runtime below are the original design, kept as history.
+
 ---
 
 ## Problem
@@ -116,7 +121,7 @@ Backwards-compatible — existing entries without new fields default to `""`.
 
 ```
 autogis envmon list-tools \
-  [--runtime CLOUD|LOCAL|DRAFT] \
+  [--runtime CLOUD|HYBRID|LOCAL] \
   [--domain intake|qa|analysis|cartography|field|agol|reporting|admin] \
   [--status stable|draft|planned] \
   [--search <keyword>] \

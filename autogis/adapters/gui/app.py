@@ -34,11 +34,11 @@ from pathlib import Path
 from PySide6.QtCore import QLocale, Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QCompleter,
-    QDateEdit, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QPushButton,
-    QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QTextEdit, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox,
+    QCompleter, QDateEdit, QDoubleSpinBox, QFileDialog, QFormLayout,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+    QPushButton, QRadioButton, QScrollArea, QSpinBox, QSplitter, QTableWidget,
+    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from . import settings
@@ -171,6 +171,27 @@ QPushButton#dangerButton {
 QCheckBox {
     spacing: 6px;
 }
+QRadioButton {
+    spacing: 6px;
+}
+/* An app-level stylesheet drops QRadioButton into styled-indicator mode where
+   the *checked* dot renders blank against this dark theme (the unchecked ring
+   still draws). Draw both states explicitly: a filled cyan disc = selected,
+   a hollow dark disc = not. */
+QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    border-radius: 8px;
+    border: 1px solid #4a7ba0;
+    background-color: #0b1d33;
+}
+QRadioButton::indicator:hover {
+    border-color: #35cfff;
+}
+QRadioButton::indicator:checked {
+    border-color: #35cfff;
+    background-color: #35cfff;
+}
 QHeaderView::section {
     background-color: #0d2742;
     color: #9eeaff;
@@ -223,6 +244,48 @@ def _pick_path(kind: str, parent, title: str, start: str) -> str:
     if kind == "save":
         return QFileDialog.getSaveFileName(parent, title, start)[0]
     return QFileDialog.getOpenFileName(parent, title, start)[0]
+
+
+_USE_CONFIG_LABEL = "Use my config file's setting (default)"
+# Per-field wording for the on/off states of a nullable Click flag
+# (``--x/--no-x`` with default=None). harvest ``--incremental`` is the only
+# such flag in the tree today; an unlisted nullable flag falls back to generic
+# wording keyed off its own label so the radio group still reads sensibly.
+_NULLABLE_FLAG_LABELS = {
+    "incremental": (
+        "Incremental — only harvest new or changed attachments",
+        "Full re-harvest — process every attachment",
+    ),
+}
+
+
+class _NullableFlagRadios(QWidget):
+    """Three mutually-exclusive radios for a nullable Click flag (``--x/--no-x``
+    with default=None), whose three states are "use the config file" (None),
+    on (True) and off (False). Replaces the old tri-state checkbox whose dash
+    state was undiscoverable and whose blank box silently forced ``--no-<flag>``
+    over the config file (#352). The "use config" option is pre-checked, so an
+    untouched form still overrides nothing; ``_raw_values`` reads
+    :meth:`value` -> None/True/False, exactly the flag contract ``build_argv``
+    expects."""
+
+    def __init__(self, options: list[tuple[str, object]]) -> None:
+        # ``options`` are (label, value) pairs, default first (pre-checked).
+        super().__init__()
+        self._values = [value for _label, value in options]
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._group = QButtonGroup(self)  # exclusive by default
+        for index, (label, _value) in enumerate(options):
+            button = QRadioButton(label)
+            self._group.addButton(button, index)
+            if index == 0:
+                button.setChecked(True)
+            layout.addWidget(button)
+
+    def value(self) -> object:
+        index = self._group.checkedId()
+        return self._values[index] if index >= 0 else self._values[0]
 
 
 class _RepeatableRows(QWidget):
@@ -728,25 +791,28 @@ class MainWindow(QMainWindow):
                 widget: QWidget = QLineEdit()
                 widget.setPlaceholderText(
                     f"{field.nargs} space-separated values")
+            elif field.kind == "flag" and field.default is None:
+                # A nullable flag (Click `--x/--no-x` with default=None) carries
+                # three meanings, not two: on, off, and "leave whatever the
+                # config file says alone". A tri-state checkbox cycled through
+                # these with no words -- the "leave config alone" dash was
+                # undiscoverable, and a blank box looked like "off" while
+                # silently forcing --no-<flag> over the config file (#352). A
+                # radio group names all three and shows the default; "use
+                # config" (None) is pre-checked so an untouched form overrides
+                # nothing. _raw_values reads the selected value back.
+                on_label, off_label = _NULLABLE_FLAG_LABELS.get(
+                    field.name,
+                    (f"Yes — enable {field.label}",
+                     f"No — disable {field.label}"))
+                widget = _NullableFlagRadios([
+                    (_USE_CONFIG_LABEL, None),
+                    (on_label, True),
+                    (off_label, False),
+                ])
             elif field.kind == "flag":
                 widget = QCheckBox()
-                if field.default is None:
-                    # A nullable flag (Click `--x/--no-x` with default=None)
-                    # carries three meanings, not two: on, off, and "leave
-                    # whatever the config file says alone". bool(None)
-                    # collapsed the third into "off", so an untouched form
-                    # emitted --no-incremental and silently overrode the
-                    # config (#352). setTristate must come first -- Qt
-                    # ignores a partial state on a two-state box.
-                    widget.setTristate(True)
-                    widget.setCheckState(Qt.CheckState.PartiallyChecked)
-                else:
-                    widget.setChecked(bool(field.default))
-                if field.help_text:
-                    # flags have no placeholder to carry their help the way
-                    # QLineEdit does below; without this the partial state is
-                    # a half-filled box with no explanation
-                    widget.setToolTip(field.help_text)
+                widget.setChecked(bool(field.default))
             elif field.kind == "choice":
                 widget = QComboBox()
                 # A leading blank item: an untouched combo box otherwise
@@ -929,13 +995,13 @@ class MainWindow(QMainWindow):
     def _raw_values(self) -> dict[str, object]:
         values: dict[str, object] = {}
         for name, widget in self._field_widgets.items():
-            if isinstance(widget, QCheckBox):
-                state = widget.checkState()
-                values[name] = (
-                    None
-                    if state == Qt.CheckState.PartiallyChecked
-                    else state == Qt.CheckState.Checked
-                )
+            if isinstance(widget, _NullableFlagRadios):
+                values[name] = widget.value()  # None / True / False
+            elif isinstance(widget, QCheckBox):
+                # Every form-field flag is now two-state -- the sole nullable
+                # flag renders as _NullableFlagRadios above -- so a checkbox is
+                # always a plain bool.
+                values[name] = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 values[name] = widget.currentText()
             elif isinstance(widget, QListWidget):

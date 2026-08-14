@@ -80,6 +80,72 @@ def linear_unit_scale(source_unit: str, target_unit: str) -> float:
     return source / target
 
 
+_AUTHORITY_CRS_RE = re.compile(
+    r"^\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(\d+)\s*$")
+
+
+def authority_crs(value: Optional[str]) -> Optional[str]:
+    """Return a normalized authority code, treating bare numbers as EPSG."""
+    if parse_epsg(value) is not None:
+        return f"EPSG:{parse_epsg(value)}"
+    match = _AUTHORITY_CRS_RE.match(value or "")
+    if match is None:
+        return None
+    return f"{match.group(1).upper()}:{match.group(2)}"
+
+
+class SourceMetadata(NamedTuple):
+    """Metadata a LandXML file explicitly declares (never inferred)."""
+    crs: tuple            # authority codes in declaration order
+    linear_unit: Optional[str]     # Units linearUnit attribute, verbatim
+    elevation_unit: Optional[str]  # Units elevationUnit attribute, verbatim
+    surface_names: tuple
+
+
+def read_source_metadata(path: Path) -> SourceMetadata:
+    """Read the CRS, units, and surface names a LandXML file declares.
+
+    Promoted from landxml_transform._source_metadata (ADR-0128) so the
+    transform and handoff-packaging paths share one extraction.
+    """
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError as exc:
+        raise ValueError(f"Malformed LandXML {path}: {exc}") from None
+    coordinate_system = root.find(".//{*}CoordinateSystem")
+    declared_crs = []
+    if coordinate_system is not None:
+        epsg = parse_epsg(coordinate_system.get("epsgCode"))
+        if epsg is not None:
+            declared_crs.append(f"EPSG:{epsg}")
+        named = authority_crs(coordinate_system.get("name"))
+        if named is not None and named not in declared_crs:
+            declared_crs.append(named)
+
+    unit_elements = [
+        element for element in (
+            root.find(".//{*}Units/{*}Metric"),
+            root.find(".//{*}Units/{*}Imperial"),
+        )
+        if element is not None
+    ]
+    if len(unit_elements) > 1:
+        raise ValueError(
+            f"{path} declares both Metric and Imperial LandXML units.")
+    declared_unit = (
+        unit_elements[0].get("linearUnit") if unit_elements else None
+    )
+    elevation_unit = (
+        unit_elements[0].get("elevationUnit") if unit_elements else None
+    )
+    surface_names = tuple(
+        surface.get("name", "")
+        for surface in root.findall(".//{*}Surfaces/{*}Surface")
+    )
+    return SourceMetadata(
+        tuple(declared_crs), declared_unit, elevation_unit, surface_names)
+
+
 def _landxml_root(*, crs: Optional[str], linear_unit: Optional[str]) -> ET.Element:
     """Build the shared, coordinate-aware LandXML 1.2 document root."""
     if crs and parse_epsg(crs) is None:
@@ -219,6 +285,10 @@ def parse_landxml_surface(path: Path, *, surface_name: str = "") -> LandXMLSurfa
         matched = [s for s in surfaces if s.get("name") == surface_name]
         if not matched:
             raise ValueError(f"Surface {surface_name!r} not found in {path}")
+        if len(matched) > 1:
+            raise ValueError(
+                f"{path} declares {len(matched)} surfaces named "
+                f"{surface_name!r}; surface selection is ambiguous.")
         surface = matched[0]
 
     points: dict = {}

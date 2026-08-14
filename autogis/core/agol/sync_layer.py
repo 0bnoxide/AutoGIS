@@ -38,7 +38,7 @@ def edits_where_clause(where: Optional[str] = None,
     the same epoch-ms convention the attachment harvester's incremental mode
     uses.  ``edit_field`` defaults to ``EditDate`` (the AGOL hosted default);
     callers with a layer whose ``editFieldsInfo.editDateField`` differs pass
-    it explicitly (Tool 7.5 does).  The hosted layer needs editor tracking
+    it explicitly (FieldMapsSyncPreflight does).  The hosted layer needs editor tracking
     for the field to exist.
     """
     base = where or "1=1"

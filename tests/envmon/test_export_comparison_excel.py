@@ -1,4 +1,4 @@
-"""Unit + CLI tests for export_comparison_excel (Tool 4.8)."""
+"""Unit + CLI tests for export_comparison_excel."""
 import csv
 import zipfile
 from pathlib import Path
