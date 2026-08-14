@@ -161,6 +161,7 @@ def test_adr_scan_base_includes_the_callers_worktree(tmp_path, monkeypatch):
     caller = _fake_tree(tmp_path / "wt", [121])
     monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: str(caller))
     monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(next_adr_number, "_remote_max", lambda root: 0)
     monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
 
     assert coord_cli._adr_scan_base(str(caller)) == 121
@@ -174,6 +175,7 @@ def test_adr_scan_base_keeps_its_own_tree_when_that_one_is_ahead(
     caller = _fake_tree(tmp_path / "wt", [121])
     monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: str(caller))
     monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(next_adr_number, "_remote_max", lambda root: 0)
     monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
 
     assert coord_cli._adr_scan_base(str(caller)) == 130
@@ -186,6 +188,7 @@ def test_adr_scan_base_survives_a_non_git_cwd(tmp_path, monkeypatch):
     own = _fake_tree(tmp_path / "main", [118])
     monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: "")
     monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(next_adr_number, "_remote_max", lambda root: 0)
     monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
 
     assert coord_cli._adr_scan_base(str(tmp_path / "nowhere")) == 118
@@ -236,6 +239,9 @@ def test_reserve_adr_still_prints_a_number_when_gh_is_absent(
     out = capsys.readouterr()
     assert out.out.strip() == "0125"
     assert "open-PR ADR scan did not run" in out.err
+    # #495: the same subprocess outage also darkens the origin/main floor --
+    # that degradation must be visible too.
+    assert "origin/main ADR scan did not run" in out.err
 
 
 def test_adr_scan_base_keeps_its_floor_when_the_widening_raises(
@@ -251,6 +257,7 @@ def test_adr_scan_base_keeps_its_floor_when_the_widening_raises(
     own = _fake_tree(tmp_path / "main", [118])
     monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
     monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(next_adr_number, "_remote_max", lambda root: 0)
 
     def _boom(_cwd):
         raise RuntimeError("git exploded")
@@ -275,3 +282,82 @@ def test_adr_scan_base_keeps_the_caller_floor_when_its_own_scan_raises(
     monkeypatch.setattr(next_adr_number, "_scan_max", _boom)
 
     assert coord_cli._adr_scan_base(str(caller)) == 121
+
+
+# --- #495: the scan must floor against origin/main, not just local trees -----
+#
+# All local trees only show what's checked out. A stale checkout handed out a
+# number already merged upstream (live repro: reserve-adr returned 0129 while
+# origin/main already had 0129/0130). _remote_max fetches (best-effort) then
+# reads `git ls-tree origin/main docs/adr/` as one more floor input.
+
+class _Res:
+    def __init__(self, rc=0, out=""):
+        self.returncode, self.stdout, self.stderr = rc, out, ""
+
+
+def _fake_git(listing, fetch_rc=0):
+    """subprocess.run stub: git fetch/ls-tree answered, everything else (gh)
+    absent -- matching a session with git but no gh."""
+    def run(cmd, **_k):
+        if cmd[0] == "git" and "fetch" in cmd:
+            return _Res(fetch_rc)
+        if cmd[0] == "git" and "ls-tree" in cmd:
+            return _Res(0, listing)
+        raise FileNotFoundError(cmd[0])
+    return run
+
+
+def test_reserve_adr_clears_origin_main_when_remote_is_ahead(
+        tmp_path, monkeypatch, capsys):
+    """Local trees top out at 0128; origin/main already has 0130."""
+    import next_adr_number
+    own = _fake_tree(tmp_path / "main", [128])
+    monkeypatch.setattr(coord_cli, "_own_tree", lambda: str(own))
+    monkeypatch.setattr(coord_cli, "_git_toplevel", lambda cwd: "")
+    monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(
+        next_adr_number.subprocess, "run",
+        _fake_git("docs/adr/0129-a.md\ndocs/adr/0130-b.md\ndocs/adr/README.md\n"))
+
+    assert coord_cli.run(["reserve-adr", "--session", "s1"],
+                         tmp_path / "c.json") == 0
+    assert capsys.readouterr().out.strip() == "0131"
+
+
+def test_next_adr_number_clears_origin_main(tmp_path, monkeypatch):
+    import next_adr_number
+    root = _fake_tree(tmp_path / "r", [118])
+    monkeypatch.setattr(next_adr_number, "_open_pr_max", lambda: 0)
+    monkeypatch.setattr(next_adr_number, "_reserved_max", lambda: 0)
+    monkeypatch.setattr(next_adr_number.subprocess, "run",
+                        _fake_git("docs/adr/0130-b.md\n"))
+
+    assert next_adr_number.next_adr_number(root) == 131
+
+
+def test_remote_max_warns_and_falls_back_when_git_is_absent(
+        tmp_path, monkeypatch, capsys):
+    import next_adr_number
+
+    def _boom(*_a, **_k):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(next_adr_number.subprocess, "run", _boom)
+
+    assert next_adr_number._remote_max(tmp_path) == 0    # falls back, no crash
+    err = capsys.readouterr().err
+    assert "origin/main ADR scan did not run" in err
+    assert "cross-check manually" in err
+
+
+def test_remote_max_warns_but_still_floors_on_stale_ref_when_fetch_fails(
+        tmp_path, monkeypatch, capsys):
+    """Offline: fetch fails but the local origin/main ref is still a better
+    floor than nothing -- warn (it may be stale) and use it."""
+    import next_adr_number
+    monkeypatch.setattr(next_adr_number.subprocess, "run",
+                        _fake_git("docs/adr/0130-b.md\n", fetch_rc=1))
+
+    assert next_adr_number._remote_max(tmp_path) == 130
+    assert "origin/main ADR scan did not run" in capsys.readouterr().err
