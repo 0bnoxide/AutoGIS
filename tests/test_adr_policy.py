@@ -761,6 +761,56 @@ def test_finalize_rolls_back_bytes_after_adr_or_readme_write_failure(
     assert _finalize_bytes(root) == before
 
 
+def test_finalize_does_not_delete_target_created_by_another_actor(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    target = root / "docs" / "adr" / "0131-example-decision.md"
+
+    def concurrent_target(path, _data):
+        Path(path).write_bytes(b"other actor")
+        raise OSError("injected write failure")
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner(), write_bytes=concurrent_target)
+
+    assert target.read_bytes() == b"other actor"
+
+
+def test_finalize_rejects_existing_numeric_adr_with_mismatched_heading(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    existing = root / "docs" / "adr" / "0130-existing.md"
+    existing.write_bytes(b"# ADR-0129: Incorrect\n")
+    before = _finalize_bytes(root)
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert _finalize_bytes(root) == before
+
+
+def test_finalize_rejects_gapped_coordinated_reservations(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "alpha", "zeta")
+    _uncoordinated(monkeypatch)
+    released = []
+
+    class Registry:
+        values = iter((131, 133))
+
+        def reserve_number(self, *_args):
+            return next(self.values)
+
+        def release(self, _path, _sid, kind=None, value=None):
+            released.append((kind, value))
+
+    monkeypatch.setattr(adr, "_coordination", lambda *_a, **_k: (Registry(), "claims", "s1"))
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert released == [("adr", "131"), ("adr", "133")]
+
+
 def test_finalize_reservation_is_released_on_failure_and_retained_on_success(
         monkeypatch, tmp_path):
     root = _finalize_repo(tmp_path, "example-decision")
@@ -795,13 +845,24 @@ def test_finalize_cli_prints_sorted_mappings_and_sanitizes_errors(monkeypatch, t
     root = _finalize_repo(tmp_path, "zeta", "alpha")
     _uncoordinated(monkeypatch)
     monkeypatch.setattr(adr, "finalize_placeholders", lambda *_a, **_k: [
-        adr.FinalizedADR(Path("docs/adr/XXXX-alpha.md"), Path("docs/adr/0131-alpha.md")),
-        adr.FinalizedADR(Path("docs/adr/XXXX-zeta.md"), Path("docs/adr/0132-zeta.md")),
+        adr.FinalizedADR(root / "docs/adr/XXXX-alpha.md", root / "docs/adr/0131-alpha.md"),
+        adr.FinalizedADR(root / "docs/adr/XXXX-zeta.md", root / "docs/adr/0132-zeta.md"),
     ])
 
-    assert adr.main(["--finalize"]) == 0
+    assert adr.main(["--finalize"], repo_root=root) == 0
     assert capsys.readouterr().out.splitlines() == [
         "docs/adr/XXXX-alpha.md -> docs/adr/0131-alpha.md",
         "docs/adr/XXXX-zeta.md -> docs/adr/0132-zeta.md",
+        "updated docs/adr/README.md",
+    ]
+
+
+def test_finalize_cli_uses_real_temp_repo_relative_paths(monkeypatch, tmp_path, capsys):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+
+    assert adr.main(["--finalize"], repo_root=root, run=_finalize_runner()) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "docs/adr/XXXX-example-decision.md -> docs/adr/0131-example-decision.md",
         "updated docs/adr/README.md",
     ]

@@ -564,6 +564,11 @@ def _finalize_plan(repo_root: Path, run, environ):
     originals = {path: path.read_bytes() for path in placeholders}
     readme = adr_dir / "README.md"
     originals[readme] = readme.read_bytes()
+    for path in adr_dir.glob("*.md"):
+        number = _num(path.name)
+        if number is not None and not re.match(
+                fr"^# ADR-{number:04d}(?![A-Z0-9])".encode(), path.read_bytes()):
+            raise ADRFinalizeError("Existing ADR heading does not match its filename.")
     for path, data in originals.items():
         if path != readme and not _PLACEHOLDER_H1.match(data):
             raise ADRFinalizeError("Placeholder ADR heading is malformed.")
@@ -588,8 +593,11 @@ def _finalize_plan(repo_root: Path, run, environ):
     try:
         if coord:
             registry, path, sid = coord
-            for _ in placeholders:
-                reservations.append(registry.reserve_number(path, sid, "adr", floor))
+            for expected in range(floor + 1, floor + len(placeholders) + 1):
+                value = registry.reserve_number(path, sid, "adr", floor)
+                reservations.append(value)
+                if value != expected:
+                    raise ADRFinalizeError("ADR reservations are not consecutive.")
         else:
             reservations = list(range(floor + 1, floor + len(placeholders) + 1))
         plans = []
@@ -642,16 +650,19 @@ def finalize_placeholders(
     """Strictly allocate, validate, reserve when coordinated, and rewrite XXXX ADRs."""
     plans, originals, updates, coord, reservations = _finalize_plan(repo_root, run, environ)
     writer = write_bytes or (lambda path, data: path.write_bytes(data))
+    created = []
     try:
         for path, data in updates.items():
             writer(path, data)
+            if path.name != "README.md":
+                created.append(path)
         for mapping in plans:
             mapping.old_path.unlink()
     except Exception as exc:
         rollback_failed = False
-        for mapping in plans:
+        for path in created:
             try:
-                mapping.new_path.unlink(missing_ok=True)
+                path.unlink(missing_ok=True)
             except OSError:
                 rollback_failed = True
         for path, data in originals.items():
@@ -715,7 +726,7 @@ def _check() -> None:
     print("next_adr_number self-check OK")
 
 
-def main(argv=None, environ=None, run=None) -> int:
+def main(argv=None, environ=None, run=None, repo_root=None) -> int:
     """Run the number helper or its fail-closed CI policy check."""
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group()
@@ -725,7 +736,7 @@ def main(argv=None, environ=None, run=None) -> int:
     modes.add_argument("--finalize", action="store_true")
     parser.add_argument("--event-file")
     args = parser.parse_args(argv)
-    root = Path(__file__).resolve().parents[3]
+    root = repo_root or Path(__file__).resolve().parents[3]
     if args.check:
         _check()
         return 0
@@ -739,7 +750,9 @@ def main(argv=None, environ=None, run=None) -> int:
             print("ADR finalization failed.", file=sys.stderr)
             return 2
         for mapping in sorted(mappings, key=lambda item: item.old_path.as_posix()):
-            print(f"{mapping.old_path.as_posix()} -> {mapping.new_path.as_posix()}")
+            old = mapping.old_path.relative_to(root).as_posix()
+            new = mapping.new_path.relative_to(root).as_posix()
+            print(f"{old} -> {new}")
         print("updated docs/adr/README.md")
         return 0
     if not args.policy_check:
