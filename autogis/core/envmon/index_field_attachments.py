@@ -45,7 +45,12 @@ def load_manifest(path: Path) -> list[dict]:
     p = Path(path)
     try:
         if p.suffix.lower() == ".json":
-            return json.loads(p.read_text(encoding="utf-8"))
+            rows = json.loads(p.read_text(encoding="utf-8"))
+            if not isinstance(rows, list):
+                raise ValueError(
+                    f"Malformed manifest {p}: expected a JSON array of rows, "
+                    f"got {type(rows).__name__} (#503)")
+            return rows
         with p.open(newline="", encoding="utf-8") as fh:
             return list(csv.DictReader(fh))
     except (json.JSONDecodeError, UnicodeDecodeError, csv.Error) as exc:
