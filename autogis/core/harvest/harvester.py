@@ -1,6 +1,10 @@
+import hashlib
+import json
 import logging
+import math
 import os
 import time
+from datetime import datetime, timezone
 
 from .models import AttachmentResult, RunSummary, summary_counts
 from ..common.config import ConfigError
@@ -103,6 +107,70 @@ def _effective_where(config, layer):
     return where
 
 
+_WEB_MERCATOR_WKIDS = {3857, 102100}
+_R = 6378137.0
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _vertices(geom):
+    if geom.get("x") is not None and geom.get("y") is not None:
+        return [(geom["x"], geom["y"])]
+    parts = geom.get("paths") or geom.get("rings") or []
+    vertices = []
+    for part in parts:
+        if len(part) > 1 and part[0][:2] == part[-1][:2]:
+            part = part[:-1]
+        vertices.extend((x, y) for x, y, *_ in part)
+    return vertices
+
+
+def _rep_point_wgs84(geom, result):
+    """Representative point of an Esri geometry dict as (lat, lon) WGS84.
+
+    Returns None for absent/empty geometry (silent — normal for tables) or
+    the sentinel string "unsupported" when geometry exists but its spatial
+    reference is missing or not convertible (caller warns once per layer).
+    ponytail: 4326 + web-mercator only; extend when another SR shows up.
+    """
+    if not isinstance(geom, dict):
+        return None
+    verts = _vertices(geom)
+    if not verts:
+        return None
+    x = sum(v[0] for v in verts) / len(verts)
+    y = sum(v[1] for v in verts) / len(verts)
+    sr = geom.get("spatialReference") or getattr(
+        result, "spatial_reference", None) or {}
+    wkid = _prop(sr, "latestWkid") or _prop(sr, "wkid")
+    if wkid == 4326:
+        return (y, x)
+    if wkid in _WEB_MERCATOR_WKIDS:
+        lon = math.degrees(x / _R)
+        lat = math.degrees(2 * math.atan(math.exp(y / _R)) - math.pi / 2)
+        return (lat, lon)
+    return "unsupported"
+
+
+def _edit_date_field(layer):
+    info = _prop(layer.properties, "editFieldsInfo")
+    return _prop(info, "editDateField") if info else None
+
+
+def _iso_utc(ms):
+    try:
+        return datetime.fromtimestamp(
+            int(ms) / 1000, tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
 def _warn_unresolved_template_fields(config, features, source_table):
     """Warn once per layer when a group/filename template references a field
     absent from the layer's attributes -- usually a case mismatch (e.g.
@@ -128,11 +196,29 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
     """Query ONE layer/table and accumulate its attachments into the shared
     manifest, rooting destination paths at ``base_dir``."""
     where = _effective_where(config, layer)
-    result = layer.query(where=where, out_fields="*", return_geometry=False)
+    result = layer.query(where=where, out_fields="*", return_geometry=True)
     _warn_unresolved_template_fields(config, result.features, source_table)
+    edit_field = _edit_date_field(layer)
+    unsupported_sr = 0
     for feature in result.features:
         attrs = feature.attributes
         objectid = attrs.get("OBJECTID")
+        try:
+            rep = _rep_point_wgs84(getattr(feature, "geometry", None), result)
+        except (ValueError, TypeError, OverflowError):
+            # Malformed vertex data (e.g. a curve-encoded ring segment with
+            # too few coords) or an out-of-range projection input must not
+            # abort the whole layer -- degrade this row's geometry to null
+            # and keep going, same "never kill the run" stance as everywhere
+            # else in this function.
+            rep = None
+        if rep == "unsupported":
+            unsupported_sr += 1
+            rep = None
+        geometry_json = (json.dumps(
+            {"lat": round(rep[0], 7), "lon": round(rep[1], 7)})
+            if rep else None)
+        edited_at = _iso_utc(attrs.get(edit_field)) if edit_field else None
         for att in layer.attachments.get_list(oid=objectid):
             att_id, name, size = att["id"], att["name"], att.get("size")
             group = render_path_component(config.group_template, attrs)
@@ -154,20 +240,47 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
             dest = os.path.join(base_dir, group, fname)
 
             if config.skip_existing and os.path.exists(dest):
+                try:
+                    checksum, algorithm = _sha256(dest), "sha256"
+                except OSError:
+                    # File locked (AV/indexer) or deleted between the
+                    # exists() check above and the read -- record the row
+                    # anyway with a null checksum rather than losing this
+                    # and every already-downloaded row's manifest entry.
+                    checksum, algorithm = None, None
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, dest, size, "skipped",
-                    disposition="skipped", source_table=source_table))
+                    disposition="skipped", source_table=source_table,
+                    checksum=checksum, algorithm=algorithm,
+                    geometry=geometry_json, feature_edited_at=edited_at))
                 continue
             try:
                 download_one(layer, objectid, att_id, dest,
                              config.retries, config.backoff_seconds, sleep=sleep)
-                manifest.add(AttachmentResult(
-                    objectid, att_id, name, dest, size, "downloaded",
-                    disposition="downloaded", source_table=source_table))
             except Exception as exc:  # resilience: never kill the run
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, None, size, "failed", str(exc),
-                    disposition="failed", source_table=source_table))
+                    disposition="failed", source_table=source_table,
+                    geometry=geometry_json, feature_edited_at=edited_at))
+                continue
+            try:
+                checksum, algorithm = _sha256(dest), "sha256"
+            except OSError:
+                # Download succeeded; a hash-time race (AV lock on the
+                # just-written file) must not demote the row to "failed" and
+                # orphan the on-disk file -- it just loses its checksum,
+                # mirroring the skip branch above.
+                checksum, algorithm = None, None
+            manifest.add(AttachmentResult(
+                objectid, att_id, name, dest, size, "downloaded",
+                disposition="downloaded", source_table=source_table,
+                checksum=checksum, algorithm=algorithm,
+                geometry=geometry_json, feature_edited_at=edited_at))
+    if unsupported_sr:
+        log.warning(
+            "%s: %d feature(s) in an unsupported spatial reference — "
+            "manifest geometry left null (supported: WGS84, Web Mercator)",
+            source_table, unsupported_sr)
 
 
 def harvest(gis, config, *, layer=None, now_ms=None, sleep=time.sleep):
