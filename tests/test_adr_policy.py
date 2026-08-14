@@ -765,15 +765,40 @@ def test_finalize_does_not_delete_target_created_by_another_actor(monkeypatch, t
     root = _finalize_repo(tmp_path, "example-decision")
     _uncoordinated(monkeypatch)
     target = root / "docs" / "adr" / "0131-example-decision.md"
+    target.write_bytes(b"other actor")
 
-    def concurrent_target(path, _data):
-        Path(path).write_bytes(b"other actor")
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert target.read_bytes() == b"other actor"
+
+
+def test_finalize_removes_partial_target_owned_before_writer_failure(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    before = _finalize_bytes(root)
+    target = root / "docs" / "adr" / "0131-example-decision.md"
+    released = []
+
+    class Registry:
+        def reserve_number(self, _path, _sid, _kind, base):
+            return base + 1
+
+        def release(self, _path, _sid, kind=None, value=None):
+            released.append((kind, value))
+
+    monkeypatch.setattr(adr, "_coordination", lambda *_a, **_k: (Registry(), "claims", "s1"))
+
+    def partial(path, _data):
+        Path(path).write_bytes(b"partial numeric ADR")
         raise OSError("injected write failure")
 
     with pytest.raises(adr.ADRFinalizeError):
-        adr.finalize_placeholders(root, run=_finalize_runner(), write_bytes=concurrent_target)
+        adr.finalize_placeholders(root, run=_finalize_runner(), write_bytes=partial)
 
-    assert target.read_bytes() == b"other actor"
+    assert not target.exists()
+    assert _finalize_bytes(root) == before
+    assert released == [("adr", "131")]
 
 
 def test_finalize_rejects_existing_numeric_adr_with_mismatched_heading(monkeypatch, tmp_path):

@@ -653,9 +653,11 @@ def finalize_placeholders(
     created = []
     try:
         for path, data in updates.items():
-            writer(path, data)
             if path.name != "README.md":
+                handle = path.open("xb")
                 created.append(path)
+                handle.close()
+            writer(path, data)
         for mapping in plans:
             mapping.old_path.unlink()
     except Exception as exc:
