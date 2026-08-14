@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pick the next free ADR number — checking local files AND open PRs.
+"""Pick the next free ADR number — checking local files, open PRs, AND origin/main.
 
 Local `docs/adr/NNNN-*.md` only shows what's *merged*. Concurrent sessions
 routinely pick the same NNNN and collide at merge (the 0099->0105 renumber is a
@@ -84,9 +84,48 @@ def _open_pr_max() -> int:
     return best
 
 
+_NO_REMOTE_WARNING = (
+    "warning: origin/main ADR scan did not run ({why}) -- could not verify "
+    "against origin/main; number may collide with unmerged upstream ADRs, "
+    "cross-check manually."
+)
+
+
+def _remote_max(root: Path) -> int:
+    """Max ADR number on origin/main. 0 (with a stderr warning) if unverifiable.
+
+    Local trees only show what's *checked out*; a stale tree hands out a number
+    already merged upstream (#495: returned 0129 while origin/main had 0130).
+    Fetch is best-effort — a stale origin/main ref is still a better floor than
+    none, so a failed fetch warns but still reads the ref.
+    """
+    try:
+        fetched = subprocess.run(
+            ["git", "-C", str(root), "fetch", "--quiet", "origin", "main"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if fetched.returncode != 0:
+            print(_NO_REMOTE_WARNING.format(why="fetch failed"), file=sys.stderr)
+        out = subprocess.run(
+            ["git", "-C", str(root), "ls-tree", "--name-only", "origin/main",
+             "docs/adr/"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(_NO_REMOTE_WARNING.format(why=type(exc).__name__), file=sys.stderr)
+        return 0  # fail soft — local + PR scans still ran
+    return max(
+        (n for line in out.splitlines()
+         if (n := _num(Path(line).name)) is not None),
+        default=0,
+    )
+
+
 def _scan_max(root: Path) -> int:
-    """Highest ADR number in local files + open PRs — no reservations, no +1."""
-    return max(_local_max(root / "docs" / "adr"), _open_pr_max())
+    """Highest ADR number in local files + open PRs + origin/main — no
+    reservations, no +1."""
+    return max(_local_max(root / "docs" / "adr"), _open_pr_max(),
+               _remote_max(root))
 
 
 def _reserved_max() -> int:
@@ -146,6 +185,18 @@ def _check() -> None:
     finally:
         subprocess.run = real_run
     assert "open-PR ADR scan did not run" in err.getvalue()
+
+    # #495: git absent must warn, not silently skip the origin/main floor.
+    real_run, err = subprocess.run, io.StringIO()
+    try:
+        def _no_git(*_a, **_k):
+            raise FileNotFoundError("git")
+        subprocess.run = _no_git
+        with contextlib.redirect_stderr(err):
+            assert _remote_max(Path(".")) == 0
+    finally:
+        subprocess.run = real_run
+    assert "origin/main ADR scan did not run" in err.getvalue()
 
     print("next_adr_number self-check OK")
 
