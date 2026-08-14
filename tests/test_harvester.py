@@ -481,3 +481,25 @@ def test_iso_utc_overflow_magnitude_returns_none():
     # confirmed empirically to raise OverflowError (not OSError/ValueError,
     # which were already caught).
     assert harvester._iso_utc(10**25) is None
+
+
+def test_harvest_download_hash_failure_still_downloaded(tmp_path, monkeypatch):
+    # PR #497 review should-fix: a hash-time OSError right AFTER a successful
+    # download (same AV-lock race the skip branch is hardened against) must
+    # not demote the row to "failed" with saved_path=None -- that orphans the
+    # on-disk file. The row stays "downloaded" and only loses its checksum.
+    features = [FakeFeature({"OBJECTID": 1, "Status": "Done"})]
+    listing = {1: [{"id": 10, "name": "a.jpg", "size": 4}]}
+    layer = FakeLayer(features, listing)
+
+    def locked(path):
+        raise OSError("file locked by scanner")
+
+    monkeypatch.setattr(harvester, "_sha256", locked)
+    summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
+                                now_ms=1, sleep=lambda s: None)
+    r = summary.results[0]
+    assert r.status == "downloaded" and r.disposition == "downloaded"
+    assert r.checksum is None and r.algorithm is None
+    assert r.saved_path is not None and os.path.exists(r.saved_path)
+    assert r.error is None

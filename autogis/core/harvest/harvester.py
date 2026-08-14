@@ -218,16 +218,25 @@ def _harvest_layer(layer, config, manifest, base_dir, source_table, sleep):
             try:
                 download_one(layer, objectid, att_id, dest,
                              config.retries, config.backoff_seconds, sleep=sleep)
-                manifest.add(AttachmentResult(
-                    objectid, att_id, name, dest, size, "downloaded",
-                    disposition="downloaded", source_table=source_table,
-                    checksum=_sha256(dest), algorithm="sha256",
-                    geometry=geometry_json, feature_edited_at=edited_at))
             except Exception as exc:  # resilience: never kill the run
                 manifest.add(AttachmentResult(
                     objectid, att_id, name, None, size, "failed", str(exc),
                     disposition="failed", source_table=source_table,
                     geometry=geometry_json, feature_edited_at=edited_at))
+                continue
+            try:
+                checksum, algorithm = _sha256(dest), "sha256"
+            except OSError:
+                # Download succeeded; a hash-time race (AV lock on the
+                # just-written file) must not demote the row to "failed" and
+                # orphan the on-disk file -- it just loses its checksum,
+                # mirroring the skip branch above.
+                checksum, algorithm = None, None
+            manifest.add(AttachmentResult(
+                objectid, att_id, name, dest, size, "downloaded",
+                disposition="downloaded", source_table=source_table,
+                checksum=checksum, algorithm=algorithm,
+                geometry=geometry_json, feature_edited_at=edited_at))
     if unsupported_sr:
         logger.warning(
             "%s: %d feature(s) in an unsupported spatial reference — "
