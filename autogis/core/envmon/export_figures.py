@@ -12,6 +12,7 @@ numeric suffix unless overwrite=True.
 from __future__ import annotations
 
 import datetime as _dt
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -182,16 +183,22 @@ def export_layouts(
 
     if combine_pdf and pdfs and not dry_run:
         combined = versioned_path(export_dir / combine_pdf, overwrite)
-        # unlink after versioned_path, not instead of it: with overwrite=True
-        # that helper hands back the OCCUPIED path, and Esri's own
-        # PDFDocumentCreate example os.remove()s an existing file before
-        # creating -- so overwrite would have failed at the one call it exists
-        # to serve. A no-op when versioning already chose a free name.
-        combined.unlink(missing_ok=True)
-        pdoc = arcpy.mp.PDFDocumentCreate(str(combined))
-        for p in pdfs:
-            pdoc.appendPages(str(p))
-        pdoc.saveAndClose()
+        # Build beside the target, publish atomically with os.replace (same
+        # pattern as dashboard_data_mart). PDFDocumentCreate needs a free path
+        # (Esri's own example os.remove()s an existing file first), but
+        # unlinking the live target before the multi-step build meant one bad
+        # appendPages destroyed the previous deliverable with overwrite=True
+        # (#500). No-op difference when versioning already chose a free name.
+        tmp = combined.with_name(combined.name + ".tmp.pdf")
+        tmp.unlink(missing_ok=True)
+        try:
+            pdoc = arcpy.mp.PDFDocumentCreate(str(tmp))
+            for p in pdfs:
+                pdoc.appendPages(str(p))
+            pdoc.saveAndClose()
+            os.replace(tmp, combined)
+        finally:
+            tmp.unlink(missing_ok=True)
         written.append(combined)
         qa.add(QARecord(severity=SEV_INFO, category="combined_pdf",
                         message=f"Combined PDF written: {combined.name} "

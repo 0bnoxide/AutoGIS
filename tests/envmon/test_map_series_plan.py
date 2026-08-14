@@ -191,6 +191,47 @@ def test_gen_map_series_exposes_overwrite_flag():
     assert "--overwrite" in result.output
 
 
+def test_combined_appendix_failure_preserves_previous_appendix(
+        monkeypatch, tmp_path):
+    """#500: --overwrite unlinked the previous Appendix_Combined.pdf BEFORE
+    the multi-step PDFDocumentCreate/appendPages/saveAndClose build, so a
+    mid-append arcpy failure destroyed the old deliverable. The combine now
+    stages to .tmp.pdf and publishes via os.replace."""
+    from unittest.mock import MagicMock
+
+    import autogis.runtime.sessions as sessions
+    from autogis.adapters import cli
+    from autogis.core.envmon import export_figures, layout_manager
+
+    out = tmp_path / "out"
+    out.mkdir()
+    old = out / "Appendix_Combined.pdf"
+    old.write_text("previous deliverable", encoding="utf-8")
+
+    arcpy = MagicMock()
+    arcpy.mp.PDFDocumentCreate.return_value.appendPages.side_effect = \
+        RuntimeError("corrupt input PDF")
+    monkeypatch.setattr(cli, "_guard", lambda name: None)
+    monkeypatch.setattr(sessions, "arcpy_env", lambda: arcpy)
+    monkeypatch.setattr(layout_manager, "prepare_figure_aprx",
+                        lambda *a, **k: (tmp_path / "w.aprx", ["Layout1"]))
+    monkeypatch.setattr(export_figures, "export_layouts",
+                        lambda *a, **k: [out / "SITE-A_2026Q2_GW_FIG1.pdf"])
+    monkeypatch.setattr(export_figures, "register_exports",
+                        lambda *a, **k: None)
+
+    result = CliRunner().invoke(autogis, [
+        "envmon", "gen-map-series",
+        "--sites", "SITE-A", "--events", "2026Q2",
+        "--specs", str(_spec_dir(tmp_path)),
+        "--gdb", str(tmp_path / "f.gdb"), "--out-dir", str(out),
+        "--mode", "combined_appendix", "--overwrite",
+    ])
+    assert result.exit_code != 0
+    assert old.read_text(encoding="utf-8") == "previous deliverable"
+    assert not (out / "Appendix_Combined.pdf.tmp.pdf").exists()
+
+
 def test_empty_spec_dir_is_usage_error(tmp_path):
     d = tmp_path / "empty"
     d.mkdir()

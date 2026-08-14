@@ -4670,16 +4670,23 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
         # latest tool reference, ADR-0077).
         combined = versioned_path(export_dir / "Appendix_Combined.pdf",
                                   overwrite)
-        # With --overwrite, versioned_path hands back the OCCUPIED path and
-        # PDFDocumentCreate needs a free one (Esri's example removes it
-        # first), so the flag would have failed at the only call it serves.
-        # No-op when versioning already chose a free name. Same two lines as
-        # export_layouts' combine, because it is the same policy.
-        combined.unlink(missing_ok=True)
-        pdoc = arcpy.mp.PDFDocumentCreate(str(combined))
-        for p in written_all:
-            pdoc.appendPages(str(p))
-        pdoc.saveAndClose()
+        # Build beside the target, publish atomically with os.replace (same
+        # pattern as dashboard_data_mart and export_layouts' combine).
+        # PDFDocumentCreate needs a free path (Esri's example removes an
+        # existing file first), but unlinking the live target before the
+        # multi-step build meant one bad appendPages destroyed the previous
+        # deliverable with --overwrite (#500). No-op difference when
+        # versioning already chose a free name.
+        tmp = combined.with_name(combined.name + ".tmp.pdf")
+        tmp.unlink(missing_ok=True)
+        try:
+            pdoc = arcpy.mp.PDFDocumentCreate(str(tmp))
+            for p in written_all:
+                pdoc.appendPages(str(p))
+            pdoc.saveAndClose()
+            os.replace(tmp, combined)
+        finally:
+            tmp.unlink(missing_ok=True)
         click.echo(f"Combined appendix written: {combined} "
                    f"({len(written_all)} figures)")
     _render_qa(qa, report, fail_on)
