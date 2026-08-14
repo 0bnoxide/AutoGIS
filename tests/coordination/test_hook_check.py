@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+from datetime import timedelta
 
 import pytest
 
@@ -627,3 +628,144 @@ def test_in_main_tree_real_git_repo_and_worktree(tmp_path):
     assert hook_check._in_main_tree(str(main)) is True
     assert hook_check._in_main_tree(str(sub)) is True     # subdir — the regression
     assert hook_check._in_main_tree(str(wt)) is False     # linked worktree
+
+
+# --- numeric ADR commits require this session's live reservation -------------
+
+_ADR_DENIAL = (
+    "[coord] ADR 0131 is staged as docs/adr/0131-example.md without this "
+    "session owning reservation 0131; run coord reserve-adr --strict or "
+    "rename the file to XXXX-example.md.")
+
+
+def _adr_commit(p, staged, branch_func=lambda d: "feat/x"):
+    return hook_check.decide(
+        _payload("Bash", {"command": "git commit -m x"}), p,
+        branch_func=branch_func, staged_func=lambda d: staged)
+
+
+def test_commit_with_own_live_adr_reservation_is_allowed(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "me", "adr", 131)
+    assert _adr_commit(p, [("0131", "docs/adr/0131-example.md")]) is None
+
+
+def test_commit_with_unreserved_numeric_adr_is_denied(tmp_path):
+    p = tmp_path / "c.json"
+    out = _adr_commit(p, [("0131", "docs/adr/0131-example.md")])
+    assert out["hookSpecificOutput"]["permissionDecisionReason"] == _ADR_DENIAL
+
+
+def test_commit_with_another_sessions_adr_reservation_is_denied(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "other", "adr", 131)
+    out = _adr_commit(p, [("0131", "docs/adr/0131-example.md")])
+    assert out["hookSpecificOutput"]["permissionDecisionReason"] == _ADR_DENIAL
+
+
+def test_commit_with_stale_own_adr_reservation_is_denied(tmp_path, monkeypatch):
+    p = tmp_path / "c.json"
+    now = registry._now()
+    registry.claim(p, "me", "adr", 131, ttl_sec=1,
+                   now=now - timedelta(seconds=2))
+    monkeypatch.setattr(registry, "heartbeat", lambda *args: 0)
+    out = _adr_commit(p, [("0131", "docs/adr/0131-example.md")])
+    assert out["hookSpecificOutput"]["permissionDecisionReason"] == _ADR_DENIAL
+
+
+def test_commit_with_multiple_numeric_adrs_needs_each_reservation(tmp_path):
+    p = tmp_path / "c.json"
+    registry.claim(p, "me", "adr", 131)
+    out = _adr_commit(p, [
+        ("0132", "docs/adr/0132-next.md"),
+        ("0131", "docs/adr/0131-example.md"),
+    ])
+    assert out["hookSpecificOutput"]["permissionDecisionReason"] == (
+        "[coord] ADR 0132 is staged as docs/adr/0132-next.md without this "
+        "session owning reservation 0132; run coord reserve-adr --strict or "
+        "rename the file to XXXX-next.md.")
+
+
+def test_commit_with_xxxx_adr_path_is_allowed(tmp_path):
+    p = tmp_path / "c.json"
+    assert _adr_commit(p, []) is None
+
+
+def test_commit_allows_when_staged_adr_inspection_is_unavailable(tmp_path):
+    p = tmp_path / "c.json"
+    assert _adr_commit(p, None) is None
+
+
+@pytest.mark.parametrize("branch, setup, expected", [
+    ("main", lambda p: None,
+     "[coord] git commit on 'main' is blocked — 'main' is read-only. Use a "
+     "feature branch + PR. Override: AUTOGIS_COORD_FORCE=1."),
+    ("feat/x", lambda p: registry.claim(p, "other", "branch", "feat/x"),
+     "[coord] Branch 'feat/x' is claimed by session other (pid %s). You may "
+     "be on the wrong branch. Override: AUTOGIS_COORD_FORCE=1." % os.getpid()),
+])
+def test_main_and_branch_denials_precede_staged_adr_guard(tmp_path, branch,
+                                                           setup, expected):
+    p = tmp_path / "c.json"
+    setup(p)
+
+    def staged(_):
+        raise AssertionError("staged ADR inspection must not run")
+
+    out = hook_check.decide(
+        _payload("Bash", {"command": "git commit -m x"}), p,
+        branch_func=lambda d: branch, staged_func=staged)
+    assert out["hookSpecificOutput"]["permissionDecisionReason"] == expected
+
+
+# --- staged ADR discovery: cached A/R destinations only ---------------------
+
+def _git(cwd, *args):
+    return subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                          capture_output=True, text=True)
+
+
+def _init_adr_repo(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "t@t.test")
+    _git(repo, "config", "user.name", "t")
+    return repo
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+def test_staged_numeric_adrs_returns_added_and_rename_destinations(tmp_path):
+    repo = _init_adr_repo(tmp_path)
+    adr = repo / "docs" / "adr"
+    adr.mkdir(parents=True)
+    (adr / "XXXX-old.md").write_text("x", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "base")
+
+    (adr / "0131-added.md").write_text("x", encoding="utf-8")
+    _git(repo, "add", "docs/adr/0131-added.md")
+    _git(repo, "mv", "docs/adr/XXXX-old.md", "docs/adr/0132-renamed.md")
+
+    assert hook_check._staged_numeric_adrs(str(repo)) == [
+        ("0131", "docs/adr/0131-added.md"),
+        ("0132", "docs/adr/0132-renamed.md"),
+    ]
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+def test_staged_numeric_adrs_ignores_modifications_removals_and_xxxx(tmp_path):
+    repo = _init_adr_repo(tmp_path)
+    adr = repo / "docs" / "adr"
+    adr.mkdir(parents=True)
+    (adr / "0131-modified.md").write_text("x", encoding="utf-8")
+    (adr / "0132-removed.md").write_text("x", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "base")
+
+    (adr / "0131-modified.md").write_text("changed", encoding="utf-8")
+    (adr / "XXXX-new.md").write_text("x", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "rm", "docs/adr/0132-removed.md")
+
+    assert hook_check._staged_numeric_adrs(str(repo)) == []

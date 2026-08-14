@@ -226,6 +226,25 @@ def _git_branch(cwd):
         return ""
 
 
+def _staged_numeric_adrs(cwd):
+    """Return numeric ADR additions/rename destinations, or None if unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "diff", "--cached", "--name-status",
+             "--diff-filter=AR"], capture_output=True, text=True, timeout=3)
+        if result.returncode:
+            return None
+    except Exception:
+        return None
+    out = []
+    for line in result.stdout.splitlines():
+        path = line.rsplit("\t", 1)[-1]
+        match = re.fullmatch(r"docs/adr/(\d{4})-[^/\t\r\n]+\.md", path)
+        if match:
+            out.append((match.group(1), path))
+    return out
+
+
 def _first_existing(d):
     """Nearest existing ancestor of directory d (d itself if it exists), so a
     new file in a not-yet-created package still resolves via its worktree
@@ -326,7 +345,8 @@ def _shared_tree_warn(reg_path, sid, target, cwd, main_tree_func=None):
         "'python .claude/coordination/coord_cli.py resync'." % len(sharers))
 
 
-def decide(payload, reg_path, branch_func=None, main_tree_func=None):
+def decide(payload, reg_path, branch_func=None, main_tree_func=None,
+           staged_func=None):
     if os.environ.get("AUTOGIS_COORD_FORCE") == "1":
         return None
     import registry
@@ -426,6 +446,26 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
                         "[coord] Pushing to remote 'main' is blocked from any "
                         "branch — merge via PR instead. "
                         "Override: AUTOGIS_COORD_FORCE=1.")
+                if sub == "commit":
+                    staged = (staged_func or _staged_numeric_adrs)(target)
+                    if staged is not None:
+                        reserved = set()
+                        for claim in registry.list_claims(reg_path):
+                            if (claim.get("session_id") == sid and
+                                    claim.get("kind") == "adr"):
+                                try:
+                                    reserved.add(int(claim.get("value")))
+                                except (TypeError, ValueError):
+                                    pass
+                        for number, path in sorted(staged):
+                            if int(number) not in reserved:
+                                replacement = path.rsplit("/", 1)[-1].replace(
+                                    number, "XXXX", 1)
+                                return _deny(
+                                    "[coord] ADR %s is staged as %s without this "
+                                    "session owning reservation %s; run coord "
+                                    "reserve-adr --strict or rename the file to %s."
+                                    % (number, path, number, replacement))
             if first_target is not None:
                 warn = _shared_tree_warn(reg_path, sid, first_target, cwd,
                                          main_tree_func)
