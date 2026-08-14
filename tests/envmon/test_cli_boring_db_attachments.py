@@ -88,6 +88,20 @@ def test_index_field_attachments_end_to_end(tmp_path):
     assert count == 1
 
 
+def test_index_field_attachments_malformed_manifest_clean_error(tmp_path):
+    """A truncated manifest.json surfaces a clean error naming the file,
+    not a json.JSONDecodeError traceback (#496)."""
+    bad = tmp_path / "manifest.json"
+    bad.write_text('{"not json', encoding="utf-8")
+    db = tmp_path / "envmon.sqlite"
+    result = CliRunner().invoke(autogis, [
+        "envmon", "index-field-attachments", str(bad), "--db", str(db)])
+    assert result.exit_code != 0
+    assert "Malformed manifest" in result.output
+    assert "manifest.json" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_index_field_attachments_json_manifest(tmp_path):
     _, json_path = _write_manifest(tmp_path)
     db = tmp_path / "envmon.sqlite"

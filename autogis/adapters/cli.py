@@ -1705,15 +1705,18 @@ def well_inspection_report_cmd(wells_csv, site_id, output_dir,
         raise click.UsageError("--manifest/--harvest-dir require --format html.")
 
     qa = QACollector()
-    written = build_well_inspection_reports(
-        Path(wells_csv), Path(output_dir),
-        site_id=site_id,
-        maintenance_log_csv=Path(maintenance_log_csv) if maintenance_log_csv else None,
-        fmt=fmt,
-        manifest_path=Path(manifest_path) if manifest_path else None,
-        harvest_dir=Path(harvest_dir) if harvest_dir else None,
-        qa=qa,
-    )
+    try:
+        written = build_well_inspection_reports(
+            Path(wells_csv), Path(output_dir),
+            site_id=site_id,
+            maintenance_log_csv=Path(maintenance_log_csv) if maintenance_log_csv else None,
+            fmt=fmt,
+            manifest_path=Path(manifest_path) if manifest_path else None,
+            harvest_dir=Path(harvest_dir) if harvest_dir else None,
+            qa=qa,
+        )
+    except ValueError as exc:  # malformed manifest -> clean error (#496)
+        raise click.ClickException(str(exc))
     click.echo(f"Written {len(written)} {fmt.upper()} file(s) to {output_dir}")
     _render_qa(qa, report, fail_on)
 
@@ -4113,8 +4116,11 @@ def generate_inspection_report_cmd(inspections_csv, manifest_path,
         load_inspection_records, match_photos_to_wells, write_photo_report)
     qa = QACollector()
     records = load_inspection_records(Path(inspections_csv), qa=qa)
-    photo_map = match_photos_to_wells(
-        load_manifest(Path(manifest_path)), Path(harvest_dir), qa=qa)
+    try:
+        manifest_rows = load_manifest(Path(manifest_path))
+    except ValueError as exc:  # malformed manifest -> clean error (#496)
+        raise click.ClickException(str(exc))
+    photo_map = match_photos_to_wells(manifest_rows, Path(harvest_dir), qa=qa)
     try:
         result = write_photo_report(
             records, photo_map, Path(out_path), site_id=site_id,
@@ -4149,8 +4155,11 @@ def index_field_attachments_cmd(manifest, db_path, related_table, replace,
         build_attachment_index, load_manifest, validate_attachment_index,
         write_attachment_index)
     qa = QACollector()
-    records = build_attachment_index(load_manifest(Path(manifest)),
-                                     related_table=related_table, qa=qa)
+    try:
+        rows = load_manifest(Path(manifest))
+    except ValueError as exc:  # malformed manifest -> clean error (#496)
+        raise click.ClickException(str(exc))
+    records = build_attachment_index(rows, related_table=related_table, qa=qa)
     validate_attachment_index(records, qa)
     if not qa.has_blocking(allow_warnings=True, allow_errors=False):
         n = write_attachment_index(Path(db_path), records, replace=replace)

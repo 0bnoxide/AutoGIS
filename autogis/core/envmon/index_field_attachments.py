@@ -36,12 +36,20 @@ def classify_attachment(name: str) -> str:
 
 def load_manifest(path: Path) -> list[dict]:
     """Read a harvester manifest — ``.json`` or CSV (both come from
-    ``harvest.manifest.Manifest.write``)."""
+    ``harvest.manifest.Manifest.write``).
+
+    A truncated/malformed manifest or broken encoding is reported as a
+    ``ValueError`` naming the file, not a raw ``json.JSONDecodeError`` /
+    ``UnicodeDecodeError`` traceback (issue #496; same idiom as #439).
+    """
     p = Path(path)
-    if p.suffix.lower() == ".json":
-        return json.loads(p.read_text(encoding="utf-8"))
-    with p.open(newline="", encoding="utf-8") as fh:
-        return list(csv.DictReader(fh))
+    try:
+        if p.suffix.lower() == ".json":
+            return json.loads(p.read_text(encoding="utf-8"))
+        with p.open(newline="", encoding="utf-8") as fh:
+            return list(csv.DictReader(fh))
+    except (json.JSONDecodeError, UnicodeDecodeError, csv.Error) as exc:
+        raise ValueError(f"Malformed manifest {p}: {exc}") from exc
 
 
 def _i(v) -> Optional[int]:
