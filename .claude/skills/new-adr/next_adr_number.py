@@ -309,7 +309,7 @@ def _pull_files(pr_number: int, *, run=None, allow_discovery: bool = False) -> l
         raise ADRStateUnavailable("GitHub pull request file list reached the 3,000-file ceiling.")
     result = []
     for file in files:
-        path, status = file.get("path"), file.get("status")
+        path, status = file.get("filename"), file.get("status")
         if not isinstance(path, str) or not isinstance(status, str):
             raise ADRStateUnavailable("GitHub pull request file list is malformed.")
         result.append(PRFile(pr_number, path, status))

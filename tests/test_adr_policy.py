@@ -244,13 +244,13 @@ def _event(draft=False):
 def _policy_runner(current=None):
     return FakeRunner(
         {
-            _pr_files(488): [[current or {"path": "docs/adr/0130-current.md", "status": "added"}]],
+            _pr_files(488): [[current or {"filename": "docs/adr/0130-current.md", "status": "added"}]],
             f"repos/{REPOSITORY}/git/trees/1111111111111111111111111111111111111111?recursive=1": {
                 "truncated": False,
                 "tree": [{"path": "docs/adr/0129-base.md"}],
             },
             OPEN_PULLS: [[{"number": 488}, {"number": 489}]],
-            _pr_files(489): [[{"path": "docs/adr/0131-other.md", "status": "added"}]],
+            _pr_files(489): [[{"filename": "docs/adr/0131-other.md", "status": "added"}]],
         }
     )
 
@@ -263,11 +263,11 @@ def test_gh_pages_flattens_open_pull_pages_and_uses_gh_pagination(monkeypatch):
     assert runner.calls == [["gh", "api", OPEN_PULLS, "--paginate", "--slurp"]]
 
 
-def test_pull_files_flattens_pages_and_uses_gh_pagination(monkeypatch):
+def test_pull_files_maps_github_filename_and_uses_gh_pagination(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
     endpoint = _pr_files(488)
     runner = FakeRunner(
-        {endpoint: [[{"path": "docs/adr/0129-a.md", "status": "added"}], [{"path": "docs/adr/0130-b.md", "status": "renamed"}]]}
+        {endpoint: [[{"filename": "docs/adr/0129-a.md", "status": "added"}], [{"filename": "docs/adr/0130-b.md", "status": "renamed"}]]}
     )
 
     assert adr._pull_files(488, run=runner) == [
@@ -366,7 +366,7 @@ def test_all_open_pull_files_does_not_return_partial_results_after_later_failure
     runner = FakeRunner(
         {
             OPEN_PULLS: [[{"number": 488}, {"number": 489}]],
-            _pr_files(488): [[{"path": "docs/adr/0129-a.md", "status": "added"}]],
+            _pr_files(488): [[{"filename": "docs/adr/0129-a.md", "status": "added"}]],
             _pr_files(489): subprocess.CalledProcessError(23, ["gh"], output="secret"),
         }
     )
@@ -385,7 +385,7 @@ def test_base_tree_rejects_truncated_response(monkeypatch):
 def test_pull_files_rejects_githubs_3000_file_ceiling(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
     endpoint = _pr_files(488)
-    files = [{"path": f"docs/adr/{n:04d}-x.md", "status": "added"} for n in range(3000)]
+    files = [{"filename": f"docs/adr/{n:04d}-x.md", "status": "added"} for n in range(3000)]
     with pytest.raises(adr.ADRStateUnavailable, match="3,000"):
         adr._pull_files(488, run=FakeRunner({endpoint: [files]}))
 
@@ -441,7 +441,7 @@ def test_main_policy_check_exit_codes_and_success_output(monkeypatch, tmp_path, 
     assert adr.main(
         ["--policy-check", "--event-file", str(event_path)],
         environ={},
-        run=_policy_runner({"path": "docs/adr/XXXX-unfinalized.md", "status": "added"}),
+        run=_policy_runner({"filename": "docs/adr/XXXX-unfinalized.md", "status": "added"}),
     ) == 1
 
     unavailable = FakeRunner({_pr_files(488): FileNotFoundError("gh")})
@@ -491,15 +491,15 @@ def test_strict_scan_combines_local_default_branch_and_open_pr_claims(
             },
             OPEN_PULLS: [[{"number": 501}, {"number": 502}]],
             _pr_files(501): [[
-                {"path": "docs/adr/0141-added.md", "status": "added"},
-                {"path": "docs/adr/0142-renamed.md", "status": "renamed"},
-                {"path": "docs/adr/0998-removed.md", "status": "removed"},
-                {"path": "docs/adr/2026-08-13-pr-log.md", "status": "added"},
-                {"path": "docs/adr/logs/0997-nested.md", "status": "added"},
-                {"path": "docs/adr/XXXX-pr-draft.md", "status": "added"},
+                {"filename": "docs/adr/0141-added.md", "status": "added"},
+                {"filename": "docs/adr/0142-renamed.md", "status": "renamed"},
+                {"filename": "docs/adr/0998-removed.md", "status": "removed"},
+                {"filename": "docs/adr/2026-08-13-pr-log.md", "status": "added"},
+                {"filename": "docs/adr/logs/0997-nested.md", "status": "added"},
+                {"filename": "docs/adr/XXXX-pr-draft.md", "status": "added"},
             ]],
             _pr_files(502): [[
-                {"path": "docs/adr/0151-other.md", "status": "added"},
+                {"filename": "docs/adr/0151-other.md", "status": "added"},
             ]],
         }
     )
@@ -528,9 +528,54 @@ def test_strict_scan_raises_on_any_github_failure_without_local_fallback(
             "truncated": False, "tree": [{"path": "docs/adr/0130-default.md"}]
         },
         OPEN_PULLS: [[{"number": 501}]],
-        _pr_files(501): [[{"path": "docs/adr/0141-pr.md", "status": "added"}]],
+        _pr_files(501): [[{"filename": "docs/adr/0141-pr.md", "status": "added"}]],
     }
     responses[failed_endpoint] = FileNotFoundError("gh")
 
     with pytest.raises(adr.ADRStateUnavailable):
         adr._scan_max(tmp_path, strict=True, run=FakeRunner(responses))
+
+
+@pytest.mark.parametrize(
+    ("local", "base_paths", "pr_files", "expected"),
+    [
+        ([152], [130], [{"filename": "docs/adr/0140-pr.md", "status": "added"}], 152),
+        ([121], [153], [{"filename": "docs/adr/0140-pr.md", "status": "added"}], 153),
+        ([121], [130], [{"filename": "docs/adr/0154-pr.md", "status": "renamed"}], 154),
+        (
+            [121],
+            [130],
+            [
+                {"filename": "docs/adr/0999-removed.md", "status": "removed"},
+                {"filename": "docs/adr/2026-08-13-log.md", "status": "added"},
+                {"filename": "docs/adr/logs/0998-nested.md", "status": "added"},
+                {"filename": "docs/adr/XXXX-draft.md", "status": "added"},
+            ],
+            130,
+        ),
+    ],
+)
+def test_strict_scan_isolates_each_authoritative_floor(
+        monkeypatch, tmp_path, local, base_paths, pr_files, expected):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    for number in local:
+        (adr_dir / f"{number:04d}-local.md").write_text("")
+    default_tree = f"repos/{REPOSITORY}/git/trees/main?recursive=1"
+    runner = FakeRunner(
+        {
+            f"repos/{REPOSITORY}": {"default_branch": "main"},
+            default_tree: {
+                "truncated": False,
+                "tree": [{"path": f"docs/adr/{number:04d}-base.md"} for number in base_paths],
+            },
+            OPEN_PULLS: [[{"number": 501}]],
+            _pr_files(501): [pr_files],
+        }
+    )
+
+    assert adr._scan_max(tmp_path, strict=True, run=runner) == expected
+    assert [call[2] for call in runner.calls] == [
+        f"repos/{REPOSITORY}", default_tree, OPEN_PULLS, _pr_files(501)
+    ]
