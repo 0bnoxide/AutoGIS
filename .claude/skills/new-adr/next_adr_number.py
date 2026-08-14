@@ -270,9 +270,12 @@ def _gh_pages(endpoint: str, *, run=None) -> list[dict]:
     return items
 
 
-def _base_paths(ref: str, *, run=None, allow_discovery: bool = False) -> list[str]:
+def _base_paths(
+    ref: str, *, run=None, allow_discovery: bool = False, repository: str | None = None
+) -> list[str]:
     """Read an untruncated Git tree for the PR base SHA/ref."""
-    endpoint = f"repos/{_repository(run=run, allow_discovery=allow_discovery)}/git/trees/{ref}?recursive=1"
+    repository = repository or _repository(run=run, allow_discovery=allow_discovery)
+    endpoint = f"repos/{repository}/git/trees/{ref}?recursive=1"
     tree = _gh_object(endpoint, run=run)
     if tree.get("truncated") is not False:
         raise ADRStateUnavailable("GitHub base tree is truncated or malformed.")
@@ -286,6 +289,16 @@ def _base_paths(ref: str, *, run=None, allow_discovery: bool = False) -> list[st
             raise ADRStateUnavailable("GitHub base tree is malformed.")
         paths.append(path)
     return paths
+
+
+def _default_branch_paths(*, run=None) -> list[str]:
+    """Read the complete authoritative default-branch tree."""
+    repository = _repository(run=run, allow_discovery=True)
+    details = _gh_object(f"repos/{repository}", run=run)
+    branch = details.get("default_branch")
+    if not isinstance(branch, str) or not branch:
+        raise ADRStateUnavailable("GitHub repository default branch is malformed.")
+    return _base_paths(branch, run=run, allow_discovery=True, repository=repository)
 
 
 def _pull_files(pr_number: int, *, run=None, allow_discovery: bool = False) -> list[PRFile]:
@@ -407,7 +420,14 @@ def _open_pr_max(*, strict: bool = False, run=None) -> int:
         why = type(exc.__cause__).__name__ if exc.__cause__ else type(exc).__name__
         print(_NO_GH_WARNING.format(why=why), file=sys.stderr)
         return 0  # fail soft — local-only scan still ran
-    return max((_adr_number(file.path) or 0 for file in files), default=0)
+    return max(
+        (
+            _adr_number(file.path) or 0
+            for file in files
+            if not strict or file.status in _CLAIM_STATUSES
+        ),
+        default=0,
+    )
 
 
 _NO_REMOTE_WARNING = (
@@ -447,11 +467,14 @@ def _remote_max(root: Path) -> int:
     )
 
 
-def _scan_max(root: Path) -> int:
-    """Highest ADR number in local files + open PRs + origin/main — no
-    reservations, no +1."""
-    return max(_local_max(root / "docs" / "adr"), _open_pr_max(),
-               _remote_max(root))
+def _scan_max(root: Path, *, strict: bool = False, run=None) -> int:
+    """Highest local/base/open-PR number; strict mode requires all remote state."""
+    local = _local_max(root / "docs" / "adr")
+    if not strict:
+        return max(local, _open_pr_max() if run is None else _open_pr_max(run=run),
+                   _remote_max(root))
+    base = max((_adr_number(path) or 0 for path in _default_branch_paths(run=run)), default=0)
+    return max(local, base, _open_pr_max(strict=True, run=run))
 
 
 def _reserved_max() -> int:

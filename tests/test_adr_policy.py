@@ -467,3 +467,70 @@ def test_event_file_overrides_environment_and_selects_pull_request_mode(monkeypa
         run=runner,
     ) == 0
     assert _pr_files(488) in [call[2] for call in runner.calls]
+
+
+def test_strict_scan_combines_local_default_branch_and_open_pr_claims(
+        monkeypatch, tmp_path):
+    """Strict allocation reads all three sources and only live ADR paths."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "0121-local.md").write_text("")
+    default_tree = f"repos/{REPOSITORY}/git/trees/main?recursive=1"
+    runner = FakeRunner(
+        {
+            f"repos/{REPOSITORY}": {"default_branch": "main"},
+            default_tree: {
+                "truncated": False,
+                "tree": [
+                    {"path": "docs/adr/0130-default.md"},
+                    {"path": "docs/adr/2026-08-13-agent-decisions.md"},
+                    {"path": "docs/adr/logs/0999-log.md"},
+                    {"path": "docs/adr/XXXX-draft.md"},
+                ],
+            },
+            OPEN_PULLS: [[{"number": 501}, {"number": 502}]],
+            _pr_files(501): [[
+                {"path": "docs/adr/0141-added.md", "status": "added"},
+                {"path": "docs/adr/0142-renamed.md", "status": "renamed"},
+                {"path": "docs/adr/0998-removed.md", "status": "removed"},
+                {"path": "docs/adr/2026-08-13-pr-log.md", "status": "added"},
+                {"path": "docs/adr/logs/0997-nested.md", "status": "added"},
+                {"path": "docs/adr/XXXX-pr-draft.md", "status": "added"},
+            ]],
+            _pr_files(502): [[
+                {"path": "docs/adr/0151-other.md", "status": "added"},
+            ]],
+        }
+    )
+
+    assert adr._scan_max(tmp_path, strict=True, run=runner) == 151
+    assert [call[2] for call in runner.calls] == [
+        f"repos/{REPOSITORY}", default_tree, OPEN_PULLS, _pr_files(501), _pr_files(502)
+    ]
+
+
+@pytest.mark.parametrize("failed_endpoint", [
+    f"repos/{REPOSITORY}",
+    f"repos/{REPOSITORY}/git/trees/main?recursive=1",
+    OPEN_PULLS,
+    _pr_files(501),
+])
+def test_strict_scan_raises_on_any_github_failure_without_local_fallback(
+        monkeypatch, tmp_path, failed_endpoint):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "0999-local-only.md").write_text("")
+    responses = {
+        f"repos/{REPOSITORY}": {"default_branch": "main"},
+        f"repos/{REPOSITORY}/git/trees/main?recursive=1": {
+            "truncated": False, "tree": [{"path": "docs/adr/0130-default.md"}]
+        },
+        OPEN_PULLS: [[{"number": 501}]],
+        _pr_files(501): [[{"path": "docs/adr/0141-pr.md", "status": "added"}]],
+    }
+    responses[failed_endpoint] = FileNotFoundError("gh")
+
+    with pytest.raises(adr.ADRStateUnavailable):
+        adr._scan_max(tmp_path, strict=True, run=FakeRunner(responses))

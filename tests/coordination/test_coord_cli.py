@@ -125,7 +125,7 @@ def test_resync_detached_head_claims_only_worktree(tmp_path):
 def test_reserve_adr_reserves_and_increments(tmp_path, capsys, monkeypatch):
     # Stub the file/PR scan so the test is offline and deterministic; the scan
     # itself is exercised by the new-adr skill's own self-check.
-    monkeypatch.setattr(coord_cli, "_adr_scan_base", lambda cwd: 106)
+    monkeypatch.setattr(coord_cli, "_adr_scan_base", lambda cwd, strict=False: 106)
     p = tmp_path / "c.json"
     assert coord_cli.run(["reserve-adr", "--session", "s1"], p) == 0
     assert capsys.readouterr().out.strip() == "0107"
@@ -137,6 +137,22 @@ def test_reserve_adr_reserves_and_increments(tmp_path, capsys, monkeypatch):
 def test_reserve_adr_needs_resolvable_session(tmp_path):
     assert coord_cli.run(["reserve-adr"], tmp_path / "c.json", cwd="/nowhere",
                          env={}) == 1
+
+
+def test_strict_reserve_adr_does_not_claim_when_scan_fails(
+        tmp_path, monkeypatch, capsys):
+    def fail(_cwd, strict=False):
+        assert strict is True
+        raise RuntimeError("authoritative scan unavailable")
+
+    monkeypatch.setattr(coord_cli, "_adr_scan_base", fail)
+    registry_path = tmp_path / "claims.json"
+    rc = coord_cli.run(
+        ["reserve-adr", "--session", "s1", "--strict"], registry_path
+    )
+    assert rc == 2
+    assert registry.live_values(registry_path, "adr") == []
+    assert "no ADR number was reserved" in capsys.readouterr().err
 
 
 # --- #425: the scan must see the CALLER's worktree, not just coord_cli's -----

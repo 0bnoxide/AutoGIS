@@ -66,7 +66,9 @@ def run(argv, reg_path, cwd=None, env=None, branch_func=None):
     sub.add_parser("whoami").add_argument("--session")
     sub.add_parser("release-mine").add_argument("--session")
     sub.add_parser("resync").add_argument("--session")
-    sub.add_parser("reserve-adr").add_argument("--session")
+    reserve_adr = sub.add_parser("reserve-adr")
+    reserve_adr.add_argument("--session")
+    reserve_adr.add_argument("--strict", action="store_true")
     args = ap.parse_args(argv)
 
     if args.cmd == "list":
@@ -127,7 +129,12 @@ def run(argv, reg_path, cwd=None, env=None, branch_func=None):
         # base = highest ADR in local files + open PRs + origin/main (the skill
         # owns that scan); reserve_number atomically lifts it above any live
         # reservation.
-        n = registry.reserve_number(reg_path, sid, "adr", _adr_scan_base(cwd))
+        try:
+            base = _adr_scan_base(cwd, strict=args.strict)
+        except Exception:
+            print("ADR state unavailable; no ADR number was reserved.", file=sys.stderr)
+            return 2
+        n = registry.reserve_number(reg_path, sid, "adr", base)
         print("%04d" % n)
         return 0
 
@@ -153,7 +160,7 @@ def _git_toplevel(cwd):
         return ""
 
 
-def _adr_scan_base(cwd):
+def _adr_scan_base(cwd, strict=False):
     """Max ADR number already used by local files + open PRs + origin/main
     (#495), via the new-adr skill's own scanner. 0 if it can't be imported
     (keeps reserve-adr working off reservations alone).
@@ -174,7 +181,12 @@ def _adr_scan_base(cwd):
         import next_adr_number
         from pathlib import Path
     except Exception:
+        if strict:
+            raise
         return 0
+    if strict:
+        caller = _git_toplevel(cwd) or cwd
+        return next_adr_number._scan_max(Path(caller), strict=True)
     # Each tree's scan gets its OWN try: a failure in either must not discard
     # the floor the other can still compute. Folding both into one try made a
     # git or registry hiccup return 0 — strictly less safe for reservation
