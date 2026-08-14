@@ -1,14 +1,12 @@
-# ADR-XXXX: Issue fix batch (2026-08-14) — manifest decode seam, ADR remote floor, catalog dedupe, QA-warning precision, atomic appendix publish
+# ADR-0132: Issue fix batch (2026-08-14) — manifest decode seam, ADR remote floor, catalog dedupe, QA-warning precision, atomic appendix publish
 
 **Status:** Proposed
 
 **Date:** 2026-08-14
 
-> **Number assigned at merge.** Filed as an `XXXX-` placeholder per
-> `docs/adr/README.md` § File naming — PR #497 is open right now with its own
-> `XXXX-harvest-photo-metadata-suite.md`. At merge: take the next free number
-> after checking `docs/adr/` and every other open PR, rename the file, fix the
-> H1, and replace the `XXXX` row in the index.
+> Filed as an `XXXX-` placeholder while PRs #494/#497 were open with their own
+> placeholder ADRs; renumbered to **0132** at merge (0131 was the origin/main
+> max; #497's placeholder was the only other open-PR ADR file).
 
 ## Context
 

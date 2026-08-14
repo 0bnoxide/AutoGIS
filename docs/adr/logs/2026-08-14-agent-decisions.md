@@ -1,7 +1,7 @@
 # Agent decisions — 2026-08-14
 
 Session: PR #497 conflict resolution + five-issue fix batch (#496 #499 #495
-#476 #500). ADR: `XXXX-issue-fix-batch-2026-08-14.md`. Supplement to that ADR,
+#476 #500). ADR: `0132-issue-fix-batch-2026-08-14.md`. Supplement to that ADR,
 not a substitute.
 
 ## PR #497 conflict resolution on a detached HEAD
