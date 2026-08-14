@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from autogis.core.common.qa import QACollector
+from autogis.core.envmon import photo_metadata as photo_metadata_module
 from autogis.core.envmon.photo_metadata import (
     PhotoRecord, evaluate_photo_qa, extract_exif, haversine_m,
     load_photo_records)
@@ -24,6 +25,16 @@ def _row(saved_path, **kw):
             "feature_edited_at": None}
     base.update(kw)
     return base
+
+
+def test_path_key_preserves_case_on_case_sensitive_platform(monkeypatch):
+    monkeypatch.setattr(
+        photo_metadata_module.os.path, "normcase", lambda value: value)
+
+    upper = photo_metadata_module._path_key("G/Foo.jpg")
+    lower = photo_metadata_module._path_key("G/foo.jpg")
+
+    assert upper != lower
 
 
 def test_extract_exif_round_trip(make_photo_jpeg):

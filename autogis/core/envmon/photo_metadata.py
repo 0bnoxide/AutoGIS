@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import posixpath
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -183,7 +184,8 @@ def _group_of(saved: str, harvest_dir: Path) -> str:
 
 def _path_key(value: object) -> str:
     """Lexically normalize a manifest path without touching the filesystem."""
-    return posixpath.normpath(str(value).replace("\\", "/")).casefold()
+    normalized = posixpath.normpath(str(value).replace("\\", "/"))
+    return os.path.normcase(normalized).replace("\\", "/")
 
 
 def _harvest_file_index(harvest_dir: Path) -> dict[str, Path]:
