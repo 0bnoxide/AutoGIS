@@ -300,14 +300,19 @@ def test_no_two_tools_claim_one_catalog_section():
     claims: dict[str, set[str]] = {}
     for _c, name, rid in _dotted_seed_ids():
         claims.setdefault(rid, set()).add(name)
-    # 8.2 is a defect in the catalog, not the registry: the doc carries two
-    # '### 8.2' headings (Update Well Elevations / Create Civil 3D Contour
-    # Support Files) and each tool matches one. Renumbering a spec section is
-    # an owner call -- tracked separately, exempted here so this test pins
-    # the registry-side shape it exists for.
     collisions = {rid: sorted(ns) for rid, ns in claims.items()
-                  if len(ns) > 1 and rid != "8.2"}
+                  if len(ns) > 1}
     assert not collisions, f"multiple tools claim one catalog section: {collisions}"
+
+
+def test_catalog_section_numbers_are_unique():
+    """The catalog is the declared authority for `Tool N.N` numbers, so one
+    number must head exactly one section. It carried duplicate 8.2/8.3/8.4
+    headings for months (#476) and every id built on them was ambiguous."""
+    nums = re.findall(r'^#{2,4}\s+(\d+\.\d[0-9A-Za-z]*)\s',
+                      ROADMAP_PATH.read_text(encoding="utf-8"), re.M)
+    dupes = sorted({n for n in nums if nums.count(n) > 1})
+    assert not dupes, f"duplicate section numbers in {ROADMAP_PATH.name}: {dupes}"
 
 
 def test_post_roadmap_extras_claim_no_catalog_number():

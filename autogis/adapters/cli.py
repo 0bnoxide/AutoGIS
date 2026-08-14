@@ -6441,7 +6441,7 @@ def build_cad_package_cmd(layers, mapping, crs):
 @qa_report_options
 def export_civil3d_cmd(points_csv, crs, out_dir, start_number, landxml, units,
                        report, fail_on):
-    """Tool 8.2: PNEZD point CSV + projection note for Civil 3D (headless);
+    """Tool 8.10: PNEZD point CSV + projection note for Civil 3D (headless);
     --landxml adds a headless LandXML CgPoints export. Existing Pro TINs use
     the ExportContoursForCivil3D tool in the .pyt toolbox."""
     from autogis.core.common.qa import QACollector
