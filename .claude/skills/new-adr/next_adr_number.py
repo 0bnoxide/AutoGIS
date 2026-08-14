@@ -207,20 +207,21 @@ def _repository(*, run=None, allow_discovery: bool = False) -> str:
             timeout=30,
             check=True,
         )
-        repository = json.loads(result.stdout).get("nameWithOwner", "")
+        discovered = json.loads(result.stdout)
+        repository = discovered.get("nameWithOwner", "") if isinstance(discovered, dict) else ""
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         raise _gh_failure("repository", exc) from exc
-    if repository.count("/") != 1 or any(not part for part in repository.split("/")):
+    if not isinstance(repository, str) or repository.count("/") != 1 or any(not part for part in repository.split("/")):
         raise ADRStateUnavailable("GitHub repository discovery is malformed.")
     return repository
 
 
-def _gh_failure(endpoint: str, exc: BaseException) -> ADRStateUnavailable:
+def _gh_failure(operation: str, exc: BaseException) -> ADRStateUnavailable:
     """Convert command/parse failures without exposing command response data."""
     detail = type(exc).__name__
     if isinstance(exc, subprocess.CalledProcessError):
         detail += f" (exit {exc.returncode})"
-    return ADRStateUnavailable(f"GitHub state read failed for {endpoint}: {detail}.")
+    return ADRStateUnavailable(f"GitHub {operation} failed: {detail}.")
 
 
 def _gh_object(endpoint: str, *, run=None) -> dict:
@@ -236,9 +237,9 @@ def _gh_object(endpoint: str, *, run=None) -> dict:
         )
         data = json.loads(result.stdout)
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-        raise _gh_failure(endpoint, exc) from exc
+        raise _gh_failure("object read", exc) from exc
     if not isinstance(data, dict):
-        raise ADRStateUnavailable(f"GitHub state read failed for {endpoint}: expected object.")
+        raise ADRStateUnavailable("GitHub object read failed: expected object.")
     return data
 
 
@@ -255,16 +256,16 @@ def _gh_pages(endpoint: str, *, run=None) -> list[dict]:
         )
         pages = json.loads(result.stdout)
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-        raise _gh_failure(endpoint, exc) from exc
+        raise _gh_failure("paginated read", exc) from exc
     if not isinstance(pages, list):
-        raise ADRStateUnavailable(f"GitHub state read failed for {endpoint}: expected pages.")
+        raise ADRStateUnavailable("GitHub paginated read failed: expected pages.")
     items = []
     for page in pages:
         if not isinstance(page, list):
-            raise ADRStateUnavailable(f"GitHub state read failed for {endpoint}: expected page.")
+            raise ADRStateUnavailable("GitHub paginated read failed: expected page.")
         for item in page:
             if not isinstance(item, dict):
-                raise ADRStateUnavailable(f"GitHub state read failed for {endpoint}: expected item.")
+                raise ADRStateUnavailable("GitHub paginated read failed: expected item.")
             items.append(item)
     return items
 
@@ -341,14 +342,20 @@ def policy_check(
     if event_name == "push":
         return local_errors
     if event_name != "pull_request":
-        raise ADRStateUnavailable(f"Unsupported CI event: {event_name!r}.")
+        raise ADRStateUnavailable("Unsupported CI event.")
     try:
         pull = event["pull_request"]
         number, draft, base = pull["number"], pull["draft"], pull["base"]
         base_sha = base["sha"]
     except (KeyError, TypeError) as exc:
         raise ADRStateUnavailable(f"Pull-request event is malformed: {type(exc).__name__}.") from None
-    if isinstance(number, bool) or not isinstance(number, int) or not isinstance(draft, bool) or not isinstance(base_sha, str):
+    if (
+        isinstance(number, bool)
+        or not isinstance(number, int)
+        or not isinstance(draft, bool)
+        or not isinstance(base_sha, str)
+        or re.fullmatch(r"[0-9a-fA-F]{40}", base_sha) is None
+    ):
         raise ADRStateUnavailable("Pull-request event is malformed.")
     current_files = _pull_files(number, run=run)
     base_paths = _base_paths(base_sha, run=run)

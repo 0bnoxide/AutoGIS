@@ -316,6 +316,51 @@ def test_open_pr_max_without_actions_repository_still_reports_missing_gh(monkeyp
     assert "FileNotFoundError" in capsys.readouterr().err
 
 
+def test_legacy_numbering_fails_soft_when_repository_discovery_is_not_an_object(monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    runner = FakeRunner({"view": []})
+
+    assert adr._open_pr_max(run=runner) == 0
+    assert "ADRStateUnavailable" in capsys.readouterr().err
+
+
+def test_policy_rejects_hostile_base_sha_without_echoing_it(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    marker = "base-sha-secret-marker"
+    event = _event()
+    event["pull_request"]["base"]["sha"] = marker
+
+    with pytest.raises(adr.ADRStateUnavailable) as raised:
+        adr.policy_check(tmp_path, event_name="pull_request", event=event, run=FakeRunner({}))
+
+    assert marker not in str(raised.value)
+
+
+@pytest.mark.parametrize("event_name", [None, "schedule"])
+def test_policy_rejects_missing_or_unsupported_event_without_github(tmp_path, event_name):
+    with pytest.raises(adr.ADRStateUnavailable):
+        adr.policy_check(
+            tmp_path,
+            event_name=event_name,
+            event={},
+            run=lambda *_args, **_kwargs: pytest.fail("unsupported event must not read GitHub"),
+        )
+
+
+def test_failed_paginated_command_cannot_return_partial_results(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+
+    def partial_then_failure(_args, **_kwargs):
+        # `gh` performs pagination internally; its nonzero exit means no page set is usable.
+        raise subprocess.CalledProcessError(29, ["gh"], output="partial-page-token")
+
+    with pytest.raises(adr.ADRStateUnavailable) as raised:
+        adr._gh_pages(OPEN_PULLS, run=partial_then_failure)
+
+    assert "partial-page-token" not in str(raised.value)
+
+
 def test_all_open_pull_files_does_not_return_partial_results_after_later_failure(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
     runner = FakeRunner(
