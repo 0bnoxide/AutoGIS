@@ -45,6 +45,11 @@ def _feature(r: PhotoRecord) -> str:
     return f"{r.group}{oid}"
 
 
+def _xlsx_text(value: str) -> str:
+    """Keep untrusted text from becoming an Excel formula."""
+    return "'" + value if value.startswith(("=", "+", "-", "@")) else value
+
+
 def _bytes_of(r: PhotoRecord, box) -> bytes | None:
     p = Path(r.saved_path)
     return prepare_image_bytes(p, box) if p.is_file() else None
@@ -91,7 +96,8 @@ def _write_xlsx(records, out_path, title):
         for col, val in ((3, _feature(r)), (4, r.taken_at or ""),
                          (5, _direction(r)), (6, _coords(r)), (7, ""),
                          (8, r.saved_path)):
-            ws.cell(row=row_no, column=col, value=val).alignment = wrap
+            ws.cell(row=row_no, column=col,
+                    value=_xlsx_text(val)).alignment = wrap
     wb.save(out_path)
 
 

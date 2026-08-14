@@ -486,7 +486,16 @@ def test_harvest_geometry_wgs84_passthrough_and_centroid(tmp_path):
     summary = harvester.harvest(None, _cfg(tmp_path), layer=layer,
                                 now_ms=1, sleep=lambda s: None)
     geom = _json.loads(summary.results[0].geometry)
-    assert geom == {"lat": pytest.approx(40.8), "lon": pytest.approx(10.8)}
+    assert geom == {"lat": pytest.approx(41.0), "lon": pytest.approx(11.0)}
+
+
+def test_rep_point_uses_attribute_style_result_spatial_reference():
+    spatial_reference = type("SpatialReference", (), {"wkid": 4326})()
+    result = FakeQueryResult([], spatial_reference=spatial_reference)
+
+    point = harvester._rep_point_wgs84({"x": 10.0, "y": 40.0}, result)
+
+    assert point == (40.0, 10.0)
 
 
 def test_harvest_unknown_wkid_leaves_geometry_null(tmp_path, caplog):

@@ -123,7 +123,12 @@ def _vertices(geom):
     if geom.get("x") is not None and geom.get("y") is not None:
         return [(geom["x"], geom["y"])]
     parts = geom.get("paths") or geom.get("rings") or []
-    return [(x, y) for part in parts for x, y, *_ in part]
+    vertices = []
+    for part in parts:
+        if len(part) > 1 and part[0][:2] == part[-1][:2]:
+            part = part[:-1]
+        vertices.extend((x, y) for x, y, *_ in part)
+    return vertices
 
 
 def _rep_point_wgs84(geom, result):
@@ -143,8 +148,7 @@ def _rep_point_wgs84(geom, result):
     y = sum(v[1] for v in verts) / len(verts)
     sr = geom.get("spatialReference") or getattr(
         result, "spatial_reference", None) or {}
-    wkid = (sr.get("latestWkid") or sr.get("wkid")) if isinstance(sr, dict) \
-        else None
+    wkid = _prop(sr, "latestWkid") or _prop(sr, "wkid")
     if wkid == 4326:
         return (y, x)
     if wkid in _WEB_MERCATOR_WKIDS:

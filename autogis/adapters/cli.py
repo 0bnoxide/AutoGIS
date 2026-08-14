@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import math
 import os
 import sys
 import uuid
@@ -6589,29 +6590,44 @@ def _load_photo_records_or_fail(harvest_dir, qa):
 
 def _reject_harvest_input_overwrite(harvest_dir, *out_paths):
     """Refuse an output path that resolves onto any harvested input."""
-    from autogis.core.envmon.index_field_attachments import load_manifest
+    from autogis.core.envmon.photo_metadata import load_harvest_input_paths
 
     root = Path(harvest_dir).resolve(strict=False)
     manifest_paths = tuple((root / n).resolve(strict=False)
                            for n in ("manifest.json", "manifest.csv"))
-    inputs = set(manifest_paths)
-    manifest = next((p for p in manifest_paths if p.is_file()), None)
-    if manifest is not None:
-        for row in load_manifest(manifest):
-            saved = row.get("saved_path")
-            if not saved:
-                continue
-            p = Path(str(saved).replace("\\", "/"))
-            if not p.is_absolute():
-                p = root / p
-            try:
-                inputs.add(p.resolve(strict=False))
-            except (OSError, RuntimeError):
-                continue
-    for p in out_paths:
-        if p and Path(p).resolve(strict=False) in inputs:
+    def identity(value):
+        return str(value).replace("\\", "/").casefold()
+
+    inputs = {identity(p) for p in manifest_paths}
+    inputs.update(identity(p) for p in load_harvest_input_paths(root))
+    outputs = [(p, identity(Path(p).resolve(strict=False)))
+               for p in out_paths if p]
+    if len({key for _, key in outputs}) != len(outputs):
+        raise click.ClickException(
+            "multiple outputs resolve to the same output path")
+    for p, key in outputs:
+        target = Path(p)
+        if key in inputs:
             raise click.ClickException(
                 f"output path {p} would overwrite a harvest input")
+        if target.exists() and not target.is_file():
+            raise click.ClickException(
+                f"output path {p} is not a writable file target")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                with target.open("r+b"):
+                    pass
+            else:
+                probe = target.parent / f".autogis-probe-{uuid.uuid4().hex}"
+                try:
+                    with probe.open("xb"):
+                        pass
+                finally:
+                    probe.unlink(missing_ok=True)
+        except OSError as exc:
+            raise click.ClickException(
+                f"output path {p} is not writable: {exc}") from exc
 
 
 @photos_group.command("points")
@@ -6650,11 +6666,15 @@ def photos_points_cmd(harvest_dir, out_csv, out_geojson, report, fail_on):
               type=click.Path(exists=True, file_okay=False),
               help="Harvest output directory (contains manifest.csv/json).")
 @click.option("--max-offset-m", default=100.0, show_default=True,
+              type=click.FloatRange(min=0.0),
               help="Flag photos whose EXIF GPS is farther than this from "
                    "their source feature.")
 @qa_report_options
 def photos_qa_cmd(harvest_dir, max_offset_m, report, fail_on):
     """Cross-check photo EXIF against the features they are attached to."""
+    if not math.isfinite(max_offset_m):
+        raise click.BadParameter(
+            "must be finite", param_hint="--max-offset-m")
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.photo_metadata import evaluate_photo_qa
     qa = QACollector()

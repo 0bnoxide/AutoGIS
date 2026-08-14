@@ -435,7 +435,7 @@ not by flag.
 | `autogis envmon generate-inspection-report` | CLOUD | `core/envmon/well_inspection_photo_report.py` (photo embedding needs Pillow) |
 | `autogis envmon photos points` | CLOUD | `core/envmon/photo_points.py` (Pillow required — `report` extra) |
 | `autogis envmon photos qa` | CLOUD | `core/envmon/photo_metadata.py` (Pillow required — `report` extra) |
-| `autogis envmon photos log` | CLOUD | `core/envmon/photo_log.py` (openpyxl/Pillow; python-docx optional) |
+| `autogis envmon photos log` | CLOUD | `core/envmon/photo_log.py` (Pillow required — `report`; DOCX needs `report-docx`) |
 | `autogis envmon photos kmz` | CLOUD | `core/envmon/photo_points.py` (Pillow required — `report` extra) |
 | `autogis envmon download-dem` | CLOUD | `core/envmon/opentopo.py` (`.pyt` add-to-map/reproject path is LOCAL) |
 | `autogis envmon export-civil3d` | CLOUD | `core/envmon/civil3d_points.py` (PNEZD CSV + `--landxml` CgPoints, both headless, ADR-0088; existing TIN surface export is available in the Pro `.pyt` toolbox, ADR-0089) |
@@ -554,10 +554,11 @@ python -m pytest -q           # count is extras-dependent: python -m pytest --co
 
 | Extra | Pulls in | Unlocks |
 |-------|----------|---------|
-| `dev` | pytest, Pillow, matplotlib, pyproj | test suite (importorskip-gated tests run) |
+| `dev` | pytest, pytest-cov, Pillow, python-docx, matplotlib, pyproj | test suite (importorskip-gated tests run) |
 | `cloud` | arcgis, setuptools | ArcGIS Online publishing (CLOUD tools) |
 | `gui` | PySide6 | `autogis-gui`, the unified desktop GUI (ADR-0050) |
-| `report` | Pillow | photo embedding in `generate-inspection-report` |
+| `report` | Pillow | EXIF extraction for all `envmon photos` commands and photo embedding in `generate-inspection-report` |
+| `report-docx` | python-docx, Pillow | DOCX photographic logs (`envmon photos log --format docx`) |
 | `profile` | matplotlib | subsurface profile rendering (`generate-subsurface-profile`) |
 | `landxml` | pyproj | CRS operation selection and Z scaling for `envmon transform-landxml` |
 | `opentopo` | pyproj | non-WGS84 AOI reprojection for `envmon download-dem` (headless path only) |

@@ -1,4 +1,4 @@
-# ADR-0132: Harvest photo-metadata suite — EXIF core, four headless emitters, harvester column fill
+# ADR-0133: Harvest photo-metadata suite — EXIF core, four headless emitters, harvester column fill
 
 **Status:** Proposed
 

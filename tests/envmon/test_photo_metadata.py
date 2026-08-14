@@ -66,6 +66,120 @@ def test_extract_exif_no_gps(make_photo_jpeg):
     assert got["taken_at"] == "2026-05-05T08:17:36"
 
 
+def test_extract_exif_rejects_gps_without_hemisphere(
+        monkeypatch, make_photo_jpeg):
+    from PIL import Image
+
+    original_get_ifd = Image.Exif.get_ifd
+
+    def get_ifd(exif, tag):
+        if tag == 0x8825:
+            return {2: (45, 52, 0), 4: (103, 29, 0)}
+        return original_get_ifd(exif, tag)
+
+    monkeypatch.setattr(Image.Exif, "get_ifd", get_ifd)
+
+    got = extract_exif(make_photo_jpeg())
+
+    assert got.get("exif_lat") is None
+    assert got.get("exif_lon") is None
+    assert "corrupt EXIF" in got["exif_error"]
+
+
+def test_extract_exif_rejects_out_of_range_gps(monkeypatch, make_photo_jpeg):
+    from PIL import Image
+
+    original_get_ifd = Image.Exif.get_ifd
+
+    def get_ifd(exif, tag):
+        if tag == 0x8825:
+            return {1: "N", 2: (91, 0, 0), 3: "E", 4: (103, 29, 0)}
+        return original_get_ifd(exif, tag)
+
+    monkeypatch.setattr(Image.Exif, "get_ifd", get_ifd)
+
+    got = extract_exif(make_photo_jpeg())
+
+    assert got.get("exif_lat") is None
+    assert got.get("exif_lon") is None
+    assert "corrupt EXIF" in got["exif_error"]
+
+
+def test_extract_exif_rejects_invalid_datetime(monkeypatch, make_photo_jpeg):
+    from PIL import Image
+
+    original_get_ifd = Image.Exif.get_ifd
+
+    def get_ifd(exif, tag):
+        if tag == 0x8769:
+            return {36867: "not-a-date"}
+        return original_get_ifd(exif, tag)
+
+    monkeypatch.setattr(Image.Exif, "get_ifd", get_ifd)
+
+    got = extract_exif(make_photo_jpeg())
+
+    assert got.get("taken_at") is None
+    assert got["exif_lat"] == pytest.approx(45.874, abs=1e-4)
+    assert got["exif_lon"] == pytest.approx(-103.487, abs=1e-4)
+    assert "corrupt EXIF" in got["exif_error"]
+
+
+def test_extract_exif_rejects_invalid_heading_ref(
+        monkeypatch, make_photo_jpeg):
+    from PIL import Image
+
+    original_get_ifd = Image.Exif.get_ifd
+
+    def get_ifd(exif, tag):
+        gps = original_get_ifd(exif, tag)
+        if tag == 0x8825:
+            gps[16] = "X"
+        return gps
+
+    monkeypatch.setattr(Image.Exif, "get_ifd", get_ifd)
+
+    got = extract_exif(make_photo_jpeg())
+
+    assert got.get("heading_deg") is None
+    assert got.get("heading_ref") is None
+    assert got["exif_lat"] == pytest.approx(45.874, abs=1e-4)
+    assert "corrupt EXIF" in got["exif_error"]
+
+
+def test_extract_exif_rejects_non_mapping_gps_ifd(
+        monkeypatch, make_photo_jpeg):
+    from PIL import Image
+
+    original_get_ifd = Image.Exif.get_ifd
+
+    def get_ifd(exif, tag):
+        if tag == 0x8825:
+            return []
+        return original_get_ifd(exif, tag)
+
+    monkeypatch.setattr(Image.Exif, "get_ifd", get_ifd)
+
+    got = extract_exif(make_photo_jpeg())
+
+    assert got.get("exif_lat") is None
+    assert got.get("exif_lon") is None
+    assert "GPS IFD must be a mapping" in got["exif_error"]
+
+
+def test_extract_exif_handles_ifd_load_error(monkeypatch, make_photo_jpeg):
+    from PIL import Image
+
+    def get_ifd(_exif, _tag):
+        raise ValueError("broken IFD")
+
+    monkeypatch.setattr(Image.Exif, "get_ifd", get_ifd)
+
+    got = extract_exif(make_photo_jpeg())
+
+    assert got == {"exif_error": "corrupt EXIF: broken IFD"}
+
+
 def test_extract_exif_unreadable(tmp_path):
     pytest.importorskip("PIL")
     p = tmp_path / "bad.jpg"
@@ -149,6 +263,23 @@ def test_load_photo_records_corrupt_geometry_cell(tmp_path, make_photo_jpeg):
     assert recs[0].feature_lat is None and recs[0].feature_lon is None
 
 
+@pytest.mark.parametrize("geometry", [
+    {"lat": "NaN", "lon": "Infinity"},
+    {"lat": 91, "lon": 181},
+])
+def test_load_photo_records_rejects_invalid_geometry_coordinates(
+        tmp_path, make_photo_jpeg, geometry):
+    p = make_photo_jpeg(directory=tmp_path / "G")
+    _manifest(tmp_path, [_row(p, geometry=geometry)])
+
+    recs = load_photo_records(tmp_path, QACollector())
+
+    assert len(recs) == 1
+    assert recs[0].feature_lat is None
+    assert recs[0].feature_lon is None
+    assert recs[0].offset_m is None
+
+
 def test_load_photo_records_rejects_path_outside_harvest(
         tmp_path, make_photo_jpeg):
     outside_dir = tmp_path.parent / f"{tmp_path.name}-outside"
@@ -210,6 +341,26 @@ def test_qa_warns_when_exif_datetime_is_missing():
 
     assert s.get("missing_datetime") == 1
     assert any(r.category == "photo_missing_datetime" for r in qa.records)
+
+
+def test_qa_inventory_keeps_duplicate_basenames_distinct_without_readding():
+    recs = [
+        _rec(objectid=1, attachment_id=10, group="G1",
+             saved_path="G1/p.jpg"),
+        _rec(objectid=2, attachment_id=20, group="G2",
+             saved_path="G2/p.jpg"),
+    ]
+    qa = QACollector()
+
+    evaluate_photo_qa(recs, qa)
+    evaluate_photo_qa(recs, qa)
+
+    gps = [r for r in qa.records if r.category == "photo_missing_gps"]
+    dates = [r for r in qa.records
+             if r.category == "photo_missing_datetime"]
+    assert len(gps) == 2
+    assert len(dates) == 2
+    assert len({r.message for r in gps}) == 2
 
 
 def test_qa_exif_error_with_valid_gps_still_checks_offset():

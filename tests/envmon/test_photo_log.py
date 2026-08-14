@@ -31,6 +31,19 @@ def test_log_xlsx(tmp_path, make_photo_jpeg):
     assert ws.cell(row=2, column=7).value in (None, "")  # blank Description
 
 
+def test_log_xlsx_neutralizes_formula_leading_text(tmp_path, make_photo_jpeg):
+    pytest.importorskip("openpyxl")
+    p = make_photo_jpeg(directory=tmp_path / "G")
+    out = tmp_path / "log.xlsx"
+
+    write_log([_rec(p, group="=1+1", objectid=None)], out, fmt="xlsx")
+
+    from openpyxl import load_workbook
+    cell = load_workbook(out).active.cell(row=2, column=3)
+    assert cell.data_type != "f"
+    assert cell.value == "'=1+1"
+
+
 def test_log_html(tmp_path, make_photo_jpeg):
     p = make_photo_jpeg(directory=tmp_path / "G")
     out = tmp_path / "log.html"

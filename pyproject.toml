@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 dependencies = ["PyYAML", "click>=8.0", "openpyxl", "numpy>=1.24", "xlrd>=2.0"]   # click>=8.0: introspect.py's _field() calls param.to_info_dict(); xlrd: legacy .xls EQuIS EDDs (lazy import in equis_reader)
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "Pillow>=9.0", "matplotlib>=3.7", "pyproj"]   # Pillow/matplotlib/pyproj so the importorskip-gated tests actually run; pytest-cov feeds SonarCloud's coverage gate (#452)
+dev = ["pytest", "pytest-cov", "Pillow>=9.0", "python-docx", "matplotlib>=3.7", "pyproj"]   # Runtime extras used by importorskip-gated tests; pytest-cov feeds SonarCloud's coverage gate (#452)
 cloud = ["arcgis>=2.4,<3", "setuptools"]   # Pro 3.4+ / arcgis-dist.json unverified (Esri/arcpy restricted).
     # setuptools: arcgis's `features.geo` package still imports the stdlib
     # `distutils` module (removed in Python 3.12+); it swallows that failure
