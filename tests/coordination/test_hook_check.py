@@ -779,3 +779,44 @@ def test_staged_numeric_adrs_ignores_modifications_removals_and_xxxx(tmp_path):
     _git(repo, "rm", "docs/adr/0132-removed.md")
 
     assert hook_check._staged_numeric_adrs(str(repo)) == []
+
+
+def test_stale_adr_reservation_stays_denied_across_commit_attempts(tmp_path):
+    p = tmp_path / "c.json"
+    now = registry._now()
+    registry.claim(p, "me", "adr", 131, ttl_sec=1,
+                   now=now - timedelta(seconds=2))
+    staged = [("0131", "docs/adr/0131-example.md")]
+
+    first = _adr_commit(p, staged)
+    assert first["hookSpecificOutput"]["permissionDecisionReason"] == _ADR_DENIAL
+    assert registry.list_claims(p) == []
+
+    second = _adr_commit(p, staged)
+    assert second["hookSpecificOutput"]["permissionDecisionReason"] == _ADR_DENIAL
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+def test_staged_numeric_adrs_returns_unicode_added_path(tmp_path):
+    repo = _init_adr_repo(tmp_path)
+    adr = repo / "docs" / "adr"
+    adr.mkdir(parents=True)
+    path = "docs/adr/0131-café.md"
+    (repo / path).write_text("x", encoding="utf-8")
+    _git(repo, "add", path)
+
+    assert hook_check._staged_numeric_adrs(str(repo)) == [("0131", path)]
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+def test_staged_numeric_adrs_returns_unicode_rename_destination(tmp_path):
+    repo = _init_adr_repo(tmp_path)
+    adr = repo / "docs" / "adr"
+    adr.mkdir(parents=True)
+    (adr / "XXXX-old.md").write_text("x", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "base")
+    path = "docs/adr/0132-café.md"
+    _git(repo, "mv", "docs/adr/XXXX-old.md", path)
+
+    assert hook_check._staged_numeric_adrs(str(repo)) == [("0132", path)]

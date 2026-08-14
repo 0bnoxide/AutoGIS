@@ -231,14 +231,25 @@ def _staged_numeric_adrs(cwd):
     try:
         result = subprocess.run(
             ["git", "-C", cwd, "diff", "--cached", "--name-status",
-             "--diff-filter=AR"], capture_output=True, text=True, timeout=3)
+             "--diff-filter=AR", "-z"], capture_output=True, timeout=3)
         if result.returncode:
             return None
     except Exception:
         return None
     out = []
-    for line in result.stdout.splitlines():
-        path = line.rsplit("\t", 1)[-1]
+    fields = result.stdout.decode("utf-8").split("\0")
+    i = 0
+    while i < len(fields) - 1:
+        status = fields[i]
+        i += 1
+        if status.startswith("R"):
+            if i + 1 >= len(fields):
+                return None
+            i += 1
+        elif status != "A" or i >= len(fields):
+            return None
+        path = fields[i]
+        i += 1
         match = re.fullmatch(r"docs/adr/(\d{4})-[^/\t\r\n]+\.md", path)
         if match:
             out.append((match.group(1), path))
@@ -354,20 +365,25 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None,
     cwd = payload.get("cwd") or os.getcwd()
     tool = payload.get("tool_name", "")
     ti = payload.get("tool_input") or {}
+    normal_commit = tool == "Bash" and any(
+        sub == "commit" for sub, _d, _args in _git_writes(
+            ti.get("command", "")))
     pre_heartbeat_claims = None
-    if tool == "Bash" and any(
-            sub == "commit" for sub, _d, _args in _git_writes(
-                ti.get("command", ""))):
+    if normal_commit:
         try:
             pre_heartbeat_claims = registry.list_claims(reg_path)
         except Exception:
             pass
 
     # Best-effort: refresh this session's own heartbeat on any tool call.
-    try:
-        registry.heartbeat(reg_path, sid)
-    except Exception:
-        pass
+    def heartbeat():
+        try:
+            registry.heartbeat(reg_path, sid)
+        except Exception:
+            pass
+
+    if not normal_commit:
+        heartbeat()
 
     if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         fp = ti.get("file_path", "") or ti.get("notebook_path", "")
@@ -478,7 +494,11 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None,
                 warn = _shared_tree_warn(reg_path, sid, first_target, cwd,
                                          main_tree_func)
                 if warn:
+                    if normal_commit:
+                        heartbeat()
                     return warn
+            if normal_commit:
+                heartbeat()
         root = _coord_root(reg_path)
         bf = branch_func or _git_branch
         for writer, d, path in _shell_file_writes(command):
