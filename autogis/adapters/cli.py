@@ -1716,7 +1716,8 @@ def well_inspection_report_cmd(wells_csv, site_id, output_dir,
             harvest_dir=Path(harvest_dir) if harvest_dir else None,
             qa=qa,
         )
-    except ValueError as exc:  # malformed manifest -> clean error (#496)
+    except (ValueError, ImportError) as exc:
+        # malformed manifest (#496) or missing Pillow (#501) -> clean error
         raise click.ClickException(str(exc))
     click.echo(f"Written {len(written)} {fmt.upper()} file(s) to {output_dir}")
     _render_qa(qa, report, fail_on)
