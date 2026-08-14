@@ -69,7 +69,14 @@ def preexport_qa(aprx_path: Path, required_layers: Sequence[str],
     return ok
 
 
-def _versioned(path: Path, overwrite: bool) -> Path:
+def versioned_path(path: Path, overwrite: bool) -> Path:
+    """The module's no-silent-overwrite policy, as one function.
+
+    Public because ``gen-map-series`` writes its cross-APRX combined appendix
+    outside this module and must obey the same policy -- it did not, so the
+    run versioned every intermediate figure and overwrote the one file the
+    client actually receives (#471). One policy, one implementation.
+    """
     if overwrite or not path.exists():
         return path
     i = 2
@@ -151,7 +158,7 @@ def export_layouts(
         for fmt in formats:
             ext = {"PDF": ".pdf", "PNG": ".png", "TIFF": ".tif",
                    "JPEG": ".jpg"}[fmt]
-            out = _versioned(export_dir / f"{stem}{ext}", overwrite)
+            out = versioned_path(export_dir / f"{stem}{ext}", overwrite)
             if dry_run:
                 LOG.info("[dry-run] would export %s -> %s", lay.name, out)
                 continue
@@ -174,7 +181,13 @@ def export_layouts(
     del aprx
 
     if combine_pdf and pdfs and not dry_run:
-        combined = _versioned(export_dir / combine_pdf, overwrite)
+        combined = versioned_path(export_dir / combine_pdf, overwrite)
+        # unlink after versioned_path, not instead of it: with overwrite=True
+        # that helper hands back the OCCUPIED path, and Esri's own
+        # PDFDocumentCreate example os.remove()s an existing file before
+        # creating -- so overwrite would have failed at the one call it exists
+        # to serve. A no-op when versioning already chose a free name.
+        combined.unlink(missing_ok=True)
         pdoc = arcpy.mp.PDFDocumentCreate(str(combined))
         for p in pdfs:
             pdoc.appendPages(str(p))
