@@ -22,12 +22,21 @@ import json
 import re
 import subprocess
 import sys
+from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 # Legacy audit logs are dated `YYYY-MM-DD-*.md` — NOT sequential ADRs. A real
 # ADR is `NNNN-<slug>.md` where <slug> does not start with `MM-DD`.
 _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 _NNNN = re.compile(r"^(\d{4})-")
+_CLAIM_STATUSES = {"added", "renamed"}
+
+
+class PRFile(NamedTuple):
+    pr_number: int
+    path: str
+    status: str
 
 
 def _num(name: str) -> int | None:
@@ -36,6 +45,112 @@ def _num(name: str) -> int | None:
         return None
     m = _NNNN.match(name)
     return int(m.group(1)) if m else None
+
+
+def _root_adr_path(path: str) -> tuple[str, str] | None:
+    """Normalized root-level ADR path and filename, when applicable."""
+    normalized = path.replace("\\", "/")
+    parts = normalized.split("/")
+    if parts[:2] != ["docs", "adr"] or len(parts) != 3:
+        return None
+    return normalized, parts[2]
+
+
+def _adr_number(path: str) -> int | None:
+    """Return a root-level real ADR number, excluding dated names."""
+    root_path = _root_adr_path(path)
+    if root_path is None or not root_path[1].endswith(".md"):
+        return None
+    return _num(root_path[1])
+
+
+def _is_placeholder(path: str) -> bool:
+    """Whether path is exactly docs/adr/XXXX-<slug>.md."""
+    root_path = _root_adr_path(path)
+    if root_path is None:
+        return False
+    name = root_path[1]
+    return name.startswith("XXXX-") and name.endswith(".md") and name != "XXXX-.md"
+
+
+def _tree_policy_errors(paths: Iterable[str], *, allow_placeholders: bool) -> list[str]:
+    """Return deterministic duplicate/placeholder errors for one tree."""
+    numbered: dict[int, set[str]] = {}
+    errors = []
+    for path in paths:
+        root_path = _root_adr_path(path)
+        if root_path is None:
+            continue
+        normalized, _ = root_path
+        number = _adr_number(normalized)
+        if number is not None:
+            numbered.setdefault(number, set()).add(normalized)
+        elif _is_placeholder(normalized) and not allow_placeholders:
+            errors.append(
+                f"{normalized} is unfinalized; main may not contain ADR placeholders."
+            )
+    for number, matched_paths in numbered.items():
+        if len(matched_paths) > 1:
+            errors.append(
+                f"Duplicate ADR {number:04d} in checked-out tree: "
+                f"{', '.join(sorted(matched_paths))}."
+            )
+    return sorted(errors)
+
+
+def _pull_request_policy_errors(
+    *,
+    current_pr: int,
+    draft: bool,
+    current_files: Sequence[PRFile],
+    base_paths: Sequence[str],
+    other_files: Sequence[PRFile],
+) -> list[str]:
+    """Return deterministic current-vs-base/current-vs-open-PR errors."""
+    current_paths = [f.path for f in current_files if f.status in _CLAIM_STATUSES]
+    errors = _tree_policy_errors(current_paths, allow_placeholders=True)
+    if not draft:
+        errors.extend(
+            f"{_root_adr_path(path)[0]} is unfinalized; "
+            "ready PRs require numeric ADR filenames."
+            for path in current_paths
+            if _is_placeholder(path)
+        )
+
+    base_by_number: dict[int, set[str]] = {}
+    for path in base_paths:
+        number = _adr_number(path)
+        root_path = _root_adr_path(path)
+        if number is not None and root_path is not None:
+            base_by_number.setdefault(number, set()).add(root_path[0])
+
+    other_by_number: dict[int, set[tuple[str, int]]] = {}
+    for file in other_files:
+        if file.pr_number == current_pr or file.status not in _CLAIM_STATUSES:
+            continue
+        number = _adr_number(file.path)
+        root_path = _root_adr_path(file.path)
+        if number is not None and root_path is not None:
+            other_by_number.setdefault(number, set()).add((root_path[0], file.pr_number))
+
+    for path in current_paths:
+        number = _adr_number(path)
+        root_path = _root_adr_path(path)
+        if number is None or root_path is None:
+            continue
+        normalized = root_path[0]
+        for base_path in sorted(base_by_number.get(number, set()) - {normalized}):
+            errors.append(
+                f"ADR {number:04d} already exists on the base branch as {base_path}; "
+                f"{normalized} must use a different number."
+            )
+        for other_path, pr_number in sorted(other_by_number.get(number, set())):
+            if other_path != normalized:
+                errors.append(
+                    f"ADR {number:04d} is also added by PR #{pr_number} as {other_path}; "
+                    "use XXXX or finalize after that claim changes."
+                )
+    return sorted(errors)
 
 
 def _local_max(adr_dir: Path) -> int:
