@@ -4556,11 +4556,15 @@ def _ids_arg(value: str) -> list:
               help="File geodatabase to repath layers to and register exports "
                    "in (required unless --dry-run).")
 @click.option("--dpi", type=int, default=300, show_default=True)
+@click.option("--overwrite", is_flag=True, default=False,
+              help="Overwrite existing exports instead of versioning them "
+                   "(_v2, _v3). Applies to the figures and the combined "
+                   "appendix alike.")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Print the planned job list without touching arcpy.")
 @qa_report_options
 def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
-                       gdb, dpi, dry_run, report, fail_on):
+                       gdb, dpi, overwrite, dry_run, report, fail_on):
     """Tool 5.6: batch figure-packet exporter across sites/events (ArcGIS Pro).
 
     Headless path (--dry-run): expand the site x event x figure-spec matrix
@@ -4585,6 +4589,17 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
     specs = {}
     for f in spec_files:
         s = FigureSpec.load(f)
+        if s.figure_spec_id in specs:
+            # Refuse rather than let the last file win. Two specs copy-pasted
+            # from one another with the id left unchanged are usually two
+            # *different* figures, so the silent collapse dropped a real
+            # deliverable from the packet AND reduced the job count that would
+            # have revealed it (#470). A duplicate id would also collide
+            # downstream in Env_FigureRegistry and the Env_CalloutBoxes
+            # definition query, so there is no reading under which it is fine.
+            raise click.UsageError(
+                f"Two figure specs declare figure_spec_id "
+                f"{s.figure_spec_id!r}: {specs[s.figure_spec_id].path} and {f}")
         specs[s.figure_spec_id] = s
 
     jobs = plan_map_series(_ids_arg(sites), _ids_arg(events),
@@ -4601,7 +4616,7 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
                                "(or use --dry-run to preview the plan).")
     _guard("gen-map-series")
     from autogis.core.envmon.export_figures import (
-        export_layouts, register_exports)
+        export_layouts, register_exports, versioned_path)
     from autogis.core.envmon.layout_manager import prepare_figure_aprx
 
     qa = QACollector()
@@ -4622,7 +4637,8 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
             work, export_dir, "{stem}", {"stem": stem}, qa,
             layout_names=layout_names,
             formats=[job.out_format.upper()], dpi=dpi,
-            required_layers=spec.get("required_layers", []))
+            required_layers=spec.get("required_layers", []),
+            overwrite=overwrite)
         register_exports(gdb_path, written, job.site_id, job.event,
                          job.figure_spec, qa)
         for w in written:
@@ -4634,7 +4650,23 @@ def gen_map_series_cmd(sites, events, specs_dir, mode, out_format, out_dir,
         # export_layouts uses for its single-APRX combine_pdf.
         from autogis.runtime.sessions import arcpy_env as _arcpy
         arcpy = _arcpy()
-        combined = export_dir / "Appendix_Combined.pdf"
+        # versioned_path, not a bare fixed name: every individual figure above
+        # lands as _v2/_v3 on a re-run, so overwriting the *combined* file was
+        # protecting the intermediates and destroying the deliverable — and a
+        # partial second run (fewer sites, a narrowed --events) silently
+        # replaced the appendix with a shorter one under the same name (#471).
+        # PDFDocumentCreate(pdf_path) takes the path it will write at
+        # saveAndClose; Esri's own example os.remove()s an existing file first,
+        # so the path must be free (verified against the Pro 3.5 floor and
+        # latest tool reference, ADR-0077).
+        combined = versioned_path(export_dir / "Appendix_Combined.pdf",
+                                  overwrite)
+        # With --overwrite, versioned_path hands back the OCCUPIED path and
+        # PDFDocumentCreate needs a free one (Esri's example removes it
+        # first), so the flag would have failed at the only call it serves.
+        # No-op when versioning already chose a free name. Same two lines as
+        # export_layouts' combine, because it is the same policy.
+        combined.unlink(missing_ok=True)
         pdoc = arcpy.mp.PDFDocumentCreate(str(combined))
         for p in written_all:
             pdoc.appendPages(str(p))

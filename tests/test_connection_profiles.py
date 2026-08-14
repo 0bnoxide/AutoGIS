@@ -1,6 +1,7 @@
 """``list_connection_profiles`` powers the AGOL ``--profile`` dropdown: it must
-return only *complete* (url + username) profiles from ``~/.arcgisprofile`` and
-fail open on a missing/corrupt file, since it runs at CLI import time."""
+return only *complete* profiles from ``~/.arcgisprofile`` -- url plus one of the
+authentication modes ``GIS(profile=...)`` accepts -- and fail open on a
+missing/corrupt file, since it runs at CLI import time."""
 
 from autogis.runtime.sessions import list_connection_profiles
 
@@ -70,6 +71,29 @@ def test_unresolvable_home_fails_open(monkeypatch):
 
     monkeypatch.setattr(pathlib.Path, "home", staticmethod(_boom))
     assert list_connection_profiles() == []
+
+
+def test_pki_profile_without_username_is_complete(tmp_path):
+    # key_file + cert_file is a supported GIS(profile=...) mode and carries no
+    # username; requiring one hid these from the dropdown entirely (#493)
+    text = ("[pki]\nurl = https://portal.example\n"
+            "key_file = key.pem\ncert_file = cert.pem\n")
+    assert list_connection_profiles(_write(tmp_path, text)) == ["pki"]
+
+
+def test_oauth_client_id_profile_without_username_is_complete(tmp_path):
+    text = "[oauth]\nurl = https://portal.example\nclient_id = abc123\n"
+    assert list_connection_profiles(_write(tmp_path, text)) == ["oauth"]
+
+
+def test_half_written_auth_modes_stay_excluded(tmp_path):
+    # url alone, or a PKI pair missing its other half, is still the
+    # half-written section a failed store_credential leaves behind
+    text = ("[url_only]\nurl = https://portal.example\n"
+            "[key_no_cert]\nurl = https://portal.example\nkey_file = key.pem\n"
+            "[cert_no_key]\nurl = https://portal.example\ncert_file = c.pem\n"
+            "[no_url]\nusername = greg\n")
+    assert list_connection_profiles(_write(tmp_path, text)) == []
 
 
 def test_duplicate_stripped_names_deduped(tmp_path):

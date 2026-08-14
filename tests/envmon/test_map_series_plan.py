@@ -163,6 +163,34 @@ def test_export_requires_gdb_and_out_dir(tmp_path):
     assert "--gdb" in result.output or "--out-dir" in result.output
 
 
+def test_duplicate_figure_spec_id_is_refused(tmp_path):
+    """Two spec files declaring one figure_spec_id collapsed to whichever
+    sorted last — the packet lost a real figure and the job count was reduced
+    to match, so nothing looked wrong (#470)."""
+    d = _spec_dir(tmp_path)
+    # a *different* figure whose id was left unchanged by a copy-paste
+    (d / "soil_fig2.yaml").write_text(
+        _SPEC_YAML.replace("map_type: GW_ANALYTICAL", "map_type: SOIL"),
+        encoding="utf-8")
+    result = CliRunner().invoke(autogis, [
+        "envmon", "gen-map-series",
+        "--sites", "SITE-A", "--events", "2026Q2",
+        "--specs", str(d), "--dry-run",
+    ])
+    assert result.exit_code != 0
+    assert "GW_FIG1" in result.output
+    # both file names are shown, so the operator can tell which to renumber
+    assert "gw_fig1.yaml" in result.output and "soil_fig2.yaml" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_gen_map_series_exposes_overwrite_flag():
+    """The combined appendix and the figures now share one overwrite policy
+    (#471); the flag is the operator's way to opt out of versioning."""
+    result = CliRunner().invoke(autogis, ["envmon", "gen-map-series", "--help"])
+    assert "--overwrite" in result.output
+
+
 def test_empty_spec_dir_is_usage_error(tmp_path):
     d = tmp_path / "empty"
     d.mkdir()

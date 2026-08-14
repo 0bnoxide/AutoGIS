@@ -13,13 +13,36 @@ nor ``arcpy`` — only *calling* a provider that needs them does.
 """
 
 
+def _profile_is_complete(section) -> bool:
+    """True when a ``.arcgisprofile`` section names a usable login.
+
+    ArcGIS API for Python persists "any combination of" ``url``, ``username``,
+    ``key_file``, ``cert_file`` and ``client_id`` in this file; the password,
+    when there is one, lives in the OS keyring. So ``url`` + ``username`` is
+    only *one* of the modes ``GIS(profile=...)`` accepts -- a PKI profile
+    (``key_file`` + ``cert_file``) or an OAuth one (``client_id``) carries no
+    username at all, and requiring one hid those profiles from the dropdown
+    entirely (#493). ``url`` alone still fails: that is the half-written
+    section a failed ``store_credential`` leaves behind, with nothing to log
+    in with.
+
+    Ref: developers.arcgis.com "Working with different authentication
+    schemes" -> Storing your credentials locally.
+    """
+    if not section.get("url"):
+        return False
+    return bool(section.get("username")
+                or (section.get("key_file") and section.get("cert_file"))
+                or section.get("client_id"))
+
+
 def list_connection_profiles(path=None):
     """Sorted names of *complete* ArcGIS API for Python connection profiles.
 
     Reads ``~/.arcgisprofile`` (the ProfileManager store) and returns the
-    names of profiles that carry both a ``url`` and a ``username`` -- the
-    usable ones, skipping the half-written sections a failed
-    ``store_credential`` leaves behind. arcgis-free: plain stdlib
+    names of profiles that carry a ``url`` plus credentials for one of the
+    supported authentication modes -- skipping the half-written sections a
+    failed ``store_credential`` leaves behind. arcgis-free: plain stdlib
     ``configparser``, no ``arcgis`` import, so adapters can offer a profile
     dropdown without the heavy dependency (the password still lives in the OS
     keyring, keyed by name -- not read here).
@@ -42,8 +65,7 @@ def list_connection_profiles(path=None):
         parser.read(profile_file, encoding="utf-8")
         return sorted(
             {name.strip() for name, section in parser.items()
-             if name != parser.default_section
-             and section.get("url") and section.get("username")}
+             if name != parser.default_section and _profile_is_complete(section)}
         )
     except (configparser.Error, OSError, ValueError, RuntimeError):
         # Fail-open: a missing / corrupt / mis-encoded dotfile, or an
