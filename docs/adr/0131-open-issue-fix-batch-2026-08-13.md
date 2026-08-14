@@ -1,14 +1,8 @@
-# ADR-XXXX: Open-issue fix batch (2026-08-13) — the answer must not depend on who asks first
+# ADR-0131: Open-issue fix batch (2026-08-13) — the answer must not depend on who asks first
 
 **Status:** Proposed
 
 **Date:** 2026-08-13
-
-> **Number assigned at merge.** Filed as an `XXXX-` placeholder per
-> `docs/adr/README.md` § File naming, because #492 is exactly what happens when
-> a branch guesses. At merge: take the next free number after checking both
-> `docs/adr/` and the files of every other open PR, rename the file, fix the
-> H1, and replace the `XXXX` row in the index.
 
 ## Context
 
