@@ -6587,19 +6587,31 @@ def _load_photo_records_or_fail(harvest_dir, qa):
         raise click.ClickException(str(exc))
 
 
-def _reject_manifest_overwrite(harvest_dir, *out_paths):
-    """Refuse an output path that resolves onto the harvest manifest itself.
+def _reject_harvest_input_overwrite(harvest_dir, *out_paths):
+    """Refuse an output path that resolves onto any harvested input."""
+    from autogis.core.envmon.index_field_attachments import load_manifest
 
-    photos commands read the manifest and then write derived output(s); a
-    user-supplied --out-csv/--out/--report that happens to land on
-    manifest.csv/.json would silently clobber the harvest's own record.
-    """
-    manifests = {(Path(harvest_dir) / n).resolve(strict=False)
-                 for n in ("manifest.csv", "manifest.json")}
+    root = Path(harvest_dir).resolve(strict=False)
+    manifest_paths = tuple((root / n).resolve(strict=False)
+                           for n in ("manifest.json", "manifest.csv"))
+    inputs = set(manifest_paths)
+    manifest = next((p for p in manifest_paths if p.is_file()), None)
+    if manifest is not None:
+        for row in load_manifest(manifest):
+            saved = row.get("saved_path")
+            if not saved:
+                continue
+            p = Path(str(saved).replace("\\", "/"))
+            if not p.is_absolute():
+                p = root / p
+            try:
+                inputs.add(p.resolve(strict=False))
+            except (OSError, RuntimeError):
+                continue
     for p in out_paths:
-        if p and Path(p).resolve(strict=False) in manifests:
+        if p and Path(p).resolve(strict=False) in inputs:
             raise click.ClickException(
-                f"output path {p} would overwrite the harvest manifest")
+                f"output path {p} would overwrite a harvest input")
 
 
 @photos_group.command("points")
@@ -6615,12 +6627,13 @@ def photos_points_cmd(harvest_dir, out_csv, out_geojson, report, fail_on):
     """One point per GPS-bearing photo (EXIF position + heading)."""
     if not out_csv and not out_geojson:
         raise click.UsageError("pass --out-csv and/or --out-geojson")
-    _reject_manifest_overwrite(harvest_dir, out_csv, out_geojson, report)
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.photo_points import (
         write_points_csv, write_points_geojson)
     qa = QACollector()
     records = _load_photo_records_or_fail(harvest_dir, qa)
+    _reject_harvest_input_overwrite(
+        harvest_dir, out_csv, out_geojson, report)
     n = 0
     if out_csv:
         n = write_points_csv(records, Path(out_csv))
@@ -6642,16 +6655,17 @@ def photos_points_cmd(harvest_dir, out_csv, out_geojson, report, fail_on):
 @qa_report_options
 def photos_qa_cmd(harvest_dir, max_offset_m, report, fail_on):
     """Cross-check photo EXIF against the features they are attached to."""
-    _reject_manifest_overwrite(harvest_dir, report)
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.photo_metadata import evaluate_photo_qa
     qa = QACollector()
     records = _load_photo_records_or_fail(harvest_dir, qa)
+    _reject_harvest_input_overwrite(harvest_dir, report)
     s = evaluate_photo_qa(records, qa, max_offset_m=max_offset_m)
     click.echo(f"Photo QA: {s['n_photos']} photo(s); "
                f"offset {s['flagged_offset']}/{s['checked_offset']} flagged; "
                f"date {s['flagged_date']}/{s['checked_date']} flagged; "
                f"{s['missing_gps']} missing GPS; "
+               f"{s['missing_datetime']} missing datetime; "
                f"{s['unreadable']} unreadable")
     _render_qa(qa, report, fail_on)
 
@@ -6668,11 +6682,11 @@ def photos_qa_cmd(harvest_dir, max_offset_m, report, fail_on):
 @qa_report_options
 def photos_log_cmd(harvest_dir, out_path, fmt, title, report, fail_on):
     """Photographic log appendix (thumbnail, date, direction, coordinates)."""
-    _reject_manifest_overwrite(harvest_dir, out_path, report)
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.photo_log import write_log
     qa = QACollector()
     records = _load_photo_records_or_fail(harvest_dir, qa)
+    _reject_harvest_input_overwrite(harvest_dir, out_path, report)
     try:
         n = write_log(records, Path(out_path), fmt=fmt, title=title)
     except ImportError as exc:
@@ -6693,11 +6707,11 @@ def photos_log_cmd(harvest_dir, out_path, fmt, title, report, fail_on):
 @qa_report_options
 def photos_kmz_cmd(harvest_dir, out_path, thumb_px, report, fail_on):
     """Google Earth KMZ of GPS-bearing photos with view-direction styling."""
-    _reject_manifest_overwrite(harvest_dir, out_path, report)
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.photo_points import write_kmz
     qa = QACollector()
     records = _load_photo_records_or_fail(harvest_dir, qa)
+    _reject_harvest_input_overwrite(harvest_dir, out_path, report)
     n = write_kmz(records, Path(out_path), thumb_px=thumb_px)
     click.echo(f"KMZ: {n} placemark(s) -> {out_path}")
     _render_qa(qa, report, fail_on)

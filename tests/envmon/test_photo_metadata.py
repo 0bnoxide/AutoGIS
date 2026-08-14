@@ -37,6 +37,28 @@ def test_extract_exif_round_trip(make_photo_jpeg):
     assert got["camera"] == "samsung SM-X308U"
 
 
+def test_extract_exif_uses_pillow_9_compatible_ifd_tags(
+        monkeypatch, make_photo_jpeg):
+    from PIL import Image
+
+    calls = []
+    original_get_ifd = Image.Exif.get_ifd
+
+    def get_ifd(exif, tag):
+        calls.append(tag)
+        return original_get_ifd(exif, tag)
+
+    p = make_photo_jpeg()
+    monkeypatch.setattr(Image.Exif, "get_ifd", get_ifd)
+
+    got = extract_exif(p)
+
+    assert calls[:2] == [0x8825, 0x8769]
+    assert all(type(tag) is int for tag in calls[:2])
+    assert got["exif_lat"] == pytest.approx(45.874, abs=1e-4)
+    assert got["taken_at"] == "2026-05-05T08:17:36"
+
+
 def test_extract_exif_no_gps(make_photo_jpeg):
     p = make_photo_jpeg(lat=None, lon=None, heading=None)
     got = extract_exif(p)
@@ -127,6 +149,21 @@ def test_load_photo_records_corrupt_geometry_cell(tmp_path, make_photo_jpeg):
     assert recs[0].feature_lat is None and recs[0].feature_lon is None
 
 
+def test_load_photo_records_rejects_path_outside_harvest(
+        tmp_path, make_photo_jpeg):
+    outside_dir = tmp_path.parent / f"{tmp_path.name}-outside"
+    p = make_photo_jpeg(directory=outside_dir)
+    escaped = Path("..") / outside_dir.name / p.name
+    _manifest(tmp_path, [_row(escaped)])
+
+    qa = QACollector()
+    recs = load_photo_records(tmp_path, qa)
+
+    assert recs == []
+    assert any(r.category == "manifest_rows_outside_harvest_dir"
+               for r in qa.records)
+
+
 def _rec(**kw):
     base = dict(objectid=1, attachment_id=1, source_table="T", group="G",
                 saved_path="G/p.jpg")
@@ -163,6 +200,16 @@ def test_qa_missing_gps_and_unreadable_inventory():
     assert s["missing_gps"] == 1 and s["unreadable"] == 1
     cats = {r.category for r in qa.records}
     assert {"photo_missing_gps", "photo_unreadable"} <= cats
+
+
+def test_qa_warns_when_exif_datetime_is_missing():
+    recs = [_rec(exif_lat=45.0, exif_lon=-103.0)]
+    qa = QACollector()
+
+    s = evaluate_photo_qa(recs, qa)
+
+    assert s.get("missing_datetime") == 1
+    assert any(r.category == "photo_missing_datetime" for r in qa.records)
 
 
 def test_qa_exif_error_with_valid_gps_still_checks_offset():

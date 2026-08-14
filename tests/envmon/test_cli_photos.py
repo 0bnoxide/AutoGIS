@@ -8,8 +8,10 @@ from click.testing import CliRunner
 from autogis.adapters.cli import autogis as cli
 
 
-def _harvest(tmp_path, make_photo_jpeg, geometry=None):
-    p = make_photo_jpeg(name="spring.jpg", directory=tmp_path / "Obs" / "S")
+def _harvest(tmp_path, make_photo_jpeg, geometry=None,
+             dto="2026:05:05 08:17:36"):
+    p = make_photo_jpeg(name="spring.jpg", directory=tmp_path / "Obs" / "S",
+                        dto=dto)
     row = {"objectid": 2, "attachment_id": 7, "original_name": "Photo 1.jpg",
            "saved_path": str(p), "size": 5, "status": "downloaded",
            "error": None, "disposition": "downloaded", "checksum": None,
@@ -59,6 +61,14 @@ def test_photos_qa_offset_flag(tmp_path, make_photo_jpeg):
     assert "photo_far_from_feature" in res.output
 
 
+def test_photos_qa_reports_missing_datetime_count(tmp_path, make_photo_jpeg):
+    h = _harvest(tmp_path, make_photo_jpeg, dto=None)
+    res = CliRunner().invoke(cli, [
+        "envmon", "photos", "qa", "--harvest-dir", str(h)])
+    assert res.exit_code == 0, res.output
+    assert "1 missing datetime" in res.output
+
+
 def test_photos_log_and_kmz(tmp_path, make_photo_jpeg):
     h = _harvest(tmp_path, make_photo_jpeg)
     out_log = tmp_path / "log.html"
@@ -102,6 +112,27 @@ def test_photos_points_rejects_manifest_overwrite(tmp_path, make_photo_jpeg):
         "--out-csv", str(h / "manifest.csv")])
     assert res.exit_code != 0
     assert "overwrite" in res.output
+
+
+@pytest.mark.parametrize("tail", [
+    ["points", "--out-csv", "{photo}"],
+    ["qa", "--report", "{photo}"],
+    ["log", "--out", "{photo}", "--format", "html"],
+    ["kmz", "--out", "{photo}"],
+])
+def test_photos_commands_reject_harvested_photo_overwrite(
+        tmp_path, make_photo_jpeg, tail):
+    h = _harvest(tmp_path, make_photo_jpeg)
+    photo = h / "Obs" / "S" / "spring.jpg"
+    before = photo.read_bytes()
+    args = [str(photo) if value == "{photo}" else value for value in tail]
+
+    res = CliRunner().invoke(cli, [
+        "envmon", "photos", *args, "--harvest-dir", str(h)])
+
+    assert res.exit_code != 0
+    assert "overwrite" in res.output
+    assert photo.read_bytes() == before
 
 
 def test_photos_kmz_thumb_px_zero_rejected(tmp_path, make_photo_jpeg):

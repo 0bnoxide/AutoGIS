@@ -69,15 +69,15 @@ def _dms_to_dd(dms, ref) -> Optional[float]:
 def extract_exif(path: Path) -> dict:
     """EXIF fields of one image file; ``{"exif_error": ...}`` if unreadable."""
     try:
-        from PIL import ExifTags, Image
+        from PIL import Image
     except ImportError as exc:
         raise ImportError(PILLOW_HINT) from exc
     out: dict = {}
     try:
         with Image.open(path) as img:
             exif = img.getexif()
-            gps = exif.get_ifd(ExifTags.IFD.GPSInfo)
-            sub = exif.get_ifd(ExifTags.IFD.Exif)
+            gps = exif.get_ifd(0x8825)  # GPSInfo
+            sub = exif.get_ifd(0x8769)  # ExifOffset
     except OSError as exc:  # UnidentifiedImageError subclasses OSError
         return {"exif_error": f"unreadable image: {exc}"}
     try:
@@ -132,7 +132,7 @@ def _group_of(saved: str, harvest_dir: Path) -> str:
 
 def load_photo_records(harvest_dir: Path, qa: QACollector) -> list[PhotoRecord]:
     """Manifest rows joined with per-file EXIF, one record per usable photo."""
-    harvest_dir = Path(harvest_dir)
+    harvest_dir = Path(harvest_dir).resolve()
     manifest = next((harvest_dir / n for n in ("manifest.json", "manifest.csv")
                      if (harvest_dir / n).is_file()), None)
     if manifest is None:
@@ -140,7 +140,7 @@ def load_photo_records(harvest_dir: Path, qa: QACollector) -> list[PhotoRecord]:
             f"no manifest.json/manifest.csv in {harvest_dir} — is this a "
             f"harvest output directory?")
     records: list[PhotoRecord] = []
-    missing, non_image = [], []
+    missing, non_image, outside = [], [], 0
     for row in load_manifest(manifest):
         disposition = row.get("disposition") or row.get("status")
         saved = row.get("saved_path")
@@ -149,6 +149,12 @@ def load_photo_records(harvest_dir: Path, qa: QACollector) -> list[PhotoRecord]:
         p = Path(str(saved).replace("\\", "/"))
         if not p.is_absolute():
             p = harvest_dir / p
+        try:
+            p = p.resolve()
+            p.relative_to(harvest_dir)
+        except (OSError, RuntimeError, ValueError):
+            outside += 1
+            continue
         if p.suffix.lower() not in IMAGE_SUFFIXES:
             non_image.append(p.name)
             continue
@@ -177,6 +183,10 @@ def load_photo_records(harvest_dir: Path, qa: QACollector) -> list[PhotoRecord]:
         qa.add(SEV_INFO, "non_image_attachment",
                f"{len(non_image)} non-image attachment(s) skipped: "
                f"{', '.join(sorted(non_image)[:5])}")
+    if outside:
+        qa.add(SEV_WARNING, "manifest_rows_outside_harvest_dir",
+               f"{outside} manifest photo path(s) outside {harvest_dir} "
+               "— dropped")
     return records
 
 
@@ -192,7 +202,7 @@ def evaluate_photo_qa(records: list[PhotoRecord], qa: QACollector, *,
 
     s = {"n_photos": len(records), "checked_offset": 0, "flagged_offset": 0,
          "checked_date": 0, "flagged_date": 0, "missing_gps": 0,
-         "unreadable": 0}
+         "missing_datetime": 0, "unreadable": 0}
     any_feature_geom = any(r.feature_lat is not None for r in records)
     for r in records:
         name = Path(r.saved_path).name
@@ -205,6 +215,10 @@ def evaluate_photo_qa(records: list[PhotoRecord], qa: QACollector, *,
             s["missing_gps"] += 1
             qa.add(SEV_WARNING, "photo_missing_gps",
                    f"{name}: no GPS in EXIF")
+        if not r.taken_at:
+            s["missing_datetime"] += 1
+            qa.add(SEV_WARNING, "photo_missing_datetime",
+                   f"{name}: no capture datetime in EXIF")
         if r.offset_m is not None:
             s["checked_offset"] += 1
             if r.offset_m > max_offset_m:
