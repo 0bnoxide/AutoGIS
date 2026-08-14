@@ -143,6 +143,25 @@ def test_pr_policy_orders_base_and_open_collisions_by_counterpart_path():
     ]
 
 
+def test_pr_policy_orders_all_diagnostics_by_adr_number_then_path_then_pr():
+    assert adr._pull_request_policy_errors(
+        current_pr=488,
+        draft=False,
+        current_files=[
+            adr.PRFile(488, "docs/adr/0130-b.md", "added"),
+            adr.PRFile(488, "docs/adr/0129-current.md", "added"),
+            adr.PRFile(488, "docs/adr/0130-a.md", "added"),
+        ],
+        base_paths=["docs/adr/0129-existing.md"],
+        other_files=[],
+    ) == [
+        "ADR 0129 already exists on the base branch as docs/adr/0129-existing.md; "
+        "docs/adr/0129-current.md must use a different number.",
+        "Duplicate ADR 0130 in checked-out tree: "
+        "docs/adr/0130-a.md, docs/adr/0130-b.md.",
+    ]
+
+
 def test_pr_policy_ignores_same_path_modified_and_removed_files():
     assert adr._pull_request_policy_errors(
         current_pr=488,

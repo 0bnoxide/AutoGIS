@@ -73,10 +73,10 @@ def _is_placeholder(path: str) -> bool:
     return name.startswith("XXXX-") and name.endswith(".md") and name != "XXXX-.md"
 
 
-def _tree_policy_errors(paths: Iterable[str], *, allow_placeholders: bool) -> list[str]:
-    """Return deterministic duplicate/placeholder errors for one tree."""
+def _policy_paths(paths: Iterable[str]) -> tuple[dict[int, set[str]], list[str]]:
+    """Return numbered and placeholder root-level ADR paths."""
     numbered: dict[int, set[str]] = {}
-    errors = []
+    placeholders = []
     for path in paths:
         root_path = _root_adr_path(path)
         if root_path is None:
@@ -85,17 +85,52 @@ def _tree_policy_errors(paths: Iterable[str], *, allow_placeholders: bool) -> li
         number = _adr_number(normalized)
         if number is not None:
             numbered.setdefault(number, set()).add(normalized)
-        elif _is_placeholder(normalized) and not allow_placeholders:
+        elif _is_placeholder(normalized):
+            placeholders.append(normalized)
+    return numbered, placeholders
+
+
+def _format_policy_records(records: Iterable[tuple[int, str, int, str, str]]) -> list[str]:
+    """Sort structured records and format their stable diagnostics."""
+    errors = []
+    for number, path, pr_number, kind, current_path in sorted(records):
+        if kind == "duplicate":
             errors.append(
-                f"{normalized} is unfinalized; main may not contain ADR placeholders."
+                f"Duplicate ADR {number:04d} in checked-out tree: {current_path}."
             )
+        elif kind == "main-placeholder":
+            errors.append(f"{path} is unfinalized; main may not contain ADR placeholders.")
+        elif kind == "ready-placeholder":
+            errors.append(
+                f"{path} is unfinalized; ready PRs require numeric ADR filenames."
+            )
+        elif kind == "base":
+            errors.append(
+                f"ADR {number:04d} already exists on the base branch as {path}; "
+                f"{current_path} must use a different number."
+            )
+        else:
+            errors.append(
+                f"ADR {number:04d} is also added by PR #{pr_number} as {path}; "
+                "use XXXX or finalize after that claim changes."
+            )
+    return errors
+
+
+def _tree_policy_errors(paths: Iterable[str], *, allow_placeholders: bool) -> list[str]:
+    """Return deterministic duplicate/placeholder errors for one tree."""
+    numbered, placeholders = _policy_paths(paths)
+    records = []
     for number, matched_paths in numbered.items():
         if len(matched_paths) > 1:
-            errors.append(
-                f"Duplicate ADR {number:04d} in checked-out tree: "
-                f"{', '.join(sorted(matched_paths))}."
+            records.append(
+                (number, min(matched_paths), 0, "duplicate", ", ".join(sorted(matched_paths)))
             )
-    return sorted(errors)
+    if not allow_placeholders:
+        records.extend(
+            (10_000, path, 0, "main-placeholder", "") for path in placeholders
+        )
+    return _format_policy_records(records)
 
 
 def _pull_request_policy_errors(
@@ -108,14 +143,16 @@ def _pull_request_policy_errors(
 ) -> list[str]:
     """Return deterministic current-vs-base/current-vs-open-PR errors."""
     current_paths = [f.path for f in current_files if f.status in _CLAIM_STATUSES]
-    errors = _tree_policy_errors(current_paths, allow_placeholders=True)
-    collisions: list[tuple[int, str, int, str, bool]] = []
+    current_numbered, placeholders = _policy_paths(current_paths)
+    records = []
+    for number, matched_paths in current_numbered.items():
+        if len(matched_paths) > 1:
+            records.append(
+                (number, min(matched_paths), 0, "duplicate", ", ".join(sorted(matched_paths)))
+            )
     if not draft:
-        errors.extend(
-            f"{_root_adr_path(path)[0]} is unfinalized; "
-            "ready PRs require numeric ADR filenames."
-            for path in current_paths
-            if _is_placeholder(path)
+        records.extend(
+            (10_000, path, 0, "ready-placeholder", "") for path in placeholders
         )
 
     base_by_number: dict[int, set[str]] = {}
@@ -141,23 +178,11 @@ def _pull_request_policy_errors(
             continue
         normalized = root_path[0]
         for base_path in sorted(base_by_number.get(number, set()) - {normalized}):
-            collisions.append((number, base_path, 0, normalized, True))
+            records.append((number, base_path, 0, "base", normalized))
         for other_path, pr_number in sorted(other_by_number.get(number, set())):
             if other_path != normalized:
-                collisions.append((number, other_path, pr_number, normalized, False))
-    errors = sorted(errors)
-    for number, other_path, pr_number, current_path, on_base in sorted(collisions):
-        if on_base:
-            errors.append(
-                f"ADR {number:04d} already exists on the base branch as {other_path}; "
-                f"{current_path} must use a different number."
-            )
-        else:
-            errors.append(
-                f"ADR {number:04d} is also added by PR #{pr_number} as {other_path}; "
-                "use XXXX or finalize after that claim changes."
-            )
-    return errors
+                records.append((number, other_path, pr_number, "open-pr", normalized))
+    return _format_policy_records(records)
 
 
 def _local_max(adr_dir: Path) -> int:
