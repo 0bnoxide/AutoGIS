@@ -995,3 +995,55 @@ def test_finalize_cli_uses_real_temp_repo_relative_paths(monkeypatch, tmp_path, 
         "docs/adr/XXXX-example-decision.md -> docs/adr/0131-example-decision.md",
         "updated docs/adr/README.md",
     ]
+
+
+def test_finalize_rejects_lowercase_placeholder_heading_without_reservation(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    placeholder = root / "docs" / "adr" / "XXXX-example-decision.md"
+    placeholder.write_bytes(b"# ADR-XXXXbroken\n")
+    before = _finalize_bytes(root)
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert _finalize_bytes(root) == before
+
+
+def test_finalize_rejects_lowercase_existing_numeric_heading(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    existing = root / "docs" / "adr" / "0130-existing.md"
+    existing.write_bytes(b"# ADR-0130broken\n")
+    before = _finalize_bytes(root)
+
+    with pytest.raises(adr.ADRFinalizeError):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert _finalize_bytes(root) == before
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected", "forbidden"),
+    [
+        (adr.ADRFinalizeError("Finalization requires a non-main branch."),
+         "Finalization requires a non-main branch.", ""),
+        (adr.ADRStateUnavailable("GitHub object read failed: CalledProcessError."),
+         "GitHub object read failed: CalledProcessError.", ""),
+        (RuntimeError("secret-command-payload"), "RuntimeError.", "secret-command-payload"),
+    ],
+)
+def test_finalize_cli_reports_safe_failure_reasons(monkeypatch, tmp_path, capsys,
+                                                   failure, expected, forbidden):
+    root = _finalize_repo(tmp_path, "example-decision")
+
+    def fail(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(adr, "finalize_placeholders", fail)
+
+    assert adr.main(["--finalize"], repo_root=root) == 2
+    err = capsys.readouterr().err
+    assert expected in err
+    if forbidden:
+        assert forbidden not in err

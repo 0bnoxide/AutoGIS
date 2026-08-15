@@ -522,7 +522,12 @@ class FinalizedADR(NamedTuple):
     new_path: Path
 
 
-_PLACEHOLDER_H1 = re.compile(br"^# ADR-XXXX(?![A-Z0-9])")
+_H1_BOUNDARY = br"(?![A-Za-z0-9])"
+_PLACEHOLDER_H1 = re.compile(br"^# ADR-XXXX" + _H1_BOUNDARY)
+
+
+def _numbered_h1(number: int, data: bytes):
+    return re.match(fr"^# ADR-{number:04d}".encode() + _H1_BOUNDARY, data)
 
 
 def _coordination(repo_root: Path, environ):
@@ -575,8 +580,7 @@ def _finalize_plan(repo_root: Path, run, environ):
     originals[readme] = readme.read_bytes()
     for path in adr_dir.glob("*.md"):
         number = _num(path.name)
-        if number is not None and not re.match(
-                fr"^# ADR-{number:04d}(?![A-Z0-9])".encode(), path.read_bytes()):
+        if number is not None and not _numbered_h1(number, path.read_bytes()):
             raise ADRFinalizeError("Existing ADR heading does not match its filename.")
     for path, data in originals.items():
         if path != readme and not _PLACEHOLDER_H1.match(data):
@@ -625,7 +629,7 @@ def _finalize_plan(repo_root: Path, run, environ):
             transformed_names.add(new_path.name)
             transformed_numbers.append(number)
             new_bytes = originals[path].replace(b"# ADR-XXXX", f"# ADR-{number:04d}".encode(), 1)
-            if not re.match(fr"^# ADR-{number:04d}(?![A-Z0-9])".encode(), new_bytes):
+            if not _numbered_h1(number, new_bytes):
                 raise ADRFinalizeError("ADR heading does not match its filename.")
             plans.append(FinalizedADR(path, new_path))
         if len(transformed_numbers) != len(set(transformed_numbers)):
@@ -757,8 +761,11 @@ def main(argv=None, environ=None, run=None, repo_root=None) -> int:
     if args.finalize:
         try:
             mappings = finalize_placeholders(root, environ=environ, run=run)
-        except (ADRFinalizeError, ADRStateUnavailable, OSError, subprocess.SubprocessError):
-            print("ADR finalization failed.", file=sys.stderr)
+        except (ADRFinalizeError, ADRStateUnavailable) as exc:
+            print(f"ADR finalization failed: {exc}", file=sys.stderr)
+            return 2
+        except Exception as exc:
+            print(f"ADR finalization failed: {type(exc).__name__}.", file=sys.stderr)
             return 2
         for mapping in sorted(mappings, key=lambda item: item.old_path.as_posix()):
             old = mapping.old_path.relative_to(root).as_posix()
