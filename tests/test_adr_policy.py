@@ -316,6 +316,41 @@ def test_pull_files_maps_github_filename_and_uses_gh_pagination(monkeypatch):
     assert runner.calls == [["gh", "api", endpoint, "--paginate", "--slurp"]]
 
 
+@pytest.mark.parametrize(
+    "file",
+    [
+        {"filename": "docs/adr/0129-secret-marker.md", "status": "not-a-status"},
+        {"filename": None, "status": "added"},
+        {"filename": "", "status": "added"},
+    ],
+)
+def test_pull_files_rejects_unknown_status_and_invalid_filename_without_echoing_values(
+        monkeypatch, file):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    endpoint = _pr_files(488)
+
+    with pytest.raises(adr.ADRStateUnavailable) as raised:
+        adr._pull_files(488, run=FakeRunner({endpoint: [[file]]}))
+
+    assert "secret-marker" not in str(raised.value)
+
+
+def test_cli_policy_rejects_unknown_file_status_as_unavailable_state(
+        monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps(_event()))
+
+    assert adr.main(
+        ["--policy-check", "--event-file", str(event_path)],
+        environ={},
+        run=_policy_runner(
+            {"filename": "docs/adr/0129-current.md", "status": "not-a-status"}
+        ),
+    ) == 2
+    assert "not-a-status" not in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("payload", [{}, [{"number": 488}], [["not-an-object"]]])
 def test_gh_pages_rejects_malformed_outer_page_and_item_shapes(monkeypatch, payload):
     monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
@@ -450,6 +485,36 @@ def test_policy_check_excludes_current_pr_from_other_file_collection(monkeypatch
 
     adr.policy_check(tmp_path, event_name="pull_request", event=_event(), run=runner)
     assert [call[2] for call in runner.calls].count(_pr_files(488)) == 1
+
+
+def test_policy_check_deduplicates_identical_current_tree_diagnostics(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    event = _event()
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    for name in ("0129-a.md", "0129-b.md"):
+        (adr_dir / name).write_text("")
+    runner = FakeRunner(
+        {
+            _pr_files(488): [[
+                {"filename": "docs/adr/0129-a.md", "status": "added"},
+                {"filename": "docs/adr/0129-b.md", "status": "added"},
+            ]],
+            f"repos/{REPOSITORY}/git/trees/1111111111111111111111111111111111?recursive=1": {
+                "truncated": False,
+                "tree": [],
+            },
+            OPEN_PULLS: [[{"number": 488}]],
+        }
+    )
+    tree_endpoint = next(key for key in runner.responses if "/git/trees/" in key)
+    runner.responses[
+        f"repos/{REPOSITORY}/git/trees/{event['pull_request']['base']['sha']}?recursive=1"
+    ] = runner.responses.pop(tree_endpoint)
+
+    assert adr.policy_check(tmp_path, event_name="pull_request", event=event, run=runner) == [
+        "Duplicate ADR 0129 in checked-out tree: docs/adr/0129-a.md, docs/adr/0129-b.md."
+    ]
 
 
 def test_policy_check_push_only_checks_local_tree_without_github(tmp_path):

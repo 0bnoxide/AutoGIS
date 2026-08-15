@@ -33,6 +33,9 @@ from typing import NamedTuple
 _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 _NNNN = re.compile(r"^(\d{4})-")
 _CLAIM_STATUSES = {"added", "renamed"}
+_FILE_STATUSES = {
+    "added", "modified", "removed", "renamed", "copied", "changed", "unchanged"
+}
 
 
 class PRFile(NamedTuple):
@@ -310,7 +313,12 @@ def _pull_files(pr_number: int, *, run=None, allow_discovery: bool = False) -> l
     result = []
     for file in files:
         path, status = file.get("filename"), file.get("status")
-        if not isinstance(path, str) or not isinstance(status, str):
+        if (
+            not isinstance(path, str)
+            or not path
+            or not isinstance(status, str)
+            or status not in _FILE_STATUSES
+        ):
             raise ADRStateUnavailable("GitHub pull request file list is malformed.")
         result.append(PRFile(pr_number, path, status))
     return result
@@ -376,13 +384,14 @@ def policy_check(
     for open_number in _open_pull_numbers(run=run):
         if open_number != number:
             other_files.extend(_pull_files(open_number, run=run))
-    return local_errors + _pull_request_policy_errors(
+    pull_errors = _pull_request_policy_errors(
         current_pr=number,
         draft=draft,
         current_files=current_files,
         base_paths=base_paths,
         other_files=other_files,
     )
+    return list(dict.fromkeys(local_errors + pull_errors))
 
 
 def _local_max(adr_dir: Path) -> int:
