@@ -207,6 +207,7 @@ def _repository(*, run=None, allow_discovery: bool = False) -> str:
             ["gh", "repo", "view", "--json", "nameWithOwner"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             check=True,
         )
@@ -235,6 +236,7 @@ def _gh_object(endpoint: str, *, run=None) -> dict:
             ["gh", "api", endpoint],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             check=True,
         )
@@ -254,6 +256,7 @@ def _gh_pages(endpoint: str, *, run=None) -> list[dict]:
             ["gh", "api", endpoint, "--paginate", "--slurp"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             check=True,
         )

@@ -302,6 +302,31 @@ def test_gh_pages_flattens_open_pull_pages_and_uses_gh_pagination(monkeypatch):
     assert runner.calls == [["gh", "api", OPEN_PULLS, "--paginate", "--slurp"]]
 
 
+def test_github_subprocess_reads_utf8_independent_of_windows_locale(monkeypatch):
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    unicode_path = "docs/adr/0134-\u0441oncurrent.md"
+
+    def windows_runner(args, **kwargs):
+        if args[1:3] == ["repo", "view"]:
+            value = {"nameWithOwner": "owner/\u0441oncurrent"}
+        elif "--slurp" in args:
+            value = [[{"filename": unicode_path, "status": "added"}]]
+        else:
+            value = {"truncated": False, "tree": [{"path": unicode_path}]}
+        output = json.dumps(value, ensure_ascii=False).encode("utf-8")
+        text = output.decode(kwargs.get("encoding") or "cp1252")
+        return subprocess.CompletedProcess(args, 0, text, "")
+
+    assert adr._repository(run=windows_runner, allow_discovery=True) == "owner/\u0441oncurrent"
+    assert adr._gh_object("repos/owner/repo/git/trees/base", run=windows_runner) == {
+        "truncated": False,
+        "tree": [{"path": unicode_path}],
+    }
+    assert adr._gh_pages(OPEN_PULLS, run=windows_runner) == [
+        {"filename": unicode_path, "status": "added"}
+    ]
+
+
 def test_pull_files_maps_github_filename_and_uses_gh_pagination(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
     endpoint = _pr_files(488)

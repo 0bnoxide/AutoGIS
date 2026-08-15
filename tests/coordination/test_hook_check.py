@@ -706,16 +706,12 @@ def test_commit_allows_when_staged_adr_inspection_is_unavailable(tmp_path):
     assert _adr_commit(p, None) is None
 
 
-@pytest.mark.parametrize("branch, setup, expected", [
-    ("main", lambda p: None,
-     "[coord] git commit on 'main' is blocked — 'main' is read-only. Use a "
-     "feature branch + PR. Override: AUTOGIS_COORD_FORCE=1."),
-    ("feat/x", lambda p: registry.claim(p, "other", "branch", "feat/x"),
-     "[coord] Branch 'feat/x' is claimed by session other (pid %s). You may "
-     "be on the wrong branch. Override: AUTOGIS_COORD_FORCE=1." % os.getpid()),
-])
+@pytest.mark.parametrize("branch, setup", [
+    ("main", lambda p: None),
+    ("feat/x", lambda p: registry.claim(p, "other", "branch", "feat/x")),
+], ids=["main", "claimed-branch"])
 def test_main_and_branch_denials_precede_staged_adr_guard(tmp_path, branch,
-                                                           setup, expected):
+                                                           setup):
     p = tmp_path / "c.json"
     setup(p)
 
@@ -725,6 +721,13 @@ def test_main_and_branch_denials_precede_staged_adr_guard(tmp_path, branch,
     out = hook_check.decide(
         _payload("Bash", {"command": "git commit -m x"}), p,
         branch_func=lambda d: branch, staged_func=staged)
+    expected = (
+        "[coord] git commit on 'main' is blocked — 'main' is read-only. Use a "
+        "feature branch + PR. Override: AUTOGIS_COORD_FORCE=1."
+        if branch == "main" else
+        "[coord] Branch 'feat/x' is claimed by session other (pid %s). You may "
+        "be on the wrong branch. Override: AUTOGIS_COORD_FORCE=1." % os.getpid()
+    )
     assert out["hookSpecificOutput"]["permissionDecisionReason"] == expected
 
 
