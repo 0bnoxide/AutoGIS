@@ -19,16 +19,22 @@ sys.modules[SPEC.name] = adr
 SPEC.loader.exec_module(adr)
 
 
-WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+CI_WORKFLOW = WORKFLOWS / "ci.yml"
+ADR_WORKFLOW = WORKFLOWS / "adr-policy.yml"
 
 
 def _ci_workflow():
     """Load workflow syntax without YAML 1.1 coercing the `on` key."""
-    return yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    return yaml.load(CI_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+
+
+def _adr_workflow():
+    return yaml.load(ADR_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 
 def test_adr_policy_workflow_contract():
-    workflow = _ci_workflow()
+    workflow = _adr_workflow()
     assert "pull_request" not in workflow["on"]
     assert workflow["on"]["pull_request_target"]["types"] == [
         "opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft"
@@ -76,6 +82,16 @@ def test_adr_policy_workflow_contract():
             ),
         },
     ]
+
+
+def test_candidate_ci_stays_separate_from_trusted_adr_policy():
+    workflow = _ci_workflow()
+
+    assert workflow["on"]["pull_request"]["types"] == [
+        "opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft"
+    ]
+    assert "pull_request_target" not in workflow["on"]
+    assert "adr-policy" not in workflow["jobs"]
 
 
 @pytest.mark.parametrize(
