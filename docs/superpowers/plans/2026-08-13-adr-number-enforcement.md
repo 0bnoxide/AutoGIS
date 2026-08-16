@@ -680,7 +680,10 @@ Parse YAML with `yaml.BaseLoader` so the YAML 1.1 `on` key remains the string `"
 - permissions are exactly read-only `contents` and `pull-requests`;
 - no install command or cache is present;
 - the trusted base checker runs with `--policy-check --repo-root candidate`;
-- both checkouts persist no credentials, and candidate `ci.yml` has no `adr-policy` job; and
+- both checkouts persist no credentials;
+- only the candidate checkout sets `allow-unsafe-pr-checkout: true`, allowing
+  fork content to be fetched as data without executing it;
+- candidate `ci.yml` has no `adr-policy` job; and
 - `GH_TOKEN` comes from `${{ github.token }}`.
 
 - [ ] **Step 2: Run the workflow-contract test and confirm RED**
@@ -717,6 +720,7 @@ base-controlled shape:
           ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
           path: candidate
           persist-credentials: false
+          allow-unsafe-pr-checkout: true
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -903,13 +907,16 @@ The PR body must include:
 - why manual workflow dispatch cannot satisfy the required context; and
 - a rollout checklist showing the ruleset update is still pending.
 
-- [ ] **Step 3: Wait for the implementation PR's `adr-policy` check**
+- [ ] **Step 3: Verify hosted checks and the documented bootstrap condition**
 
 ```powershell
 gh pr checks <implementation-pr-number> --watch
 ```
 
-Confirm the exact check context is `adr-policy`, it succeeds on the exact reviewed head, and `pytest` behavior is unchanged.
+Confirm all checks that can run from the current base are green on the exact
+reviewed head. The native `adr-policy` context is expected to be absent on this
+introduction PR because the base-controlled workflow does not yet exist on
+`main`; absence is neither success nor evidence that the later rule is active.
 
 - [ ] **Step 4: Audit every currently open PR with the same policy command**
 
@@ -931,7 +938,105 @@ Use thread-aware review retrieval, not flat comments. The ruleset mutation must 
 
 ---
 
-### Task 10: Make `adr-policy` load-bearing, then merge and verify
+### Task 10: Allow fork candidate data checkout without widening execution
+
+**Files:**
+- Modify: `.github/workflows/adr-policy.yml:31-36`
+- Test: `tests/test_adr_policy.py:36-84`
+- Modify: `docs/adr/0110-ci-and-agent-tooling-batch.md`
+
+**Interfaces:**
+- Consumes: the existing exact parsed-workflow contract in
+  `test_adr_policy_workflow_contract()` and `actions/checkout@v7` input
+  `allow-unsafe-pr-checkout`.
+- Produces: a candidate checkout that can fetch fork merge refs while remaining
+  credential-free and data-only; the trusted policy checkout does not opt in.
+
+- [ ] **Step 1: Write the failing candidate-only opt-in regression**
+
+Add this test beside the existing workflow contract:
+
+```python
+def test_only_candidate_checkout_opts_into_fork_content():
+    steps = _adr_workflow()["jobs"]["adr-policy"]["steps"]
+    trusted = next(step for step in steps if step.get("name") == "Checkout trusted policy")
+    candidate = next(step for step in steps if step.get("name") == "Checkout candidate tree")
+
+    assert "allow-unsafe-pr-checkout" not in trusted["with"]
+    assert candidate["with"]["allow-unsafe-pr-checkout"] == "true"
+    assert candidate["with"]["persist-credentials"] == "false"
+```
+
+Also add `"allow-unsafe-pr-checkout": "true"` only to the candidate step in
+the exact `job["steps"]` expectation.
+
+- [ ] **Step 2: Run the regression and confirm RED**
+
+```powershell
+python -m pytest tests/test_adr_policy.py::test_only_candidate_checkout_opts_into_fork_content -q -p no:cacheprovider
+```
+
+Expected: FAIL because the candidate checkout has no
+`allow-unsafe-pr-checkout` input.
+
+- [ ] **Step 3: Add the minimal workflow opt-in**
+
+Under `Checkout candidate tree` only, retain `persist-credentials: false` and
+add:
+
+```yaml
+          allow-unsafe-pr-checkout: true
+```
+
+Do not add the input to `Checkout trusted policy`. Do not execute, import, or
+source anything from `candidate`; the trusted checker remains the only executed
+repository code.
+
+- [ ] **Step 4: Run workflow-contract tests and confirm GREEN**
+
+```powershell
+python -m pytest tests/test_adr_policy.py -k "workflow or candidate" -q -p no:cacheprovider
+```
+
+Expected: PASS, including both the exact step-list contract and the
+candidate-only opt-in regression.
+
+- [ ] **Step 5: Reconcile ADR-0110 with the approved trust boundary**
+
+Add this consequence to the 2026-08-13 enforcement amendment:
+
+```markdown
+- Checkout v7's fork opt-in is set only on the credential-free candidate
+  checkout. It permits fetching untrusted PR content as policy input; no
+  candidate file is imported, invoked, or sourced.
+```
+
+- [ ] **Step 6: Run focused and full verification**
+
+Use unique non-Git `%TEMP%` base directories:
+
+```powershell
+$focusedBase = Join-Path ([System.IO.Path]::GetTempPath()) ("autogis-pr506-focused-" + [guid]::NewGuid().ToString("N"))
+python -m pytest tests/test_adr_policy.py tests/coordination/test_hook_check.py -q -p no:cacheprovider --basetemp $focusedBase
+$fullBase = Join-Path ([System.IO.Path]::GetTempPath()) ("autogis-pr506-full-" + [guid]::NewGuid().ToString("N"))
+python -m pytest -q -p no:cacheprovider --basetemp $fullBase
+python .claude/skills/new-adr/next_adr_number.py --check
+git diff --check
+```
+
+- [ ] **Step 7: Commit the reviewed fork-checkout slice**
+
+```powershell
+git add .github/workflows/adr-policy.yml tests/test_adr_policy.py docs/adr/0110-ci-and-agent-tooling-batch.md
+git commit -m "fix: allow fork ADR policy checkout"
+```
+
+Request a fresh independent exact-head review. Do not resolve review threads or
+merge until its verdict is APPROVE.
+
+---
+
+### Task 11: Bootstrap `adr-policy`, make it load-bearing, and verify
 
 This task mutates repository settings and merges the PR. Execute it only with the user's explicit authorization for those remote actions.
 
@@ -965,7 +1070,21 @@ Before mutation, verify:
 - non-fast-forward protection remains; and
 - the pull-request rule still requires review-thread resolution with its existing merge-method settings.
 
-- [ ] **Step 3: Add only the required-status-check rule**
+- [ ] **Step 3: Bootstrap-merge the exact reviewed head**
+
+After all available hosted checks pass and every actionable thread is addressed,
+merge only the exact independently reviewed head SHA using the owner's explicit
+one-time admin authorization. If the head changed, return to Task 8 review and
+verification. This bypass exists only because the base-controlled workflow is
+not yet present on `main`.
+
+- [ ] **Step 4: Verify the first trusted push run**
+
+Confirm the reviewed head is reachable from `origin/main`, then watch the
+push-to-main `.github/workflows/adr-policy.yml` run. Require its literal
+`adr-policy` job to succeed before changing the ruleset.
+
+- [ ] **Step 5: Add only the required-status-check rule**
 
 Use GitHub Settings -> Rules -> Rulesets -> `RulesForThee` after re-resolving it. Add “Require status checks to pass,” select the exact successful `adr-policy` check, leave strict up-to-date policy disabled unless it was already enabled, and save. Do not alter any other rule or bypass actor.
 
@@ -984,7 +1103,7 @@ The equivalent REST rule, if the UI is unavailable, is:
 
 When using REST `PUT`, rebuild the payload from the just-fetched live `name`, `target`, `enforcement`, `bypass_actors`, `conditions`, and complete `rules` array; append this rule and preserve every existing field. Never send a hardcoded historical payload.
 
-- [ ] **Step 4: Verify the live ruleset after mutation**
+- [ ] **Step 6: Verify the live ruleset after mutation**
 
 Re-fetch it and assert:
 
@@ -994,15 +1113,8 @@ Re-fetch it and assert:
 - `current_user_can_bypass` remains `never`; and
 - deletion, non-fast-forward, PR, review-thread, conditions, target, and enforcement are byte-for-byte semantically unchanged.
 
-If any preservation assertion fails, stop before merge and restore from the pre-mutation snapshot through the same settings surface.
-
-- [ ] **Step 5: Prove the rule is actually load-bearing**
-
-Confirm the implementation PR remains mergeable while `adr-policy` is green. Use a non-mutating inspection of PR merge state and required checks. Do not deliberately make the production PR red.
-
-- [ ] **Step 6: Merge with expected-head protection**
-
-Merge only the exact independently reviewed head SHA. If the head changed, return to Task 8 review/verification.
+If any preservation assertion fails, restore from the pre-mutation snapshot
+through the same settings surface and report the incomplete rollout.
 
 - [ ] **Step 7: Verify post-merge state**
 
@@ -1010,7 +1122,9 @@ After merge:
 
 - confirm the reviewed head is reachable from `origin/main`;
 - confirm the push-to-main `adr-policy` run passed on the merged head;
-- re-fetch `RulesForThee` and confirm `adr-policy` remains required with no bypass actor; and
+- re-fetch `RulesForThee` and confirm `adr-policy` is required with no bypass actor;
+- confirm any subsequent PR without the context is blocked until its
+  base-controlled run completes; and
 - confirm no root `XXXX-*.md` and no duplicate numeric prefix exists on `main`.
 
 The feature is incomplete if the ruleset cannot be updated or the required check is absent, even if all code is merged.
@@ -1021,7 +1135,7 @@ The feature is incomplete if the ruleset cannot be updated or the required check
 
 | Approved requirement | Implemented/tested in |
 |---|---|
-| Every PR, including manual/remote/fork | Tasks 2, 6, 10 |
+| Every PR, including manual/remote/fork | Tasks 2, 6, 10, 11 |
 | Reservation-first local numeric ADR | Tasks 3, 5, 7 |
 | Degraded allocation becomes `XXXX` | Tasks 3, 7 |
 | Draft allows `XXXX`; ready rejects it | Tasks 1, 2, 6 |
@@ -1029,8 +1143,8 @@ The feature is incomplete if the ruleset cannot be updated or the required check
 | Complete pagination and fail-closed state | Task 2 |
 | Strict filename/H1/index finalization | Task 4 |
 | Main rejects duplicates/placeholders | Tasks 1, 2, 6 |
-| Required dedicated check, no pytest broadening | Tasks 6, 10 |
+| Required dedicated check, no pytest broadening | Tasks 6, 10, 11 |
 | No manual-dispatch status bypass | Task 6 |
-| Preserve ruleset protections/no bypass actors | Task 10 |
+| Preserve ruleset protections/no bypass actors | Task 11 |
 | ADR-0110/README/skill agree | Task 7 |
 | Historical #487/#488 regression | Task 1 |
