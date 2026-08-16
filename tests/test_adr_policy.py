@@ -145,12 +145,35 @@ def test_pr_policy_allows_placeholder_only_for_draft_prs(draft, expected):
     ) == expected
 
 
+@pytest.mark.parametrize("draft", [True, False], ids=["draft", "ready"])
+def test_pr_policy_rejects_empty_placeholder_slug(draft):
+    assert adr._pull_request_policy_errors(
+        current_pr=488,
+        draft=draft,
+        current_files=[adr.PRFile(488, "docs/adr/XXXX-.md", "added")],
+        base_paths=[],
+        other_files=[],
+    ) == [
+        "docs/adr/XXXX-.md is malformed; ADR placeholders require "
+        "XXXX-<slug>.md."
+    ]
+
+
 def test_tree_policy_rejects_placeholder_on_main():
     assert adr._tree_policy_errors(
         ["docs/adr/XXXX-new-policy.md"], allow_placeholders=False
     ) == [
         "docs/adr/XXXX-new-policy.md is unfinalized; "
         "main may not contain ADR placeholders."
+    ]
+
+
+def test_tree_policy_rejects_empty_placeholder_slug_on_main():
+    assert adr._tree_policy_errors(
+        ["docs/adr/XXXX-.md"], allow_placeholders=False
+    ) == [
+        "docs/adr/XXXX-.md is malformed; ADR placeholders require "
+        "XXXX-<slug>.md."
     ]
 
 

@@ -69,6 +69,16 @@ consequences below remain historical context, not the active workflow.
 - The paginated, fail-closed `adr-policy` check covers every PR, including
   human, remote, and fork PRs. The active default-branch ruleset must require
   that check.
+- The required context comes from standalone `.github/workflows/adr-policy.yml`
+  on `pull_request_target`, so both its workflow and checker are loaded from the
+  trusted base revision. It has read-only permissions, persists no credentials,
+  treats a separate candidate checkout only as `--repo-root` data, and never
+  imports or executes candidate code. Candidate `ci.yml` cannot emit the
+  required context.
+- The introduction PR needs one explicit owner-authorized bootstrap merge
+  because a `pull_request_target` workflow cannot run before it exists on the
+  base branch. The merged push check must pass before the no-bypass ruleset is
+  considered active for subsequent PRs.
 
 ### Amendment — SonarCloud CI analysis (2026-08-04)
 

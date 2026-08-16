@@ -21,8 +21,8 @@
 - CI must fail closed on incomplete GitHub state. Local informational numbering remains fail-soft. Local commit-hook inspection remains fail-open on unexpected internal errors because it is not the authority.
 - The GitHub reader must request every open-PR page and every changed-file page. GitHub's REST file-list endpoint caps a PR at 3,000 files; seeing 3,000 entries is therefore unverifiable and must fail closed.
 - Never log tokens, response headers, full GitHub payloads, or raw authenticated command lines. Diagnostics may include endpoint purpose, PR number, HTTP/CLI exit status, or exception class.
-- The policy job must use the exact required-check context `adr-policy` for `pull_request` and `push` only. A `workflow_dispatch` run on a PR head must not be able to satisfy that context.
-- No bot write, `pull_request_target`, merge queue, automatic commit/push, PR state transition, label, or merge behavior.
+- The policy job must use the exact required-check context `adr-policy` for base-controlled `pull_request_target` and `push` runs only. A `workflow_dispatch` or candidate-controlled `pull_request` run must not be able to satisfy that context.
+- The read-only `pull_request_target` job may execute only the trusted base checker against a credential-free candidate checkout treated as data. No bot write, candidate-code execution, merge queue, automatic commit/push, PR state transition, label, or merge behavior.
 - No new ADR. Amend ADR-0110 because this is enforcement of its existing tooling decision.
 - Use `python -m pytest ... -q -p no:cacheprovider` for focused tests. The final full suite remains arcpy-free.
 
@@ -38,7 +38,8 @@
 | `tests/coordination/test_coord_cli.py` | Strict/fail-soft reservation behavior and caller-worktree regression coverage |
 | `.claude/coordination/hook_check.py` | Inspect staged added/renamed numeric ADRs on `git commit` and require the current session's matching live reservation |
 | `tests/coordination/test_hook_check.py` | Reservation ownership, staged status, rename, placeholder, modification, and fail-open hook tests |
-| `.github/workflows/ci.yml` | Dedicated dependency-free `adr-policy` job and PR-state triggers |
+| `.github/workflows/adr-policy.yml` | Base-controlled dependency-free `adr-policy` job, trusted checker, and separate candidate checkout |
+| `.github/workflows/ci.yml` | Candidate-controlled pytest workflow; must not emit the required `adr-policy` context |
 | `.claude/skills/new-adr/SKILL.md` | Reservation-first creation, `XXXX` fallback, and finalization instructions |
 | `docs/adr/README.md` | One consistent author workflow and merge-state rules |
 | `docs/adr/0110-ci-and-agent-tooling-batch.md` | 2026-08-13 enforcement amendment tied to #492/#487/#488 |
@@ -663,6 +664,7 @@ git commit -m "feat: guard numeric ADR commits with reservations"
 ### Task 6: Wire the dependency-free `adr-policy` GitHub Actions job
 
 **Files:**
+- Create: `.github/workflows/adr-policy.yml`
 - Modify: `.github/workflows/ci.yml`
 - Modify: `tests/test_adr_policy.py`
 
@@ -670,14 +672,15 @@ git commit -m "feat: guard numeric ADR commits with reservations"
 
 Parse YAML with `yaml.BaseLoader` so the YAML 1.1 `on` key remains the string `"on"`. Assert:
 
-- `pull_request.types` is exactly the set `opened`, `synchronize`, `reopened`, `ready_for_review`, `converted_to_draft`;
+- `pull_request_target.types` is exactly the set `opened`, `synchronize`, `reopened`, `ready_for_review`, `converted_to_draft`;
 - job key `adr-policy` exists;
 - PR/push check name resolves to literal `adr-policy`;
 - `workflow_dispatch` is excluded or named differently, so it cannot create the required context;
 - runner is `windows-2022`;
 - permissions are exactly read-only `contents` and `pull-requests`;
 - no install command or cache is present;
-- the command is `python .claude/skills/new-adr/next_adr_number.py --policy-check`; and
+- the trusted base checker runs with `--policy-check --repo-root candidate`;
+- both checkouts persist no credentials, and candidate `ci.yml` has no `adr-policy` job; and
 - `GH_TOKEN` comes from `${{ github.token }}`.
 
 - [ ] **Step 2: Run the workflow-contract test and confirm RED**
@@ -688,7 +691,9 @@ python -m pytest tests/test_adr_policy.py -q -p no:cacheprovider
 
 - [ ] **Step 3: Add the triggers and job**
 
-Retain `workflow_dispatch` for the existing full CI job. Add explicit PR activity types. Use this job shape:
+Retain `workflow_dispatch` and ordinary `pull_request` for candidate pytest in
+`ci.yml`. Put the required check in standalone `adr-policy.yml`, using this
+base-controlled shape:
 
 ```yaml
   adr-policy:
@@ -700,17 +705,32 @@ Retain `workflow_dispatch` for the existing full CI job. Add explicit PR activit
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout trusted policy
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
+          path: trusted-policy
+          persist-credentials: false
+      - name: Checkout candidate tree
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          path: candidate
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Enforce ADR allocation policy
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python .claude/skills/new-adr/next_adr_number.py --policy-check
+        run: python trusted-policy/.claude/skills/new-adr/next_adr_number.py --policy-check --repo-root candidate
 ```
 
-The distinct manual name is load-bearing: a green manual tree-only run on a PR head must not satisfy the `adr-policy` ruleset requirement.
+The distinct manual name and standalone base-controlled workflow are
+load-bearing: neither a green manual run nor candidate-edited `ci.yml` may
+satisfy the `adr-policy` ruleset requirement. The introduction PR needs one
+owner-authorized bootstrap merge because this trigger cannot run until the
+workflow exists on the base branch; no later PR receives that bypass.
 
 - [ ] **Step 4: Run focused tests and inspect parsed workflow**
 
@@ -721,7 +741,7 @@ python -m pytest tests/test_adr_policy.py tests/test_adr_numbering.py -q -p no:c
 - [ ] **Step 5: Commit the workflow slice**
 
 ```powershell
-git add .github/workflows/ci.yml tests/test_adr_policy.py
+git add .github/workflows/adr-policy.yml .github/workflows/ci.yml tests/test_adr_policy.py
 git commit -m "ci: enforce ADR allocation policy"
 ```
 

@@ -60,13 +60,14 @@ GitHub-wide merge gate backed by a consistent authoring policy.
 - Preserve the existing sequential four-digit ADR convention.
 - Keep local authoring useful when GitHub or the coordination registry is
   unavailable without allowing an unverified guess to masquerade as safe.
-- Reuse the existing allocator, registry, hook, and CI workflow.
+- Reuse the existing allocator, registry, hook, and GitHub Actions platform.
 - Produce exact diagnostics naming the conflicting files and PRs.
 - Keep the policy implementation stdlib-only and arcpy-free.
 
 ## Non-goals
 
-- No bot pushes, merge queue, or privileged `pull_request_target` workflow.
+- No bot pushes, merge queue, candidate-code execution, or write-capable
+  `pull_request_target` workflow.
 - No renumbering of historical ADRs.
 - No replacement of sequential IDs with PR numbers, timestamps, or UUIDs.
 - No guarantee that a red external branch can never temporarily contain a
@@ -176,12 +177,16 @@ The check is fail-closed in CI:
 - diagnostics distinguish “policy violation” from “GitHub state could not be
   verified.”
 
-Add a dedicated `adr-policy` job to `.github/workflows/ci.yml`. It runs
-before the full test job needs to finish, uses read-only `contents` and
-`pull-requests` permissions, and adds no dependency installation. The
-`pull_request` trigger must explicitly retain `opened`, `synchronize`, and
-`reopened` and add `ready_for_review` and `converted_to_draft`, so
-placeholder validity is re-evaluated when PR state changes.
+Add a standalone `.github/workflows/adr-policy.yml`. Its
+`pull_request_target` trigger loads both the workflow and checker from the
+trusted base revision; the job has read-only `contents` and `pull-requests`
+permissions, persists no checkout credentials, and executes only that trusted
+checker. A separate candidate merge-tree checkout is treated strictly as data
+through `--repo-root`; no candidate code is imported or executed. The trigger
+must include `opened`, `synchronize`, `reopened`, `ready_for_review`, and
+`converted_to_draft`, so placeholder validity is re-evaluated when PR state
+changes. The ordinary `pull_request`-triggered `ci.yml` remains responsible for
+running candidate pytest and cannot emit the required `adr-policy` context.
 
 On a pull request the job enforces:
 
@@ -309,8 +314,9 @@ Use temporary repositories to cover:
 
 ### Workflow and live verification
 
-- Parse the workflow and assert the `adr-policy` job and PR-state triggers are
-  present.
+- Parse the standalone policy workflow and assert its base-controlled
+  `adr-policy` job, separate candidate checkout, and PR-state triggers are
+  present; also assert candidate `ci.yml` cannot emit that context.
 - Run the focused ADR and coordination suite arcpy-free.
 - Run the historical #487/#488 file list through the policy command and confirm
   a collision result.
@@ -338,13 +344,15 @@ ADR-0110 tooling decision.
 
 ## Rollout
 
-1. Land the policy code, tests, workflow job, skill text, README reconciliation,
+1. Land the policy code, tests, standalone workflow, skill text, README reconciliation,
    and ADR-0110 amendment in one PR.
-2. Verify the new job on that PR and audit all currently open PR ADR claims.
-3. Update `RulesForThee` to require `adr-policy`.
-4. Confirm the implementation PR remains mergeable only while the check passes.
-5. Merge the implementation PR.
-6. Verify the required rule and push-to-main policy against the merged head.
+2. Audit all currently open PR ADR claims and independently review the exact
+   implementation head. Because `pull_request_target` workflows do not exist
+   until present on the base branch, the introduction PR requires one explicit,
+   owner-authorized bootstrap merge bypass.
+3. Verify the push-to-main policy passes on the merge commit.
+4. Update or confirm `RulesForThee` requires `adr-policy` with no bypass actor.
+5. Confirm every subsequent PR receives the base-controlled required check.
 
 If the ruleset cannot be updated, the PR must remain explicitly incomplete; the
 repository code alone does not satisfy “every PR.”
@@ -365,8 +373,9 @@ and clients without the hook. This is the current failure mode. Rejected.
 
 Could prevent even temporary numeric overlap, but requires bot writes,
 cross-fork permission handling, a concurrency protocol, recovery from partial
-bot pushes, and a privileged workflow. The required check provides the merge
-guarantee with much less machinery. Rejected.
+bot pushes, and candidate-code execution in a privileged workflow. The
+read-only, base-controlled required check provides the merge guarantee with
+much less machinery. Rejected.
 
 ### Use PR numbers, timestamps, or UUIDs as ADR IDs
 

@@ -328,6 +328,12 @@ def _rev_parse(cwd, *args):
         return ""
 
 
+def _git_toplevel(cwd):
+    """Repository identity for cwd, falling back to its real path."""
+    top = _rev_parse(cwd, "--show-toplevel").strip()
+    return os.path.normcase(os.path.realpath(top or cwd))
+
+
 def _in_main_tree(d):
     # main tree: git-dir and git-common-dir point at the SAME .git; a linked
     # worktree: they differ. git prints either absolute OR cwd-relative paths
@@ -453,7 +459,7 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None,
                 target = _first_existing(os.path.join(cwd, d) if d else cwd)
                 if _foreign_repo(target, root):
                     continue
-                target = os.path.realpath(target)
+                target = _git_toplevel(target)
                 if sub in {"add", "mv"}:
                     staged_in_command.add(target)
                 elif sub == "commit" and target in staged_in_command:
@@ -490,7 +496,7 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None,
                         "branch — merge via PR instead. "
                         "Override: AUTOGIS_COORD_FORCE=1.")
                 if sub == "commit":
-                    if os.path.realpath(target) in compound_commit_targets:
+                    if _git_toplevel(target) in compound_commit_targets:
                         return _deny(
                             "[coord] Stage ADR changes and commit them in "
                             "separate Bash commands so the reservation guard "

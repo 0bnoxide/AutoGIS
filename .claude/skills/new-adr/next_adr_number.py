@@ -82,10 +82,13 @@ def _is_placeholder(path: str) -> bool:
     return name.startswith("XXXX-") and name.endswith(".md") and name != "XXXX-.md"
 
 
-def _policy_paths(paths: Iterable[str]) -> tuple[dict[int, set[str]], list[str]]:
-    """Return numbered and placeholder root-level ADR paths."""
+def _policy_paths(
+    paths: Iterable[str],
+) -> tuple[dict[int, set[str]], list[str], list[str]]:
+    """Return numbered, valid-placeholder, and malformed-placeholder paths."""
     numbered: dict[int, set[str]] = {}
     placeholders = []
+    malformed_placeholders = []
     for path in paths:
         root_path = _root_adr_path(path)
         if root_path is None:
@@ -96,7 +99,9 @@ def _policy_paths(paths: Iterable[str]) -> tuple[dict[int, set[str]], list[str]]
             numbered.setdefault(number, set()).add(normalized)
         elif _is_placeholder(normalized):
             placeholders.append(normalized)
-    return numbered, placeholders
+        elif root_path[1].startswith("XXXX-") and root_path[1].endswith(".md"):
+            malformed_placeholders.append(normalized)
+    return numbered, placeholders, malformed_placeholders
 
 
 def _format_policy_records(records: Iterable[tuple[int, str, int, str, str]]) -> list[str]:
@@ -113,6 +118,10 @@ def _format_policy_records(records: Iterable[tuple[int, str, int, str, str]]) ->
             errors.append(
                 f"{path} is unfinalized; ready PRs require numeric ADR filenames."
             )
+        elif kind == "malformed-placeholder":
+            errors.append(
+                f"{path} is malformed; ADR placeholders require XXXX-<slug>.md."
+            )
         elif kind == "base":
             errors.append(
                 f"ADR {number:04d} already exists on the base branch as {path}; "
@@ -128,7 +137,7 @@ def _format_policy_records(records: Iterable[tuple[int, str, int, str, str]]) ->
 
 def _tree_policy_errors(paths: Iterable[str], *, allow_placeholders: bool) -> list[str]:
     """Return deterministic duplicate/placeholder errors for one tree."""
-    numbered, placeholders = _policy_paths(paths)
+    numbered, placeholders, malformed_placeholders = _policy_paths(paths)
     records = []
     for number, matched_paths in numbered.items():
         if len(matched_paths) > 1:
@@ -139,6 +148,10 @@ def _tree_policy_errors(paths: Iterable[str], *, allow_placeholders: bool) -> li
         records.extend(
             (10_000, path, 0, "main-placeholder", "") for path in placeholders
         )
+    records.extend(
+        (10_000, path, 0, "malformed-placeholder", "")
+        for path in malformed_placeholders
+    )
     return _format_policy_records(records)
 
 
@@ -152,7 +165,7 @@ def _pull_request_policy_errors(
 ) -> list[str]:
     """Return deterministic current-vs-base/current-vs-open-PR errors."""
     current_paths = [f.path for f in current_files if f.status in _CLAIM_STATUSES]
-    current_numbered, placeholders = _policy_paths(current_paths)
+    current_numbered, placeholders, malformed_placeholders = _policy_paths(current_paths)
     records = []
     for number, matched_paths in current_numbered.items():
         if len(matched_paths) > 1:
@@ -163,6 +176,10 @@ def _pull_request_policy_errors(
         records.extend(
             (10_000, path, 0, "ready-placeholder", "") for path in placeholders
         )
+    records.extend(
+        (10_000, path, 0, "malformed-placeholder", "")
+        for path in malformed_placeholders
+    )
 
     base_by_number: dict[int, set[str]] = {}
     for path in base_paths:

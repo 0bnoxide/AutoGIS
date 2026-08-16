@@ -679,6 +679,36 @@ def test_staging_before_commit_in_same_command_is_denied(tmp_path, staging):
     )
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+def test_root_staging_then_subdirectory_commit_is_denied(tmp_path):
+    repo = _init_adr_repo(tmp_path)
+    (repo / "docs" / "adr").mkdir(parents=True)
+    (repo / "docs" / "adr" / "0131-example.md").write_text(
+        "# ADR-0131: Example\n", encoding="utf-8"
+    )
+    reg_path = repo / ".claude" / "coordination" / "claims.json"
+    reg_path.parent.mkdir(parents=True)
+
+    def stale_index_must_not_be_used(_cwd):
+        pytest.fail("the pre-command index cannot validate compound staging")
+
+    out = hook_check.decide(
+        _payload(
+            "Bash",
+            {"command": "git add docs/adr/0131-example.md && cd docs && git commit -m x"},
+            cwd=str(repo),
+        ),
+        reg_path,
+        branch_func=lambda _cwd: "feat/x",
+        staged_func=stale_index_must_not_be_used,
+    )
+
+    assert out["hookSpecificOutput"]["permissionDecisionReason"] == (
+        "[coord] Stage ADR changes and commit them in separate Bash commands so "
+        "the reservation guard can inspect the final index."
+    )
+
+
 def test_commit_with_another_sessions_adr_reservation_is_denied(tmp_path):
     p = tmp_path / "c.json"
     registry.claim(p, "other", "adr", 131)
