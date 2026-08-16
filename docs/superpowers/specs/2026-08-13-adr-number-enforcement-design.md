@@ -188,6 +188,13 @@ must include `opened`, `synchronize`, `reopened`, `ready_for_review`, and
 changes. The ordinary `pull_request`-triggered `ci.yml` remains responsible for
 running candidate pytest and cannot emit the required `adr-policy` context.
 
+`actions/checkout@v7` rejects fork content in a `pull_request_target` workflow
+unless the checkout explicitly opts in. Set `allow-unsafe-pr-checkout: true`
+only on the credential-free candidate checkout. The trusted policy checkout
+must not opt in. This exception widens fetching, not execution: the candidate
+tree remains untrusted data, and no step may import, invoke, or source files
+from it.
+
 On a pull request the job enforces:
 
 - no duplicate numeric prefix within the checked-out tree;
