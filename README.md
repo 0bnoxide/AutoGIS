@@ -354,6 +354,7 @@ not by flag.
 | Command | Runtime | Backing module |
 |---------|---------|----------------|
 | `autogis harvest` | HYBRID | `core/harvest/` |
+| `autogis handoff` | CLOUD | `core/handoff.py` |
 | `autogis envmon inspect` | CLOUD | `core/envmon/excel_workbook_inspector.py` |
 | `autogis envmon parser-profile` | CLOUD | `core/envmon/excel_profile_reader.py` |
 | `autogis envmon figure-spec` | CLOUD | `core/common/config.py` (`FigureSpec`) |
