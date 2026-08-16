@@ -75,6 +75,9 @@ consequences below remain historical context, not the active workflow.
   treats a separate candidate checkout only as `--repo-root` data, and never
   imports or executes candidate code. Candidate `ci.yml` cannot emit the
   required context.
+- Checkout v7's fork opt-in is set only on the credential-free candidate
+  checkout. It permits fetching untrusted PR content as policy input; no
+  candidate file is imported, invoked, or sourced.
 - The introduction PR needs one explicit owner-authorized bootstrap merge
   because a `pull_request_target` workflow cannot run before it exists on the
   base branch. The merged push check must pass before the no-bypass ruleset is

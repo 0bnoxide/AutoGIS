@@ -67,6 +67,7 @@ def test_adr_policy_workflow_contract():
                 "ref": "${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}",
                 "path": "candidate",
                 "persist-credentials": "false",
+                "allow-unsafe-pr-checkout": "true",
             },
         },
         {
@@ -82,6 +83,16 @@ def test_adr_policy_workflow_contract():
             ),
         },
     ]
+
+
+def test_only_candidate_checkout_opts_into_fork_content():
+    steps = _adr_workflow()["jobs"]["adr-policy"]["steps"]
+    trusted = next(step for step in steps if step.get("name") == "Checkout trusted policy")
+    candidate = next(step for step in steps if step.get("name") == "Checkout candidate tree")
+
+    assert "allow-unsafe-pr-checkout" not in trusted["with"]
+    assert candidate["with"]["allow-unsafe-pr-checkout"] == "true"
+    assert candidate["with"]["persist-credentials"] == "false"
 
 
 def test_candidate_ci_stays_separate_from_trusted_adr_policy():
