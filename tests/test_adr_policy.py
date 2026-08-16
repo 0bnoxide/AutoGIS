@@ -201,6 +201,32 @@ def test_pr_policy_rejects_current_number_already_on_base():
     ]
 
 
+def test_pr_policy_rejects_copied_current_number_already_on_base():
+    assert adr._pull_request_policy_errors(
+        current_pr=488,
+        draft=False,
+        current_files=[adr.PRFile(488, "docs/adr/0129-new.md", "copied")],
+        base_paths=["docs/adr/0129-existing.md"],
+        other_files=[],
+    ) == [
+        "ADR 0129 already exists on the base branch as docs/adr/0129-existing.md; "
+        "docs/adr/0129-new.md must use a different number."
+    ]
+
+
+def test_pr_policy_rejects_copied_current_number_already_in_open_pr():
+    assert adr._pull_request_policy_errors(
+        current_pr=488,
+        draft=False,
+        current_files=[adr.PRFile(488, "docs/adr/0129-new.md", "copied")],
+        base_paths=[],
+        other_files=[adr.PRFile(487, "docs/adr/0129-existing.md", "added")],
+    ) == [
+        "ADR 0129 is also added by PR #487 as docs/adr/0129-existing.md; "
+        "use XXXX or finalize after that claim changes."
+    ]
+
+
 def test_pr_policy_rejects_two_numeric_adrs_in_current_pr():
     assert adr._pull_request_policy_errors(
         current_pr=488,
@@ -310,6 +336,21 @@ def test_issue_492_distinct_0129_slugs_cannot_both_pass():
         current_files=[adr.PRFile(488, "docs/adr/0129-registry-metadata.md", "added")],
         base_paths=[],
         other_files=[adr.PRFile(487, "docs/adr/0129-connection-profile.md", "added")],
+    )
+    assert errors == [
+        "ADR 0129 is also added by PR #487 as "
+        "docs/adr/0129-connection-profile.md; use XXXX or finalize after "
+        "that claim changes."
+    ]
+
+
+def test_issue_492_distinct_0129_copied_slugs_cannot_both_pass():
+    errors = adr._pull_request_policy_errors(
+        current_pr=488,
+        draft=False,
+        current_files=[adr.PRFile(488, "docs/adr/0129-registry-metadata.md", "copied")],
+        base_paths=[],
+        other_files=[adr.PRFile(487, "docs/adr/0129-connection-profile.md", "copied")],
     )
     assert errors == [
         "ADR 0129 is also added by PR #487 as "
@@ -732,6 +773,28 @@ def test_strict_scan_combines_local_default_branch_and_open_pr_claims(
     ]
 
 
+def test_strict_scan_counts_copied_open_pr_adr_claims(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    default_tree = f"repos/{REPOSITORY}/git/trees/main?recursive=1"
+    runner = FakeRunner(
+        {
+            f"repos/{REPOSITORY}": {"default_branch": "main"},
+            default_tree: {
+                "truncated": False,
+                "tree": [{"path": "docs/adr/0130-default.md"}],
+            },
+            OPEN_PULLS: [[{"number": 501}]],
+            _pr_files(501): [[
+                {"filename": "docs/adr/0151-copied.md", "status": "copied"},
+            ]],
+        }
+    )
+
+    assert adr._scan_max(tmp_path, strict=True, run=runner) == 151
+
+
 @pytest.mark.parametrize("failed_endpoint", [
     f"repos/{REPOSITORY}",
     f"repos/{REPOSITORY}/git/trees/main?recursive=1",
@@ -896,6 +959,37 @@ def test_finalize_rewrites_only_the_validated_readme_table_row(monkeypatch, tmp_
     updated = readme.read_text(encoding="utf-8")
     assert updated.startswith(prose)
     assert "| [131](0131-example-decision.md) |" in updated
+
+
+def test_finalize_rejects_duplicate_marker_on_one_readme_table_row(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    readme = root / "docs" / "adr" / "README.md"
+    marker = "[XXXX](XXXX-example-decision.md)"
+    readme.write_text(
+        f"| {marker} and {marker} | Example decision | Proposed | 2026-08-13 |\n",
+        encoding="utf-8",
+    )
+    before = _finalize_bytes(root)
+    reservations = []
+
+    class Registry:
+        def reserve_number(self, *_args):
+            reservations.append("created")
+            return 131
+
+        def release(self, *_args, **_kwargs):
+            reservations.append("released")
+
+    monkeypatch.setattr(
+        adr, "_coordination", lambda *_args: (Registry(), "claims", "s1")
+    )
+
+    with pytest.raises(adr.ADRFinalizeError, match="exactly one placeholder row"):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert _finalize_bytes(root) == before
+    assert reservations == []
 
 
 def test_finalize_uses_strict_floor_and_live_reservations(monkeypatch, tmp_path):

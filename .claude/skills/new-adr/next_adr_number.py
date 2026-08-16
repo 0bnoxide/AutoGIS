@@ -32,7 +32,7 @@ from typing import NamedTuple
 # ADR is `NNNN-<slug>.md` where <slug> does not start with `MM-DD`.
 _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 _NNNN = re.compile(r"^(\d{4})-")
-_CLAIM_STATUSES = {"added", "renamed"}
+_CLAIM_STATUSES = {"added", "copied", "renamed"}
 _FILE_STATUSES = {
     "added", "modified", "removed", "renamed", "copied", "changed", "unchanged"
 }
@@ -615,11 +615,11 @@ def _finalize_plan(repo_root: Path, run, environ):
         raise ADRFinalizeError("ADR index is malformed.") from exc
     for path in placeholders:
         marker = f"[XXXX]({path.name})"
-        matches = [
-            line for line in readme_text.splitlines(keepends=True)
-            if line.startswith("|") and marker in line
-        ]
-        if len(matches) != 1:
+        matches = sum(
+            line.count(marker) for line in readme_text.splitlines(keepends=True)
+            if line.startswith("|")
+        )
+        if matches != 1:
             raise ADRFinalizeError("ADR index must contain exactly one placeholder row.")
 
     # A strict remote scan is deliberately before reservation: unknown state
