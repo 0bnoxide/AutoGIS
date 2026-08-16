@@ -52,6 +52,37 @@ Add three pieces of workflow tooling (no product/architecture code changes):
   unmerged branch is invisible to other sessions — only a shared store closes
   the gap, and the repo already has one.
 
+### Amendment — required ADR allocation enforcement (2026-08-13)
+
+Issue #492 exposed that PRs #487 and #488 could both claim ADR 0129 despite
+different slugs. Reservations remain the local pre-PR race defense, but this
+amendment supersedes the original claim that reservation alone was sufficient;
+it does not erase that decision's historical rationale. The pre-amendment
+consequences below remain historical context, not the active workflow.
+
+- A coordinated numeric ADR requires a verified, strict reservation. If session
+  resolution or the strict GitHub scan is unavailable, `XXXX` is the explicit
+  degraded draft state, not a competing allocator.
+- Before a PR is ready, strict `--finalize` rewrites every placeholder's
+  filename, H1, and index row; authors review the mapping, stage and commit it,
+  then release reservations after merge.
+- The paginated, fail-closed `adr-policy` check covers every PR, including
+  human, remote, and fork PRs. The active default-branch ruleset must require
+  that check.
+- The required context comes from standalone `.github/workflows/adr-policy.yml`
+  on `pull_request_target`, so both its workflow and checker are loaded from the
+  trusted base revision. It has read-only permissions, persists no credentials,
+  treats a separate candidate checkout only as `--repo-root` data, and never
+  imports or executes candidate code. Candidate `ci.yml` cannot emit the
+  required context.
+- Checkout v7's fork opt-in is set only on the credential-free candidate
+  checkout. It permits fetching untrusted PR content as policy input; no
+  candidate file is imported, invoked, or sourced.
+- The introduction PR needs one explicit owner-authorized bootstrap merge
+  because a `pull_request_target` workflow cannot run before it exists on the
+  base branch. The merged push check must pass before the no-bypass ruleset is
+  considered active for subsequent PRs.
+
 ### Amendment — SonarCloud CI analysis (2026-08-04)
 
 - **`.github/workflows/build.yml`** runs the pinned SonarSource scanner on

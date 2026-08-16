@@ -27,13 +27,13 @@ _GIT_WRITE_SUBCMDS = {"commit", "push", "merge", "rebase", "cherry-pick",
 _REDIRECT_RE = re.compile(r"^(?:\d+|&)?(>>?)(.*)$")
 
 
-def _git_writes(cmd):
-    """Yield (subcmd, dir, args) for each git *write* invocation in a shell
-    command — EVERY write, so a second write in a compound command can't slip
-    past on the first one's dir. dir is where that write runs: the
+def _git_commands(cmd):
+    """Yield (subcmd, dir, args) for each git invocation in a shell command.
+
+    dir is where that command runs: the
     invocation's own `-C` / `--work-tree` / `--git-dir`'s parent, else the
     carried `cd` target, else '' (caller falls back to cwd). args are the
-    write's own tokens after the subcommand (for refspec inspection).
+    command's own tokens after the subcommand.
 
     Splits on shell separators and tokenizes, so the operative subcommand is
     identified by position (first non-option token after `git`), not by mere
@@ -91,8 +91,15 @@ def _git_writes(cmd):
                 continue
             sub = t                         # first non-option token = subcmd
             break
-        if sub in _GIT_WRITE_SUBCMDS:
+        if sub:
             yield sub, (loc or cur), toks[i + 1:]
+
+
+def _git_writes(cmd):
+    """Yield every history/ref-writing git command in a shell command."""
+    for command in _git_commands(cmd):
+        if command[0] in _GIT_WRITE_SUBCMDS:
+            yield command
 
 
 def _is_git_write(cmd):
@@ -226,6 +233,36 @@ def _git_branch(cwd):
         return ""
 
 
+def _staged_numeric_adrs(cwd):
+    """Return numeric ADR additions/rename destinations, or None if unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "diff", "--cached", "--name-status",
+             "--diff-filter=AR", "-z"], capture_output=True, timeout=3)
+        if result.returncode:
+            return None
+    except Exception:
+        return None
+    out = []
+    fields = result.stdout.decode("utf-8").split("\0")
+    i = 0
+    while i < len(fields) - 1:
+        status = fields[i]
+        i += 1
+        if status.startswith("R"):
+            if i + 1 >= len(fields):
+                return None
+            i += 1
+        elif status != "A" or i >= len(fields):
+            return None
+        path = fields[i]
+        i += 1
+        match = re.fullmatch(r"docs/adr/(\d{4})-[^/\t\r\n]+\.md", path)
+        if match:
+            out.append((match.group(1), path))
+    return out
+
+
 def _first_existing(d):
     """Nearest existing ancestor of directory d (d itself if it exists), so a
     new file in a not-yet-created package still resolves via its worktree
@@ -291,6 +328,12 @@ def _rev_parse(cwd, *args):
         return ""
 
 
+def _git_toplevel(cwd):
+    """Repository identity for cwd, falling back to its real path."""
+    top = _rev_parse(cwd, "--show-toplevel").strip()
+    return os.path.normcase(os.path.realpath(top or cwd))
+
+
 def _in_main_tree(d):
     # main tree: git-dir and git-common-dir point at the SAME .git; a linked
     # worktree: they differ. git prints either absolute OR cwd-relative paths
@@ -326,7 +369,8 @@ def _shared_tree_warn(reg_path, sid, target, cwd, main_tree_func=None):
         "'python .claude/coordination/coord_cli.py resync'." % len(sharers))
 
 
-def decide(payload, reg_path, branch_func=None, main_tree_func=None):
+def decide(payload, reg_path, branch_func=None, main_tree_func=None,
+           staged_func=None):
     if os.environ.get("AUTOGIS_COORD_FORCE") == "1":
         return None
     import registry
@@ -334,12 +378,25 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
     cwd = payload.get("cwd") or os.getcwd()
     tool = payload.get("tool_name", "")
     ti = payload.get("tool_input") or {}
+    normal_commit = tool == "Bash" and any(
+        sub == "commit" for sub, _d, _args in _git_writes(
+            ti.get("command", "")))
+    pre_heartbeat_claims = None
+    if normal_commit:
+        try:
+            pre_heartbeat_claims = registry.list_claims(reg_path)
+        except Exception:
+            pass
 
     # Best-effort: refresh this session's own heartbeat on any tool call.
-    try:
-        registry.heartbeat(reg_path, sid)
-    except Exception:
-        pass
+    def heartbeat():
+        try:
+            registry.heartbeat(reg_path, sid)
+        except Exception:
+            pass
+
+    if not normal_commit:
+        heartbeat()
 
     if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         fp = ti.get("file_path", "") or ti.get("notebook_path", "")
@@ -391,10 +448,22 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
 
     if tool == "Bash":
         command = ti.get("command", "")
+        commands = list(_git_commands(command))
         writes = list(_git_writes(command))
         if writes:
             bf = branch_func or _git_branch
             root = _coord_root(reg_path)
+            staged_in_command = set()
+            compound_commit_targets = set()
+            for sub, d, _args in commands:
+                target = _first_existing(os.path.join(cwd, d) if d else cwd)
+                if _foreign_repo(target, root):
+                    continue
+                target = _git_toplevel(target)
+                if sub in {"add", "mv"}:
+                    staged_in_command.add(target)
+                elif sub == "commit" and target in staged_in_command:
+                    compound_commit_targets.add(target)
             first_target = None      # first non-foreign target, for the warn
             checked = set()          # dirs already branch-checked
             for sub, d, args in writes:
@@ -426,11 +495,40 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None):
                         "[coord] Pushing to remote 'main' is blocked from any "
                         "branch — merge via PR instead. "
                         "Override: AUTOGIS_COORD_FORCE=1.")
+                if sub == "commit":
+                    if _git_toplevel(target) in compound_commit_targets:
+                        return _deny(
+                            "[coord] Stage ADR changes and commit them in "
+                            "separate Bash commands so the reservation guard "
+                            "can inspect the final index.")
+                    staged = (staged_func or _staged_numeric_adrs)(target)
+                    if staged is not None and pre_heartbeat_claims is not None:
+                        reserved = set()
+                        for claim in pre_heartbeat_claims:
+                            if (claim.get("session_id") == sid and
+                                    claim.get("kind") == "adr"):
+                                try:
+                                    reserved.add(int(claim.get("value")))
+                                except (TypeError, ValueError):
+                                    pass
+                        for number, path in sorted(staged):
+                            if int(number) not in reserved:
+                                replacement = path.rsplit("/", 1)[-1].replace(
+                                    number, "XXXX", 1)
+                                return _deny(
+                                    "[coord] ADR %s is staged as %s without this "
+                                    "session owning reservation %s; run coord "
+                                    "reserve-adr --strict or rename the file to %s."
+                                    % (number, path, number, replacement))
             if first_target is not None:
                 warn = _shared_tree_warn(reg_path, sid, first_target, cwd,
                                          main_tree_func)
                 if warn:
+                    if normal_commit:
+                        heartbeat()
                     return warn
+            if normal_commit:
+                heartbeat()
         root = _coord_root(reg_path)
         bf = branch_func or _git_branch
         for writer, d, path in _shell_file_writes(command):

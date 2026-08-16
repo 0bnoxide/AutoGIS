@@ -3,6 +3,7 @@ name: CI
 on:
   workflow_dispatch:   # manual "Run workflow" button / `gh workflow run`
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
 

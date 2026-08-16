@@ -10,44 +10,47 @@ Create the next sequential ADR from the project template.
 
 ## Steps
 
-1. Get the next number from the preflight — it checks local ADRs **and** open
-   PRs, so concurrent sessions collide less often (the recurring `0099 → 0105`
-   renumber is what this targets):
+1. Allocate the ADR before creating it. For a coordinated, verified session,
+   reserve the number with the strict scan:
 
-   ```bash
-   python .claude/skills/new-adr/next_adr_number.py   # prints e.g. 0107
+   ```powershell
+   python .claude/coordination/coord_cli.py reserve-adr --strict --session $env:AUTOGIS_SESSION_ID
    ```
 
-   Only `NNNN-`-prefixed files count; dated legacy names (`2026-06-18-*.md`),
-   `README.md`, and `TEMPLATE.md` are ignored. If `gh` is offline/unauthed it
-   degrades to a local-only scan (still correct, just less protective).
+   A successful command authorizes the printed numeric filename. If session
+   resolution or the strict GitHub scan fails, create
+   `docs/adr/XXXX-<slug>.md` instead; never use a fail-soft numeric suggestion.
+   The no-argument allocator is informational only and never authorizes a
+   numeric filename:
 
-   The preflight **reduces, not eliminates** collisions — two sessions that both
-   grab a number *before either opens a PR* are invisible to the PR scan. When
-   other sessions are active, **reserve** the number instead so it's claimed in
-   the shared registry immediately (closes the pre-PR gap):
-
-   ```bash
-   python .claude/coordination/coord_cli.py reserve-adr --session "$AUTOGIS_SESSION_ID"
+   ```powershell
+   python .claude/skills/new-adr/next_adr_number.py
    ```
-
-   It prints the reserved number (e.g. `0110`); the preflight then steps over it
-   for everyone else. The reservation auto-expires if the session dies before
-   merging; release it explicitly with
-   `coord_cli.py release --session "$SID" --kind adr` once merged.
 
 2. Slugify the title from the argument: lowercase, spaces → hyphens, strip
-   punctuation. New path: `docs/adr/<NNNN>-<slug>.md`.
+   punctuation. The new path is the authorized numeric
+   `docs/adr/<NNNN>-<slug>.md`, or the fallback `docs/adr/XXXX-<slug>.md`.
 
 3. Copy `docs/adr/TEMPLATE.md` into the new file, then fill in only:
-   - the heading `# ADR-<NNNN>: <Title>` (human-readable title from the argument)
+   - the heading `# ADR-<NNNN>: <Title>` or `# ADR-XXXX: <Title>`
+     (human-readable title from the argument)
    - `**Status:** Proposed`
    - `**Date:** <today, YYYY-MM-DD>`
 
    Leave Context / Decision / Consequences / Alternatives as the template
    placeholders — those are the author's to write.
 
-4. Add the index line to `docs/adr/README.md` if it keeps a list (match the
-   existing format).
+4. Add the index line to `docs/adr/README.md`. A placeholder has exactly one
+   `[XXXX](XXXX-<slug>.md)` row.
 
-5. Report the new file path. Do **not** invent the decision content.
+5. A draft PR may retain `XXXX`; a ready PR and `main` may not. Before making
+   the PR ready, finalize every placeholder:
+
+   ```powershell
+   python .claude/skills/new-adr/next_adr_number.py --finalize
+   ```
+
+   Review the printed mapping, stage and commit normally, then release the ADR
+   reservation after merge. `adr-policy` is the fail-closed required merge gate
+   for human, remote, and fork PRs. Report the new file path; do **not** invent
+   the decision content.

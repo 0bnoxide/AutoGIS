@@ -1,0 +1,44 @@
+name: ADR policy
+
+on:
+  workflow_dispatch:   # manual runs are deliberately not the required context
+  # Base-controlled event: a PR cannot weaken the workflow that checks itself.
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  push:
+    branches: [main]
+
+concurrency:
+  group: adr-policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  adr-policy:
+    name: ${{ github.event_name == 'workflow_dispatch' && 'adr-policy-manual' || 'adr-policy' }}
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout trusted policy
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
+          path: trusted-policy
+          persist-credentials: false
+      - name: Checkout candidate tree
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          path: candidate
+          persist-credentials: false
+          allow-unsafe-pr-checkout: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Enforce ADR allocation policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python trusted-policy/.claude/skills/new-adr/next_adr_number.py --policy-check --repo-root candidate
