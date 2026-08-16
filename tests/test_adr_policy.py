@@ -29,7 +29,8 @@ def _ci_workflow():
 
 def test_adr_policy_workflow_contract():
     workflow = _ci_workflow()
-    assert workflow["on"]["pull_request"]["types"] == [
+    assert "pull_request" not in workflow["on"]
+    assert workflow["on"]["pull_request_target"]["types"] == [
         "opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft"
     ]
     assert "workflow_dispatch" in workflow["on"]
@@ -44,7 +45,24 @@ def test_adr_policy_workflow_contract():
     assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
 
     assert job["steps"] == [
-        {"uses": "actions/checkout@v7"},
+        {
+            "name": "Checkout trusted policy",
+            "uses": "actions/checkout@v7",
+            "with": {
+                "ref": "${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}",
+                "path": "trusted-policy",
+                "persist-credentials": "false",
+            },
+        },
+        {
+            "name": "Checkout candidate tree",
+            "uses": "actions/checkout@v7",
+            "with": {
+                "ref": "${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}",
+                "path": "candidate",
+                "persist-credentials": "false",
+            },
+        },
         {
             "uses": "actions/setup-python@v7",
             "with": {"python-version": "3.11"},
@@ -52,7 +70,10 @@ def test_adr_policy_workflow_contract():
         {
             "name": "Enforce ADR allocation policy",
             "env": {"GH_TOKEN": "${{ github.token }}"},
-            "run": "python .claude/skills/new-adr/next_adr_number.py --policy-check",
+            "run": (
+                "python trusted-policy/.claude/skills/new-adr/next_adr_number.py "
+                "--policy-check --repo-root candidate"
+            ),
         },
     ]
 

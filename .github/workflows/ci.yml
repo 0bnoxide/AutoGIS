@@ -2,7 +2,8 @@ name: CI
 
 on:
   workflow_dispatch:   # manual "Run workflow" button / `gh workflow run`
-  pull_request:
+  # Runs from the base branch so a PR cannot weaken its own required checker.
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
@@ -21,14 +22,25 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout trusted policy
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
+          path: trusted-policy
+          persist-credentials: false
+      - name: Checkout candidate tree
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          path: candidate
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Enforce ADR allocation policy
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python .claude/skills/new-adr/next_adr_number.py --policy-check
+        run: python trusted-policy/.claude/skills/new-adr/next_adr_number.py --policy-check --repo-root candidate
 
   pytest:
     # arcpy-free suite. Windows, not ubuntu: the repo is Windows-native
