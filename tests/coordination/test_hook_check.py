@@ -656,6 +656,29 @@ def test_commit_with_unreserved_numeric_adr_is_denied(tmp_path):
     assert out["hookSpecificOutput"]["permissionDecisionReason"] == _ADR_DENIAL
 
 
+@pytest.mark.parametrize("staging", [
+    "git add docs/adr/0131-example.md",
+    "git mv docs/adr/XXXX-example.md docs/adr/0131-example.md",
+])
+def test_staging_before_commit_in_same_command_is_denied(tmp_path, staging):
+    p = tmp_path / "c.json"
+
+    def stale_index_must_not_be_used(_cwd):
+        pytest.fail("the pre-command index cannot validate compound staging")
+
+    out = hook_check.decide(
+        _payload("Bash", {"command": f"{staging} && git commit -m x"}),
+        p,
+        branch_func=lambda _cwd: "feat/x",
+        staged_func=stale_index_must_not_be_used,
+    )
+
+    assert out["hookSpecificOutput"]["permissionDecisionReason"] == (
+        "[coord] Stage ADR changes and commit them in separate Bash commands so "
+        "the reservation guard can inspect the final index."
+    )
+
+
 def test_commit_with_another_sessions_adr_reservation_is_denied(tmp_path):
     p = tmp_path / "c.json"
     registry.claim(p, "other", "adr", 131)

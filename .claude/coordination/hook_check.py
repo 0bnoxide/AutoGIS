@@ -27,13 +27,13 @@ _GIT_WRITE_SUBCMDS = {"commit", "push", "merge", "rebase", "cherry-pick",
 _REDIRECT_RE = re.compile(r"^(?:\d+|&)?(>>?)(.*)$")
 
 
-def _git_writes(cmd):
-    """Yield (subcmd, dir, args) for each git *write* invocation in a shell
-    command — EVERY write, so a second write in a compound command can't slip
-    past on the first one's dir. dir is where that write runs: the
+def _git_commands(cmd):
+    """Yield (subcmd, dir, args) for each git invocation in a shell command.
+
+    dir is where that command runs: the
     invocation's own `-C` / `--work-tree` / `--git-dir`'s parent, else the
     carried `cd` target, else '' (caller falls back to cwd). args are the
-    write's own tokens after the subcommand (for refspec inspection).
+    command's own tokens after the subcommand.
 
     Splits on shell separators and tokenizes, so the operative subcommand is
     identified by position (first non-option token after `git`), not by mere
@@ -91,8 +91,15 @@ def _git_writes(cmd):
                 continue
             sub = t                         # first non-option token = subcmd
             break
-        if sub in _GIT_WRITE_SUBCMDS:
+        if sub:
             yield sub, (loc or cur), toks[i + 1:]
+
+
+def _git_writes(cmd):
+    """Yield every history/ref-writing git command in a shell command."""
+    for command in _git_commands(cmd):
+        if command[0] in _GIT_WRITE_SUBCMDS:
+            yield command
 
 
 def _is_git_write(cmd):
@@ -435,10 +442,22 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None,
 
     if tool == "Bash":
         command = ti.get("command", "")
+        commands = list(_git_commands(command))
         writes = list(_git_writes(command))
         if writes:
             bf = branch_func or _git_branch
             root = _coord_root(reg_path)
+            staged_in_command = set()
+            compound_commit_targets = set()
+            for sub, d, _args in commands:
+                target = _first_existing(os.path.join(cwd, d) if d else cwd)
+                if _foreign_repo(target, root):
+                    continue
+                target = os.path.realpath(target)
+                if sub in {"add", "mv"}:
+                    staged_in_command.add(target)
+                elif sub == "commit" and target in staged_in_command:
+                    compound_commit_targets.add(target)
             first_target = None      # first non-foreign target, for the warn
             checked = set()          # dirs already branch-checked
             for sub, d, args in writes:
@@ -471,6 +490,11 @@ def decide(payload, reg_path, branch_func=None, main_tree_func=None,
                         "branch — merge via PR instead. "
                         "Override: AUTOGIS_COORD_FORCE=1.")
                 if sub == "commit":
+                    if os.path.realpath(target) in compound_commit_targets:
+                        return _deny(
+                            "[coord] Stage ADR changes and commit them in "
+                            "separate Bash commands so the reservation guard "
+                            "can inspect the final index.")
                     staged = (staged_func or _staged_numeric_adrs)(target)
                     if staged is not None and pre_heartbeat_claims is not None:
                         reserved = set()

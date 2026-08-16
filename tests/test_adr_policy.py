@@ -584,6 +584,28 @@ def test_main_policy_check_exit_codes_and_success_output(monkeypatch, tmp_path, 
     ) == 2
 
 
+def test_cli_policy_check_uses_candidate_root_for_pull_request_target(
+        monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
+    candidate = tmp_path / "candidate"
+    adr_dir = candidate / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "0128-a.md").write_text("", encoding="utf-8")
+    (adr_dir / "0128-b.md").write_text("", encoding="utf-8")
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps(_event()), encoding="utf-8")
+
+    assert adr.main(
+        ["--policy-check", "--repo-root", str(candidate)],
+        environ={
+            "GITHUB_EVENT_NAME": "pull_request_target",
+            "GITHUB_EVENT_PATH": str(event_path),
+        },
+        run=_policy_runner(),
+    ) == 1
+    assert "Duplicate ADR 0128" in capsys.readouterr().err
+
+
 def test_event_file_overrides_environment_and_selects_pull_request_mode(monkeypatch, tmp_path):
     monkeypatch.setenv("GITHUB_REPOSITORY", REPOSITORY)
     event_path = tmp_path / "pr-event.json"
@@ -778,6 +800,31 @@ def test_finalize_multiple_placeholders_sorts_paths_and_mappings(monkeypatch, tm
     readme = (root / "docs" / "adr" / "README.md").read_text(encoding="utf-8")
     assert "[131](0131-alpha.md)" in readme
     assert "[132](0132-zeta.md)" in readme
+
+
+def test_finalize_rejects_placeholder_with_empty_slug_before_writes(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "")
+    _uncoordinated(monkeypatch)
+    before = _finalize_bytes(root)
+
+    with pytest.raises(adr.ADRFinalizeError, match="filename is malformed"):
+        adr.finalize_placeholders(root, run=_finalize_runner())
+
+    assert _finalize_bytes(root) == before
+
+
+def test_finalize_rewrites_only_the_validated_readme_table_row(monkeypatch, tmp_path):
+    root = _finalize_repo(tmp_path, "example-decision")
+    _uncoordinated(monkeypatch)
+    readme = root / "docs" / "adr" / "README.md"
+    prose = "Discuss [XXXX](XXXX-example-decision.md) here.\n\n"
+    readme.write_text(prose + readme.read_text(encoding="utf-8"), encoding="utf-8")
+
+    adr.finalize_placeholders(root, run=_finalize_runner())
+
+    updated = readme.read_text(encoding="utf-8")
+    assert updated.startswith(prose)
+    assert "| [131](0131-example-decision.md) |" in updated
 
 
 def test_finalize_uses_strict_floor_and_live_reservations(monkeypatch, tmp_path):

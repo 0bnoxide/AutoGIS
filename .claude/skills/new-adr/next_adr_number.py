@@ -360,12 +360,13 @@ def policy_check(
     run=None,
 ) -> list[str]:
     """Validate checkout plus authoritative PR/base/open-PR state."""
+    pull_request_event = event_name in {"pull_request", "pull_request_target"}
     local_errors = _tree_policy_errors(
-        _local_adr_paths(repo_root), allow_placeholders=event_name == "pull_request"
+        _local_adr_paths(repo_root), allow_placeholders=pull_request_event
     )
     if event_name == "push":
         return local_errors
-    if event_name != "pull_request":
+    if not pull_request_event:
         raise ADRStateUnavailable("Unsupported CI event.")
     try:
         pull = event["pull_request"]
@@ -578,6 +579,9 @@ def _finalize_plan(repo_root: Path, run, environ):
     placeholders = sorted(adr_dir.glob("XXXX-*.md"), key=lambda path: path.name)
     if not placeholders:
         raise ADRFinalizeError("No root ADR placeholders were found.")
+    if any(not _is_placeholder(path.relative_to(repo_root).as_posix())
+           for path in placeholders):
+        raise ADRFinalizeError("Placeholder ADR filename is malformed.")
     originals = {path: path.read_bytes() for path in placeholders}
     readme = adr_dir / "README.md"
     originals[readme] = readme.read_bytes()
@@ -642,7 +646,11 @@ def _finalize_plan(repo_root: Path, run, environ):
             number = int(mapping.new_path.name[:4])
             old = f"[XXXX]({mapping.old_path.name})"
             new = f"[{number:03d}]({mapping.new_path.name})"
-            new_readme = new_readme.replace(old, new, 1)
+            new_readme = "".join(
+                line.replace(old, new, 1)
+                if line.startswith("|") and old in line else line
+                for line in new_readme.splitlines(keepends=True)
+            )
         updates = {
             mapping.new_path: originals[mapping.old_path].replace(
                 b"# ADR-XXXX", f"# ADR-{int(mapping.new_path.name[:4]):04d}".encode(), 1
@@ -753,8 +761,10 @@ def main(argv=None, environ=None, run=None, repo_root=None) -> int:
     modes.add_argument("--policy-check", action="store_true")
     modes.add_argument("--finalize", action="store_true")
     parser.add_argument("--event-file")
+    parser.add_argument("--repo-root")
     args = parser.parse_args(argv)
-    root = repo_root or Path(__file__).resolve().parents[3]
+    root = (Path(args.repo_root).resolve() if args.repo_root
+            else repo_root or Path(__file__).resolve().parents[3])
     if args.check:
         _check()
         return 0
