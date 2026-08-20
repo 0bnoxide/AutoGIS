@@ -19,6 +19,7 @@ from typing import Optional
 
 from ..common.qa import QACollector, SEV_WARNING
 from .boring_log_report import read_boring_records
+from .sticklog import uscs_hatch
 
 Point = tuple  # (northing, easting)
 
@@ -188,12 +189,24 @@ def render_profile(placements: list, out_path: Path, *, title: str = "",
             bottom = ground - iv["bottom_depth"]
             ax.add_patch(Rectangle(
                 (p.station_ft - col_width / 2, bottom), col_width, top - bottom,
-                edgecolor="black", facecolor="#d9c9a3", linewidth=0.5))
+                edgecolor="black", facecolor="#d9c9a3",
+                hatch=uscs_hatch(iv.get("uscs")), linewidth=0.5))
             if iv.get("uscs"):
                 ax.text(p.station_ft, (top + bottom) / 2, iv["uscs"],
                         ha="center", va="center", fontsize=6)
         ax.text(p.station_ft, ground + 1, p.boring_id,
                 ha="center", va="bottom", fontsize=8, fontweight="bold")
+    if drawable:
+        # Explicit limits: text artists never autoscale, so a boring with no
+        # lithology patches would otherwise leave its label outside the view
+        # and bbox_inches="tight" would balloon the canvas to reach it
+        # (minutes-long renders and enormous files).
+        stations = [p.station_ft for p in drawable]
+        grounds = [p.location["ground_elevation"] for p in drawable]
+        floors = [g - iv["bottom_depth"]
+                  for p, g in zip(drawable, grounds) for iv in p.lithology]
+        ax.set_xlim(min(stations) - col_width, max(stations) + col_width)
+        ax.set_ylim(min(floors, default=min(grounds)) - 2, max(grounds) + 3)
     ax.set_xlabel("Station (ft)")
     ax.set_ylabel("Elevation (ft)")
     if title:

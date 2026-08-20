@@ -4081,6 +4081,54 @@ def generate_subsurface_profile_cmd(db_path, out_path, boring_a, boring_b,
     _render_qa(qa, report, fail_on)
 
 
+@envmon.command("gen-sticklogs")
+@click.option("--db", "db_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Boring-log SQLite database (from create-boring-log-db).")
+@click.option("--out-dir", "out_dir", required=True,
+              type=click.Path(file_okay=False),
+              help="Directory for the per-boring sticklog_<id>.png files.")
+@click.option("--borings", default="",
+              help="Comma-separated boring IDs (default: all).")
+@click.option("--fmt", type=click.Choice(["png", "svg"]), default="png",
+              show_default=True, help="Output image format.")
+@qa_report_options
+def gen_sticklogs_cmd(db_path, out_dir, borings, fmt, report, fail_on):
+    """Render a 2D sticklog figure per boring from the boring database
+    (headless).
+
+    Each sticklog is a depth-indexed, USCS-hatched lithology column with
+    sample brackets, a well-construction column, interval descriptions with
+    PID and a water-level marker. Borings with no lithology are skipped
+    with a QA warning.
+
+    Rendering requires matplotlib: pip install "autogis[profile]".
+    """
+    from autogis.core.common.qa import QACollector, SEV_ERROR
+    from autogis.core.envmon.create_boring_log_database import (
+        validate_boring_log_database)
+    from autogis.core.envmon.sticklog import generate_sticklogs
+    qa = QACollector()
+    validate_boring_log_database(Path(db_path), qa)
+    if qa.has_blocking():
+        _render_qa(qa, report, fail_on)
+        return
+    ids = [b.strip() for b in borings.split(",") if b.strip()] or None
+    try:
+        paths = generate_sticklogs(Path(db_path), Path(out_dir),
+                                   boring_ids=ids, fmt=fmt, qa=qa)
+    except ImportError as exc:
+        raise click.ClickException(str(exc))
+    if not paths:
+        qa.add(SEV_ERROR, "no_sticklogs",
+               f"No sticklogs rendered from {db_path} (no matching borings "
+               f"with lithology).")
+        _render_qa(qa, report, fail_on)
+        return
+    click.echo(f"Wrote {len(paths)} sticklog(s) -> {out_dir}")
+    _render_qa(qa, report, fail_on)
+
+
 @envmon.command("generate-inspection-report")
 @click.option("--inspections", "inspections_csv", required=True,
               type=click.Path(exists=True, dir_okay=False),
