@@ -176,6 +176,26 @@ def test_write_outputs_disambiguates_colliding_filenames(tmp_path):
                for r in qa.records)
 
 
+def test_write_outputs_disambiguates_case_insensitive_filenames(tmp_path):
+    docs = [
+        build_boring_log(
+            boring_id, location=dict(LOCATION, boring_id=boring_id),
+            lithology=[], samples=[], construction=[], groundwater=[], photos=[])
+        for boring_id in ("B-1", "b-1", "B-1_2")
+    ]
+    qa = QACollector()
+
+    paths = write_outputs(docs, tmp_path / "logs", qa=qa)
+
+    names = {p.name for p in paths if p.name.startswith("boring_log_")}
+    assert names == {
+        "boring_log_B-1.md", "boring_log_b-1_2.md",
+        "boring_log_B-1_2_2.md",
+    }
+    assert any(r.category == "boring_log_filename_collision"
+               for r in qa.records)
+
+
 # ---- read_boring_records (the read API 8.0a never shipped) ------------------
 
 def _seed_db(tmp_path):

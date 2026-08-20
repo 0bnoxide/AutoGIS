@@ -289,13 +289,17 @@ def _safe_name(boring_id: str) -> str:
 
 
 def _unique_safe_name(boring_id: str, taken: set) -> tuple:
-    """Reserve a deterministic sanitized name, suffixing collisions."""
+    """Reserve a deterministic sanitized name, suffixing collisions.
+
+    ``taken`` stores case-folded keys so names remain unique on the
+    case-insensitive filesystems commonly used by Windows deployments.
+    """
     name = _safe_name(boring_id)
     final, n = name, 1
-    while final in taken:
+    while final.casefold() in taken:
         n += 1
         final = f"{name}_{n}"
-    taken.add(final)
+    taken.add(final.casefold())
     return final, final != name
 
 
