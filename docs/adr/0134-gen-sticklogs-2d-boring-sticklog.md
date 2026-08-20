@@ -28,16 +28,26 @@ Ship `envmon gen-sticklogs` → `core/envmon/sticklog.py`:
 - **Depth-based, not elevation-based:** the y-axis is feet below ground
   surface, so a boring with no ground elevation still renders (unlike the
   profile, which must anchor columns to a shared elevation datum).
-- **Per-figure content (v1):** lithology bands with in-band USCS and
-  alongside `primary_material, description` text; the first
+- **Per-figure content:** hatched lithology bands (USCS-derived texture via
+  `uscs_hatch`, a first-letter heuristic — G/S/M/C/O/P — shared with
+  `render_profile` so both renderers stay consistent) with in-band USCS
+  labels; sample intervals as a bracket lane left of the column with rotated
+  sample IDs; a well-construction column right of the lithology column
+  (screen components hatched) drawn only when construction rows exist;
+  `primary_material, description — PID n ppm` text alongside; the first
   `GroundwaterObservations.depth_to_water` as a dashed water-level line with
-  marker. Well construction, samples and PID are not drawn.
+  marker. PID is rendered as text, not a second axis (one-axis rule).
 - **Skip, don't fake:** a boring with no lithology intervals is skipped with
   a QA warning (`sticklog_no_lithology`) rather than rendered empty — same
   posture as `render_profile`'s missing-ground-elevation skip.
-- **Outputs** are fixed `sticklog_<id>.png` per boring into `--out-dir`
-  (`--borings` filters); the CLI validates the DB first via 8.0a's
-  `validate_boring_log_database`, matching `gen-boring-logs`.
+- **Outputs** are `sticklog_<id>.png` or `.svg` per boring into `--out-dir`
+  (`--fmt png|svg`, default png; `--borings` filters); the CLI validates the
+  DB first via 8.0a's `validate_boring_log_database`, matching
+  `gen-boring-logs`.
+- **Drive-by fix in `render_profile`** (issue #509): explicit axes limits —
+  text artists never autoscale, so a drawable boring with no lithology
+  patches left its station label outside the autoscaled view and
+  `bbox_inches="tight"` ballooned the canvas (~160 s renders, huge files).
 - Registered in `_REGISTRY_SEED` as a post-roadmap extra (`roadmap_id=""`),
   CLOUD, `cartography` — the same registration shape as
   `generate-subsurface-profile` (no `TOOLS` entry: CLOUD, never guarded).
@@ -52,13 +62,16 @@ Ship `envmon gen-sticklogs` → `core/envmon/sticklog.py`:
 
 ### Negative
 
-- One neutral fill, no USCS hatch patterns or per-material color — matching
-  the profile renderer. Add hatches to both renderers together if a
-  deliverable requires them.
-- Samples/well construction/PID are absent from the figure; the 8.0c
-  Markdown log remains the complete record.
-- PNG only (matplotlib infers format from extension internally, but the CLI
-  hard-codes `.png` names); add a format option when SVG is actually needed.
+- The USCS hatch map is a first-letter heuristic, not the full ASTM D2488
+  graphic standard (dual symbols key off the primary fraction; the
+  `LithologyIntervals.graphic_pattern` column is ignored because its
+  vocabulary is undefined). Swap in per-symbol patterns if a deliverable
+  requires the ASTM fills.
+- Well-construction component labels are drawn only for components thicker
+  than 4% of total depth (thin seals would render as unreadable smears);
+  thin components remain visible but unlabeled.
+- Blow counts/recovery are not on the figure; the 8.0c Markdown log remains
+  the complete record.
 
 ## Alternatives considered
 

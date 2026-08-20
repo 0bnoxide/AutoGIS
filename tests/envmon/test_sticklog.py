@@ -7,10 +7,12 @@ from click.testing import CliRunner
 from autogis.adapters.cli import autogis
 from autogis.core.common.qa import QACollector
 from autogis.core.common.schema.boring import (
-    BoringLocation, GroundwaterObservation, LithologyInterval)
+    BoringLocation, BoringSample, GroundwaterObservation, LithologyInterval,
+    WellConstruction)
 from autogis.core.common.sqlite_schema import insert_rows
 from autogis.core.envmon.create_boring_log_database import create_boring_log_database
-from autogis.core.envmon.sticklog import generate_sticklogs, render_sticklog
+from autogis.core.envmon.sticklog import (
+    _interval_label, generate_sticklogs, render_sticklog, uscs_hatch)
 
 
 def _loc(boring_id, total_depth_ft=None):
@@ -37,10 +39,40 @@ def _seed_db(tmp_path):
             GroundwaterObservation(boring_id="B-1", observation_datetime=None,
                                    depth_to_water=8.5).to_row(),
         ])
+        insert_rows(conn, BoringSample, [
+            BoringSample(sample_id="B-1-S1", boring_id="B-1",
+                         sample_type="split spoon", top_depth=4.0,
+                         bottom_depth=6.0).to_row(),
+        ])
+        insert_rows(conn, WellConstruction, [
+            WellConstruction(boring_id="B-1", component_type="riser",
+                             top_depth=0.0, bottom_depth=7.0).to_row(),
+            WellConstruction(boring_id="B-1", component_type="screen",
+                             top_depth=7.0, bottom_depth=12.0).to_row(),
+        ])
         conn.commit()
     finally:
         conn.close()
     return db
+
+
+# ---- pure helpers --------------------------------------------------------------
+
+def test_uscs_hatch_maps_primary_letter():
+    assert uscs_hatch("CL") == "//"
+    assert uscs_hatch("SP-SM") == ".."   # dual symbol -> primary fraction
+    assert uscs_hatch("gw") == "oo"      # case-insensitive
+    assert uscs_hatch("") == ""
+    assert uscs_hatch(None) == ""
+    assert uscs_hatch("XX") == ""        # unknown letter -> no hatch
+
+
+def test_interval_label_includes_pid():
+    assert _interval_label({"primary_material": "clay", "description": "stiff",
+                            "pid_ppm": 2.1}) == "clay, stiff — PID 2.1 ppm"
+    assert _interval_label({"pid_ppm": 0.0}) == "PID 0.0 ppm"
+    assert _interval_label({"primary_material": "sand",
+                            "pid_ppm": None}) == "sand"
 
 
 # ---- render_sticklog ---------------------------------------------------------
@@ -98,6 +130,20 @@ def test_gen_sticklogs_cli_renders(tmp_path):
     assert result.exit_code == 0, result.output
     assert (out_dir / "sticklog_B-1.png").exists()
     assert "1 sticklog" in result.output
+
+
+def test_gen_sticklogs_cli_svg_format(tmp_path):
+    pytest.importorskip("matplotlib")
+    db = _seed_db(tmp_path)
+    out_dir = tmp_path / "out"
+    result = CliRunner().invoke(autogis, [
+        "envmon", "gen-sticklogs", "--db", str(db), "--out-dir", str(out_dir),
+        "--borings", "B-1", "--fmt", "svg",
+    ])
+    assert result.exit_code == 0, result.output
+    svg = out_dir / "sticklog_B-1.svg"
+    assert svg.exists()
+    assert b"<svg" in svg.read_bytes()[:1024]
 
 
 def test_gen_sticklogs_cli_no_matching_borings_fails(tmp_path):

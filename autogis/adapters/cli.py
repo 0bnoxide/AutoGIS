@@ -4090,14 +4090,17 @@ def generate_subsurface_profile_cmd(db_path, out_path, boring_a, boring_b,
               help="Directory for the per-boring sticklog_<id>.png files.")
 @click.option("--borings", default="",
               help="Comma-separated boring IDs (default: all).")
+@click.option("--fmt", type=click.Choice(["png", "svg"]), default="png",
+              show_default=True, help="Output image format.")
 @qa_report_options
-def gen_sticklogs_cmd(db_path, out_dir, borings, report, fail_on):
+def gen_sticklogs_cmd(db_path, out_dir, borings, fmt, report, fail_on):
     """Render a 2D sticklog figure per boring from the boring database
     (headless).
 
-    Each sticklog is a depth-indexed lithology column with USCS labels,
-    interval descriptions and a water-level marker. Borings with no
-    lithology are skipped with a QA warning.
+    Each sticklog is a depth-indexed, USCS-hatched lithology column with
+    sample brackets, a well-construction column, interval descriptions with
+    PID and a water-level marker. Borings with no lithology are skipped
+    with a QA warning.
 
     Rendering requires matplotlib: pip install "autogis[profile]".
     """
@@ -4113,7 +4116,7 @@ def gen_sticklogs_cmd(db_path, out_dir, borings, report, fail_on):
     ids = [b.strip() for b in borings.split(",") if b.strip()] or None
     try:
         paths = generate_sticklogs(Path(db_path), Path(out_dir),
-                                   boring_ids=ids, qa=qa)
+                                   boring_ids=ids, fmt=fmt, qa=qa)
     except ImportError as exc:
         raise click.ClickException(str(exc))
     if not paths:
