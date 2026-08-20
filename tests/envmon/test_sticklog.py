@@ -12,7 +12,8 @@ from autogis.core.common.schema.boring import (
 from autogis.core.common.sqlite_schema import insert_rows
 from autogis.core.envmon.create_boring_log_database import create_boring_log_database
 from autogis.core.envmon.sticklog import (
-    _interval_label, generate_sticklogs, render_sticklog, uscs_hatch)
+    _depth_extent, _interval_label, generate_sticklogs, render_sticklog,
+    uscs_hatch)
 
 
 def _loc(boring_id, total_depth_ft=None):
@@ -132,30 +133,41 @@ def test_render_sticklog_drops_rows_missing_depths_with_warning(tmp_path):
 
 
 def test_generate_sticklogs_disambiguates_colliding_filenames(tmp_path):
-    # "B 1" and "B_1" both sanitize to B_1 — the second must not silently
-    # overwrite the first.
+    # "B 1" and "B_1" both sanitize to B_1, and the suffixed B_1_2 must not
+    # collide with a genuine boring ID "B_1_2" either (PR #511 review): every
+    # reported output must exist as its own file.
     pytest.importorskip("matplotlib")
     db = tmp_path / "borings.sqlite"
     create_boring_log_database(db)
     conn = sqlite3.connect(str(db))
     try:
-        insert_rows(conn, BoringLocation, [_loc("B 1"), _loc("B_1")])
+        insert_rows(conn, BoringLocation,
+                    [_loc("B 1"), _loc("B_1"), _loc("B_1_2")])
         insert_rows(conn, LithologyInterval, [
-            LithologyInterval(boring_id="B 1", top_depth=0.0,
-                              bottom_depth=5.0, uscs="CL").to_row(),
-            LithologyInterval(boring_id="B_1", top_depth=0.0,
-                              bottom_depth=9.0, uscs="SM").to_row(),
-        ])
+            LithologyInterval(boring_id=b, top_depth=0.0,
+                              bottom_depth=5.0, uscs="CL").to_row()
+            for b in ("B 1", "B_1", "B_1_2")])
         conn.commit()
     finally:
         conn.close()
     qa = QACollector()
     paths = generate_sticklogs(db, tmp_path / "out", qa=qa)
-    assert sorted(p.name for p in paths) == [
-        "sticklog_B_1.png", "sticklog_B_1_2.png"]
-    assert all(p.exists() for p in paths)
+    assert len(paths) == 3
+    assert sorted(p.name for p in paths) == sorted(
+        p.name for p in (tmp_path / "out").glob("*.png"))
     assert any(r.category == "sticklog_filename_collision"
                for r in qa.records)
+
+
+def test_depth_extent_covers_all_overlays():
+    # A sample/screen/DTW deeper than the lithology column must extend the
+    # y-limit, or schema-valid rows would render clipped (PR #511 review).
+    lith = [{"bottom_depth": 10.0}]
+    assert _depth_extent(lith, [], [], None, None) == 10.0
+    assert _depth_extent(lith, [{"bottom_depth": 50.0}], [], None, None) == 50.0
+    assert _depth_extent(lith, [], [{"bottom_depth": 30.0}], None, None) == 30.0
+    assert _depth_extent(lith, [], [], 42.0, None) == 42.0
+    assert _depth_extent(lith, [], [], None, 25.0) == 25.0
 
 
 # ---- CLI ----------------------------------------------------------------------

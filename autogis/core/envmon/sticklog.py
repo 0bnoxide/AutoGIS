@@ -60,6 +60,19 @@ def _with_depths(rows: list, boring_id: str, kind: str,
     return sorted(keep, key=lambda r: r["top_depth"])
 
 
+def _depth_extent(lithology: list, samples: list, construction: list,
+                  dtw: Optional[float], total_depth_ft) -> float:
+    """Deepest drawable depth — every rendered overlay counts, not just
+    lithology, so a sample or screen below the lithology column is never
+    clipped by the y-limit."""
+    return max(
+        [iv["bottom_depth"] for iv in lithology]
+        + [s["bottom_depth"] for s in samples]
+        + [c["bottom_depth"] for c in construction]
+        + ([dtw] if dtw is not None else [])
+        + ([total_depth_ft] if total_depth_ft else []))
+
+
 def _first_water_depth(groundwater: list) -> Optional[float]:
     """First recorded depth-to-water, in observation order (rows with no
     depth are skipped)."""
@@ -118,8 +131,9 @@ def render_sticklog(
                            "sample", qa)
     construction = _with_depths(bundle.get("construction", []), boring_id,
                                 "construction", qa)
-    depth_max = max(max(iv["bottom_depth"] for iv in lithology),
-                    loc.get("total_depth_ft") or 0.0)
+    dtw = _first_water_depth(bundle.get("groundwater", []))
+    depth_max = _depth_extent(lithology, samples, construction, dtw,
+                              loc.get("total_depth_ft"))
     text_x = 1.55 if construction else 1.15  # text shifts right of well column
 
     fig, ax = plt.subplots(figsize=(4.5, max(6.0, depth_max * 0.12)))
@@ -165,7 +179,6 @@ def render_sticklog(
                     bbox={"facecolor": "white", "edgecolor": "none",
                           "pad": 1.0})
 
-    dtw = _first_water_depth(bundle.get("groundwater", []))
     if dtw is not None:
         ax.axhline(dtw, color="#2b6cb0", linestyle="--", linewidth=0.8)
         ax.plot(-0.5, dtw, marker="v", color="#2b6cb0", clip_on=False)
@@ -208,19 +221,22 @@ def generate_sticklogs(
     bundles = read_boring_records(Path(db_path), boring_ids=boring_ids, qa=qa)
     out = Path(out_dir)
     paths = []
-    seen: dict = {}  # sanitized name -> count, so "B 1"/"B_1" can't collide
+    taken: set = set()  # final filenames, so a suffixed name can't collide
+    # with a genuine boring ID that sanitizes to the same thing (B_1_2)
     for boring_id, bundle in bundles.items():
         name = _safe_name(boring_id)
-        n = seen.get(name, 0)
-        seen[name] = n + 1
-        if n and qa is not None:
+        final, n = name, 1
+        while final in taken:
+            n += 1
+            final = f"{name}_{n}"
+        taken.add(final)
+        if final != name and qa is not None:
             qa.add(SEV_WARNING, "sticklog_filename_collision",
                    f"Boring {boring_id!r} sanitizes to the same filename as "
-                   f"an earlier boring; writing sticklog_{name}_{n + 1}.{fmt} "
+                   f"an earlier boring; writing sticklog_{final}.{fmt} "
                    f"instead.")
-        suffix = f"_{n + 1}" if n else ""
         p = render_sticklog(boring_id, bundle,
-                            out / f"sticklog_{name}{suffix}.{fmt}", qa=qa)
+                            out / f"sticklog_{final}.{fmt}", qa=qa)
         if p is not None:
             paths.append(p)
     return paths
