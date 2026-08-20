@@ -112,6 +112,52 @@ def test_generate_sticklogs_end_to_end(tmp_path):
     assert "B-EMPTY" in warning.message
 
 
+def test_render_sticklog_drops_rows_missing_depths_with_warning(tmp_path):
+    # A NULL depth written by an external tool (schema validation checks
+    # columns, not data) must warn and skip, not crash the render.
+    pytest.importorskip("matplotlib")
+    bundle = {
+        "location": {},
+        "lithology": [
+            {"top_depth": 0.0, "bottom_depth": 5.0, "uscs": "CL"},
+            {"top_depth": None, "bottom_depth": 8.0, "uscs": "SM"},
+        ],
+        "samples": [{"sample_id": "S1", "top_depth": None, "bottom_depth": 2.0}],
+    }
+    qa = QACollector()
+    out = render_sticklog("B-1", bundle, tmp_path / "stick.png", qa=qa)
+    assert out is not None and out.exists()
+    assert {r.category for r in qa.records} >= {
+        "sticklog_lithology_missing_depth", "sticklog_sample_missing_depth"}
+
+
+def test_generate_sticklogs_disambiguates_colliding_filenames(tmp_path):
+    # "B 1" and "B_1" both sanitize to B_1 — the second must not silently
+    # overwrite the first.
+    pytest.importorskip("matplotlib")
+    db = tmp_path / "borings.sqlite"
+    create_boring_log_database(db)
+    conn = sqlite3.connect(str(db))
+    try:
+        insert_rows(conn, BoringLocation, [_loc("B 1"), _loc("B_1")])
+        insert_rows(conn, LithologyInterval, [
+            LithologyInterval(boring_id="B 1", top_depth=0.0,
+                              bottom_depth=5.0, uscs="CL").to_row(),
+            LithologyInterval(boring_id="B_1", top_depth=0.0,
+                              bottom_depth=9.0, uscs="SM").to_row(),
+        ])
+        conn.commit()
+    finally:
+        conn.close()
+    qa = QACollector()
+    paths = generate_sticklogs(db, tmp_path / "out", qa=qa)
+    assert sorted(p.name for p in paths) == [
+        "sticklog_B_1.png", "sticklog_B_1_2.png"]
+    assert all(p.exists() for p in paths)
+    assert any(r.category == "sticklog_filename_collision"
+               for r in qa.records)
+
+
 # ---- CLI ----------------------------------------------------------------------
 
 def test_gen_sticklogs_in_help():

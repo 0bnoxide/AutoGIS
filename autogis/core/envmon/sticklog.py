@@ -44,6 +44,22 @@ def uscs_hatch(uscs: Optional[str]) -> str:
     return _USCS_HATCHES.get((uscs or "")[:1].upper(), "")
 
 
+def _with_depths(rows: list, boring_id: str, kind: str,
+                 qa: Optional[QACollector]) -> list:
+    """Rows with numeric top/bottom depths, sorted by top; depth-less rows
+    are undrawable and dropped with a QA warning (same posture as the
+    import-side parsers) — a NULL written by an external tool must not
+    crash the render."""
+    keep = [r for r in rows
+            if r.get("top_depth") is not None
+            and r.get("bottom_depth") is not None]
+    if len(keep) != len(rows) and qa is not None:
+        qa.add(SEV_WARNING, f"sticklog_{kind}_missing_depth",
+               f"Boring {boring_id}: {len(rows) - len(keep)} {kind} row(s) "
+               f"dropped (missing top/bottom depth).")
+    return sorted(keep, key=lambda r: r["top_depth"])
+
+
 def _first_water_depth(groundwater: list) -> Optional[float]:
     """First recorded depth-to-water, in observation order (rows with no
     depth are skipped)."""
@@ -88,8 +104,8 @@ def render_sticklog(
     except ImportError as exc:
         raise ImportError(_MATPLOTLIB_HINT) from exc
 
-    lithology = sorted(bundle.get("lithology", []),
-                       key=lambda iv: iv["top_depth"])
+    lithology = _with_depths(bundle.get("lithology", []), boring_id,
+                             "lithology", qa)
     if not lithology:
         if qa is not None:
             qa.add(SEV_WARNING, "sticklog_no_lithology",
@@ -98,9 +114,10 @@ def render_sticklog(
         return None
 
     loc = bundle.get("location", {})
-    samples = sorted(bundle.get("samples", []), key=lambda s: s["top_depth"])
-    construction = sorted(bundle.get("construction", []),
-                          key=lambda c: c["top_depth"])
+    samples = _with_depths(bundle.get("samples", []), boring_id,
+                           "sample", qa)
+    construction = _with_depths(bundle.get("construction", []), boring_id,
+                                "construction", qa)
     depth_max = max(max(iv["bottom_depth"] for iv in lithology),
                     loc.get("total_depth_ft") or 0.0)
     text_x = 1.55 if construction else 1.15  # text shifts right of well column
@@ -191,10 +208,19 @@ def generate_sticklogs(
     bundles = read_boring_records(Path(db_path), boring_ids=boring_ids, qa=qa)
     out = Path(out_dir)
     paths = []
+    seen: dict = {}  # sanitized name -> count, so "B 1"/"B_1" can't collide
     for boring_id, bundle in bundles.items():
+        name = _safe_name(boring_id)
+        n = seen.get(name, 0)
+        seen[name] = n + 1
+        if n and qa is not None:
+            qa.add(SEV_WARNING, "sticklog_filename_collision",
+                   f"Boring {boring_id!r} sanitizes to the same filename as "
+                   f"an earlier boring; writing sticklog_{name}_{n + 1}.{fmt} "
+                   f"instead.")
+        suffix = f"_{n + 1}" if n else ""
         p = render_sticklog(boring_id, bundle,
-                            out / f"sticklog_{_safe_name(boring_id)}.{fmt}",
-                            qa=qa)
+                            out / f"sticklog_{name}{suffix}.{fmt}", qa=qa)
         if p is not None:
             paths.append(p)
     return paths
