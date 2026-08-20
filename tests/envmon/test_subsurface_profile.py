@@ -153,6 +153,26 @@ def test_render_profile_skips_boring_with_missing_ground_elevation(tmp_path):
     assert "B-OK" not in warning.message
 
 
+def test_render_profile_drops_lithology_missing_depths(tmp_path):
+    pytest.importorskip("matplotlib")
+    placements = [ProfileBoringPlacement(
+        boring_id="B-1", station_ft=0.0, offset_ft=0.0,
+        location={"ground_elevation": 100.0},
+        lithology=[
+            {"top_depth": 0.0, "bottom_depth": 5.0, "uscs": "CL"},
+            {"top_depth": None, "bottom_depth": 8.0, "uscs": "SM"},
+        ])]
+    qa = QACollector()
+
+    out = render_profile(placements, tmp_path / "profile.png", qa=qa)
+
+    assert out.exists()
+    warning = next(
+        r for r in qa.records
+        if r.category == "profile_lithology_missing_depth")
+    assert "B-1" in warning.message
+
+
 def test_build_profile_end_to_end(tmp_path):
     locations = [_loc("B-A", 0.0, 0.0), _loc("B-B", 100.0, 0.0),
                  _loc("B-MID", 50.0, 5.0)]

@@ -4028,7 +4028,7 @@ def gen_boring_logs_cmd(db_path, out_dir, borings, report, fail_on):
         return
     docs = [build_boring_log(bid, qa=qa, **bundle)
             for bid, bundle in bundles.items()]
-    paths = write_outputs(docs, Path(out_dir))
+    paths = write_outputs(docs, Path(out_dir), qa=qa)
     click.echo(f"Wrote {len(paths)} file(s) for {len(docs)} boring(s) "
                f"-> {out_dir}")
     _render_qa(qa, report, fail_on)

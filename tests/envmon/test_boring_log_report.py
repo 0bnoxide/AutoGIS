@@ -156,6 +156,26 @@ def test_write_outputs_produces_all_files(tmp_path):
         encoding="utf-8")
 
 
+def test_write_outputs_disambiguates_colliding_filenames(tmp_path):
+    docs = [
+        build_boring_log(
+            boring_id, location=dict(LOCATION, boring_id=boring_id),
+            lithology=[], samples=[], construction=[], groundwater=[], photos=[])
+        for boring_id in ("B 1", "B_1", "B_1_2")
+    ]
+    qa = QACollector()
+
+    paths = write_outputs(docs, tmp_path / "logs", qa=qa)
+
+    names = {p.name for p in paths if p.name.startswith("boring_log_")}
+    assert names == {
+        "boring_log_B_1.md", "boring_log_B_1_2.md",
+        "boring_log_B_1_2_2.md",
+    }
+    assert any(r.category == "boring_log_filename_collision"
+               for r in qa.records)
+
+
 # ---- read_boring_records (the read API 8.0a never shipped) ------------------
 
 def _seed_db(tmp_path):
@@ -220,6 +240,33 @@ def test_cli_gen_boring_logs_end_to_end(tmp_path):
     assert (out_dir / "sample_summary.csv").exists()
     # B-2 has no samples -> WARNING surfaced but not fatal by default
     assert "no_samples" in result.output
+
+
+def test_cli_gen_boring_logs_drops_rows_missing_depths(tmp_path):
+    db = _seed_db(tmp_path)
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute(
+            'UPDATE "LithologyIntervals" SET top_depth = NULL '
+            "WHERE boring_id = 'B-1' AND top_depth = 5.0")
+        conn.execute(
+            'UPDATE "BoringSamples" SET top_depth = NULL '
+            "WHERE boring_id = 'B-1'")
+        conn.execute(
+            'UPDATE "WellConstruction" SET bottom_depth = NULL '
+            "WHERE boring_id = 'B-1' AND top_depth = 10.0")
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = CliRunner().invoke(autogis, [
+        "envmon", "gen-boring-logs", "--db", str(db),
+        "--out-dir", str(tmp_path / "boring_logs")])
+
+    assert result.exit_code == 0, result.output
+    assert "boring_log_lithology_missing_depth" in result.output
+    assert "boring_log_sample_missing_depth" in result.output
+    assert "boring_log_construction_missing_depth" in result.output
 
 
 def test_cli_gen_boring_logs_borings_filter(tmp_path):

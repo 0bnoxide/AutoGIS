@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..common.qa import QACollector, SEV_WARNING
-from .boring_log_report import read_boring_records
+from .boring_log_report import _with_depths, read_boring_records
 from .sticklog import uscs_hatch
 
 Point = tuple  # (northing, easting)
@@ -182,11 +182,16 @@ def render_profile(placements: list, out_path: Path, *, title: str = "",
 
     fig, ax = plt.subplots(figsize=(max(6, len(drawable) * 1.5), 8))
     col_width = max((p.station_ft for p in drawable), default=1.0) * 0.02 + 1.0
+    floors = []
     for p in drawable:
         ground = p.location["ground_elevation"]
-        for iv in p.lithology:
+        lithology = _with_depths(
+            p.lithology, p.boring_id, "lithology", qa,
+            warning_prefix="profile")
+        for iv in lithology:
             top = ground - iv["top_depth"]
             bottom = ground - iv["bottom_depth"]
+            floors.append(bottom)
             ax.add_patch(Rectangle(
                 (p.station_ft - col_width / 2, bottom), col_width, top - bottom,
                 edgecolor="black", facecolor="#d9c9a3",
@@ -203,8 +208,6 @@ def render_profile(placements: list, out_path: Path, *, title: str = "",
         # (minutes-long renders and enormous files).
         stations = [p.station_ft for p in drawable]
         grounds = [p.location["ground_elevation"] for p in drawable]
-        floors = [g - iv["bottom_depth"]
-                  for p, g in zip(drawable, grounds) for iv in p.lithology]
         ax.set_xlim(min(stations) - col_width, max(stations) + col_width)
         ax.set_ylim(min(floors, default=min(grounds)) - 2, max(grounds) + 3)
     ax.set_xlabel("Station (ft)")
