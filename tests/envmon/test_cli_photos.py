@@ -1,6 +1,5 @@
 import json
 import os
-import stat
 import zipfile
 from pathlib import Path
 
@@ -272,18 +271,22 @@ def test_photos_points_preflights_all_outputs_before_writing(
 
 
 def test_photos_points_preflights_read_only_output_before_writing(
-        tmp_path, make_photo_jpeg):
+        tmp_path, make_photo_jpeg, monkeypatch):
     h = _harvest(tmp_path, make_photo_jpeg)
     out_csv = tmp_path / "created.csv"
     out_geojson = tmp_path / "locked.geojson"
     out_geojson.write_text("preserve", encoding="utf-8")
-    out_geojson.chmod(stat.S_IREAD)
-    try:
-        res = CliRunner().invoke(cli, [
-            "envmon", "photos", "points", "--harvest-dir", str(h),
-            "--out-csv", str(out_csv), "--out-geojson", str(out_geojson)])
-    finally:
-        out_geojson.chmod(stat.S_IWRITE)
+    real_open = Path.open
+
+    def deny_locked_write(path, mode="r", *args, **kwargs):
+        if path == out_geojson and mode == "r+b":
+            raise PermissionError("read-only test target")
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny_locked_write)
+    res = CliRunner().invoke(cli, [
+        "envmon", "photos", "points", "--harvest-dir", str(h),
+        "--out-csv", str(out_csv), "--out-geojson", str(out_geojson)])
 
     assert res.exit_code != 0
     assert "not writable" in res.output
