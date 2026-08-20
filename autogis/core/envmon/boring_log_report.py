@@ -118,6 +118,19 @@ def _md_table(headers: list, rows: list) -> list:
     return lines
 
 
+def _with_depths(rows: list, boring_id: str, kind: str,
+                 qa: Optional[QACollector], *, warning_prefix: str) -> list:
+    """Return depth-bearing rows sorted by top depth; warn on dropped rows."""
+    keep = [r for r in rows
+            if r.get("top_depth") is not None
+            and r.get("bottom_depth") is not None]
+    if len(keep) != len(rows) and qa is not None:
+        qa.add(SEV_WARNING, f"{warning_prefix}_{kind}_missing_depth",
+               f"Boring {boring_id}: {len(rows) - len(keep)} {kind} row(s) "
+               f"dropped (missing top/bottom depth).")
+    return sorted(keep, key=lambda r: r["top_depth"])
+
+
 def _sample_pid(sample: dict, lithology: list) -> Optional[float]:
     """Max PID (ppm) over lithology intervals overlapping the sample interval.
 
@@ -149,6 +162,13 @@ def build_boring_log(
     renders, with an empty sample section and a QA WARNING.
     """
     loc = location
+    lithology = _with_depths(
+        lithology, boring_id, "lithology", qa, warning_prefix="boring_log")
+    samples = _with_depths(
+        samples, boring_id, "sample", qa, warning_prefix="boring_log")
+    construction = _with_depths(
+        construction, boring_id, "construction", qa,
+        warning_prefix="boring_log")
     lines = [f"# Boring Log — {boring_id}", "", "## Header", ""]
     # ponytail: no drilling_method row — the 8.0a schema has no such column
     # (closest fields: completion_type, driller). Add when 8.0a grows one.
@@ -172,23 +192,21 @@ def build_boring_log(
 
     lines += ["", "## Lithologic Column", ""]
     if lithology:
-        ordered = sorted(lithology, key=lambda iv: iv["top_depth"])
         lines += _md_table(
             ["Top (ft)", "Bottom (ft)", "USCS", "Graphic", "Material",
              "Color", "Moisture", "PID (ppm)", "Description"],
             [[iv["top_depth"], iv["bottom_depth"], iv["uscs"],
               iv["graphic_pattern"], iv["primary_material"], iv["color"],
               iv["moisture"], iv["pid_ppm"], iv["description"]]
-             for iv in ordered])
+             for iv in lithology])
     else:
         lines.append("_No lithology intervals recorded._")
 
     lines += ["", "## Samples", ""]
     sample_rows: list = []
     if samples:
-        ordered = sorted(samples, key=lambda s: s["top_depth"])
         table = []
-        for s in ordered:
+        for s in samples:
             pid = _sample_pid(s, lithology)
             table.append([s["sample_id"], s["sample_type"], s["top_depth"],
                           s["bottom_depth"], s["recovery"], s["blow_counts"],
@@ -214,13 +232,12 @@ def build_boring_log(
 
     lines += ["", "## Well Construction", ""]
     if construction:
-        ordered = sorted(construction, key=lambda c: c["top_depth"])
         lines += _md_table(
             ["Top (ft)", "Bottom (ft)", "Component", "Diameter", "Material",
              "Slot Size", "Notes"],
             [[c["top_depth"], c["bottom_depth"], c["component_type"],
               c["diameter"], c["material"], c["slot_size"], c["notes"]]
-             for c in ordered])
+             for c in construction])
     else:
         lines.append("_No well construction records (no well installed)._")
 
@@ -271,7 +288,23 @@ def _safe_name(boring_id: str) -> str:
     return re.sub(r"[^\w.-]", "_", boring_id)
 
 
-def write_outputs(docs: list, out_dir: Path) -> list:
+def _unique_safe_name(boring_id: str, taken: set) -> tuple:
+    """Reserve a deterministic sanitized name, suffixing collisions.
+
+    ``taken`` stores case-folded keys so names remain unique on the
+    case-insensitive filesystems commonly used by Windows deployments.
+    """
+    name = _safe_name(boring_id)
+    final, n = name, 1
+    while final.casefold() in taken:
+        n += 1
+        final = f"{name}_{n}"
+    taken.add(final.casefold())
+    return final, final != name
+
+
+def write_outputs(docs: list, out_dir: Path,
+                  qa: Optional[QACollector] = None) -> list:
     """Write per-boring .md, appendix .md, photo-log .md and sample CSV.
 
     Returns every path written. The photo log and sample CSV are always
@@ -280,8 +313,14 @@ def write_outputs(docs: list, out_dir: Path) -> list:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = []
+    taken: set = set()
     for d in docs:
-        p = out / f"boring_log_{_safe_name(d.boring_id)}.md"
+        name, collided = _unique_safe_name(d.boring_id, taken)
+        if collided and qa is not None:
+            qa.add(SEV_WARNING, "boring_log_filename_collision",
+                   f"Boring {d.boring_id!r} sanitizes to the same filename as "
+                   f"an earlier boring; writing boring_log_{name}.md instead.")
+        p = out / f"boring_log_{name}.md"
         p.write_text(d.markdown, encoding="utf-8")
         paths.append(p)
 

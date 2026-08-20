@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Optional
 
 from ..common.qa import QACollector, SEV_WARNING
-from .boring_log_report import _safe_name, read_boring_records
+from .boring_log_report import (
+    _unique_safe_name, _with_depths, read_boring_records,
+)
 
 _MATPLOTLIB_HINT = ('matplotlib is required to render sticklogs. '
                     'Install with: pip install "autogis[profile]"')
@@ -42,22 +44,6 @@ STICKLOG_FORMATS = ("png", "svg")
 def uscs_hatch(uscs: Optional[str]) -> str:
     """Hatch pattern for a USCS symbol ('' when unknown/blank)."""
     return _USCS_HATCHES.get((uscs or "")[:1].upper(), "")
-
-
-def _with_depths(rows: list, boring_id: str, kind: str,
-                 qa: Optional[QACollector]) -> list:
-    """Rows with numeric top/bottom depths, sorted by top; depth-less rows
-    are undrawable and dropped with a QA warning (same posture as the
-    import-side parsers) — a NULL written by an external tool must not
-    crash the render."""
-    keep = [r for r in rows
-            if r.get("top_depth") is not None
-            and r.get("bottom_depth") is not None]
-    if len(keep) != len(rows) and qa is not None:
-        qa.add(SEV_WARNING, f"sticklog_{kind}_missing_depth",
-               f"Boring {boring_id}: {len(rows) - len(keep)} {kind} row(s) "
-               f"dropped (missing top/bottom depth).")
-    return sorted(keep, key=lambda r: r["top_depth"])
 
 
 def _depth_extent(lithology: list, samples: list, construction: list,
@@ -117,8 +103,9 @@ def render_sticklog(
     except ImportError as exc:
         raise ImportError(_MATPLOTLIB_HINT) from exc
 
-    lithology = _with_depths(bundle.get("lithology", []), boring_id,
-                             "lithology", qa)
+    lithology = _with_depths(
+        bundle.get("lithology", []), boring_id, "lithology", qa,
+        warning_prefix="sticklog")
     if not lithology:
         if qa is not None:
             qa.add(SEV_WARNING, "sticklog_no_lithology",
@@ -127,10 +114,12 @@ def render_sticklog(
         return None
 
     loc = bundle.get("location", {})
-    samples = _with_depths(bundle.get("samples", []), boring_id,
-                           "sample", qa)
-    construction = _with_depths(bundle.get("construction", []), boring_id,
-                                "construction", qa)
+    samples = _with_depths(
+        bundle.get("samples", []), boring_id, "sample", qa,
+        warning_prefix="sticklog")
+    construction = _with_depths(
+        bundle.get("construction", []), boring_id, "construction", qa,
+        warning_prefix="sticklog")
     dtw = _first_water_depth(bundle.get("groundwater", []))
     depth_max = _depth_extent(lithology, samples, construction, dtw,
                               loc.get("total_depth_ft"))
@@ -221,16 +210,10 @@ def generate_sticklogs(
     bundles = read_boring_records(Path(db_path), boring_ids=boring_ids, qa=qa)
     out = Path(out_dir)
     paths = []
-    taken: set = set()  # final filenames, so a suffixed name can't collide
-    # with a genuine boring ID that sanitizes to the same thing (B_1_2)
+    taken: set = set()
     for boring_id, bundle in bundles.items():
-        name = _safe_name(boring_id)
-        final, n = name, 1
-        while final in taken:
-            n += 1
-            final = f"{name}_{n}"
-        taken.add(final)
-        if final != name and qa is not None:
+        final, collided = _unique_safe_name(boring_id, taken)
+        if collided and qa is not None:
             qa.add(SEV_WARNING, "sticklog_filename_collision",
                    f"Boring {boring_id!r} sanitizes to the same filename as "
                    f"an earlier boring; writing sticklog_{final}.{fmt} "
