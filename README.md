@@ -145,6 +145,7 @@ dated snapshot and the tables below supersede it. Per-batch history lives in
 | [UpdateWellElevationsFromLevelLoop](autogis/core/envmon/level_loop.py) | 8.2 | `envmon update-well-elevations` *(registered LOCAL — headless via `--wells-csv`; `--gdb` write path needs arcpy)* | Tool 8.2: push a closed level-loop run's elevations to MonitoringWells.TOC_ft |
 | [ExportContoursForCivil3D](autogis/core/envmon/civil3d_points.py) | 8.10 | `envmon export-civil3d` | Tool 8.10: PNEZD point CSV + projection note + `--landxml` CgPoints export, all headless (ADR-0088); the `.pyt` tool exports an existing Pro TIN as a triangulated LandXML surface (ADR-0089) |
 | [GenerateSubsurfaceProfileFromBorings](autogis/core/envmon/subsurface_profile.py) | — | `envmon generate-subsurface-profile` | Render a subsurface profile figure from borings projected onto a line (headless; `profile` extra for matplotlib) |
+| [GenerateBoringSticklogs](autogis/core/envmon/sticklog.py) | — | `envmon gen-sticklogs` | Render a 2D sticklog figure per boring from the boring-log database (headless; `profile` extra for matplotlib) |
 | [DraftLithologyFromScan](autogis/core/envmon/draft_lithology_from_scan.py) | — | `envmon draft-lithology-from-scan` (DRAFT, unreviewed OCR output) | Draft a lithology CSV from a scanned boring log via a Table-Transformer + TrOCR pipeline (ADR-0074, headless; `ocr` extra) |
 | [UpdateAGOLWebMapFromFigureSpec](autogis/core/agol/webmap.py) | 6.3 | `agol update-webmap` (visibility + definition-query config only; no popup/label/symbology in the canonical FigureSpec) | Tool 6.3: push a figure spec's display config into an AGOL web map |
 | [CreateHostedViewsForStakeholders](autogis/core/agol/hosted_views.py) | 6.11 | `agol create-views` | Tool 6.11: create/update audience-specific hosted views (sensitive-field leak is blocking) |
@@ -442,6 +443,7 @@ not by flag.
 | `autogis envmon export-civil3d` | CLOUD | `core/envmon/civil3d_points.py` (PNEZD CSV + `--landxml` CgPoints, both headless, ADR-0088; existing TIN surface export is available in the Pro `.pyt` toolbox, ADR-0089) |
 | `autogis envmon transform-landxml` | CLOUD | `core/envmon/landxml_transform.py` (`landxml` extra; selected single TIN surface only) |
 | `autogis envmon generate-subsurface-profile` | CLOUD | `core/envmon/subsurface_profile.py` (`profile` extra for matplotlib) |
+| `autogis envmon gen-sticklogs` | CLOUD | `core/envmon/sticklog.py` (`profile` extra for matplotlib) |
 | `autogis envmon draft-lithology-from-scan` | CLOUD | `core/envmon/draft_lithology_from_scan.py` (DRAFT; `ocr` extra) |
 | `autogis envmon init-site` | CLOUD | `core/envmon/init_site.py` |
 | `autogis envmon new-flight-yaml` | CLOUD | `core/envmon/register_drone_flight.py` |
@@ -560,7 +562,7 @@ python -m pytest -q           # count is extras-dependent: python -m pytest --co
 | `gui` | PySide6 | `autogis-gui`, the unified desktop GUI (ADR-0050) |
 | `report` | Pillow | EXIF extraction for all `envmon photos` commands and photo embedding in `generate-inspection-report` |
 | `report-docx` | python-docx, Pillow | DOCX photographic logs (`envmon photos log --format docx`) |
-| `profile` | matplotlib | subsurface profile rendering (`generate-subsurface-profile`) |
+| `profile` | matplotlib | subsurface profile + sticklog rendering (`generate-subsurface-profile`, `gen-sticklogs`) |
 | `landxml` | pyproj | CRS operation selection and Z scaling for `envmon transform-landxml` |
 | `opentopo` | pyproj | non-WGS84 AOI reprojection for `envmon download-dem` (headless path only) |
 | `ocr` | torch, transformers, pillow, pymupdf | boring-log OCR digitization (`draft-lithology-from-scan`, DRAFT tool) |
