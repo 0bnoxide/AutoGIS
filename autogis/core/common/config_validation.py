@@ -22,6 +22,17 @@ KNOWN_SHEET_DATA_TYPES = {
     "RPD", "SOIL", "GW_ANALYTICAL",
 }
 
+# Informational site keys: not load-blocking (ADR-0135), but still reported
+# here so `validate-config` stays the arcpy-free place an operator learns a
+# site config is incomplete. `coordinate_system` is the load-bearing case --
+# it IS consumed (adapters/cli.py build-fieldmaps), and its absence otherwise
+# only surfaces as an `unknown_crs` warning inside provision_fieldmaps_layers,
+# which is an arcpy-only LOCAL path a headless operator never reaches.
+SITE_RECOMMENDED = ["project_number", "address", "city", "state",
+                    "coordinate_system", "default_gdb",
+                    "default_aprx_template", "soil_borings_fc",
+                    "site_boundary_fc"]
+
 # Minimal key sets used by tests to isolate non-missing-key checks.
 _SITE_MIN = SITE_REQUIRED + ["map_units", "plausible_gwe_range_ft"]
 _FIGURE_MIN = FIGURE_REQUIRED + ["matrix", "map_type"]
@@ -68,6 +79,12 @@ def _require(data, keys, context, out):
 def validate_site(data: dict) -> List[QARecord]:
     out: List[QARecord] = []
     _require(data, SITE_REQUIRED, "site config", out)
+    for k in SITE_RECOMMENDED:
+        if k not in data:
+            out.append(_rec(SEV_WARNING, "missing_recommended_key",
+                            f"site config: missing recommended key {k!r}",
+                            action="add it to the site config; tools that use "
+                                   "it fall back to a default without it"))
     mu = data.get("map_units")
     if mu is not None and mu not in ("feet", "meters"):
         out.append(_rec(SEV_ERROR, "bad_map_units",

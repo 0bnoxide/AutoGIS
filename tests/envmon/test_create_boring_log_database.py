@@ -93,6 +93,37 @@ def test_validate_missing_db_errors(tmp_path):
     assert any(r.category == "db_missing" for r in _errors(qa))
 
 
+def test_validate_non_sqlite_file_is_qa_error_not_traceback(tmp_path):
+    db = tmp_path / "bogus.sqlite"
+    db.write_text("not a database", encoding="utf-8")
+    qa = QACollector()
+    validate_boring_log_database(db, qa)  # must not raise (#512)
+    assert any(r.category == "db_unreadable" for r in _errors(qa))
+    # validation did NOT complete -- no false all-clear alongside the error
+    assert not any(r.category == "validation_complete" for r in qa.records)
+
+
+def test_validate_truncated_db_is_qa_error(tmp_path):
+    db = tmp_path / "boring.sqlite"
+    create_boring_log_database(db)
+    raw = db.read_bytes()
+    db.write_bytes(raw[:len(raw) // 3])
+    qa = QACollector()
+    validate_boring_log_database(db, qa)
+    assert any(r.category == "db_unreadable" for r in _errors(qa))
+
+
+def test_validate_unopenable_path_is_qa_error(tmp_path):
+    # A directory exists() but cannot be opened: sqlite3.connect raises here,
+    # not the PRAGMA. The CLI's click.Path(dir_okay=False) rejects this first;
+    # library callers of the core function have no such guard.
+    d = tmp_path / "adir.sqlite"
+    d.mkdir()
+    qa = QACollector()
+    validate_boring_log_database(d, qa)  # must not raise
+    assert any(r.category == "db_unreadable" for r in _errors(qa))
+
+
 def test_validate_missing_table_errors(tmp_path):
     db = tmp_path / "boring.sqlite"
     create_boring_log_database(db)

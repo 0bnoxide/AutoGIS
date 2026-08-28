@@ -12,6 +12,12 @@ def test_result_carries_disposition_and_reserved_fields():
     assert r.source_table is None and r.relationship_id is None
 
 
+def test_record_result_records():
+    rep = Reporter(QACollector())
+    assert rep.record_result("r1") == "r1"
+    assert rep.results == ["r1"]
+
+
 def test_reporter_cancel_hook():
     flag = {"stop": False}
     rep = Reporter(QACollector(), cancel=lambda: flag["stop"])
