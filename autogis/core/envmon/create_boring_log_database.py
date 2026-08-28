@@ -94,8 +94,12 @@ def validate_boring_log_database(db_path: Path, qa: QACollector) -> None:
         finally:
             conn.close()
     except sqlite3.DatabaseError as exc:
+        # Deliberately not narrowed: the breadth is what makes mid-loop
+        # corruption and permission errors land as QA records too. The cause
+        # is carried through verbatim, since it also covers recoverable states
+        # (a concurrent writer's lock) that are not corruption.
         qa.add(SEV_ERROR, "db_unreadable",
-               f"Not a readable SQLite database: {p} ({exc})")
+               f"Could not read SQLite database: {p} ({exc})")
         return
     qa.add(SEV_INFO, "validation_complete",
            f"Checked {len(BORING_TABLES)} expected tables in {p}.")

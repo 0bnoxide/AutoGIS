@@ -34,13 +34,19 @@ else — so the substance went into ADR-0135 rather than riding in as a silent
 bug fix inside a PR body. The deferral was correct when it was made; recording
 the reversal is what keeps it correct now.
 
-**#450 — flagged the `validate-config` consequence instead of quietly
-absorbing it.** `config_validation.validate_site` shares `SITE_REQUIRED`, so
-narrowing the list also stops `envmon validate-config` reporting those nine
-keys. Adding a separate optional-keys list to preserve the reporting was the
-alternative; it is a second mechanism invented to soften a consequence the
-owner may actually want, so it is named in the ADR's negative consequences and
-in the PR body as a follow-up the owner can call for, not pre-emptively built.
+**#450 — flagged the `validate-config` consequence, and was wrong to stop
+there.** Narrowing `SITE_REQUIRED` also stopped `envmon validate-config`
+reporting those nine keys, since both read one constant. I named it in the ADR
+and PR body as an owner follow-up rather than fixing it, reasoning that adding
+a second list was a mechanism invented to soften a consequence the owner might
+want. The cold `pr-reviewer` rejected that and was right: it demonstrated a
+scaffold with `_TODO` lines deleted going from 7 errors/exit 1 to
+`0 error(s) / PASS / exit 0`, and pointed out that `coordinate_system` *is*
+consumed, with its only other signal living on an arcpy-only path a headless
+operator never reaches. A silent regression in an operator-facing validator is
+not a preference to be offered — flagging a defect is not the same as leaving
+one in. Fixed with `SITE_RECOMMENDED` at WARNING (ADR-0135 §1a), plus the
+`validate_site` test whose absence let the suite stay green through it.
 
 **#450 — `record_result` appends rather than raises.** Raising would break the
 class's only existing caller (`tests/test_reporting.py`) to protect a caller

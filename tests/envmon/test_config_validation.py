@@ -9,6 +9,23 @@ def _cats(records):
     return {(r.severity, r.category) for r in records}
 
 
+def test_validate_site_still_reports_informational_keys(tmp_path):
+    # Load stops requiring these (ADR-0135), but validate-config must keep
+    # reporting them: for coordinate_system the only other signal is an
+    # arcpy-only unknown_crs warning a headless operator never reaches.
+    data = {"site_id": "H281", "site_name": "X", "monitoring_wells_fc": "MW",
+            "map_units": "feet", "plausible_gwe_range_ft": [1900, 2400]}
+    records = cv.validate_site(data)
+    assert (SEV_WARNING, "missing_recommended_key") in _cats(records)
+    missing = {r.message.rsplit("'", 2)[-2] for r in records
+               if r.category == "missing_recommended_key"}
+    assert missing == set(cv.SITE_RECOMMENDED)
+    # ...and a complete config reports none of them
+    full = dict(data, **{k: "x" for k in cv.SITE_RECOMMENDED})
+    assert not [r for r in cv.validate_site(full)
+                if r.category == "missing_recommended_key"]
+
+
 def test_site_config_loads_without_informational_keys(tmp_path):
     # Only consumed keys are load-blocking; the scaffolded informational keys
     # (project_number, address, default_gdb, ...) are optional (#450).

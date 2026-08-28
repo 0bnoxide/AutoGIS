@@ -49,6 +49,17 @@ tolerated these keys being absent or unfilled; only the loader did not.
    informational — still scaffolded by `init-site`, still readable via
    `__getattr__`/`.get` when present, no longer load-blocking. Their unused
    typed accessors are deleted.
+1a. **Loading and validating are decoupled.** `config_validation` gets its own
+   `SITE_RECOMMENDED` list carrying those nine keys, and `validate_site`
+   reports each absent one as a `SEV_WARNING`/`missing_recommended_key`.
+   Narrowing the load gate alone would have silently deleted nine checks from
+   `envmon validate-config`, because both had been reading one constant. That
+   matters most for `coordinate_system`, which *is* consumed
+   (`adapters/cli.py` `build-fieldmaps`): without it the run degrades to
+   `spatial_reference=None`, whose only other signal is an `unknown_crs`
+   warning raised inside `provision_fieldmaps_layers` — an arcpy-only LOCAL
+   path a headless operator never reaches. `validate-config` is the sole
+   arcpy-free place that gap is visible, so it keeps reporting.
 2. `Reporter` declares its unwired future-use status in its own docstring, the
    way `core/common/seen.py` does, and `record_result` appends to
    `Reporter.results` instead of silently discarding its argument.
@@ -71,14 +82,17 @@ identified as unconsumed.
 
 ### Negative consequences
 
-- `config_validation.validate_site` shares `SITE_REQUIRED`, so
-  `envmon validate-config` no longer emits `missing_key` for the nine
-  informational keys. An operator who omits `coordinate_system` entirely now
-  learns of it from the `unknown_crs` QA warning at figure/Field Maps time
-  rather than at config-validation time. This follows from calling them
-  informational; if they should stay *reported* while not *load-blocking*,
-  that needs a separate optional-keys list in `config_validation`, which this
-  ADR deliberately does not add.
+- The nine keys drop from `SEV_ERROR` to `SEV_WARNING` in
+  `envmon validate-config`, so a config missing all of them now exits 0 where
+  it previously exited 1. That is the intended meaning of "informational" —
+  the config genuinely loads and runs — but a pipeline that gated on
+  `validate-config`'s exit code alone will stop catching them. The records are
+  still emitted and still visible in the report.
+- Two lists now describe one set of keys (`SITE_REQUIRED` in `config.py`,
+  `SITE_RECOMMENDED` in `config_validation.py`). They are deliberately
+  separate because they answer different questions — *can this load?* versus
+  *is this complete?* — but a key added to the site schema has to be placed in
+  the right one, and nothing enforces that mechanically.
 - `Reporter.results` grows unbounded for as long as a Reporter instance lives.
   Acceptable while the class is unwired and single-run scoped; a caller
   wiring it into long-running work must revisit it.
@@ -95,6 +109,11 @@ identified as unconsumed.
   Informational-but-present is the honest state.
 - **Leave `SITE_REQUIRED` alone and only fix the docstring.** Rejected: it
   keeps a hard load failure on nine values nothing reads, which is the defect.
+- **Narrow `SITE_REQUIRED` and let `validate_site` follow it.** This is what
+  the first cut of the change did, and the cold review caught it: it silently
+  removed nine operator-facing checks as a side effect of a loader change.
+  Rejected — see 1a. Keeping them at `SEV_ERROR` in the validator was also
+  rejected: a config that loads and runs should not be reported as failing.
 - **Wire `Reporter` into a production tool.** Rejected as out of scope and
   speculative — no tool currently needs a second emit channel; marking it
   future-use is what `seen.py` already established as the honest pattern.

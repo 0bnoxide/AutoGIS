@@ -68,10 +68,12 @@ def col_index(ref) -> Optional[int]:
 # ---------------------------------------------------------------------------
 # Site configuration
 # ---------------------------------------------------------------------------
-# Only keys some code actually reads are load-blocking. The other site keys
-# the init-site template scaffolds (project_number, address, coordinate_system,
-# default_gdb, ...) are informational/optional: consumers read them via
-# ``.get(...)`` and tolerate absence (#450).
+# Load-blocking keys: the site's identity, plus the one feature class every
+# GDB-touching tool addresses. The other keys init-site scaffolds
+# (project_number, address, coordinate_system, default_gdb, ...) are
+# informational -- absent, they change no tool's behaviour beyond a documented
+# fallback, so they are validated but not required (ADR-0135).
+# `config_validation.SITE_RECOMMENDED` still reports them, at WARNING.
 SITE_REQUIRED = ["site_id", "site_name", "monitoring_wells_fc"]
 
 
