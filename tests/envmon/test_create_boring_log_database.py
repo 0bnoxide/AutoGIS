@@ -93,6 +93,14 @@ def test_validate_missing_db_errors(tmp_path):
     assert any(r.category == "db_missing" for r in _errors(qa))
 
 
+def test_validate_non_sqlite_file_is_qa_error_not_traceback(tmp_path):
+    db = tmp_path / "bogus.sqlite"
+    db.write_text("not a database", encoding="utf-8")
+    qa = QACollector()
+    validate_boring_log_database(db, qa)  # must not raise (#512)
+    assert any(r.category == "db_unreadable" for r in _errors(qa))
+
+
 def test_validate_missing_table_errors(tmp_path):
     db = tmp_path / "boring.sqlite"
     create_boring_log_database(db)

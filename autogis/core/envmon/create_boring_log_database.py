@@ -66,8 +66,14 @@ def validate_boring_log_database(db_path: Path, qa: QACollector) -> None:
     try:
         for dc in BORING_TABLES:
             # table_name is a code constant (ClassVar), not user input.
-            info = conn.execute(
-                f'PRAGMA table_info("{dc.table_name}")').fetchall()
+            try:
+                info = conn.execute(
+                    f'PRAGMA table_info("{dc.table_name}")').fetchall()
+            except sqlite3.DatabaseError as exc:
+                # Corrupt or non-SQLite file: a QA error, not a traceback (#512).
+                qa.add(SEV_ERROR, "db_unreadable",
+                       f"Not a readable SQLite database: {p} ({exc})")
+                return
             if not info:
                 qa.add(SEV_ERROR, "missing_table",
                        f"Table {dc.table_name} not found.")
