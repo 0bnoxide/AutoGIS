@@ -9,17 +9,21 @@ def _cats(records):
     return {(r.severity, r.category) for r in records}
 
 
-def test_validate_site_still_reports_informational_keys(tmp_path):
+def test_validate_site_still_reports_informational_keys():
     # Load stops requiring these (ADR-0135), but validate-config must keep
     # reporting them: for coordinate_system the only other signal is an
-    # arcpy-only unknown_crs warning a headless operator never reaches.
+    # arcpy-only unknown_crs warning a headless operator never reaches. Pinned
+    # by name -- comparing the report against SITE_RECOMMENDED alone is
+    # self-referential and would pass if the key were dropped from the list.
+    assert "coordinate_system" in cv.SITE_RECOMMENDED
     data = {"site_id": "H281", "site_name": "X", "monitoring_wells_fc": "MW",
             "map_units": "feet", "plausible_gwe_range_ft": [1900, 2400]}
-    records = cv.validate_site(data)
-    assert (SEV_WARNING, "missing_recommended_key") in _cats(records)
-    missing = {r.message.rsplit("'", 2)[-2] for r in records
-               if r.category == "missing_recommended_key"}
-    assert missing == set(cv.SITE_RECOMMENDED)
+    flagged = [r for r in cv.validate_site(data)
+               if r.category == "missing_recommended_key"]
+    assert {r.severity for r in flagged} == {SEV_WARNING}
+    assert len(flagged) == len(cv.SITE_RECOMMENDED)
+    for key in cv.SITE_RECOMMENDED:
+        assert any(repr(key) in r.message for r in flagged), key
     # ...and a complete config reports none of them
     full = dict(data, **{k: "x" for k in cv.SITE_RECOMMENDED})
     assert not [r for r in cv.validate_site(full)

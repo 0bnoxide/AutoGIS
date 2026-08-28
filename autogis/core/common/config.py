@@ -68,8 +68,10 @@ def col_index(ref) -> Optional[int]:
 # ---------------------------------------------------------------------------
 # Site configuration
 # ---------------------------------------------------------------------------
-# Load-blocking keys: the site's identity, plus the one feature class every
-# GDB-touching tool addresses. The other keys init-site scaffolds
+# Load-blocking keys: the site's identity, plus the wells feature class --
+# kept required because a wrong feature-class name fails loudly at the first
+# arcpy cursor, unlike a defaulted-away CRS, which fails silently.
+# The other keys init-site scaffolds
 # (project_number, address, coordinate_system, default_gdb, ...) are
 # informational -- absent, they change no tool's behaviour beyond a documented
 # fallback, so they are validated but not required (ADR-0135).

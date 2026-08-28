@@ -64,9 +64,17 @@ tolerated these keys being absent or unfilled; only the loader did not.
    way `core/common/seen.py` does, and `record_result` appends to
    `Reporter.results` instead of silently discarding its argument.
 
-`monitoring_wells_fc` stays required because it is genuinely consumed
-(`fieldmaps_plan.py`, `toolbox.pyt:959`); this matches the set #450 itself
-identified as unconsumed.
+`monitoring_wells_fc` stays required, and the reason is **not** simply that it
+is consumed — `coordinate_system` is consumed too, by `.get(key, default)`
+exactly as `monitoring_wells_fc` is, and it was demoted. The operative
+difference is how each one fails when defaulted: a wrong *feature class name*
+fails loudly at the first arcpy cursor, while a defaulted-away *CRS* silently
+produces layers with an unknown spatial reference. Requiring the noisy one
+costs an operator nothing; the quiet one is the case §1a keeps reporting.
+(Note `toolbox.pyt:959` reads a raw `load_config` dict rather than a
+`SiteConfig`, so it never passes through `SITE_REQUIRED` at all — keeping the
+key required does not protect that call site.) The resulting split matches the
+set #450 itself identified as unconsumed.
 
 ## Consequences
 
