@@ -153,6 +153,7 @@ Each ADR follows this structure:
 | [132](0132-issue-fix-batch-2026-08-14.md) | Issue fix batch (2026-08-14) — malformed-manifest `ValueError` seam in `load_manifest` incl. wrong-shape JSON + clean CLI surfacing (#496, #503); `defquery_key_collision` names only truly colliding keys (#499); `reserve-adr`/`next_adr_number` floor against `origin/main` with warn-and-degrade (#495); catalog §8 duplicate headings renumbered 8.10/8.11/8.12 (+8.2a→8.10a) with no-duplicate guard test (#476); atomic `.tmp.pdf`+`os.replace` combined-appendix publish under `--overwrite` at both combine seams (#500) | Proposed | 2026-08-14 |
 | [133](0133-harvest-photo-metadata-suite.md) | Harvest photo-metadata suite — shared arcpy/arcgis-free EXIF-extraction core (`load_photo_records`/`evaluate_photo_qa`) feeding four headless emitters (`envmon photos points/qa/log/kmz`: CSV+GeoJSON, photo↔feature QA, xlsx/html/docx log, Google Earth KMZ); harvester fill of the ADR-0012 reserved `geometry`/`checksum`/`algorithm` columns (WGS84/Web-Mercator only) plus a new optional `feature_edited_at` column, all back-compat/appended-last; `envmon coc` subgroup idiom reused for the CLI (ADR-0107). | Proposed | 2026-08-13 |
 | [134](0134-gen-sticklogs-2d-boring-sticklog.md) | GenerateBoringSticklogs: 2D per-boring sticklog from the 8.0a database | Accepted | 2026-08-20 |
+| [135](0135-site-required-informational-keys-and-reporter-status.md) | Site-config required keys narrowed to consumed keys; Reporter declared future-use | Accepted | 2026-08-28 |
 
 ## File naming
 
