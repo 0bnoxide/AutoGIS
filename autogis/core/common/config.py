@@ -68,10 +68,11 @@ def col_index(ref) -> Optional[int]:
 # ---------------------------------------------------------------------------
 # Site configuration
 # ---------------------------------------------------------------------------
-SITE_REQUIRED = ["site_id", "site_name", "project_number", "address", "city",
-                 "state", "coordinate_system", "default_gdb",
-                 "default_aprx_template", "monitoring_wells_fc",
-                 "soil_borings_fc", "site_boundary_fc"]
+# Only keys some code actually reads are load-blocking. The other site keys
+# the init-site template scaffolds (project_number, address, coordinate_system,
+# default_gdb, ...) are informational/optional: consumers read them via
+# ``.get(...)`` and tolerate absence (#450).
+SITE_REQUIRED = ["site_id", "site_name", "monitoring_wells_fc"]
 
 
 @dataclass
@@ -91,25 +92,7 @@ class SiteConfig:
     @property
     def site_name(self) -> str: return self.data["site_name"]
     @property
-    def project_number(self) -> str: return self.data["project_number"]
-    @property
-    def address(self) -> str: return self.data["address"]
-    @property
-    def city(self) -> str: return self.data["city"]
-    @property
-    def state(self) -> str: return self.data["state"]
-    @property
-    def coordinate_system(self) -> str: return self.data["coordinate_system"]
-    @property
-    def default_gdb(self) -> str: return self.data["default_gdb"]
-    @property
-    def default_aprx_template(self) -> str: return self.data["default_aprx_template"]
-    @property
     def monitoring_wells_fc(self) -> str: return self.data["monitoring_wells_fc"]
-    @property
-    def soil_borings_fc(self) -> str: return self.data["soil_borings_fc"]
-    @property
-    def site_boundary_fc(self) -> str: return self.data["site_boundary_fc"]
 
     def __getattr__(self, item):
         try:
