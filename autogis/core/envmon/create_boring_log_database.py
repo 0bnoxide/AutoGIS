@@ -62,37 +62,40 @@ def validate_boring_log_database(db_path: Path, qa: QACollector) -> None:
     if not p.exists():
         qa.add(SEV_ERROR, "db_missing", f"Database not found: {p}")
         return
-    conn = sqlite3.connect(str(p))
+    # One guard over connect AND every PRAGMA: a file that exists but is not an
+    # openable/readable SQLite database is a QA error, never a traceback (#512).
+    # connect() is lazy, so a non-SQLite file surfaces at the first PRAGMA,
+    # but an unopenable path (a directory, bad permissions) raises at connect.
     try:
-        for dc in BORING_TABLES:
-            # table_name is a code constant (ClassVar), not user input.
-            try:
+        conn = sqlite3.connect(str(p))
+        try:
+            for dc in BORING_TABLES:
+                # table_name is a code constant (ClassVar), not user input.
                 info = conn.execute(
                     f'PRAGMA table_info("{dc.table_name}")').fetchall()
-            except sqlite3.DatabaseError as exc:
-                # Corrupt or non-SQLite file: a QA error, not a traceback (#512).
-                qa.add(SEV_ERROR, "db_unreadable",
-                       f"Not a readable SQLite database: {p} ({exc})")
-                return
-            if not info:
-                qa.add(SEV_ERROR, "missing_table",
-                       f"Table {dc.table_name} not found.")
-                continue
-            actual = {r[1]: (r[2] or "").upper() for r in info}
-            expected = sqlite_columns(dc)
-            for name, sqltype in expected:
-                if name not in actual:
-                    qa.add(SEV_ERROR, "missing_column",
-                           f"{dc.table_name}.{name} is missing.")
-                elif actual[name] != sqltype:
-                    qa.add(SEV_ERROR, "column_type_mismatch",
-                           f"{dc.table_name}.{name}: expected {sqltype}, "
-                           f"found {actual[name] or '(untyped)'}.")
-            known = {n for n, _ in expected} | {"id"}
-            for extra in sorted(set(actual) - known):
-                qa.add(SEV_WARNING, "unexpected_column",
-                       f"{dc.table_name}.{extra} is not in the expected schema.")
-    finally:
-        conn.close()
+                if not info:
+                    qa.add(SEV_ERROR, "missing_table",
+                           f"Table {dc.table_name} not found.")
+                    continue
+                actual = {r[1]: (r[2] or "").upper() for r in info}
+                expected = sqlite_columns(dc)
+                for name, sqltype in expected:
+                    if name not in actual:
+                        qa.add(SEV_ERROR, "missing_column",
+                               f"{dc.table_name}.{name} is missing.")
+                    elif actual[name] != sqltype:
+                        qa.add(SEV_ERROR, "column_type_mismatch",
+                               f"{dc.table_name}.{name}: expected {sqltype}, "
+                               f"found {actual[name] or '(untyped)'}.")
+                known = {n for n, _ in expected} | {"id"}
+                for extra in sorted(set(actual) - known):
+                    qa.add(SEV_WARNING, "unexpected_column",
+                           f"{dc.table_name}.{extra} is not in the expected schema.")
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as exc:
+        qa.add(SEV_ERROR, "db_unreadable",
+               f"Not a readable SQLite database: {p} ({exc})")
+        return
     qa.add(SEV_INFO, "validation_complete",
            f"Checked {len(BORING_TABLES)} expected tables in {p}.")
