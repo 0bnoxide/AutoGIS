@@ -36,12 +36,12 @@ Each ADR follows this structure:
 | [015](0015-npg-vendoring-pattern.md) | Absorbed-in-place vendoring for Dan Patterson numpy_geometry | Accepted | 2026-06-25 |
 | [016](0016-lab-edd-importer-design.md) | Lab EDD Importer — per-lab YAML profile + gdb_schema output types | Accepted | 2026-06-25 |
 | [017](0017-run-history-csv-log.md) | CSV-based append-only run history log | Accepted | 2026-06-25 |
-| [018](0018-upgrade-gdb-schema-tool.md) | UpgradeEnvMonitoringGDBSchema tool design | Accepted | 2026-06-26 |
+| [018](0018-upgrade-gdb-schema-tool.md) | UpgradeEnvMonitoringGDBSchema tool design | Accepted | 2026-06-25 |
 | [019](0019-reconcile-locations-design.md) | ReconcileSampleLocations — stdlib difflib, two-path headless/GDB design | Accepted | 2026-06-26 |
 | [020](0020-callout-placement-extend-assemble-callouts.md) | Callout placement — extend assemble_callouts, add manage_callout_overrides | Accepted | 2026-06-26 |
 | [021](0021-survey123-xlsform-builder-headless-openpyxl.md) | Survey123 XLSForm builder — headless openpyxl tool | Accepted | 2026-06-26 |
-| [022](0022-screening-unit-conversion-invariant.md) | Unit-conversion gate for screening-level evaluation | Accepted | 2026-06-26 |
-| [023](0023-workgroup-2-post-import-qa-scope.md) | Workgroup 2 scope — post-import QA + first reporting deliverable | Accepted | 2026-06-26 |
+| [022](0022-screening-unit-conversion-invariant.md) | Unit-conversion gate for screening-level evaluation | Accepted | 2026-06-25 |
+| [023](0023-workgroup-2-post-import-qa-scope.md) | Workgroup 2 scope — post-import QA + first reporting deliverable | Accepted | 2026-06-25 |
 | [024](0024-reconcile-locations-fuzzy-matching.md) | ReconcileSampleLocations: stdlib difflib for fuzzy ID matching | Accepted | 2026-06-26 |
 | [025](0025-edd-duplicate-rpd-via-isduplicate-flag.md) | EDD duplicate RPD: detect via IsDuplicate=1 flag | Accepted | 2026-06-26 |
 | [026](0026-night-implementer-batch-2026-06-27.md) | Night-implementer batch — CompareMonitoringEvents, ProcessLevelLoop, IdentifyMonitoringDataGaps | Accepted | 2026-06-27 |
@@ -85,9 +85,9 @@ Each ADR follows this structure:
 | [064](0064-agol-publish-hardening.md) | AGOL publish-layer hardening — keep tracebacks in QA errors, pre-check the hosted service name + explicit `publish_parameters`, detect/validate source type (FGDB zip, shapefile zip, GeoJSON) | Accepted | 2026-07-06 |
 | [065](0065-gui-site-config-builder.md) | GUI Site Config Builder — guided harvest `config.yaml` dialog; live sublayer lookup resolves the pick to `layer.url`; validation round-trips through `HarvestConfig.load` | Accepted | 2026-07-06 |
 | [066](0066-harvest-layer-index-combined-sublayers.md) | `HarvestConfig.layer_index` — harvest sublayer selection over the combined layers+tables list (AGOL `?sublayer=N` numbering); out-of-range raises `ConfigError`; fixes hardcoded `layers[0]` | Accepted | 2026-07-06 |
-| [067](0067-coord-hook-write-coverage-hardening.md) | Coordination hook covers every git write in a command, push-to-main refspecs, history-writing porcelain, links, and NotebookEdit | Accepted | 2026-07-07 |
+| [067](0067-coord-hook-write-coverage-hardening.md) | Coordination hook covers every git write in a command, push-to-main refspecs, history-writing porcelain, links, and NotebookEdit | Accepted | 2026-07-06 |
 | [068](0068-pyt-run-history-recording.md) | Record run history for redirect-only `.pyt` executions through an arcpy-free `toolbox_core` recorder; environment override then target-GDB parent then cwd; functional Pro QA tracked in #231 | Accepted | 2026-07-11 |
-| [069](0069-tool-registry-single-source-consolidation.md) | Consolidate the hand-maintained tool registries behind one table (PROPOSAL) | Proposed (not executed) | 2026-07-07 |
+| [069](0069-tool-registry-single-source-consolidation.md) | Consolidate the hand-maintained tool registries behind one table (PROPOSAL) | Proposed (not executed) | 2026-07-06 |
 | [070](0070-callout-placement-cli-wiring.md) | Wire callout-placement tools 5.2 / 5.3 (folded hull-collision flag; override CRUD with a full-row read) | Accepted | 2026-07-07 |
 | [071](0071-export-survey-cad-landxml-format.md) | LandXML as the CAD point-export format for `export-survey-cad` | Accepted | 2026-07-08 |
 | [072](0072-harvest-all-sublayers-mode.md) | `HarvestConfig.all_sublayers` — harvest every attachment-bearing layer/table of an item in one run, each under its own subfolder; mutually exclusive with `url`/`layer_index`/`incremental`; GUI checkbox in the Site Config Builder | Accepted | 2026-07-08 |
