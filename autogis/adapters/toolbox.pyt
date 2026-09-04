@@ -530,7 +530,6 @@ class ApproveGWModel(object):
             "ranked cross-validation statistics, then record the reviewer’s "
             "chosen model. Rank 1 is a suggestion only.")
         self.canRunInBackground = False
-        self._last_selection = None
 
     def getParameterInfo(self):
         run_id = _param("run_id", "DRAFT model run", "GPString")
@@ -565,7 +564,6 @@ class ApproveGWModel(object):
                or getattr(p["gdb"], "value", None) or "")
         if not gdb or not arcpy.Exists(gdb):
             p["confirm"].value = False
-            self._last_selection = None
             p["run_id"].filter.list = []
             p["model"].filter.list = []
             return
@@ -591,7 +589,6 @@ class ApproveGWModel(object):
         run = next((r for r in drafts if r["RunID"] == selected), None)
         if run is None:
             p["confirm"].value = False
-            self._last_selection = None
             p["model"].filter.list = []
             p["model_summary"].value = (
                 "Select a DRAFT run to review its executed models.")
@@ -603,10 +600,11 @@ class ApproveGWModel(object):
             ranked = [m["ModelName"] for m in run["Models"]
                       if m["ModelName"] in executed]
             p["model"].value = (ranked or executed or [None])[0]
-        selection = (str(gdb), selected, p["model"].valueAsText)
-        if selection != self._last_selection:
+        # Re-confirm after a changed selection. Instance state did not
+        # survive Pro 3.6.1's validation cycles (#521), so use arcpy's flags.
+        if any(p[n].altered and not p[n].hasBeenValidated
+               for n in ("gdb", "run_id", "model")):
             p["confirm"].value = False
-            self._last_selection = selection
         ranked_by_name = {m["ModelName"]: m for m in run["Models"]}
         lines = []
         for name in executed:
