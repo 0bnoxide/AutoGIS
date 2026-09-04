@@ -46,6 +46,11 @@ _DRAFT_WARNING = (
     "Do not cite in regulatory deliverables without professional review. "
     "ReviewStatus=DRAFT in Env_SurfaceRegistry."
 )
+_GWE_DRAFT_WARNING = (
+    "DRAFT: groundwater-elevation model uncertainty surface for reviewer "
+    "use only. Do not cite in regulatory deliverables without professional "
+    "review. ReviewStatus=DRAFT in Env_SurfaceRegistry."
+)
 
 
 def _num(row: dict, field: str) -> Optional[float]:
@@ -231,7 +236,8 @@ def build_surface_registry_rows(
         "AnalyteFilter": analyte, "Method": method, "RasterType": rtype,
         "NondetectRule": nondetect_rule, "Units": units, "RasterPath": name,
         "ReviewStatus": "DRAFT", "CreatedAt": now,
-        "Notes": _DRAFT_WARNING[:200],
+        "Notes": (_GWE_DRAFT_WARNING if kind == "GWE"
+                  else _DRAFT_WARNING)[:200],  # #522
     } for rtype, name in sorted(rasters.items())]
 
 

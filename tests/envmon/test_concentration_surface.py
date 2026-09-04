@@ -287,6 +287,9 @@ def test_registry_rows_gwe_kind():
         {"STD_ERROR": "Draft_GWE_x_EBK_SE"}, NOW, units="ft")
     assert len(rows) == 1
     assert rows[0]["AnalyteFilter"] == "" and rows[0]["Units"] == "ft"
+    # #522: a GWE row must not carry the concentration-surface boilerplate
+    assert "concentration" not in rows[0]["Notes"]
+    assert "groundwater-elevation" in rows[0]["Notes"]
 
 
 # ---------------------------------------------------------------------------
