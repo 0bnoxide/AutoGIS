@@ -600,8 +600,8 @@ class ApproveGWModel(object):
             ranked = [m["ModelName"] for m in run["Models"]
                       if m["ModelName"] in executed]
             p["model"].value = (ranked or executed or [None])[0]
-        # Re-confirm after a changed selection. Pro keeps no tool-instance
-        # state between validation calls (#521), so use arcpy's own flags.
+        # Re-confirm after a changed selection. Instance state did not
+        # survive Pro 3.6.1's validation cycles (#521), so use arcpy's flags.
         if any(p[n].altered and not p[n].hasBeenValidated
                for n in ("gdb", "run_id", "model")):
             p["confirm"].value = False
