@@ -190,6 +190,31 @@ def scratch_tag(site_id: str, analyte: str) -> str:
     return f"{surface_tag(site_id, analyte)}_{uuid.uuid4().hex[:12]}"
 
 
+def cleanup_scratch(arcpy, objects: Sequence[str], qa: QACollector,
+                    site_id: str, rerun: str = "the tool") -> None:
+    """Delete a run's scratch objects in reverse creation order (#383/#523).
+
+    A lock-held object (the operator added it to the map mid-session) is a
+    WARNING naming the exact path, never a traceback after the outputs are
+    already written — and because every name carries a per-run tag, a
+    leftover can no longer block the next run.
+    """
+    for obj in reversed(list(objects)):
+        try:
+            if arcpy.Exists(obj):
+                arcpy.management.Delete(obj)
+        except Exception as exc:
+            qa.add(
+                SEV_WARNING, "scratch_cleanup_failed",
+                f"Could not delete scratch object {obj}: {exc}. Close "
+                "ArcGIS Pro layers or release locks, then delete this "
+                "path manually before retrying.",
+                recommended_action=(
+                    f"Close layers using {obj}, delete it from Catalog, "
+                    f"then rerun {rerun}."),
+                site_id=site_id)
+
+
 def minimum_surface_points(method: str, configured_minimum: int = 4) -> int:
     """Method-aware preflight floor.
 
@@ -482,19 +507,7 @@ def build_concentration_surface(  # pragma: no cover
                    site_id=site_id)
         return summary
     finally:
-        for obj in reversed(scratch_objects):
-            try:
-                if arcpy.Exists(obj):
-                    arcpy.management.Delete(obj)
-            except Exception as exc:
-                qa.add(
-                    SEV_WARNING, "scratch_cleanup_failed",
-                    f"Could not delete scratch object {obj}: {exc}. Close "
-                    "ArcGIS Pro layers or release locks, then delete this "
-                    "path manually before retrying.",
-                    recommended_action=(
-                        f"Close layers using {obj}, delete it from Catalog, "
-                        "then rerun Build Concentration Surface."),
-                    site_id=site_id)
+        cleanup_scratch(arcpy, scratch_objects, qa, site_id,
+                        rerun="Build Concentration Surface")
         for e in acquired:
             arcpy.CheckInExtension(e)
