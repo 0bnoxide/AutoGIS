@@ -195,6 +195,50 @@ def test_groundwater_approval_tool_is_registered():
         elt.id for elt in tools.elts if isinstance(elt, ast.Name)]
 
 
+def test_approve_gw_model_confirm_survives_revalidation(monkeypatch):
+    """#521: Pro re-validates with no instance state; confirm must stick."""
+    from autogis.core.envmon import gw_model_pipeline
+
+    run = {"RunID": "R1", "ReviewStatus": "DRAFT", "ApprovedModel": "",
+           "ExecutedMethods": ["TIN", "EBK"],
+           "Models": [{"ModelName": "TIN", "Rank": 1, "NPoints": 6,
+                       "RMSE": 0.02, "MeanError": 0.0, "MAE": 0.01,
+                       "PctWithinTolerance": 100.0}]}
+    monkeypatch.setattr(gw_model_pipeline, "read_gw_model_reviews",
+                        lambda gdb: [run])
+    cls = _load_pyt_class("ApproveGWModel")
+    cls.updateParameters.__globals__["arcpy"].Exists = lambda path: True
+
+    class P:
+        def __init__(self, name, value=None, altered=False, validated=True):
+            self.name, self.value = name, value
+            self.altered, self.hasBeenValidated = altered, validated
+            self.filter, self.enabled = SimpleNamespace(list=[]), True
+
+        @property
+        def valueAsText(self):
+            return None if self.value is None else str(self.value)
+
+    params = [P("gdb", "C:/x.gdb", altered=True, validated=False),
+              P("run_id"), P("model_summary"), P("model"), P("reviewer"),
+              P("confirm", False), P("approval_status")]
+    p = {q.name: q for q in params}
+
+    cls().updateParameters(params)          # gdb just set -> auto-select
+    assert (p["run_id"].value, p["model"].value) == ("R1", "TIN")
+    p["gdb"].hasBeenValidated = True
+
+    p["confirm"].value, p["confirm"].altered = True, True
+    p["confirm"].hasBeenValidated = False
+    cls().updateParameters(params)          # fresh instance, as Pro does
+    assert p["confirm"].value is True
+
+    p["model"].value, p["model"].altered = "EBK", True
+    p["model"].hasBeenValidated = False
+    cls().updateParameters(params)          # selection changed -> re-confirm
+    assert p["confirm"].value is False
+
+
 # Deprecated (since Pro 3.2) arcpy conversion tools -> current replacement,
 # per the #214 audit cited in ADR-0077.
 _DEPRECATED_ARCPY_CALLS = {
