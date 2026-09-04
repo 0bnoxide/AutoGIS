@@ -21,6 +21,10 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..common.logging import get_logger
 from ..common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
+from .concentration_surface import (
+    build_surface_registry_rows, cleanup_scratch, scratch_tag, surface_tag,
+    write_surface_registry_rows,
+)
 
 LOG = get_logger(__name__)
 
@@ -202,81 +206,95 @@ def build_groundwater_contours(
                site_id=site_id)
         summary["skipped"] = True
         return summary
-    # Checkout and ALL post-checkout setup sit inside one try/finally that
-    # checks back in only the extensions actually acquired — a scratch-lock
-    # or missing-schema failure must not leak a license (#241 review).
-    acquired = []
+    # Every scratch object carries a per-run tag and is deleted in the outer
+    # finally (#523, the #383 pattern): fixed names persisted in scratch.gdb,
+    # got added to the map, and the next run's Delete failed on the lock
+    # (raw ERROR 000210). Checkout and ALL post-checkout setup sit inside
+    # the inner try/finally that checks back in only the extensions actually
+    # acquired — a scratch-lock or missing-schema failure must not leak a
+    # license (#241 review).
+    tag = scratch_tag(site_id, "")
+    scratch = Path(scratch or arcpy.env.scratchGDB)
+    scratch_objects: List[str] = []
+    acquired: List[str] = []
     try:
-        for ext in needs:
-            arcpy.CheckOutExtension(ext)
-            acquired.append(ext)
+        try:
+            for ext in needs:
+                arcpy.CheckOutExtension(ext)
+                acquired.append(ext)
 
-        scratch = Path(scratch or arcpy.env.scratchGDB)
-        pt_fc = str(scratch / f"gwe_pts_{site_id}")
-        sr = arcpy.Describe(str(gdb / "MonitoringWells")).spatialReference
-        if arcpy.Exists(pt_fc):
-            arcpy.management.Delete(pt_fc)
-        arcpy.management.CreateFeatureclass(str(scratch), Path(pt_fc).name,
-                                            "POINT", spatial_reference=sr)
-        arcpy.management.AddField(pt_fc, "GWE", "DOUBLE")
-        with arcpy.da.InsertCursor(pt_fc, ["SHAPE@XY", "GWE"]) as cur:
-            for _loc, x, y, z in pts:
-                cur.insertRow([(x, y), z])
+            pt_fc = str(scratch / f"gwe_pts_{tag}")
+            scratch_objects.append(pt_fc)
+            sr = arcpy.Describe(str(gdb / "MonitoringWells")).spatialReference
+            arcpy.management.CreateFeatureclass(
+                str(scratch), Path(pt_fc).name, "POINT", spatial_reference=sr)
+            arcpy.management.AddField(pt_fc, "GWE", "DOUBLE")
+            with arcpy.da.InsertCursor(pt_fc, ["SHAPE@XY", "GWE"]) as cur:
+                for _loc, x, y, z in pts:
+                    cur.insertRow([(x, y), z])
 
-        raw_contours = str(scratch / f"gwe_ctr_{site_id}")
-        if arcpy.Exists(raw_contours):
-            arcpy.management.Delete(raw_contours)
+            raw_contours = str(scratch / f"gwe_ctr_{tag}")
+            scratch_objects.append(raw_contours)
 
-        if method == "TIN":
-            tin = str(Path(str(scratch)).parent / f"gwe_tin_{site_id}")
-            if arcpy.Exists(tin):
-                arcpy.management.Delete(tin)
-            arcpy.ddd.CreateTin(tin, sr, [[pt_fc, "GWE", "Mass_Points"]])
-            arcpy.ddd.SurfaceContour(tin, raw_contours, contour_interval)
-        else:
-            xs = [p[1] for p in pts]; ys = [p[2] for p in pts]
-            cs = cell_size or max((max(xs) - min(xs)),
-                                  (max(ys) - min(ys)), 1.0) / 250.0
-            if method == "IDW":
-                ras = arcpy.sa.Idw(pt_fc, "GWE", cs)
-            elif method == "EBK":
-                # Slice-2 D1 (ADR-0077 doc-verified 2026-07-16): EBK
-                # prediction raster -> the same sa.Contour path as IDW,
-                # honoring contour_interval; the standard-error companion
-                # raster (D3) is exported here and published below only
-                # after the contours succeed.
-                ras = str(scratch / f"gwe_ebk_{site_id}")
-                if arcpy.Exists(ras):
-                    arcpy.management.Delete(ras)
-                lyr = f"gwe_ebk_lyr_{site_id}"
-                if arcpy.Exists(lyr):
-                    arcpy.management.Delete(lyr)  # re-run in same Pro session
-                arcpy.ga.EmpiricalBayesianKriging(pt_fc, "GWE", lyr, ras, cs)
-                ebk_se_scratch = str(scratch / f"gwe_ebk_se_{site_id}")
-                if arcpy.Exists(ebk_se_scratch):
-                    arcpy.management.Delete(ebk_se_scratch)
-                arcpy.ga.GALayerToRasters(lyr, ebk_se_scratch,
-                                          "PREDICTION_STANDARD_ERROR",
-                                          cell_size=cs)
+            if method == "TIN":
+                tin = str(scratch.parent / f"gwe_tin_{tag}")
+                scratch_objects.append(tin)
+                arcpy.ddd.CreateTin(tin, sr, [[pt_fc, "GWE", "Mass_Points"]])
+                arcpy.ddd.SurfaceContour(tin, raw_contours, contour_interval)
             else:
-                ras = arcpy.sa.NaturalNeighbor(pt_fc, "GWE", cs)
-            arcpy.sa.Contour(ras, raw_contours, contour_interval)
-    except Exception as exc:  # pragma: no cover - arcpy runtime only
-        qa.add(SEV_ERROR, "contour_generation_failed",
-               f"{method} contouring failed: {exc}", site_id=site_id)
-        summary["skipped"] = True
-        return summary
+                xs = [p[1] for p in pts]; ys = [p[2] for p in pts]
+                cs = cell_size or max((max(xs) - min(xs)),
+                                      (max(ys) - min(ys)), 1.0) / 250.0
+                if method == "IDW":
+                    ras = arcpy.sa.Idw(pt_fc, "GWE", cs)
+                elif method == "EBK":
+                    # Slice-2 D1 (ADR-0077 doc-verified 2026-07-16): EBK
+                    # prediction raster -> the same sa.Contour path as IDW,
+                    # honoring contour_interval; the standard-error
+                    # companion raster (D3) is exported here and published
+                    # below only after the contours succeed.
+                    ras = str(scratch / f"gwe_ebk_{tag}")
+                    lyr = f"gwe_ebk_lyr_{tag}"
+                    scratch_objects += [ras, lyr]
+                    arcpy.ga.EmpiricalBayesianKriging(
+                        pt_fc, "GWE", lyr, ras, cs)
+                    ebk_se_scratch = str(scratch / f"gwe_ebk_se_{tag}")
+                    scratch_objects.append(ebk_se_scratch)
+                    arcpy.ga.GALayerToRasters(lyr, ebk_se_scratch,
+                                              "PREDICTION_STANDARD_ERROR",
+                                              cell_size=cs)
+                else:
+                    ras = arcpy.sa.NaturalNeighbor(pt_fc, "GWE", cs)
+                arcpy.sa.Contour(ras, raw_contours, contour_interval)
+        except Exception as exc:  # pragma: no cover - arcpy runtime only
+            qa.add(SEV_ERROR, "contour_generation_failed",
+                   f"{method} contouring failed: {exc}", site_id=site_id)
+            summary["skipped"] = True
+            return summary
+        finally:
+            for ext in acquired:
+                arcpy.CheckInExtension(ext)
+
+        clipped = raw_contours
+        if boundary_fc and arcpy.Exists(boundary_fc):
+            clipped = str(scratch / f"gwe_ctr_clip_{tag}")
+            scratch_objects.append(clipped)
+            arcpy.analysis.Clip(raw_contours, boundary_fc, clipped)
+
+        return _write_contour_outputs(
+            arcpy, gdb, site_id, event_date, ev_dt, method, contour_interval,
+            pts, sr, clipped, summary, qa,
+            ebk_se_scratch if method == "EBK" else "")
     finally:
-        for ext in acquired:
-            arcpy.CheckInExtension(ext)
+        cleanup_scratch(arcpy, scratch_objects, qa, site_id)
 
-    clipped = raw_contours
-    if boundary_fc and arcpy.Exists(boundary_fc):
-        clipped = str(scratch / f"gwe_ctr_clip_{site_id}")
-        if arcpy.Exists(clipped):
-            arcpy.management.Delete(clipped)
-        arcpy.analysis.Clip(raw_contours, boundary_fc, clipped)
 
+def _write_contour_outputs(arcpy, gdb, site_id, event_date, ev_dt, method,
+                           contour_interval, pts, sr, clipped, summary, qa,
+                           ebk_se_scratch):
+    """Persist draft contours, flow arrow and (EBK) the SE raster from a
+    finished scratch build. Split out of build_groundwater_contours so the
+    scratch lifecycle above stays one readable try/finally (#523)."""
     out_fc = str(gdb / "Env_GWContours_Draft")
     where = f"SiteID = '{site_id}' AND " + _where_date("EventDate", event_date)
     # Replace only THIS method's draft rows: multi-method runs (the ADR-0085
@@ -343,10 +361,6 @@ def build_groundwater_contours(
         # Guarded: delete-then-copy is not atomic, and a lock-held old
         # draft must surface as QA, not a traceback (#slice-2 review) —
         # the contours above are already written and stay valid.
-        from autogis.core.envmon.concentration_surface import (
-            build_surface_registry_rows, surface_tag,
-            write_surface_registry_rows,
-        )
         se_name = f"Draft_GWE_{surface_tag(site_id)}_{ev_dt:%Y%m%d}_EBK_SE"
         try:
             final = str(gdb / se_name)

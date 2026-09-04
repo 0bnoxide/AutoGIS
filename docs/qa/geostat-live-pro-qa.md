@@ -76,6 +76,12 @@ PASS (per `expected_truth.md`):
       each <0.05 ft, and IDW RMSE is <0.20 ft.
 - [ ] EBK wrote a `Draft_` standard-error raster; `GW_ModelRun` +
       `GW_ModelCrossValidation` rows exist with ReviewStatus=DRAFT.
+- [ ] Re-run the tool a second time in the same Pro session, with no manual
+      scratch cleanup in between. It completes on all three methods; no
+      `gwe_*` or `gwm_*` objects remain in `scratch.gdb` (nor a `gwe_tin_*` /
+      `gwm_loo_tin_*` folder beside it) after either run. If a lock prevents
+      cleanup, the QA warning names the exact scratch path and tells the
+      operator to close layers and delete it before retrying (#523).
 
 ### 4. Approval action (~3 min)
 

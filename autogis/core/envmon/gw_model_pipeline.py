@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from autogis.core.common.qa import QACollector, SEV_ERROR, SEV_INFO, SEV_WARNING
+from autogis.core.envmon.concentration_surface import cleanup_scratch, scratch_tag
 from autogis.core.envmon.evaluate_gw_models import (
     ModelStats, ObservationRow, evaluate_gw_models,
 )
@@ -250,13 +251,18 @@ def cross_validate_and_rank(
 #   GetCellValue (no extension) — all current, none deprecated at Pro 3.x.
 # ---------------------------------------------------------------------------
 
-def _make_point_fc(arcpy, scratch, name, sr, pts):  # pragma: no cover
+def _make_point_fc(arcpy, scratch, name, sr, pts,
+                   scratch_objects):  # pragma: no cover
     """(Re)create a scratch point FC with GWE + LocID fields from pts.
 
     LocID lets CrossValidation output points (Source_ID = source OID) be
     joined back to wells without assuming OID insertion order (slice-2 D2).
+    The path is registered in ``scratch_objects`` once for end-of-run
+    cleanup (#523); the Exists/Delete is the per-fold rebuild within a run.
     """
     fc = str(Path(str(scratch)) / name)
+    if fc not in scratch_objects:
+        scratch_objects.append(fc)
     if arcpy.Exists(fc):
         arcpy.management.Delete(fc)
     arcpy.management.CreateFeatureclass(str(scratch), name, "POINT",
@@ -271,8 +277,8 @@ def _make_point_fc(arcpy, scratch, name, sr, pts):  # pragma: no cover
     return fc
 
 
-def make_arcpy_loo_predictor(sr, scratch,
-                             cell_size=None):  # pragma: no cover
+def make_arcpy_loo_predictor(sr, scratch, cell_size=None, *, tag,
+                             scratch_objects):  # pragma: no cover
     """Build a Predictor that re-interpolates with arcpy per LOO fold.
 
     TIN: CreateTin over the N-1 points + AddSurfaceInformation 'Z' at the
@@ -280,22 +286,28 @@ def make_arcpy_loo_predictor(sr, scratch,
     IDW: arcpy.sa.Idw raster + GetCellValue at the held-out point (None on
     'NoData'). ponytail: N surface builds per method — fine for monitoring
     networks (tens of wells); batch it if a site ever has hundreds.
+    ``tag`` (per run) keeps the scratch names from colliding with a
+    lock-held leftover of an earlier run; every object is registered in
+    ``scratch_objects`` for the caller to delete after the run (#523).
     """
     from autogis.runtime.sessions import arcpy_env as _arcpy
     arcpy = _arcpy()
     scratch = Path(str(scratch))
+    tin = str(scratch.parent / f"gwm_loo_tin_{tag}")
 
     def predict(method: str, rest: Sequence[Point],
                 held: Point) -> Optional[float]:
-        pt_fc = _make_point_fc(arcpy, scratch, "gwm_loo_pts", sr, rest)
+        pt_fc = _make_point_fc(arcpy, scratch, f"gwm_loo_pts_{tag}", sr,
+                               rest, scratch_objects)
         _loc, x, y, _z = held
         if method == "TIN":
-            tin = str(Path(str(scratch)).parent / "gwm_loo_tin")
+            if tin not in scratch_objects:
+                scratch_objects.append(tin)
             if arcpy.Exists(tin):
                 arcpy.management.Delete(tin)
             arcpy.ddd.CreateTin(tin, sr, [[pt_fc, "GWE", "Mass_Points"]])
-            held_fc = _make_point_fc(arcpy, scratch, "gwm_loo_held", sr,
-                                     [held])
+            held_fc = _make_point_fc(arcpy, scratch, f"gwm_loo_held_{tag}",
+                                     sr, [held], scratch_objects)
             arcpy.ddd.AddSurfaceInformation(held_fc, tin, "Z", "LINEAR")
             with arcpy.da.SearchCursor(held_fc, ["Z"]) as cur:
                 for (z,) in cur:
@@ -315,30 +327,30 @@ def make_arcpy_loo_predictor(sr, scratch,
     return predict
 
 
-def ebk_loo_predictions(sr, scratch, pts) -> Dict[str, float]:  # pragma: no cover
+def ebk_loo_predictions(sr, scratch, pts, *, tag,
+                        scratch_objects) -> Dict[str, float]:  # pragma: no cover
     """Per-well leave-one-out predictions for EBK (slice-2 D2).
 
     ADR-0077 doc-verified 2026-07-16: EmpiricalBayesianKriging +
     CrossValidation (Geostatistical Analyst). CrossValidation IS
     leave-one-out for the fitted layer — one call instead of N EBK refits.
     Wells the CV excluded (Included negative / null Predicted) are simply
-    absent, which evaluate_gw_models treats as skipped cells.
+    absent, which evaluate_gw_models treats as skipped cells. Scratch
+    naming/registration as in ``make_arcpy_loo_predictor`` (#523).
     """
     from autogis.runtime.sessions import arcpy_env as _arcpy
     arcpy = _arcpy()
     scratch = Path(str(scratch))
-    pt_fc = _make_point_fc(arcpy, scratch, "gwm_ebk_pts", sr, pts)
+    pt_fc = _make_point_fc(arcpy, scratch, f"gwm_ebk_pts_{tag}", sr, pts,
+                           scratch_objects)
     oid_to_loc: Dict[int, str] = {}
     with arcpy.da.SearchCursor(pt_fc, ["OID@", "LocID"]) as cur:
         for oid, loc in cur:
             oid_to_loc[oid] = loc
-    lyr = "gwm_ebk_cv_lyr"
-    if arcpy.Exists(lyr):
-        arcpy.management.Delete(lyr)  # re-run in same Pro session
+    lyr = f"gwm_ebk_cv_lyr_{tag}"
+    cv_pts = str(scratch / f"gwm_ebk_cv_pts_{tag}")
+    scratch_objects += [lyr, cv_pts]
     arcpy.ga.EmpiricalBayesianKriging(pt_fc, "GWE", lyr)
-    cv_pts = str(scratch / "gwm_ebk_cv_pts")
-    if arcpy.Exists(cv_pts):
-        arcpy.management.Delete(cv_pts)
     arcpy.ga.CrossValidation(lyr, cv_pts)
     preds: Dict[str, float] = {}
     with arcpy.da.SearchCursor(
@@ -472,6 +484,10 @@ def run_field_to_groundwater_model_pipeline(  # pragma: no cover
         manual = [m for m in cv_methods if m != "EBK"]
         need = {"TIN": "3D", "IDW": "Spatial", "EBK": "GeoStats"}
         acquired = []
+        # Per-run scratch tag + end-of-run cleanup (#523): the LOO/CV
+        # seams used fixed names that persisted after the run.
+        tag = scratch_tag(site_id, "")
+        scratch_objects: List[str] = []
         try:
             # Checkout inside the try, tracking only what was acquired —
             # a partial checkout must not leak the first license (#241).
@@ -480,12 +496,15 @@ def run_field_to_groundwater_model_pipeline(  # pragma: no cover
                 acquired.append(ext)
             sr = arcpy.Describe(
                 str(Path(str(gdb)) / "MonitoringWells")).spatialReference
-            predict = make_arcpy_loo_predictor(sr, arcpy.env.scratchGDB) \
+            predict = make_arcpy_loo_predictor(
+                sr, arcpy.env.scratchGDB, tag=tag,
+                scratch_objects=scratch_objects) \
                 if manual else (lambda *_: None)
             extra = {}
             if "EBK" in cv_methods:
                 extra["EBK"] = ebk_loo_predictions(
-                    sr, arcpy.env.scratchGDB, pts)
+                    sr, arcpy.env.scratchGDB, pts, tag=tag,
+                    scratch_objects=scratch_objects)
             rows, stats, run_row, cv_rows = cross_validate_and_rank(
                 pts, cv_methods, predict, qa, site_id=site_id,
                 event_date=event_date, now=now, tolerance_ft=tolerance_ft,
@@ -494,6 +513,7 @@ def run_field_to_groundwater_model_pipeline(  # pragma: no cover
         finally:
             for ext in acquired:
                 arcpy.CheckInExtension(ext)
+            cleanup_scratch(arcpy, scratch_objects, qa, site_id)
     else:
         rows, stats, run_row, cv_rows = cross_validate_and_rank(
             pts, cv_methods, lambda *_: None, qa, site_id=site_id,
