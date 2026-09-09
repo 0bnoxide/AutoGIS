@@ -1,0 +1,3 @@
+# Git-invoked shell hooks must stay LF: CRLF makes sh compare "main" and
+# the guard silently no-ops (#465 item 6).
+.githooks/* text eol=lf

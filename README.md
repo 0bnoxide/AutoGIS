@@ -549,6 +549,7 @@ environment, registering the `.pyt`, and the toolbox cache/reload gotcha.
 ```bash
 pip install -e ".[dev]"
 python -m pytest -q           # count is extras-dependent: python -m pytest --collect-only -q
+git config core.hooksPath .githooks   # one-time: blocks accidental commits on main
 ```
 
 ### Optional extras

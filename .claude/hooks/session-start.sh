@@ -13,14 +13,19 @@ set -euo pipefail
 # and ALWAYS log the outcome (status + node/edge counts) so a failed or stale
 # index is a one-`cat last-index.log` diagnosis next session. See the 2026-06-30
 # deviation log in docs/codebase-memory-mcp.md. repo_path is the canonical
-# checkout (not $CLAUDE_PROJECT_DIR) so worktree sessions refresh the one
-# registered project; forward slashes required by the JSON arg.
+# checkout — derived via --git-common-dir (NOT $CLAUDE_PROJECT_DIR or
+# --show-toplevel, which would make each worktree index itself as a separate
+# project) so worktree sessions refresh the one registered project. pwd -W
+# yields the Windows drive-letter form with forward slashes that the JSON arg
+# needs (Git Bash); plain pwd is the non-Windows fallback (#465).
 CBM="$(command -v codebase-memory-mcp || true)"
 CBM_LOG="$HOME/.cache/codebase-memory-mcp/last-index.log"
 mkdir -p "$(dirname "$CBM_LOG")"
+CBM_ROOT="$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .)/.." && { pwd -W 2>/dev/null || pwd; })"
+CBM_KEY="$(printf '%s' "$CBM_ROOT" | sed 's|[:/\\]\{1,\}|-|g')"
 if [ -n "$CBM" ]; then
-  if "$CBM" cli index_repository '{"repo_path":"C:/Users/ichbi/AutoGIS","mode":"full"}' >/dev/null 2>&1; then
-    echo "$(date -Iseconds) ok $("$CBM" cli index_status '{"project":"C-Users-ichbi-AutoGIS"}' 2>/dev/null)" >> "$CBM_LOG"
+  if "$CBM" cli index_repository "{\"repo_path\":\"$CBM_ROOT\",\"mode\":\"full\"}" >/dev/null 2>&1; then
+    echo "$(date -Iseconds) ok $("$CBM" cli index_status "{\"project\":\"$CBM_KEY\"}" 2>/dev/null)" >> "$CBM_LOG"
   else
     rc=$?
     echo "$(date -Iseconds) FAILED index_repository rc=$rc" >> "$CBM_LOG"
