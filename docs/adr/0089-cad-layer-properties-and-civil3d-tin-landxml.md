@@ -1,6 +1,8 @@
 # ADR-0089: CAD layer properties and Civil 3D TIN LandXML
 
-**Status:** Proposed
+**Status:** Accepted (2026-09-08 — owner sign-off closing housekeeping
+tracker #349; both tools shipped `stable` via PR #258 and live-QA'd
+2026-07-18, the status had simply never been flipped.)
 
 **Date:** 2026-07-17
 
