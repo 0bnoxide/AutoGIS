@@ -33,8 +33,8 @@ run_history.csv
 # toolbox.<Tool>.pyt.xml sidecar per tool next to the .pyt on load
 *.pyt.xml
 
-# Project MCP server config — local-only per CLAUDE.md ("There is no project
-# .mcp.json"). Kept out of the repo so it never auto-loads for other sessions.
+# Project MCP server config — GitHub MCP only, per CLAUDE.md. Kept out of the
+# repo so it never auto-loads for other sessions.
 .mcp.json
 build/
 
