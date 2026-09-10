@@ -33,7 +33,11 @@ def load_config(path: Path) -> dict:
     path = Path(path)
     if not path.exists():
         raise ConfigError(f"Configuration file not found: {path}")
+    try:
     text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(
+            f"{path} could not be parsed: invalid UTF-8 ({exc})") from None
     if path.suffix.lower() in (".yaml", ".yml"):
         try:
             import yaml
