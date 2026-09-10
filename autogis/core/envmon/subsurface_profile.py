@@ -202,10 +202,10 @@ def render_profile(placements: list, out_path: Path, *, title: str = "",
         ax.text(p.station_ft, ground + 1, p.boring_id,
                 ha="center", va="bottom", fontsize=8, fontweight="bold")
     if drawable:
-        # Explicit limits: text artists never autoscale, so a boring with no
-        # lithology patches would otherwise leave its label outside the view
-        # and bbox_inches="tight" would balloon the canvas to reach it
-        # (minutes-long renders and enormous files).
+        # Explicit limits keep labels inside the fixed figure bounds: text
+        # artists do not autoscale, and a boring with no lithology patches
+        # would otherwise be clipped. Avoid a tight-bbox layout pass here so
+        # render time stays bounded on hosted Windows.
         stations = [p.station_ft for p in drawable]
         grounds = [p.location["ground_elevation"] for p in drawable]
         ax.set_xlim(min(stations) - col_width, max(stations) + col_width)
@@ -217,6 +217,6 @@ def render_profile(placements: list, out_path: Path, *, title: str = "",
     ax.grid(True, linestyle=":", linewidth=0.5)
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, bbox_inches="tight")
+    fig.savefig(out_path)
     plt.close(fig)
     return out_path
