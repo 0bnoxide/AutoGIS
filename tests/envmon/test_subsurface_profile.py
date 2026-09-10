@@ -153,6 +153,28 @@ def test_render_profile_skips_boring_with_missing_ground_elevation(tmp_path):
     assert "B-OK" not in warning.message
 
 
+def test_render_profile_uses_explicit_limits_without_tight_bbox(
+        tmp_path, monkeypatch):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from matplotlib.figure import Figure
+
+    seen = {}
+
+    def savefig(self, path, **kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", savefig)
+    placement = ProfileBoringPlacement(
+        boring_id="B-1", station_ft=0.0, offset_ft=0.0,
+        location={"ground_elevation": 100.0},
+        lithology=[{"top_depth": 0.0, "bottom_depth": 5.0, "uscs": "CL"}])
+
+    render_profile([placement], tmp_path / "profile.png")
+
+    assert "bbox_inches" not in seen
+
+
 def test_render_profile_drops_lithology_missing_depths(tmp_path):
     pytest.importorskip("matplotlib")
     placements = [ProfileBoringPlacement(
