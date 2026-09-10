@@ -33,7 +33,11 @@ def load_config(path: Path) -> dict:
     path = Path(path)
     if not path.exists():
         raise ConfigError(f"Configuration file not found: {path}")
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(
+            f"{path} could not be parsed: invalid UTF-8 ({exc})") from None
     if path.suffix.lower() in (".yaml", ".yml"):
         try:
             import yaml
@@ -42,16 +46,22 @@ def load_config(path: Path) -> dict:
                 f"PyYAML is required to read {path.name}. Either run "
                 f"'conda install pyyaml' in the ArcGIS Pro environment or "
                 f"provide the same configuration as .json.") from exc
-        data = yaml.safe_load(text)
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ConfigError(f"{path} could not be parsed: {exc}") from None
     else:
-        data = json.loads(text)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ConfigError(f"{path} could not be parsed: {exc}") from None
     if not isinstance(data, dict):
         raise ConfigError(f"{path} must contain a mapping at the top level")
     return data
 
 
 def _require(data: dict, keys: List[str], context: str) -> None:
-    missing = [k for k in keys if k not in data]
+    missing = [k for k in keys if k not in data or data[k] is None]
     if missing:
         raise ConfigError(f"{context}: missing required keys: {', '.join(missing)}")
 

@@ -1,7 +1,8 @@
+import pytest
 import yaml
 
 from autogis.core.common import config_validation as cv
-from autogis.core.common.config import SiteConfig
+from autogis.core.common.config import ConfigError, SiteConfig, load_config
 from autogis.core.common.qa import SEV_ERROR, SEV_WARNING
 
 
@@ -52,6 +53,46 @@ def test_validate_site_flags_missing_keys_and_todos():
     # _TODO value -> WARNING / placeholder
     assert (SEV_WARNING, "placeholder") in cats
 
+
+
+@pytest.mark.parametrize("suffix, contents", [
+    (".yaml", 'site_id: "H281\nbad: [unclosed\n'),
+    (".json", '{"site_id": '),
+])
+def test_load_config_malformed_document_raises_config_error(
+        tmp_path, suffix, contents):
+    path = tmp_path / f"broken{suffix}"
+    path.write_text(contents, encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="could not be parsed"):
+        load_config(path)
+
+
+def test_load_config_invalid_utf8_raises_config_error(tmp_path):
+    path = tmp_path / "broken.yaml"
+    path.write_bytes(b"site_id: \x80\n")
+
+    with pytest.raises(ConfigError, match="could not be parsed"):
+        load_config(path)
+
+def test_site_config_load_rejects_null_required_key(tmp_path):
+    path = tmp_path / "site.yaml"
+    path.write_text(yaml.safe_dump({
+        "site_id": None, "site_name": "X", "monitoring_wells_fc": "MW",
+    }), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="missing required keys: site_id"):
+        SiteConfig.load(path)
+
+
+def test_validate_site_reports_null_required_key():
+    data = {k: "x" for k in cv._SITE_MIN}
+    data["site_id"] = None
+
+    records = cv.validate_site(data)
+
+    assert any(r.category == "missing_key" and "site_id" in r.message
+               for r in records)
 
 def test_validate_site_bad_map_units_and_gwe_range():
     data = {k: "x" for k in cv._SITE_MIN}  # minimal so missing_key doesn't dominate
