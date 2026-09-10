@@ -79,6 +79,19 @@ def test_create_overwrite_replaces(tmp_path):
     assert "leftover" not in _table_names(db)
 
 
+def test_create_overwrite_directory_is_qa_error(tmp_path):
+    db = tmp_path / "adir.sqlite"
+    db.mkdir()
+    qa = QACollector()
+
+    with pytest.raises(FileExistsError):
+        create_boring_log_database(db, overwrite=True, qa=qa)
+
+    assert db.is_dir()
+    assert any(r.category == "overwrite_failed" for r in _errors(qa))
+    assert not any(r.category == "database_created" for r in qa.records)
+
+
 def test_created_db_validates_clean(tmp_path):
     db = tmp_path / "boring.sqlite"
     create_boring_log_database(db)
