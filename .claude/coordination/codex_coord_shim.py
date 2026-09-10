@@ -32,7 +32,7 @@ Wire from ~/.codex/config.toml (or managed requirements.toml):
     matcher = "^(Bash|apply_patch|Edit|Write)$"   # edits report tool_name=apply_patch
     [[hooks.PreToolUse.hooks]]
     type = "command"
-    command_windows = 'python "C:/Users/ichbi/AutoGIS/.claude/coordination/codex_coord_shim.py"'
+    command_windows = 'python "<repo-root>/.claude/coordination/codex_coord_shim.py"'  # substitute your clone path
     timeout = 10
 
 # ponytail: warns dropped on the Codex side -- Codex's handling of Claude's

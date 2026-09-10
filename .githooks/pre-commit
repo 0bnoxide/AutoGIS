@@ -1,0 +1,10 @@
+#!/bin/sh
+# Git-level backstop for the repo's read-only-main policy (#465 item 6).
+# The agent-layer PreToolUse hook already blocks agent writes on main; this
+# catches plain `git commit` from any terminal. Enable once per clone:
+#   git config core.hooksPath .githooks
+branch="$(git symbolic-ref --quiet --short HEAD)"
+if [ "$branch" = "main" ]; then
+  echo "pre-commit: direct commits to 'main' are blocked — branch first (CLAUDE.md > Worktrees & session coordination)." >&2
+  exit 1
+fi

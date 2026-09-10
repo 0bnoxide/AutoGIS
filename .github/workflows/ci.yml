@@ -40,6 +40,11 @@ jobs:
           # repo-root on the path so gui-executor subprocess tests import autogis
           PYTHONPATH: ${{ github.workspace }}
         run: python -m pytest -q -n auto --durations=20 --cov=autogis --cov-report=xml
+      # The one script that has a self-check gets it run (#465 item 4). Git
+      # Bash ships on windows-2022; shell: bash resolves it explicitly.
+      - name: watch-pr-reviews self-check
+        shell: bash
+        run: bash .claude/scripts/test-watch-pr-reviews.sh
 
       # Scan here, on this job's coverage.xml, rather than in its own workflow:
       # a separate job would have to re-run the suite (ADR-0110 flags Windows
