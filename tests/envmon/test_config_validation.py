@@ -70,7 +70,7 @@ def test_load_config_malformed_document_raises_config_error(
 
 def test_load_config_invalid_utf8_raises_config_error(tmp_path):
     path = tmp_path / "broken.yaml"
-    path.write_bytes(b"site_id: \\x80\\n")
+    path.write_bytes(b"site_id: \x80\n")
 
     with pytest.raises(ConfigError, match="could not be parsed"):
         load_config(path)
