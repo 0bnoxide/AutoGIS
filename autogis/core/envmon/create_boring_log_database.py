@@ -41,7 +41,13 @@ def create_boring_log_database(
             qa.add(SEV_ERROR, "file_exists",
                    f"{p} already exists. Use --overwrite to replace it.")
             raise FileExistsError(f"{p} already exists.")
-        p.unlink()
+        try:
+            p.unlink()
+        except OSError as exc:
+            qa.add(SEV_ERROR, "overwrite_failed",
+                   f"Could not replace existing database {p}: {exc}")
+            raise FileExistsError(
+                f"Could not replace existing database: {p}") from None
     if p.parent != Path("."):
         p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(p))
