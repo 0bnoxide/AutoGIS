@@ -205,8 +205,10 @@ def test_render_profile_keeps_edge_labels_and_long_title_bounded(
 
     assert seen["alignments"] == ["left", "right"]
     assert all("\n" in label for label in seen["labels"])
+    assert all(len("".join(label.splitlines())) <= 32
+               for label in seen["labels"])
     title_lines = seen["title"].splitlines()
-    assert len(title_lines) <= 2
+    assert len(title_lines) <= 1
     assert all(len(line) <= 60 for line in title_lines)
 
 
