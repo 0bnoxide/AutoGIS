@@ -153,6 +153,65 @@ def test_render_profile_skips_boring_with_missing_ground_elevation(tmp_path):
     assert "B-OK" not in warning.message
 
 
+def test_render_profile_uses_explicit_limits_without_tight_bbox(
+        tmp_path, monkeypatch):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from matplotlib.figure import Figure
+
+    seen = {}
+
+    def savefig(self, path, **kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", savefig)
+    placement = ProfileBoringPlacement(
+        boring_id="B-1", station_ft=0.0, offset_ft=0.0,
+        location={"ground_elevation": 100.0},
+        lithology=[{"top_depth": 0.0, "bottom_depth": 5.0, "uscs": "CL"}])
+
+    render_profile([placement], tmp_path / "profile.png")
+
+    assert "bbox_inches" not in seen
+
+
+def test_render_profile_keeps_edge_labels_and_long_title_bounded(
+        tmp_path, monkeypatch):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from matplotlib.figure import Figure
+
+    seen = {}
+
+    def savefig(self, path, **kwargs):
+        axis = self.axes[0]
+        seen["labels"] = [text.get_text() for text in axis.texts]
+        seen["alignments"] = [
+            text.get_horizontalalignment() for text in axis.texts]
+        seen["title"] = axis.get_title()
+
+    monkeypatch.setattr(Figure, "savefig", savefig)
+    placements = [
+        ProfileBoringPlacement(
+            boring_id="A" * 32, station_ft=0.0, offset_ft=0.0,
+            location={"ground_elevation": 100.0}, lithology=[]),
+        ProfileBoringPlacement(
+            boring_id="B" * 32, station_ft=10000.0, offset_ft=0.0,
+            location={"ground_elevation": 95.0}, lithology=[]),
+    ]
+
+    render_profile([*placements], tmp_path / "profile.png",
+                   title="Title " + "x" * 200)
+
+    assert seen["alignments"] == ["left", "right"]
+    assert all("\n" in label for label in seen["labels"])
+    assert all(len("".join(label.splitlines())) <= 32
+               for label in seen["labels"])
+    title_lines = seen["title"].splitlines()
+    assert len(title_lines) <= 1
+    assert all(len(line) <= 60 for line in title_lines)
+
+
 def test_render_profile_drops_lithology_missing_depths(tmp_path):
     pytest.importorskip("matplotlib")
     placements = [ProfileBoringPlacement(
