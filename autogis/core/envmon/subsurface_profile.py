@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from textwrap import fill
 from typing import Optional
 
 from ..common.qa import QACollector, SEV_WARNING
@@ -182,6 +183,8 @@ def render_profile(placements: list, out_path: Path, *, title: str = "",
 
     fig, ax = plt.subplots(figsize=(max(6, len(drawable) * 1.5), 8))
     col_width = max((p.station_ft for p in drawable), default=1.0) * 0.02 + 1.0
+    first_station = min((p.station_ft for p in drawable), default=None)
+    last_station = max((p.station_ft for p in drawable), default=None)
     floors = []
     for p in drawable:
         ground = p.location["ground_elevation"]
@@ -199,8 +202,17 @@ def render_profile(placements: list, out_path: Path, *, title: str = "",
             if iv.get("uscs"):
                 ax.text(p.station_ft, (top + bottom) / 2, iv["uscs"],
                         ha="center", va="center", fontsize=6)
-        ax.text(p.station_ft, ground + 1, p.boring_id,
-                ha="center", va="bottom", fontsize=8, fontweight="bold")
+        if p.station_ft == first_station:
+            label_ha = "left"
+        elif p.station_ft == last_station:
+            label_ha = "right"
+        else:
+            label_ha = "center"
+        ax.text(
+            p.station_ft, ground + 1,
+            fill(str(p.boring_id), width=16, max_lines=2, placeholder="…"),
+            ha=label_ha, va="bottom", fontsize=8, fontweight="bold",
+            clip_on=True)
     if drawable:
         # Explicit limits keep labels inside the fixed figure bounds: text
         # artists do not autoscale, and a boring with no lithology patches
@@ -213,7 +225,7 @@ def render_profile(placements: list, out_path: Path, *, title: str = "",
     ax.set_xlabel("Station (ft)")
     ax.set_ylabel("Elevation (ft)")
     if title:
-        ax.set_title(title)
+        ax.set_title(fill(str(title), width=60, max_lines=1, placeholder="…"))
     ax.grid(True, linestyle=":", linewidth=0.5)
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
