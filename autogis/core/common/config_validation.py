@@ -71,7 +71,7 @@ def scan_todos(data, context: str, **ctx) -> List[QARecord]:
 
 def _require(data, keys, context, out):
     for k in keys:
-        if k not in data:
+        if k not in data or data[k] is None:
             out.append(_rec(SEV_ERROR, "missing_key",
                             f"{context}: missing required key {k!r}"))
 
