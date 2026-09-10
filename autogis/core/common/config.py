@@ -34,7 +34,7 @@ def load_config(path: Path) -> dict:
     if not path.exists():
         raise ConfigError(f"Configuration file not found: {path}")
     try:
-    text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise ConfigError(
             f"{path} could not be parsed: invalid UTF-8 ({exc})") from None
