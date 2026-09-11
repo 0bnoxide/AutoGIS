@@ -32,7 +32,7 @@ Because the session hook builds a fresh index, PREFER validating index health ov
 - Tools 1, 9, 10 are headless (openpyxl only); Tools 2-8 are LOCAL (arcpy) and CLI commands for 2-8 guard then redirect to the `.pyt` toolbox. Respect this seam.
 - `HarvestConfig` is canonical in `core/common/config.py` and re-exported from `core/harvest/models.py` for back-compat — preserve both.
 - Screening levels and the H281 parser profile are pre-production stubs: do NOT remove DRAFT banners or `_TODO` markers until verified against real data.
-- Tests are arcpy-free and run with `python -m pytest -q`. Do NOT trust any hardcoded count here — derive the live count with `python -m pytest --collect-only -q 2>&1 | tail -1` at runtime. As of 2026-06-28 the count is 560 across 75 test files.
+- Tests are arcpy-free and run with `python -m pytest -q`. Do NOT trust any hardcoded count here — derive the live count with `python -m pytest --collect-only -q 2>&1 | tail -1` at runtime.
 
 ## Safety and correctness constraints
 - `main` is READ-ONLY. Do not edit any repo file while on the `main` branch — the coordination hook denies it. Check out a feature branch and claim it + your files via the session-coordination framework (see project CLAUDE.md) before writing. One-off override only if explicitly told: `AUTOGIS_COORD_FORCE=1`.
