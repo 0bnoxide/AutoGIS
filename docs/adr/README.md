@@ -154,6 +154,7 @@ Each ADR follows this structure:
 | [133](0133-harvest-photo-metadata-suite.md) | Harvest photo-metadata suite — shared arcpy/arcgis-free EXIF-extraction core (`load_photo_records`/`evaluate_photo_qa`) feeding four headless emitters (`envmon photos points/qa/log/kmz`: CSV+GeoJSON, photo↔feature QA, xlsx/html/docx log, Google Earth KMZ); harvester fill of the ADR-0012 reserved `geometry`/`checksum`/`algorithm` columns (WGS84/Web-Mercator only) plus a new optional `feature_edited_at` column, all back-compat/appended-last; `envmon coc` subgroup idiom reused for the CLI (ADR-0107). | Proposed | 2026-08-13 |
 | [134](0134-gen-sticklogs-2d-boring-sticklog.md) | GenerateBoringSticklogs: 2D per-boring sticklog from the 8.0a database | Accepted | 2026-08-20 |
 | [135](0135-site-required-informational-keys-and-reporter-status.md) | Site-config required keys narrowed to consumed keys; Reporter declared future-use | Accepted | 2026-08-28 |
+| [136](0136-survey123-submission-provenance.md) | Survey123 device-to-client provenance tracer: complete snapshots, exact identities, conservative progress counts; real-device/live acceptance pending | Proposed | 2026-09-12 |
 
 ## File naming
 

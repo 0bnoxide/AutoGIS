@@ -56,6 +56,7 @@ TOOLS: dict[str, Runtime] = {
     "import-rtk-survey": Runtime.LOCAL,  # writes to GDB — needs arcpy
     "route-survey123": Runtime.LOCAL,    # writes to GDB — needs arcpy
     "sync-survey123": Runtime.CLOUD,     # S123 Phase 2 live read-only pull (arcgis via lazy provider)
+    "trace-survey123": Runtime.CLOUD,    # offline snapshots or optional read-only live layers
     "build-dashboard-data-mart": Runtime.LOCAL,  # truncates/repopulates GDB
     "generate-trend-charts": Runtime.CLOUD,  # tool 4.6 headless openpyxl charts
     "ingest-reviewer-comments": Runtime.CLOUD,  # tool 9.4 headless parser
@@ -141,6 +142,8 @@ class ToolCapability:
 
 # (command, name, roadmap_id, runtime, status, domain, description)
 _REGISTRY_SEED = [
+    ("trace-survey123", "TraceSurvey123Provenance", "", "CLOUD", "draft", "field",
+     "DRAFT: device-to-client submission evidence and distinct progress counts"),
     ("inspect", "InspectWorkbook", "1", "CLOUD", "stable", "intake",
      "Inspect an Excel workbook's structure"),
     ("parser-profile", "ParserProfile", "9", "CLOUD", "stable", "admin",

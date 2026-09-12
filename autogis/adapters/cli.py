@@ -153,7 +153,8 @@ _SELF_LOGGING_COMMANDS = {"promote", "event-status", "coc"}
 # also a finding, not a failure (not self-logging like `coc`, so it needs
 # an explicit entry here or every discrepancy run-history record would be
 # mislogged as status='error').
-_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}, "reconcile-event": {2}}
+_SEMANTIC_EXIT_CODES = {"diff-survey-schema": {2, 3}, "reconcile-event": {2},
+                        "trace-survey123": {2}}
 
 
 def _record_tool_name(ctx) -> str:
@@ -5115,6 +5116,90 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
 
     click.echo(f"Batch {bid}: {wl_inserted} water levels, {samp_inserted} samples imported.")
     _render_qa(qa, report, fail_on)
+
+
+@envmon.command("trace-survey123")
+@click.option("--device", "device_paths", multiple=True, required=True,
+              type=click.Path(exists=True, dir_okay=False), help="Closed device SQLite export; repeat for multiple devices.")
+@click.option("--device-root", required=True, help="Exact top-level root in Surveys.data JSON; selects one form.")
+@click.option("--device-key", default="globalid", show_default=True, help="Stable identity field in the selected device root.")
+@click.option("--hosted-json", type=click.Path(exists=True, dir_okay=False), help="Complete version-1 hosted snapshot (see operator guide).")
+@click.option("--hosted-url", help="HTTPS FeatureServer/<layer-id> URL; mutually exclusive with --hosted-json.")
+@click.option("--hosted-key", default="globalid", show_default=True)
+@click.option("--client-json", type=click.Path(exists=True, dir_okay=False), help="Optional complete client snapshot.")
+@click.option("--client-url", help="Optional client HTTPS layer URL; mutually exclusive with --client-json.")
+@click.option("--client-key", default="globalid", show_default=True, help="Client field retaining the original stable identity.")
+@connection_profile_option
+@click.option("--client-profile", default=None, help="Separate named client login profile; omitted means anonymous.")
+@click.option("--out", required=True, type=click.Path(file_okay=False), help="New report directory; existing directories are refused.")
+def trace_survey123_cmd(device_paths, device_root, device_key, hosted_json,
+                        hosted_url, hosted_key, client_json, client_url,
+                        client_key, profile, client_profile, out):
+    """DRAFT: trace device-to-hosted-to-client presence; JSON/CSV evidence.
+
+    Base install supports SQLite + saved snapshots; URLs need the survey123
+    extra. Read-only. Exit 2 means discrepancies/review items, 1 means failure.
+    Counts exclude inbox copies, edits, drafts, and ambiguous IDs from new work.
+    """
+    import importlib.util
+    import sqlite3
+    from autogis.core.envmon import submission_provenance as sp
+
+    if bool(hosted_json) == bool(hosted_url):
+        raise click.UsageError('Provide exactly one of --hosted-json or --hosted-url.')
+    if client_json and client_url:
+        raise click.UsageError('Provide only one of --client-json or --client-url.')
+    if (profile and not hosted_url) or (client_profile and not client_url):
+        raise click.UsageError('Profiles require the corresponding live URL.')
+    # Usage errors are not logged: credential-bearing URLs never reach history.
+    try:
+        for url in (hosted_url, client_url):
+            if url:
+                sp.validate_layer_url(url)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from None
+    if (hosted_url or client_url) and importlib.util.find_spec('arcgis') is None:
+        raise click.ClickException('Live tracing needs the ArcGIS API for Python. '
+                                   'Install it with: pip install "autogis[survey123]"')
+
+    def endpoint(json_path, url, key, login):
+        if json_path:
+            return sp.read_snapshot(Path(json_path), key_field=key)
+        from arcgis.features import FeatureLayer
+        try:
+            layer = FeatureLayer(url, gis=agol_from_profile(login))
+            snapshot = sp.fetch_snapshot(layer, source=url, key_field=key)
+        except Exception:
+            # Provider exceptions can contain request URLs/tokens. No echo to
+            # console or run history; failure is never an empty successful leg.
+            raise click.ClickException('Live snapshot failed. Check access, field names, '
+                                       'and service availability, then retry.') from None
+        return sp.validate_snapshot(snapshot, key_field=key)
+
+    try:
+        if Path(out).exists():
+            raise ValueError('Report directory already exists; choose a new --out directory.')
+        paths = [Path(p).resolve() for p in device_paths]
+        if len(set(paths)) != len(paths):
+            raise ValueError('The same device export was supplied more than once.')
+        observations, device_sources = [], []
+        for path in paths:
+            records, source = sp.read_device(path, root=device_root, key_field=device_key)
+            observations.extend(records)
+            device_sources.append(source)
+        hosted, hosted_source = endpoint(hosted_json, hosted_url, hosted_key, profile)
+        client, client_source = (endpoint(client_json, client_url, client_key, client_profile)
+                                 if client_json or client_url else (None, None))
+        report = sp.reconcile(observations, hosted, client, sources=dict(
+            device=device_sources, hosted=hosted_source, client=client_source))
+        sp.write_report(report, Path(out))
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        raise click.ClickException(str(exc)) from None
+    click.echo(json.dumps(report['counts'], sort_keys=True))
+    click.echo(f"Evidence report: {Path(out) / 'provenance.json'}")
+    if any(r['status'] in {'needs_review', 'device_only', 'client_only',
+                           'hosted_not_visible_at_client'} for r in report['records']):
+        raise SystemExit(2)
 
 
 @envmon.command("sync-survey123")
