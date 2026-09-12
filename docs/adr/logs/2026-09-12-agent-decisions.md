@@ -30,3 +30,15 @@ before and after tracing, including file bytes.
 
 **Revisit if:** Reading live field-app databases becomes an explicit requirement;
 that needs a consistent export/backup acquisition step instead of immutable I/O.
+
+## PR #537: recheck sidecars after device verification
+
+**Decision:** Reuse the active-WAL/journal guard after the read and final
+main-file hash check, before accepting device observations.
+
+**Reasoning:** Automated review found that concurrent commits can live only
+in a new WAL, leaving the main-file hash unchanged. A regression with a real
+SQLite writer reproduced a successful incomplete report and now fails closed.
+
+**Revisit if:** Live acquisition is authorized; pre/post checks do not replace
+the required closed-export contract or establish a continuous source lock.

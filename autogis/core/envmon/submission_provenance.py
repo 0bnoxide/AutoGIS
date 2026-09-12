@@ -86,6 +86,13 @@ def read_device(path: Path, *, root: str, key_field: str) -> tuple[list[dict], d
                          'and UTF-8 data in a closed, consolidated copy.') from None
 
 
+def _require_consolidated_export(path: Path) -> None:
+    for suffix in ('-wal', '-journal'):
+        sidecar = Path(str(path) + suffix)
+        if sidecar.exists() and sidecar.stat().st_size:
+            raise ValueError('Device export has an active WAL/journal; supply a closed, consolidated copy.')
+
+
 def _read_device(path: Path, *, root: str, key_field: str) -> tuple[list[dict], dict]:
     """Read a closed device export's Surveys.data[root]; never mutate the DB.
 
@@ -94,10 +101,7 @@ def _read_device(path: Path, *, root: str, key_field: str) -> tuple[list[dict], 
     Inbox copies are excluded, edits retained but excluded from new-work counts.
     """
     path = Path(path).resolve(strict=True)
-    for suffix in ('-wal', '-journal'):
-        sidecar = Path(str(path) + suffix)
-        if sidecar.exists() and sidecar.stat().st_size:
-            raise ValueError('Device export has an active WAL/journal; supply a closed, consolidated copy.')
+    _require_consolidated_export(path)
     before = _file_hash(path)
     records = []
     stats = dict(source=str(path), sha256=before, root=root, key_field=key_field,
@@ -144,6 +148,8 @@ def _read_device(path: Path, *, root: str, key_field: str) -> tuple[list[dict], 
                 payload_hash=payload_hash(attrs, None)))
     if _file_hash(path) != before:
         raise ValueError('Device export changed while being read; retry with a closed copy.')
+    # A concurrent writer may commit only to WAL, leaving main-file bytes unchanged.
+    _require_consolidated_export(path)
     if not stats['selected_rows']:
         raise ValueError('No device rows match the selected payload root.')
     return records, stats

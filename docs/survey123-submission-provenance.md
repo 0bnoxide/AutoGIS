@@ -16,7 +16,8 @@ The base install is sufficient. Copy the device database after closing the
 field app; keep the original intact. Do not copy just the SQLite main file
 while its data remains in a WAL/journal. Consolidate the export first using
 the field application's supported recovery process. Active WAL/journal
-sidecars are rejected; the reader opens SQLite with `mode=ro&immutable=1`, a read
+sidecars are checked before and after reading and rejected; the reader opens
+SQLite with `mode=ro&immutable=1`, a read
 transaction, `query_only=ON`, and `trusted_schema=OFF`. Before/after SHA-256
 checks reject a main file that changes during the read. Immutable mode prevents
 SQLite from creating WAL/shared-memory sidecars beside the source. It also

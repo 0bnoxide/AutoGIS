@@ -334,3 +334,38 @@ def test_closed_wal_export_does_not_create_source_sidecars(tmp_path):
     result = invoke(tmp_path, db, hosted)
     assert result.exit_code == 0, result.output
     assert {p.name: p.read_bytes() for p in evidence.iterdir()} == before
+
+
+def test_device_wal_created_during_read_is_rejected_even_if_main_hash_unchanged(tmp_path, monkeypatch):
+    mod = importlib.import_module('autogis.core.envmon.submission_provenance')
+    db = tmp_path / 'device.sqlite'
+    payload = json.dumps({'inspection': {'record_id': 'a', '__meta__': {'editMode': 0}}})
+    with closing(sqlite3.connect(db)) as conn:
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('CREATE TABLE Surveys (name TEXT, data TEXT, status INTEGER)')
+        conn.execute('INSERT INTO Surveys VALUES (?, ?, ?)', ('survey', payload, 2))
+        conn.commit()
+    before = db.read_bytes()
+    original_hash = mod._file_hash
+    calls = 0
+    writer = None
+
+    def commit_to_wal_during_verification(path):
+        nonlocal calls, writer
+        calls += 1
+        if calls == 2:
+            writer = sqlite3.connect(db)
+            writer.execute('INSERT INTO Surveys VALUES (?, ?, ?)', ('late', payload, 2))
+            writer.commit()
+            assert db.read_bytes() == before
+        return original_hash(path)
+
+    monkeypatch.setattr(mod, '_file_hash', commit_to_wal_during_verification)
+    hosted = snapshot(tmp_path / 'hosted.json', ['a'])
+    try:
+        result = invoke(tmp_path, db, hosted)
+        assert result.exit_code == 1, result.output
+        assert not (tmp_path / 'report').exists()
+    finally:
+        if writer is not None:
+            writer.close()
