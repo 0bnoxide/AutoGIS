@@ -246,6 +246,14 @@ work without turning AutoGIS into a hosting, scheduling, or messaging platform.
 
 Moved here from `CLAUDE.md` on 2026-07-29; record each new gate change here.
 
+- 2026-09-12 — The owner explicitly requested implementation of issue #414,
+  authorizing the submission provenance tracer as an optional extension of
+  the Phase 2 read path. `envmon trace-survey123` and ADR-0136 cover device
+  SQLite exports, complete hosted/client snapshots, and progress counts.
+  Tooling remains DRAFT pending sanitized real-device and live non-production
+  acceptance; this decision neither starts Phases 4–7 nor closes existing
+  acceptance gates. See [operator guide](survey123-submission-provenance.md).
+
 - 2026-07-26 — Phase 0 slice A (lifecycle SampleID contract) shipped via
   ADR-0113 (PR #359, owner-merged); envelope leg deliberately deferred to
   Phase 2 (first consumer). An explicit owner decision, not a default
