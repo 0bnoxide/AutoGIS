@@ -16,9 +16,13 @@ The base install is sufficient. Copy the device database after closing the
 field app; keep the original intact. Do not copy just the SQLite main file
 while its data remains in a WAL/journal. Consolidate the export first using
 the field application's supported recovery process. Active WAL/journal
-sidecars are rejected; the reader opens SQLite with `mode=ro`, a read
+sidecars are rejected; the reader opens SQLite with `mode=ro&immutable=1`, a read
 transaction, `query_only=ON`, and `trusted_schema=OFF`. Before/after SHA-256
-checks reject a main file that changes during the read.
+checks reject a main file that changes during the read. Immutable mode prevents
+SQLite from creating WAL/shared-memory sidecars beside the source. It also
+disables SQLite's locking and change detection, so a closed, consolidated
+export that no other process changes is required; never point this command
+at the live field-app database. See [SQLite read-only WAL guidance](https://sqlite.org/wal.html#read_only_databases).
 
 The supported schema is `Surveys(name, data, status)`, with `data` containing
 a JSON object keyed by the form's root table name. Select that **exact root**

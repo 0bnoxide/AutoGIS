@@ -16,3 +16,17 @@ incremental outputs would falsely interpret unobserved records as absent.
 requires a different, explicitly validated production/billing contract.
 
 Architectural record: [ADR-0136](../0136-survey123-submission-provenance.md).
+
+## PR #537: preserve closed WAL-mode evidence directories
+
+**Decision:** Add SQLite `immutable=1` to the read-only device URI while
+retaining nonempty WAL/journal rejection and before/after main-file hashes.
+
+**Reasoning:** Cold review and a real CLI regression reproduced that `mode=ro`
+creates `-wal`/`-shm` beside a checkpointed WAL-mode export. SQLite's documented
+immutable mode prevents those writes for the already-required closed,
+consolidated export. The regression compares the entire source directory
+before and after tracing, including file bytes.
+
+**Revisit if:** Reading live field-app databases becomes an explicit requirement;
+that needs a consistent export/backup acquisition step instead of immutable I/O.

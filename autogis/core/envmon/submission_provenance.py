@@ -103,7 +103,9 @@ def _read_device(path: Path, *, root: str, key_field: str) -> tuple[list[dict], 
     stats = dict(source=str(path), sha256=before, root=root, key_field=key_field,
                  read_at=datetime.now(timezone.utc).isoformat(),
                  selected_rows=0, unrelated_rows=0, excluded_inbox_rows=0)
-    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)) as db:
+    # Closed/consolidated exports only: immutable also prevents a WAL-mode
+    # reader from creating -wal/-shm beside the evidence (mode=ro alone does not).
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro&immutable=1', uri=True)) as db:
         db.execute('PRAGMA query_only=ON')
         db.execute('PRAGMA trusted_schema=OFF')
         db.execute('BEGIN')

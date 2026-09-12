@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import json
 import sqlite3
+from contextlib import closing
 from types import SimpleNamespace
 
 import pytest
@@ -314,3 +315,22 @@ def test_url_parser_failure_cannot_echo_credentials(tmp_path):
     assert result.exit_code == 2
     assert 'PRIVATE_PASSWORD_MARKER' not in result.output
     assert not (tmp_path / 'history.csv').exists()
+
+
+def test_closed_wal_export_does_not_create_source_sidecars(tmp_path):
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    db = evidence / 'device.sqlite'
+    with closing(sqlite3.connect(db)) as conn:
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('CREATE TABLE Surveys (name TEXT, data TEXT, status INTEGER)')
+        conn.execute('INSERT INTO Surveys VALUES (?, ?, ?)', (
+            'survey', json.dumps({'inspection': {'record_id': 'a',
+                                 '__meta__': {'editMode': 0}}}), 2))
+        conn.commit()
+    before = {p.name: p.read_bytes() for p in evidence.iterdir()}
+    assert set(before) == {'device.sqlite'}
+    hosted = snapshot(tmp_path / 'hosted.json', ['a'])
+    result = invoke(tmp_path, db, hosted)
+    assert result.exit_code == 0, result.output
+    assert {p.name: p.read_bytes() for p in evidence.iterdir()} == before
