@@ -67,23 +67,27 @@ the live app DB). Keep the raw copy **off the repo**. Sanitized = the raw
 `.sqlite` stays local; the report copies only IDs, hashes and paths.
 
 ```bat
-certutil -hashfile <export>.sqlite SHA256          :: record BEFORE
+:: record BEFORE
+certutil -hashfile <export>.sqlite SHA256
 python -m autogis envmon trace-survey123 ^
   --device <export>.sqlite --device-root <form root> --device-key globalid ^
   --hosted-json <hosted snapshot>.json --hosted-key GlobalID ^
   --out <reports>\provenance-device-<date>
-certutil -hashfile <export>.sqlite SHA256          :: record AFTER
+:: record AFTER
+certutil -hashfile <export>.sqlite SHA256
 ```
 
 If the form root is unknown, run once with a guessed root: the exit-1
 message is the cue to inspect `Surveys.data` for the real top-level key.
 
 PASS:
-- [ ] Schema accepted — none of these exit-1 messages:
+- [ ] Schema accepted — no exit-1 reader message, i.e. none of:
       `Unsupported device schema: expected a Surveys table with name, data, status.`,
-      `Device row N has invalid JSON data.`, `Device row N data must be an object.`,
-      or `Device SQLite export could not be read; verify its schema and UTF-8
-      data in a closed, consolidated copy.`
+      `Device SQLite export could not be read; verify its schema and UTF-8
+      data in a closed, consolidated copy.`, or any `Device row N …` message
+      (`has invalid JSON data`, `data must be an object`, `selected root must
+      be an object`, `has an unsupported status` — the last is the likeliest
+      real-app surprise: a status outside 0–4).
       **FAIL here → file a reader-revision issue; stop the run.**
 - [ ] Before/after SHA-256 identical; no sidecars created.
 - [ ] `device_rows + excluded_inbox_rows` equals the independent count
