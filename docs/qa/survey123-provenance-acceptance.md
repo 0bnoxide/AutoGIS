@@ -2,8 +2,9 @@
 
 The one remaining leg of issue #414 (ADR-0136, **Proposed**): prove the
 shipped `envmon trace-survey123` against a real device export and real
-non-production services, then lift DRAFT. Everything below runs from the base
-install; legs 2–3 are owner-gated (physical device, live credentials).
+non-production services, then lift DRAFT. Legs 1–2 run from the base
+install (leg 3 needs the `survey123` extra); legs 2–3 are owner-gated
+(physical device, live credentials).
 
 Sign-off policy (owner decision, 2026-09-17): **explained-not-zero** —
 `needs_review` rows do not block acceptance provided each one is traced to a
@@ -33,6 +34,8 @@ PASS: `--check` prints `CHECK OK`. Then run the same shape by hand:
 
 ```bat
 set QA=%USERPROFILE%\Desktop\AutoGIS-QA\survey123
+:: the tool refuses an existing --out, so clear a previous rehearsal first
+if exist %QA%\report-1 rmdir /s /q %QA%\report-1
 python -m autogis envmon trace-survey123 ^
   --device %QA%\device.sqlite --device-root inspection --device-key record_id ^
   --hosted-json %QA%\hosted.json --hosted-key record_id ^
@@ -52,7 +55,8 @@ PASS (verified against head `4d04727`):
       `device_only` with `new_ready=False`.
 - [ ] Guardrails: re-run with the same `--out` → refused, no files touched;
       `--device-root wrongroot` → exit 1 "No device rows match"; omit
-      `--client-json` → `client_rows` is `null`, **not** `0`.
+      `--client-json` → `client_rows` is `null` in `provenance.json`,
+      **not** `0` (`counts.csv` shows it as an empty cell).
 - [ ] No `device.sqlite-wal` / `-shm` beside the export after any run.
 
 ## 2. Real device export (owner-gated)
@@ -75,12 +79,16 @@ If the form root is unknown, run once with a guessed root: the exit-1
 message is the cue to inspect `Surveys.data` for the real top-level key.
 
 PASS:
-- [ ] Schema accepted: no "incompatible schema" / malformed-JSON failure.
+- [ ] Schema accepted — none of these exit-1 messages:
+      `Unsupported device schema: expected a Surveys table with name, data, status.`,
+      `Device row N has invalid JSON data.`, `Device row N data must be an object.`,
+      or `Device SQLite export could not be read; verify its schema and UTF-8
+      data in a closed, consolidated copy.`
       **FAIL here → file a reader-revision issue; stop the run.**
 - [ ] Before/after SHA-256 identical; no sidecars created.
-- [ ] `device_rows + excluded_inbox_rows` equals the count from
-      `SELECT count(*) FROM Surveys` where `data` contains the root
-      (independent check in any SQLite browser).
+- [ ] `device_rows + excluded_inbox_rows` equals the independent count
+      `SELECT count(*) FROM Surveys WHERE json_extract(data,'$.<root>') IS NOT NULL`
+      (any SQLite browser; the reader matches a top-level key, not a substring).
 - [ ] Box states line up with what the app showed: Sent rows are
       `hosted_*`/`visible_*`; Outbox/Submission-Error rows are `device_only`
       with `new_ready=True`; Inbox downloads land only in
@@ -107,8 +115,10 @@ PASS:
       than the service `maxRecordCount` proves pagination.
 - [ ] Sharing-scope probe: run once with a profile that can see the whole
       hosted layer and once with a restricted view/profile. The restricted
-      run must **abort or report a smaller `hosted_rows`**, never silently
-      report the hidden records as `device_only`.
+      run must show a visibly smaller `hosted_rows` and list the hidden
+      records as `device_only` — the tool cannot tell sharing-hidden from
+      absent (documented scope limitation, not a defect). FAIL only if
+      `hosted_rows` equals the full-layer count while records are hidden.
 - [ ] Credentialed URL (`?token=…`) is refused before run history is
       written; a wrong password aborts with exit 1 and no report directory.
 - [ ] `provenance.json` records `source` URLs without credentials and both
@@ -119,7 +129,9 @@ PASS:
 
 - Comment pass/fail per checkbox on #414; attach `counts.csv` and the
   explained `needs_review` list (never the raw export). File a bug per FAIL.
-- On full PASS with owner sign-off, in one follow-up PR: drop the DRAFT
-  banner in `docs/survey123-submission-provenance.md` and the CLI help,
-  flip ADR-0136 to **Accepted**, close #414. This does not open Survey123
-  Phases 4–7.
+- On full PASS with owner sign-off, in one follow-up PR: drop DRAFT from
+  all four places — `docs/survey123-submission-provenance.md`, the CLI help
+  docstring, the `submission_provenance.py` module docstring, and the
+  `limitations[0]` string written into every `provenance.json` (grep the
+  tests for `acceptance pending` too); flip ADR-0136 to **Accepted**; close
+  #414. This does not open Survey123 Phases 4–7.
