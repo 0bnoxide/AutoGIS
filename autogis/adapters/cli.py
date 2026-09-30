@@ -2412,9 +2412,9 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
     import yaml
     from autogis.core.envmon.survey123_form_builder import build_xlsform
-    site_cfg = yaml.safe_load(open(site_path, encoding="utf-8"))
-    analytes = yaml.safe_load(open(analytes_path, encoding="utf-8"))
-    event_cfg = yaml.safe_load(open(event_path, encoding="utf-8"))
+    site_cfg = yaml.safe_load(Path(site_path).read_text(encoding="utf-8"))
+    analytes = yaml.safe_load(Path(analytes_path).read_text(encoding="utf-8"))
+    event_cfg = yaml.safe_load(Path(event_path).read_text(encoding="utf-8"))
     wb = build_xlsform(site_cfg, event_cfg, analytes)
     wb.save(out_path)
     click.echo(f"XLSForm written to {out_path}")
@@ -2442,7 +2442,7 @@ def validate_survey_form_cmd(form_xlsx, site_path, event_path, analytes_path,
         raise click.ClickException(f"cannot read XLSForm: {exc}")
 
     def _load(p):
-        return yaml.safe_load(open(p, encoding="utf-8")) if p else None
+        return yaml.safe_load(Path(p).read_text(encoding="utf-8")) if p else None
 
     qa = QACollector()
     validate_form(schema, qa,
@@ -2487,7 +2487,7 @@ def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
         if baseline_path:
             changes += diff_forms(read_xlsform(baseline_path), new)
         if spec_path:
-            spec = yaml.safe_load(open(spec_path, encoding="utf-8"))
+            spec = yaml.safe_load(Path(spec_path).read_text(encoding="utf-8"))
             changes += diff_form_vs_layer(new, spec)
     except click.ClickException:
         raise
@@ -3004,9 +3004,9 @@ def build_fieldmaps_cmd(site_path, event_path, gdb_path, dry_run, report,
             "Provide --gdb (ArcGIS Pro) or --dry-run for a headless "
             "plan preview.")
 
-    cfg = yaml.safe_load(open(site_path, encoding="utf-8")) or {}
+    cfg = yaml.safe_load(Path(site_path).read_text(encoding="utf-8")) or {}
     if event_path:
-        cfg.update(yaml.safe_load(open(event_path, encoding="utf-8")) or {})
+        cfg.update(yaml.safe_load(Path(event_path).read_text(encoding="utf-8")) or {})
     plans = plan_fieldmaps_project(cfg)
     for p in plans:
         click.echo(f"{p.name} ({p.geometry}): "
