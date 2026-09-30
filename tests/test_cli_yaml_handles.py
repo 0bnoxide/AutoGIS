@@ -1,8 +1,8 @@
 """CLI YAML inputs are read-and-closed, not left to the garbage collector.
 
-A bare ``open()`` inside ``yaml.safe_load(...)`` leaks the handle; under the
-long-lived ``.pyt`` interpreter that holds the file open until GC (a lock on
-Windows). ``build-survey-form`` is the command the suite flagged.
+A bare ``open()`` inside ``yaml.safe_load(...)`` leaks the handle until GC:
+a ResourceWarning in the suite, and a lingering lock on Windows for as long
+as the process lives. ``build-survey-form`` is the command the suite flagged.
 """
 import gc
 import warnings
