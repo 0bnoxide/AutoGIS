@@ -2440,8 +2440,10 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     event_cfg = _load_survey_yaml(event_path)
     wb = build_xlsform(site_cfg, event_cfg, analytes)
     try:
+        # A missing --out directory is created, not an error (#550).
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
         wb.save(out_path)
-    except OSError as exc:  # missing parent dir, permission denied (#550)
+    except OSError as exc:  # permission denied, parent is a file, ...
         raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"XLSForm written to {out_path}")
 

@@ -130,14 +130,26 @@ def test_validate_survey_form_empty_config_still_means_not_supplied(tmp_path):
         assert "expected a YAML mapping" in result.output
 
 
-def test_build_survey_form_unwritable_out_is_a_clean_error(tmp_path):
-    """#550: an --out in a missing directory must not escape as a raw
-    FileNotFoundError from wb.save, and must not create the directory."""
+def test_build_survey_form_creates_missing_out_directory(tmp_path):
+    """#550 (owner decision: option B): an --out in a missing directory
+    creates that directory instead of escaping as a raw FileNotFoundError."""
     obj = tmp_path / "obj.yaml"
     obj.write_text("{}\n", encoding="utf-8")
-    out = tmp_path / "nope" / "form.xlsx"
+    out = tmp_path / "new dir é" / "nested" / "form.xlsx"
+    result = _build(tmp_path, obj, obj, obj, out=out)
+    assert result.exit_code == 0, result.output
+    assert out.is_file()
+
+
+def test_build_survey_form_unwritable_out_is_a_clean_error(tmp_path):
+    """Other write failures (here: a parent that is a regular file) still
+    surface as a clean error, not a traceback."""
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    a_file = tmp_path / "a_file"
+    a_file.write_text("", encoding="utf-8")
+    out = a_file / "form.xlsx"
     result = _build(tmp_path, obj, obj, obj, out=out)
     assert result.exit_code == 1, result.output
     assert isinstance(result.exception, SystemExit), result.exception
     assert "cannot write" in result.output and str(out) in result.output
-    assert not out.parent.exists()
