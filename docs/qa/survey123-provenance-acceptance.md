@@ -26,6 +26,7 @@ a reader revision, which invalidates the other legs.
 
 ```bat
 :: any Python with autogis installed — writes to Desktop\AutoGIS-QA\survey123\
+:: the stager never overwrites: if its three files already exist it exits 1
 python docs\qa\make_survey123_provenance_qa_data.py --check
 python docs\qa\make_survey123_provenance_qa_data.py
 ```

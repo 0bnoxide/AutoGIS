@@ -58,8 +58,11 @@ EXPECTED_COUNTS = {
 def stage(out: Path) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     db = out / "device.sqlite"
-    if db.exists():
-        db.unlink()
+    # Never replace anything: this folder may later hold a real device export.
+    clash = [n for n in ("device.sqlite", "hosted.json", "client.json") if (out / n).exists()]
+    if clash:
+        raise SystemExit(f"Refusing to overwrite {', '.join(clash)} in {out}; "
+                         "use a fresh --out or remove them yourself.")
     with closing(sqlite3.connect(db)) as conn, conn:
         conn.execute("CREATE TABLE Surveys (name TEXT, data TEXT, status INTEGER)")
         conn.executemany("INSERT INTO Surveys VALUES (?, ?, ?)", [
