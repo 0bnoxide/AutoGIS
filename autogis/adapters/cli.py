@@ -2399,17 +2399,28 @@ def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
         raise click.ClickException(str(exc))
     click.echo(format_manifest(manifest))
 
-def _load_survey_yaml(path):
+
+def _load_survey_yaml(path, allow_empty=False):
     """Read a survey-form YAML input. ``click.Path(exists=True)`` admits a
     directory, and malformed YAML is a usage mistake -- report both as a
-    ClickException, not a raw traceback (#545)."""
+    ClickException, not a raw traceback (#545). The document must be a
+    mapping; an empty one is only accepted with ``allow_empty`` (returns
+    None), never coerced to {} -- that would build a form with no site,
+    wells or analytes and still exit 0 (#549)."""
     import yaml
     if not path:
         return None
     try:
-        return yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise click.ClickException(f"cannot read {path}: {exc}")
+    if data is None and allow_empty:
+        return None
+    if not isinstance(data, dict):
+        got = "an empty document" if data is None else type(data).__name__
+        raise click.ClickException(
+            f"{path}: expected a YAML mapping, got {got}")
+    return data
 
 
 @envmon.command("build-survey-form")
@@ -2420,7 +2431,7 @@ def _load_survey_yaml(path):
 @click.option("--event", "event_path", required=True,
               type=click.Path(exists=True), help="Event config YAML.")
 @click.option("--out", "out_path", required=True,
-              type=click.Path(), help="Output .xlsx path.")
+              type=click.Path(dir_okay=False), help="Output .xlsx path.")
 def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
     from autogis.core.envmon.survey123_form_builder import build_xlsform
@@ -2454,9 +2465,10 @@ def validate_survey_form_cmd(form_xlsx, site_path, event_path, analytes_path,
 
     qa = QACollector()
     validate_form(schema, qa,
-                  event_config=_load_survey_yaml(event_path),
-                  site_config=_load_survey_yaml(site_path),
-                  analyte_dict=_load_survey_yaml(analytes_path))
+                  event_config=_load_survey_yaml(event_path, allow_empty=True),
+                  site_config=_load_survey_yaml(site_path, allow_empty=True),
+                  analyte_dict=_load_survey_yaml(analytes_path,
+                                                 allow_empty=True))
     _render_qa(qa, report, fail_on)
 
 
