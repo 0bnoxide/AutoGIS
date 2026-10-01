@@ -2399,6 +2399,19 @@ def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
         raise click.ClickException(str(exc))
     click.echo(format_manifest(manifest))
 
+def _load_survey_yaml(path):
+    """Read a survey-form YAML input. ``click.Path(exists=True)`` admits a
+    directory, and malformed YAML is a usage mistake -- report both as a
+    ClickException, not a raw traceback (#545)."""
+    import yaml
+    if not path:
+        return None
+    try:
+        return yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise click.ClickException(f"cannot read {path}: {exc}")
+
+
 @envmon.command("build-survey-form")
 @click.option("--site", "site_path", required=True,
               type=click.Path(exists=True), help="Site config YAML.")
@@ -2410,11 +2423,10 @@ def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
               type=click.Path(), help="Output .xlsx path.")
 def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
-    import yaml
     from autogis.core.envmon.survey123_form_builder import build_xlsform
-    site_cfg = yaml.safe_load(Path(site_path).read_text(encoding="utf-8"))
-    analytes = yaml.safe_load(Path(analytes_path).read_text(encoding="utf-8"))
-    event_cfg = yaml.safe_load(Path(event_path).read_text(encoding="utf-8"))
+    site_cfg = _load_survey_yaml(site_path)
+    analytes = _load_survey_yaml(analytes_path)
+    event_cfg = _load_survey_yaml(event_path)
     wb = build_xlsform(site_cfg, event_cfg, analytes)
     wb.save(out_path)
     click.echo(f"XLSForm written to {out_path}")
@@ -2433,7 +2445,6 @@ def validate_survey_form_cmd(form_xlsx, site_path, event_path, analytes_path,
                              report, fail_on):
     """S123-1.1: static XLSForm validation — structure, choices, references,
     the ADR-0113 SampleID contract, and config cross-checks."""
-    import yaml
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.survey_schema import read_xlsform, validate_form
     try:
@@ -2441,14 +2452,11 @@ def validate_survey_form_cmd(form_xlsx, site_path, event_path, analytes_path,
     except Exception as exc:
         raise click.ClickException(f"cannot read XLSForm: {exc}")
 
-    def _load(p):
-        return yaml.safe_load(Path(p).read_text(encoding="utf-8")) if p else None
-
     qa = QACollector()
     validate_form(schema, qa,
-                  event_config=_load(event_path),
-                  site_config=_load(site_path),
-                  analyte_dict=_load(analytes_path))
+                  event_config=_load_survey_yaml(event_path),
+                  site_config=_load_survey_yaml(site_path),
+                  analyte_dict=_load_survey_yaml(analytes_path))
     _render_qa(qa, report, fail_on)
 
 
