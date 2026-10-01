@@ -6,9 +6,17 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
+  schedule:
+    # Weekly latest-dependency run (Monday 06:17 UTC). pyproject pins lower
+    # bounds only and the runner is fresh, so the plain install below resolves
+    # every dependency at its newest release and surfaces an upstream break
+    # without waiting for the next PR to hit it.
+    - cron: "17 6 * * 1"
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # event_name in the key: a schedule run and a push both resolve github.ref
+  # to refs/heads/main and would otherwise cancel each other (#469).
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
