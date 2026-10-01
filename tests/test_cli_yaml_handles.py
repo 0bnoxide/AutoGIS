@@ -128,3 +128,16 @@ def test_validate_survey_form_empty_config_still_means_not_supplied(tmp_path):
         assert result.exit_code == 1, result.output
         assert isinstance(result.exception, SystemExit), result.exception
         assert "expected a YAML mapping" in result.output
+
+
+def test_build_survey_form_unwritable_out_is_a_clean_error(tmp_path):
+    """#550: an --out in a missing directory must not escape as a raw
+    FileNotFoundError from wb.save, and must not create the directory."""
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "nope" / "form.xlsx"
+    result = _build(tmp_path, obj, obj, obj, out=out)
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert "cannot write" in result.output and str(out) in result.output
+    assert not out.parent.exists()

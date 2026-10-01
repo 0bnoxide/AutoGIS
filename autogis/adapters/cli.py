@@ -2439,7 +2439,10 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     analytes = _load_survey_yaml(analytes_path)
     event_cfg = _load_survey_yaml(event_path)
     wb = build_xlsform(site_cfg, event_cfg, analytes)
-    wb.save(out_path)
+    try:
+        wb.save(out_path)
+    except OSError as exc:  # missing parent dir, permission denied (#550)
+        raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"XLSForm written to {out_path}")
 
 
