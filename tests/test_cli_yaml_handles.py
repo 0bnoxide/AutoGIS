@@ -153,3 +153,26 @@ def test_build_survey_form_unwritable_out_is_a_clean_error(tmp_path):
     assert result.exit_code == 1, result.output
     assert isinstance(result.exception, SystemExit), result.exception
     assert "cannot write" in result.output and str(out) in result.output
+
+
+def test_build_survey_form_failed_save_keeps_existing_form(tmp_path, monkeypatch):
+    """#551: a save that dies partway (e.g. disk full) must not truncate an
+    existing --out form or leave a partial file behind."""
+    from openpyxl import Workbook
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+
+    def partial_save(self, filename):
+        with open(filename, "wb") as fh:
+            fh.write(b"PK\x03\x04trunc")
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Workbook, "save", partial_save)
+    result = _build(tmp_path, obj, obj, obj, out=out)
+    assert result.exit_code == 1, result.output
+    assert "cannot write" in result.output
+    assert out.read_bytes() == b"previous form"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["form.xlsx", "obj.yaml"]

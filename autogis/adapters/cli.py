@@ -2439,12 +2439,22 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     analytes = _load_survey_yaml(analytes_path)
     event_cfg = _load_survey_yaml(event_path)
     wb = build_xlsform(site_cfg, event_cfg, analytes)
+    out = Path(out_path)
+    # Save beside the target and publish with os.replace: a save that dies
+    # partway (disk full) must not truncate an existing form (#551).
+    tmp = out.with_name(out.name + ".tmp")
     try:
         # A missing --out directory is created, not an error (#550).
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        wb.save(out_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(tmp)
+        os.replace(tmp, out)
     except OSError as exc:  # permission denied, parent is a file, ...
         raise click.ClickException(f"cannot write {out_path}: {exc}")
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:  # parent is a file: nothing was written
+            pass
     click.echo(f"XLSForm written to {out_path}")
 
 
