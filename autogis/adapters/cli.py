@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 import json
 import math
@@ -2450,7 +2451,10 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
             wb.save(tmp)
             os.replace(tmp, out)
         finally:
-            tmp.unlink(missing_ok=True)
+            # openpyxl leaves the temp open on a failed save; on Windows the
+            # unlink then fails and would mask the real error.
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
     except OSError as exc:  # permission denied, parent is a file, ...
         raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"XLSForm written to {out_path}")

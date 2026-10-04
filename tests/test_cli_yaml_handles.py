@@ -176,3 +176,34 @@ def test_build_survey_form_failed_save_keeps_existing_form(tmp_path, monkeypatch
     assert "cannot write" in result.output
     assert out.read_bytes() == b"previous form"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["form.xlsx", "obj.yaml"]
+
+
+def test_build_survey_form_failed_save_reports_real_error(tmp_path, monkeypatch):
+    """#551, real openpyxl seam: save_workbook leaves its ZipFile open when
+    writing fails, so on Windows unlinking the temp raises PermissionError.
+    That cleanup failure must not mask the real save error."""
+    import pathlib
+    from openpyxl.writer.excel import ExcelWriter
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+
+    def partial_write(self):
+        self._archive.writestr("partial", b"x" * 64)
+        raise OSError(28, "No space left on device")
+
+    real_unlink = pathlib.Path.unlink
+
+    def windows_locked_unlink(self, missing_ok=False):
+        if self.name.endswith(".tmp"):  # handle still open, as on Windows
+            raise PermissionError(32, "file in use by another process")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(ExcelWriter, "write_data", partial_write)
+    monkeypatch.setattr(pathlib.Path, "unlink", windows_locked_unlink)
+    result = _build(tmp_path, obj, obj, obj, out=out)
+    assert result.exit_code == 1, result.output
+    assert "No space left on device" in result.output
+    assert out.read_bytes() == b"previous form"
