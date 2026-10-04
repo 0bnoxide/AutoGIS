@@ -2446,15 +2446,13 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     try:
         # A missing --out directory is created, not an error (#550).
         out.parent.mkdir(parents=True, exist_ok=True)
-        wb.save(tmp)
-        os.replace(tmp, out)
+        try:
+            wb.save(tmp)
+            os.replace(tmp, out)
+        finally:
+            tmp.unlink(missing_ok=True)
     except OSError as exc:  # permission denied, parent is a file, ...
         raise click.ClickException(f"cannot write {out_path}: {exc}")
-    finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:  # parent is a file: nothing was written
-            pass
     click.echo(f"XLSForm written to {out_path}")
 
 
