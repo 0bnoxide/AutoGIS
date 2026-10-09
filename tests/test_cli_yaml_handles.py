@@ -362,7 +362,7 @@ def test_build_survey_form_preserves_preexisting_staging(tmp_path, kind):
             assert wb["settings"].cell(2, 1).value == "Input Site Field Sampling"
     finally:
         wb.close()
-    assert list(tmp_path.glob("form.xlsx.*.tmp")) == []
+    assert list(tmp_path.glob("*.tmp")) == [stage]
 
 
 def test_build_survey_form_real_failed_save_removes_owned_stage(tmp_path, monkeypatch):
@@ -404,8 +404,8 @@ def test_build_survey_form_real_failed_save_removes_owned_stage(tmp_path, monkey
                 writer._archive.close()
 
 
-def test_build_survey_form_concurrent_processes_publish_their_own_forms(tmp_path):
-    """#554: overlapping saves cannot publish or delete another run's stage."""
+def test_build_survey_form_concurrent_processes_preserve_observed_publication(tmp_path):
+    """#564: a later recheck observes the first publication and preserves it."""
     import json
     import subprocess
     import sys
@@ -421,7 +421,7 @@ import json, os, sys, time
 from pathlib import Path
 from unittest.mock import patch
 from click.testing import CliRunner
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from autogis.adapters.cli import autogis
 role, folder = sys.argv[1], Path(sys.argv[2])
 def wait(name):
@@ -430,10 +430,15 @@ def wait(name):
         if time.monotonic() >= deadline:
             raise RuntimeError("barrier timeout: " + name)
         time.sleep(0.01)
+real_save = Workbook.save
 real_replace = os.replace
-def publish(source, target):
+
+def save(workbook, handle):
+    real_save(workbook, handle)
+    (folder / (role + "_stage")).write_text(str(handle.name))
     (folder / (role + "_saved")).touch()
     wait("B_saved" if role == "A" else "A_published")
+def publish(source, target):
     real_replace(source, target)
     wb = load_workbook(target)
     try:
@@ -444,7 +449,7 @@ def publish(source, target):
     (folder / (role + "_published")).touch()
 if role == "B":
     wait("A_saved")
-with patch("autogis.adapters.cli.os.replace", publish):
+with patch.object(Workbook, "save", save), patch("autogis.adapters.cli.os.replace", publish):
     result = CliRunner().invoke(autogis, ["envmon", "build-survey-form",
         "--site", str(folder / (role + ".yaml")), "--event", str(folder / "obj.yaml"),
         "--analytes", str(folder / "obj.yaml"), "--out", str(folder / "form.xlsx")])
@@ -456,14 +461,17 @@ sys.exit(result.exit_code)
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         for role in ("A", "B")]
     results = [process.communicate(timeout=30) for process in processes]
-    for role, process, (stdout, stderr) in zip(("A", "B"), processes, results):
-        assert process.returncode == 0, stdout + stderr
-        assert "XLSForm written" in stdout
-        assert json.loads((tmp_path / f"{role}_published.json").read_text()) == (
-            f"Site {role} Field Sampling")
+    assert processes[0].returncode == 0, results[0]
+    assert "XLSForm written" in results[0][0]
+    assert json.loads((tmp_path / "A_published.json").read_text()) == "Site A Field Sampling"
+    assert processes[1].returncode == 1, results[1]
+    assert "output changed during build" in results[1][0]
+    assert "XLSForm written" not in results[1][0]
+    assert not (tmp_path / "B_published.json").exists()
+    assert (tmp_path / "A_stage").read_text() != (tmp_path / "B_stage").read_text()
     wb = load_workbook(tmp_path / "form.xlsx")
     try:
-        assert wb["settings"].cell(2, 1).value == "Site B Field Sampling"
+        assert wb["settings"].cell(2, 1).value == "Site A Field Sampling"
     finally:
         wb.close()
     assert list(tmp_path.glob("*.tmp")) == []
@@ -525,7 +533,7 @@ def test_build_survey_form_uuid_collision_preserves_foreign_stage(tmp_path, monk
     obj.write_text("{}\n", encoding="utf-8")
     out = tmp_path / "form.xlsx"
     out.write_bytes(b"previous form")
-    stage = tmp_path / "form.xlsx.collision.tmp"
+    stage = tmp_path / "collision.tmp"
     stage.write_bytes(b"another owner's file")
     monkeypatch.setattr(cli.uuid, "uuid4", lambda: SimpleNamespace(hex="collision"))
     result = _build(tmp_path, obj, obj, obj, out)
@@ -552,7 +560,7 @@ def test_build_survey_form_mode_error_preserves_existing_form(tmp_path, monkeypa
         real_stat = Path.stat
 
         def denied_stat(path, *args, **kwargs):
-            if path == out:
+            if path == out and kwargs.get("follow_symlinks", True):
                 raise PermissionError("mode inspection denied")
             return real_stat(path, *args, **kwargs)
 
@@ -567,3 +575,103 @@ def test_build_survey_form_mode_error_preserves_existing_form(tmp_path, monkeypa
     assert f"mode {'inspection' if seam == 'stat' else 'copy'} denied" in result.output
     assert out.read_bytes() == b"previous form"
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+@pytest.mark.parametrize("change", ["hardlink", "symlink", "created", "deleted", "identity", "mode", "content"])
+def test_build_survey_form_rechecks_changed_output(tmp_path, monkeypatch, change):
+    """#564: changes observed after save cannot be silently replaced."""
+    import os
+    from openpyxl import Workbook
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    if change != "created":
+        out.write_bytes(b"previous form")
+    protected = tmp_path / "protected.xlsx"
+    protected.write_bytes(b"protected form")
+    observed = []
+    real_save = Workbook.save
+
+    def snapshot():
+        if not out.exists() and not out.is_symlink():
+            return None
+        data = out.lstat()
+        return (data.st_dev, data.st_ino, data.st_mode, data.st_nlink,
+                data.st_size, data.st_mtime_ns, data.st_ctime_ns,
+                os.readlink(out) if out.is_symlink() else out.read_bytes())
+
+    def mutate(workbook, handle):
+        real_save(workbook, handle)
+        if change == "hardlink":
+            os.link(out, tmp_path / "consumer.xlsx")
+        elif change == "symlink":
+            out.unlink()
+            out.symlink_to(protected)
+        elif change == "created":
+            out.write_bytes(b"created by another writer")
+        elif change == "deleted":
+            out.unlink()
+        elif change == "identity":
+            replacement = tmp_path / "replacement.xlsx"
+            replacement.write_bytes(b"replacement by another writer")
+            os.replace(replacement, out)
+        elif change == "mode":
+            out.chmod(0o444)
+        else:
+            out.write_bytes(b"updated by another writer")
+        observed.append(snapshot())
+
+    monkeypatch.setattr(Workbook, "save", mutate)
+    try:
+        result = _build(tmp_path, obj, obj, obj, out)
+        assert result.exit_code in (1, 2), result.output
+        assert "XLSForm written" not in result.output
+        assert ("output changed during build" in result.output
+                or "single-link regular file" in result.output)
+        assert snapshot() == observed[0]
+        assert protected.read_bytes() == b"protected form"
+        if change == "hardlink":
+            assert out.read_bytes() == (tmp_path / "consumer.xlsx").read_bytes()
+            assert os.path.samefile(out, tmp_path / "consumer.xlsx")
+        assert list(tmp_path.glob("*.tmp")) == []
+    finally:
+        if change == "mode":
+            out.chmod(0o666)
+
+
+@pytest.mark.parametrize("kind", ["ascii221", "ascii255", "unicode255"])
+def test_build_survey_form_supports_native_basename_limits(tmp_path, monkeypatch, kind):
+    """#565: a valid output basename must not grow into the staging basename."""
+    import os
+    from pathlib import Path
+    from openpyxl import Workbook, load_workbook
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    name = ("a" * (216 if kind == "ascii221" else 250) + ".xlsx")
+    if kind == "unicode255":
+        name = "é" * (125 if os.name == "posix" else 250) + ".xlsx"
+    out = tmp_path / name
+    if os.name == "nt":
+        out = Path("\\\\?\\" + str(out.resolve()))
+    stages = []
+    real_save = Workbook.save
+
+    def save(workbook, handle):
+        stages.append(Path(handle.name))
+        return real_save(workbook, handle)
+
+    monkeypatch.setattr(Workbook, "save", save)
+    try:
+        result = _build(tmp_path, obj, obj, obj, out)
+        assert result.exit_code == 0, result.output
+        assert len(stages) == 1 and len(stages[0].name) <= 64
+        wb = load_workbook(out)
+        try:
+            assert wb.sheetnames == ["survey", "choices", "settings"]
+        finally:
+            wb.close()
+        assert list(tmp_path.glob("*.tmp")) == []
+    finally:
+        out.unlink(missing_ok=True)

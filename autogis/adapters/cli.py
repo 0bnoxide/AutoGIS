@@ -2438,18 +2438,23 @@ def _load_survey_yaml(path, allow_empty=False):
 def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
     out = Path(out_path)
-    try:
-        output_stat = out.lstat()
-    except (FileNotFoundError, NotADirectoryError):
-        pass
-    except OSError as exc:
-        raise click.BadParameter(
-            f"cannot inspect output {out_path}: {exc}", param_hint="--out") from exc
-    else:
-        if not stat.S_ISREG(output_stat.st_mode) or output_stat.st_nlink != 1:
+
+    def output_snapshot():
+        try:
+            info = out.lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except OSError as exc:
+            raise click.BadParameter(
+                f"cannot inspect output {out_path}: {exc}", param_hint="--out") from exc
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise click.BadParameter(
                 "output must be a single-link regular file; symbolic links and "
                 f"other destinations are not supported: {out_path}", param_hint="--out")
+        return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+                info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+    initial_output = output_snapshot()
     from autogis.core.envmon.survey123_form_builder import build_xlsform
     site_cfg = _load_survey_yaml(site_path)
     analytes = _load_survey_yaml(analytes_path)
@@ -2462,7 +2467,7 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
         # A missing --out directory is created, not an error (#550).
         out.parent.mkdir(parents=True, exist_ok=True)
         try:
-            candidate = out.with_name(f"{out.name}.{uuid.uuid4().hex}.tmp")
+            candidate = out.with_name(f"{uuid.uuid4().hex}.tmp")
             with candidate.open("xb") as fh:
                 tmp = candidate
                 if os.name == "posix":
@@ -2474,6 +2479,10 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
                         # Keep existing access before writing workbook content.
                         os.fchmod(fh.fileno(), stat.S_IMODE(output_mode))
                 wb.save(fh)
+            if output_snapshot() != initial_output:
+                raise click.ClickException(f"cannot write {out_path}: output changed during build; retry")
+            # shortcut: check/replace is not atomic CAS against non-cooperating writers;
+            # stronger coordination only if required.
             os.replace(tmp, out)
         finally:
             # Close our handle before Windows publication or failure cleanup.
