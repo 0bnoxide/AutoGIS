@@ -5,6 +5,7 @@ a ResourceWarning in the suite, and a lingering lock on Windows for as long
 as the process lives. ``build-survey-form`` is the command the suite flagged.
 """
 import gc
+import os
 import warnings
 
 from click.testing import CliRunner
@@ -155,55 +156,95 @@ def test_build_survey_form_unwritable_out_is_a_clean_error(tmp_path):
     assert "cannot write" in result.output and str(out) in result.output
 
 
-def test_build_survey_form_failed_save_keeps_existing_form(tmp_path, monkeypatch):
-    """#551: a save that dies partway (e.g. disk full) must not truncate an
-    existing --out form or leave a partial file behind."""
-    from openpyxl import Workbook
+class _DiskFullFile:
+    """A real staging file whose write lands partially, then fails (ENOSPC)."""
+
+    def __init__(self, path, mode):
+        self._fh = open(path, mode)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._fh.close()
+
+    def write(self, data):
+        self._fh.write(data[:16])
+        raise OSError(28, "No space left on device")
+
+
+def test_build_survey_form_failed_write_keeps_existing_form(tmp_path, monkeypatch):
+    """#551: a write that dies partway must not truncate the existing form or
+    leave its stage behind. The stage handle is closed before cleanup, so this
+    also holds natively on Windows. A hardlink to the form at the old fixed
+    stage name (#554) must not become the write target."""
+    import autogis.adapters.cli as cli
 
     obj = tmp_path / "obj.yaml"
     obj.write_text("{}\n", encoding="utf-8")
     out = tmp_path / "form.xlsx"
     out.write_bytes(b"previous form")
+    try:
+        os.link(out, tmp_path / "form.xlsx.tmp")
+    except OSError:  # filesystem without hardlinks: the rest still applies
+        pass
 
-    def partial_save(self, filename):
-        with open(filename, "wb") as fh:
-            fh.write(b"PK\x03\x04trunc")
-        raise OSError(28, "No space left on device")
+    def disk_full_open(path, mode="r", *a, **kw):
+        if str(path).endswith(".tmp"):
+            return _DiskFullFile(path, mode)
+        return open(path, mode, *a, **kw)
 
-    monkeypatch.setattr(Workbook, "save", partial_save)
-    result = _build(tmp_path, obj, obj, obj, out=out)
-    assert result.exit_code == 1, result.output
-    assert "cannot write" in result.output
-    assert out.read_bytes() == b"previous form"
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["form.xlsx", "obj.yaml"]
-
-
-def test_build_survey_form_failed_save_reports_real_error(tmp_path, monkeypatch):
-    """#551, real openpyxl seam: save_workbook leaves its ZipFile open when
-    writing fails, so on Windows unlinking the temp raises PermissionError.
-    That cleanup failure must not mask the real save error."""
-    import pathlib
-    from openpyxl.writer.excel import ExcelWriter
-
-    obj = tmp_path / "obj.yaml"
-    obj.write_text("{}\n", encoding="utf-8")
-    out = tmp_path / "form.xlsx"
-    out.write_bytes(b"previous form")
-
-    def partial_write(self):
-        self._archive.writestr("partial", b"x" * 64)
-        raise OSError(28, "No space left on device")
-
-    real_unlink = pathlib.Path.unlink
-
-    def windows_locked_unlink(self, missing_ok=False):
-        if self.name.endswith(".tmp"):  # handle still open, as on Windows
-            raise PermissionError(32, "file in use by another process")
-        return real_unlink(self, missing_ok=missing_ok)
-
-    monkeypatch.setattr(ExcelWriter, "write_data", partial_write)
-    monkeypatch.setattr(pathlib.Path, "unlink", windows_locked_unlink)
+    monkeypatch.setattr(cli, "open", disk_full_open, raising=False)
     result = _build(tmp_path, obj, obj, obj, out=out)
     assert result.exit_code == 1, result.output
     assert "No space left on device" in result.output
     assert out.read_bytes() == b"previous form"
+    leftover = {p.name for p in tmp_path.iterdir()} - {"form.xlsx", "obj.yaml"}
+    assert leftover <= {"form.xlsx.tmp"}, leftover
+
+
+def test_build_survey_form_never_touches_files_it_did_not_create(tmp_path):
+    """#554: an input (or any file) at a stage-like sibling path survives."""
+    site = tmp_path / "form.xlsx.tmp"
+    site.write_text("site_id: S1\n", encoding="utf-8")
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    result = _build(tmp_path, site, obj, obj, out=out)
+    assert result.exit_code == 0, result.output
+    assert site.read_text(encoding="utf-8") == "site_id: S1\n"
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "form.xlsx", "form.xlsx.tmp", "obj.yaml"]
+
+
+def test_build_survey_form_overlapping_runs_publish_their_own_form(
+        tmp_path, monkeypatch):
+    """#554: run B saves and publishes while run A sits between its save and
+    its publish. Each run must publish its own workbook, from its own stage."""
+    from openpyxl import load_workbook
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    site_a = tmp_path / "a.yaml"
+    site_a.write_text("site_id: SITE_A\n", encoding="utf-8")
+    site_b = tmp_path / "b.yaml"
+    site_b.write_text("site_id: SITE_B\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+
+    real_replace = os.replace
+    stages, results = [], []
+
+    def interleaved_replace(src, dst):
+        stages.append(str(src))
+        if len(stages) == 1:  # A is about to publish: run B to completion
+            results.append(_build(tmp_path, site_b, obj, obj, out=out))
+            assert load_workbook(out)["settings"]["B2"].value == "site_b_sampling"
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", interleaved_replace)
+    result_a = _build(tmp_path, site_a, obj, obj, out=out)
+    assert result_a.exit_code == 0, result_a.output
+    assert results[0].exit_code == 0, results[0].output
+    assert len(set(stages)) == 2, stages
+    assert load_workbook(out)["settings"]["B2"].value == "site_a_sampling"
+    assert not [p for p in tmp_path.iterdir() if p.suffix == ".tmp"]

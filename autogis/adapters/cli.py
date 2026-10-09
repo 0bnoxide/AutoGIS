@@ -1,5 +1,6 @@
 import contextlib
 import dataclasses
+import io
 import json
 import math
 import os
@@ -2441,20 +2442,27 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     event_cfg = _load_survey_yaml(event_path)
     wb = build_xlsform(site_cfg, event_cfg, analytes)
     out = Path(out_path)
-    # Save beside the target and publish with os.replace: a save that dies
-    # partway (disk full) must not truncate an existing form (#551).
-    tmp = out.with_name(out.name + ".tmp")
+    # Serialise in memory: openpyxl leaves its ZipFile (and so any file
+    # handle) open when a save fails, which blocks cleanup on Windows.
+    buf = io.BytesIO()
+    wb.save(buf)
+    # Stage under a unique, exclusively created sibling and publish with
+    # os.replace: a failed write must not truncate an existing form (#551),
+    # and the stage must never be a file this run did not create -- an input,
+    # a hardlink to the form, or a concurrent run's stage (#554).
+    tmp = out.with_name(f"{out.name}.{uuid.uuid4().hex}.tmp")
     try:
         # A missing --out directory is created, not an error (#550).
         out.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(tmp, "xb")
         try:
-            wb.save(tmp)
+            with fh:
+                fh.write(buf.getvalue())
             os.replace(tmp, out)
-        finally:
-            # openpyxl leaves the temp open on a failed save; on Windows the
-            # unlink then fails and would mask the real error.
+        except BaseException:
             with contextlib.suppress(OSError):
-                tmp.unlink(missing_ok=True)
+                tmp.unlink()
+            raise
     except OSError as exc:  # permission denied, parent is a file, ...
         raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"XLSForm written to {out_path}")
