@@ -4,6 +4,7 @@ import json
 import math
 import os
 import sys
+import tempfile
 import uuid
 from datetime import datetime as _dt
 from pathlib import Path
@@ -2443,18 +2444,22 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     out = Path(out_path)
     # Save beside the target and publish with os.replace: a save that dies
     # partway (disk full) must not truncate an existing form (#551).
-    tmp = out.with_name(out.name + ".tmp")
+    tmp = None
     try:
         # A missing --out directory is created, not an error (#550).
         out.parent.mkdir(parents=True, exist_ok=True)
         try:
-            wb.save(tmp)
+            with tempfile.NamedTemporaryFile(
+                    dir=out.parent, prefix=out.name + ".", suffix=".tmp",
+                    delete=False) as fh:
+                tmp = Path(fh.name)
+                wb.save(fh)
             os.replace(tmp, out)
         finally:
-            # openpyxl leaves the temp open on a failed save; on Windows the
-            # unlink then fails and would mask the real error.
-            with contextlib.suppress(OSError):
-                tmp.unlink(missing_ok=True)
+            # Close our handle before Windows publication or failure cleanup.
+            if tmp is not None:
+                with contextlib.suppress(OSError):
+                    tmp.unlink(missing_ok=True)
     except OSError as exc:  # permission denied, parent is a file, ...
         raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"XLSForm written to {out_path}")

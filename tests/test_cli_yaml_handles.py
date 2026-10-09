@@ -7,6 +7,7 @@ as the process lives. ``build-survey-form`` is the command the suite flagged.
 import gc
 import warnings
 
+import pytest
 from click.testing import CliRunner
 
 from autogis.adapters.cli import autogis
@@ -166,8 +167,7 @@ def test_build_survey_form_failed_save_keeps_existing_form(tmp_path, monkeypatch
     out.write_bytes(b"previous form")
 
     def partial_save(self, filename):
-        with open(filename, "wb") as fh:
-            fh.write(b"PK\x03\x04trunc")
+        filename.write(b"PK\x03\x04trunc")
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(Workbook, "save", partial_save)
@@ -179,9 +179,8 @@ def test_build_survey_form_failed_save_keeps_existing_form(tmp_path, monkeypatch
 
 
 def test_build_survey_form_failed_save_reports_real_error(tmp_path, monkeypatch):
-    """#551, real openpyxl seam: save_workbook leaves its ZipFile open when
-    writing fails, so on Windows unlinking the temp raises PermissionError.
-    That cleanup failure must not mask the real save error."""
+    """#551: a cleanup failure must not mask the real openpyxl save error."""
+    import contextlib
     import pathlib
     from openpyxl.writer.excel import ExcelWriter
 
@@ -189,21 +188,170 @@ def test_build_survey_form_failed_save_reports_real_error(tmp_path, monkeypatch)
     obj.write_text("{}\n", encoding="utf-8")
     out = tmp_path / "form.xlsx"
     out.write_bytes(b"previous form")
+    writers = []
 
     def partial_write(self):
+        writers.append(self)
         self._archive.writestr("partial", b"x" * 64)
         raise OSError(28, "No space left on device")
 
     real_unlink = pathlib.Path.unlink
 
     def windows_locked_unlink(self, missing_ok=False):
-        if self.name.endswith(".tmp"):  # handle still open, as on Windows
+        if self.name.endswith(".tmp"):
             raise PermissionError(32, "file in use by another process")
         return real_unlink(self, missing_ok=missing_ok)
 
     monkeypatch.setattr(ExcelWriter, "write_data", partial_write)
     monkeypatch.setattr(pathlib.Path, "unlink", windows_locked_unlink)
-    result = _build(tmp_path, obj, obj, obj, out=out)
-    assert result.exit_code == 1, result.output
-    assert "No space left on device" in result.output
-    assert out.read_bytes() == b"previous form"
+    try:
+        result = _build(tmp_path, obj, obj, obj, out=out)
+        assert result.exit_code == 1, result.output
+        assert "No space left on device" in result.output
+        assert out.read_bytes() == b"previous form"
+    finally:
+        for writer in writers:
+            with contextlib.suppress(ValueError):
+                writer._archive.close()
+
+
+@pytest.mark.parametrize("kind", ["input", "unrelated", "hardlink", "symlink"])
+def test_build_survey_form_preserves_preexisting_staging(tmp_path, kind):
+    """#554: the old shared staging name belongs to its existing owner."""
+    import os
+    from openpyxl import load_workbook
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    stage = tmp_path / "form.xlsx.tmp"
+    original = b"site_id: INPUT\nsite_name: Input Site\n"
+    if kind in {"hardlink", "symlink"}:
+        source = tmp_path / "protected.yaml"
+        source.write_bytes(original)
+        if kind == "hardlink":
+            os.link(source, stage)
+        else:
+            try:
+                stage.symlink_to(source)
+            except OSError as exc:
+                pytest.skip(f"symlink creation unavailable: {exc}")
+    else:
+        stage.write_bytes(original)
+
+    result = _build(tmp_path, stage if kind == "input" else obj, obj, obj, out)
+    assert result.exit_code == 0, result.output
+    assert stage.read_bytes() == original
+    if kind in {"hardlink", "symlink"}:
+        assert os.path.samefile(stage, source)
+    if kind == "symlink":
+        assert stage.is_symlink()
+    wb = load_workbook(out)
+    try:
+        assert wb.sheetnames == ["survey", "choices", "settings"]
+        if kind == "input":
+            assert wb["settings"].cell(2, 1).value == "Input Site Field Sampling"
+    finally:
+        wb.close()
+    assert list(tmp_path.glob("form.xlsx.*.tmp")) == []
+
+
+def test_build_survey_form_real_failed_save_removes_owned_stage(tmp_path, monkeypatch):
+    """#551/#554: native Windows cleanup must close the failed ZIP handle."""
+    import contextlib
+    import os
+    from openpyxl.writer.excel import ExcelWriter
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    original = b"previous form"
+    out.write_bytes(original)
+    stage = tmp_path / "form.xlsx.tmp"
+    os.link(out, stage)
+    writers = []
+
+    def partial_write(self):
+        writers.append(self)
+        self._archive.writestr("partial", b"x" * 64)
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(ExcelWriter, "write_data", partial_write)
+    try:
+        result = _build(tmp_path, obj, obj, obj, out)
+        assert result.exit_code == 1, result.output
+        assert isinstance(result.exception, SystemExit), result.exception
+        assert "No space left on device" in result.output
+        assert out.read_bytes() == original
+        assert stage.read_bytes() == original
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            "form.xlsx", "form.xlsx.tmp", "obj.yaml"]
+    finally:
+        for writer in writers:
+            with contextlib.suppress(ValueError):
+                writer._archive.close()
+
+
+def test_build_survey_form_concurrent_processes_publish_their_own_forms(tmp_path):
+    """#554: overlapping saves cannot publish or delete another run's stage."""
+    import json
+    import subprocess
+    import sys
+    from openpyxl import load_workbook
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    for role in ("A", "B"):
+        (tmp_path / f"{role}.yaml").write_text(
+            f"site_id: {role}\nsite_name: Site {role}\n", encoding="utf-8")
+    script = r'''
+import json, os, sys, time
+from pathlib import Path
+from unittest.mock import patch
+from click.testing import CliRunner
+from openpyxl import load_workbook
+from autogis.adapters.cli import autogis
+role, folder = sys.argv[1], Path(sys.argv[2])
+def wait(name):
+    deadline = time.monotonic() + 15
+    while not (folder / name).exists():
+        if time.monotonic() >= deadline:
+            raise RuntimeError("barrier timeout: " + name)
+        time.sleep(0.01)
+real_replace = os.replace
+def publish(source, target):
+    (folder / (role + "_saved")).touch()
+    wait("B_saved" if role == "A" else "A_published")
+    real_replace(source, target)
+    wb = load_workbook(target)
+    try:
+        title = wb["settings"].cell(2, 1).value
+    finally:
+        wb.close()
+    (folder / (role + "_published.json")).write_text(json.dumps(title))
+    (folder / (role + "_published")).touch()
+if role == "B":
+    wait("A_saved")
+with patch("autogis.adapters.cli.os.replace", publish):
+    result = CliRunner().invoke(autogis, ["envmon", "build-survey-form",
+        "--site", str(folder / (role + ".yaml")), "--event", str(folder / "obj.yaml"),
+        "--analytes", str(folder / "obj.yaml"), "--out", str(folder / "form.xlsx")])
+print(result.output)
+sys.exit(result.exit_code)
+'''
+    processes = [subprocess.Popen(
+        [sys.executable, "-c", script, role, str(tmp_path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        for role in ("A", "B")]
+    results = [process.communicate(timeout=30) for process in processes]
+    for role, process, (stdout, stderr) in zip(("A", "B"), processes, results):
+        assert process.returncode == 0, stdout + stderr
+        assert "XLSForm written" in stdout
+        assert json.loads((tmp_path / f"{role}_published.json").read_text()) == (
+            f"Site {role} Field Sampling")
+    wb = load_workbook(tmp_path / "form.xlsx")
+    try:
+        assert wb["settings"].cell(2, 1).value == "Site B Field Sampling"
+    finally:
+        wb.close()
+    assert list(tmp_path.glob("*.tmp")) == []
