@@ -125,7 +125,8 @@ def extract_location_ids(reader, profile) -> List[str]:
 
 
 def read_well_ids_csv(path: Path) -> List[str]:
-    rows = list(csv.reader(Path(path).open(newline="", encoding="utf-8")))
+    with Path(path).open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))
     if not rows:
         return []
     header = [h.strip() for h in rows[0]]
