@@ -110,6 +110,48 @@ def test_build_survey_form_out_directory_is_a_usage_error(tmp_path):
     assert "is a directory" in result.output
 
 
+@pytest.mark.parametrize("target_exists", [True, False], ids=["live", "dangling"])
+def test_build_survey_form_rejects_symlink_output(tmp_path, monkeypatch, target_exists):
+    """#560: reject the output link before writing a stage or history record."""
+    import os
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    target = tmp_path / "target.xlsx"
+    if target_exists:
+        target.write_bytes(b"previous form")
+    out = tmp_path / "form.xlsx"
+    try:
+        out.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    original_link = out.lstat()
+    original_link_text = os.readlink(out)
+    original_target = target.stat() if target_exists else None
+    history = tmp_path / "history.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(history))
+
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 2, result.output
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert "--out" in result.output and "symbolic link" in result.output
+    assert str(out) in result.output
+    assert "XLSForm written" not in result.output
+    assert out.is_symlink() and os.readlink(out) == original_link_text
+    link_stat = out.lstat()
+    assert (link_stat.st_ino, link_stat.st_mode, link_stat.st_mtime_ns) == (
+        original_link.st_ino, original_link.st_mode, original_link.st_mtime_ns)
+    if target_exists:
+        assert target.read_bytes() == b"previous form"
+        target_stat = target.stat()
+        assert (target_stat.st_ino, target_stat.st_mode, target_stat.st_mtime_ns) == (
+            original_target.st_ino, original_target.st_mode, original_target.st_mtime_ns)
+    else:
+        assert not target.exists()
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert not history.exists()
+
+
 def test_validate_survey_form_empty_config_still_means_not_supplied(tmp_path):
     from autogis.core.envmon.survey123_form_builder import build_xlsform
     form = tmp_path / "form.xlsx"

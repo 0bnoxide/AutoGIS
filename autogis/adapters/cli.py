@@ -2437,12 +2437,15 @@ def _load_survey_yaml(path, allow_empty=False):
               type=click.Path(dir_okay=False), help="Output .xlsx path.")
 def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
+    out = Path(out_path)
+    if os.path.islink(out):
+        raise click.BadParameter(
+            f"symbolic link output is not supported: {out_path}", param_hint="--out")
     from autogis.core.envmon.survey123_form_builder import build_xlsform
     site_cfg = _load_survey_yaml(site_path)
     analytes = _load_survey_yaml(analytes_path)
     event_cfg = _load_survey_yaml(event_path)
     wb = build_xlsform(site_cfg, event_cfg, analytes)
-    out = Path(out_path)
     # Save beside the target and publish with os.replace: a save that dies
     # partway (disk full) must not truncate an existing form (#551).
     tmp = None
