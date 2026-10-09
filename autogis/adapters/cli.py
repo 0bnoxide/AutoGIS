@@ -1,7 +1,9 @@
+import contextlib
 import dataclasses
 import json
 import math
 import os
+import stat
 import sys
 import uuid
 from datetime import datetime as _dt
@@ -2431,18 +2433,98 @@ def _load_survey_yaml(path, allow_empty=False):
 @click.option("--event", "event_path", required=True,
               type=click.Path(exists=True), help="Event config YAML.")
 @click.option("--out", "out_path", required=True,
-              type=click.Path(dir_okay=False), help="Output .xlsx path.")
+              type=click.Path(dir_okay=False, readable=False), help="Output .xlsx path.")
 def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
+    out = Path(out_path)
+    output_fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_uid", "st_gid",
+                     "st_size", "st_mtime_ns", "st_ctime_ns")
+
+    def output_snapshot():
+        try:
+            info = out.lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except OSError as exc:
+            raise click.BadParameter(
+                f"cannot inspect output {out_path}: {exc}", param_hint="--out") from exc
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise click.BadParameter(
+                "output must be a single-link regular file; symbolic links and "
+                f"other destinations are not supported: {out_path}", param_hint="--out")
+        return {name: getattr(info, name) for name in output_fields}
+
+    initial_output = output_snapshot()
+    if initial_output is not None:
+        try:
+            flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(out, flags)  # Check actual write authority without truncation.
+            try:
+                info = os.fstat(fd)
+                if (info.st_dev, info.st_ino) != (initial_output["st_dev"], initial_output["st_ino"]):
+                    raise OSError("output changed before write check; retry")
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            raise click.BadParameter(f"cannot write {out_path}: {exc}", param_hint="--out") from exc
     from autogis.core.envmon.survey123_form_builder import build_xlsform
     site_cfg = _load_survey_yaml(site_path)
     analytes = _load_survey_yaml(analytes_path)
     event_cfg = _load_survey_yaml(event_path)
     wb = build_xlsform(site_cfg, event_cfg, analytes)
+    # Save beside the target and publish with os.replace: a save that dies
+    # partway (disk full) must not truncate an existing form (#551).
+    tmp = None
+    stage_identity = None
+    stage_keepalive = None
+
+    def owns_stage():
+        if tmp is None or stage_identity is None:
+            return False
+        info = tmp.lstat()
+        return (info.st_dev, info.st_ino) == stage_identity
+
     try:
         # A missing --out directory is created, not an error (#550).
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        wb.save(out_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            candidate = out.with_name(f"{uuid.uuid4().hex}.tmp")
+            with candidate.open("xb") as fh:
+                tmp = candidate
+                if os.name == "posix":
+                    # Pin the inode after write-handle close, even if its name is removed (#571).
+                    stage_keepalive = os.dup(fh.fileno())
+                # Failed/unknown descriptor identity leaves the unproven path intact.
+                stage_stat = os.fstat(fh.fileno())
+                if not stage_stat.st_ino:
+                    raise OSError("cannot establish staging file identity")
+                stage_identity = (stage_stat.st_dev, stage_stat.st_ino)
+                if os.name == "posix" and initial_output is not None:
+                    owner = (initial_output["st_uid"], initial_output["st_gid"])
+                    if (stage_stat.st_uid, stage_stat.st_gid) != owner:
+                        os.fchown(fh.fileno(), *owner)
+                    # Keep initially accepted access before workbook content.
+                    os.fchmod(fh.fileno(), stat.S_IMODE(initial_output["st_mode"]))
+                wb.save(fh)
+            if not owns_stage():
+                raise click.ClickException(f"cannot write {out_path}: staging file changed during build; retry")
+            if output_snapshot() != initial_output:
+                raise click.ClickException(f"cannot write {out_path}: output changed during build; retry")
+            # shortcut: checks before replace/unlink are observational, not atomic CAS;
+            # stronger coordination only if required.
+            os.replace(tmp, out)
+            tmp = None
+        finally:
+            # Close our handle before Windows publication or failure cleanup.
+            try:
+                if tmp is not None:
+                    with contextlib.suppress(OSError):
+                        if owns_stage():
+                            tmp.unlink(missing_ok=True)
+            finally:
+                if stage_keepalive is not None:
+                    with contextlib.suppress(OSError):
+                        os.close(stage_keepalive)
     except OSError as exc:  # permission denied, parent is a file, ...
         raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"XLSForm written to {out_path}")

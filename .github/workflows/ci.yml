@@ -20,7 +20,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  posix-coverage:
+    # Measure permission paths that the Windows suite necessarily skips.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install focused test dependencies
+        run: python -m pip install -e . pytest pytest-cov
+      - name: Run survey-form tests with POSIX coverage
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest -q tests/test_cli_yaml_handles.py --cov=autogis --cov-report=xml:coverage-posix.xml
+      - name: Upload POSIX coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: posix-coverage
+          path: coverage-posix.xml
+          if-no-files-found: error
+
   pytest:
+    needs: posix-coverage
     # arcpy-free suite. Windows, not ubuntu: the repo is Windows-native
     # (C:\ path fixtures, PowerShell + Windows-path coordination logic) and the
     # suite is demonstrably green there — ubuntu would be an unverified OS change.
@@ -57,12 +81,15 @@ jobs:
         shell: bash
         run: bash .claude/scripts/test-watch-pr-reviews.sh
 
-      # Scan here, on this job's coverage.xml, rather than in its own workflow:
-      # a separate job would have to re-run the suite (ADR-0110 flags Windows
-      # minutes as billing ~2x) or ship the report across workflows as an
-      # artifact. Neither buys anything, and running scan-after-tests also
-      # stops a red suite from publishing metrics. Skipped for fork PRs, which
-      # cannot read SONAR_TOKEN. See issue #452.
+      - name: Download POSIX coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: posix-coverage
+
+      # Scan after the Windows suite, importing its coverage.xml plus the
+      # focused Linux report for POSIX-only permission paths. A red suite
+      # stops metrics publication. Skipped for fork PRs, which cannot read
+      # SONAR_TOKEN. See issue #452.
       # The scanner hung here indefinitely on PR #464 after the UCFG cache
       # restore. A step-level cap is the load-bearing half of #469: it turns a
       # silent multi-hour hang into a fast, clearly-attributed step failure,
