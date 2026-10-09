@@ -78,3 +78,16 @@ def test_read_well_ids_csv_first_column_fallback(tmp_path):
     p = tmp_path / "wells.csv"
     p.write_text("MW-1\nMW-2\n\n", encoding="utf-8")
     assert read_well_ids_csv(p) == ["MW-1", "MW-2"]
+
+
+def test_read_well_ids_csv_closes_its_handle(tmp_path):
+    import gc
+    import warnings
+    p = tmp_path / "wells.csv"
+    p.write_text("LocationID\nMW-1\n", encoding="utf-8")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        read_well_ids_csv(p)
+        gc.collect()
+    leaked = [w for w in caught if issubclass(w.category, ResourceWarning)]
+    assert not leaked, [str(w.message) for w in leaked]

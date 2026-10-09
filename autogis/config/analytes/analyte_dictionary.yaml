@@ -2,8 +2,15 @@
 # ANALYTE DICTIONARY
 # ============================================================================
 # canonical_name is the storage key. aliases are matched case/whitespace/
-# punctuation-insensitively by normalize_analyte_name(). default_screening_level
-# values are deliberately null where no defensible source was available —
+# punctuation-insensitively by normalize_analyte_name().
+#
+# Reserved settings, retained for schema compatibility: significant_figures,
+# nondetect_display_rule, result_format_rule, and default_screening_level.
+# These settings are inactive: current tools do not consult them. Changing them
+# does not alter rendered results or screening thresholds.
+#
+# default_screening_level values remain deliberately null where no defensible
+# source was available —
 # screening levels are read from the workbook screening row first, then from
 # config/screening_levels/. DO NOT invent regulatory numbers here.
 
