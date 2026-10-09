@@ -2476,6 +2476,7 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     # partway (disk full) must not truncate an existing form (#551).
     tmp = None
     stage_identity = None
+    stage_keepalive = None
 
     def owns_stage():
         if tmp is None or stage_identity is None:
@@ -2490,6 +2491,9 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
             candidate = out.with_name(f"{uuid.uuid4().hex}.tmp")
             with candidate.open("xb") as fh:
                 tmp = candidate
+                if os.name == "posix":
+                    # Pin the inode after write-handle close, even if its name is removed (#571).
+                    stage_keepalive = os.dup(fh.fileno())
                 # Failed/unknown descriptor identity leaves the unproven path intact.
                 stage_stat = os.fstat(fh.fileno())
                 if not stage_stat.st_ino:
@@ -2512,10 +2516,15 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
             tmp = None
         finally:
             # Close our handle before Windows publication or failure cleanup.
-            if tmp is not None:
-                with contextlib.suppress(OSError):
-                    if owns_stage():
-                        tmp.unlink(missing_ok=True)
+            try:
+                if tmp is not None:
+                    with contextlib.suppress(OSError):
+                        if owns_stage():
+                            tmp.unlink(missing_ok=True)
+            finally:
+                if stage_keepalive is not None:
+                    with contextlib.suppress(OSError):
+                        os.close(stage_keepalive)
     except OSError as exc:  # permission denied, parent is a file, ...
         raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"XLSForm written to {out_path}")

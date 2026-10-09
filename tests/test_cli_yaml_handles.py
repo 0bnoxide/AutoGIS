@@ -795,10 +795,19 @@ def test_build_survey_form_preserves_recreated_stage_after_publication(tmp_path,
     foreign = b"new foreign stage owner"
     recreated = []
     real_replace = os.replace
+    real_dup, real_fstat = os.dup, os.fstat
+    retained = []
+
+    def duplicate(fd):
+        result = real_dup(fd)
+        retained.append(result)
+        return result
 
     def publish_then_recreate(source, target):
         source = Path(source)
         consumed_inode = source.lstat().st_ino
+        if os.name == "posix":
+            assert len(retained) == 1 and real_fstat(retained[0]).st_ino == consumed_inode
         real_replace(source, target)
         source.write_bytes(foreign)
         metadata = source.lstat()
@@ -806,6 +815,7 @@ def test_build_survey_form_preserves_recreated_stage_after_publication(tmp_path,
         recreated.append((source, metadata.st_ino))
 
     monkeypatch.setattr(cli.os, "replace", publish_then_recreate)
+    monkeypatch.setattr(cli.os, "dup", duplicate)
     result = _build(tmp_path, obj, obj, obj, out)
     assert result.exit_code == 0, result.output
     assert "XLSForm written" in result.output
@@ -818,6 +828,9 @@ def test_build_survey_form_preserves_recreated_stage_after_publication(tmp_path,
     source, foreign_inode = recreated[0]
     assert source.exists(), "foreign stage pathname was removed after publication"
     assert source.read_bytes() == foreign and source.lstat().st_ino == foreign_inode
+    for fd in retained:
+        with pytest.raises(OSError):
+            real_fstat(fd)
 
 
 def test_build_survey_form_write_authority_precedes_inputs(tmp_path, monkeypatch):
@@ -905,8 +918,14 @@ def test_build_survey_form_unknown_stage_identity_preserves_path(tmp_path, monke
     obj.write_text("{}\n", encoding="utf-8")
     out = tmp_path / "form.xlsx"
     out.write_bytes(b"previous form")
-    real_open, real_fstat = Path.open, os.fstat
+    real_open, real_fstat, real_dup = Path.open, os.fstat, os.dup
     stage_fds, stages, saves = set(), [], []
+    retained = []
+
+    def duplicate(fd):
+        result = real_dup(fd)
+        retained.append(result)
+        return result
 
     def open_stage(path, *args, **kwargs):
         handle = real_open(path, *args, **kwargs)
@@ -926,6 +945,7 @@ def test_build_survey_form_unknown_stage_identity_preserves_path(tmp_path, monke
 
     monkeypatch.setattr(Path, "open", open_stage)
     monkeypatch.setattr(cli.os, "fstat", denied_identity)
+    monkeypatch.setattr(cli.os, "dup", duplicate)
     monkeypatch.setattr(Workbook, "save", lambda *args: saves.append(args))
     result = _build(tmp_path, obj, obj, obj, out)
     assert result.exit_code == 1, result.output
@@ -934,4 +954,113 @@ def test_build_survey_form_unknown_stage_identity_preserves_path(tmp_path, monke
     assert out.read_bytes() == b"previous form"
     assert len(stages) == 1 and stages[0].exists()
     assert stages[0].read_bytes() == b""
+    assert list(tmp_path.glob("*.tmp")) == stages
+    for fd in retained:
+        with pytest.raises(OSError):
+            real_fstat(fd)
+
+
+@pytest.mark.parametrize("save_succeeds", [False, True])
+@pytest.mark.parametrize("close_error", [False, True])
+def test_build_survey_form_pins_unlinked_stage_until_cleanup(tmp_path, monkeypatch, save_succeeds, close_error):
+    """#571: an open descriptor prevents recycled inode identity after close/unlink."""
+    import errno
+    import os
+    from pathlib import Path
+    from openpyxl import Workbook
+    from autogis.adapters import cli
+
+    if os.name != "posix":
+        pytest.skip("POSIX unlinked open-file lifetime")
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    original = b"previous form"
+    out.write_bytes(original)
+    initial = out.lstat()
+    foreign = b"foreign file without a retained backup link"
+    duplicates, closed, observed = [], [], []
+    real_dup, real_close, real_fstat = os.dup, os.close, os.fstat
+    real_save = Workbook.save
+
+    def duplicate(fd):
+        retained = real_dup(fd)
+        duplicates.append(retained)
+        return retained
+
+    def close(fd):
+        if fd in duplicates:
+            closed.append(fd)
+        real_close(fd)
+        if fd in duplicates and close_error:
+            raise OSError("keepalive close reported error")
+
+    def substitute(wb, handle):
+        real_save(wb, handle)
+        stage = Path(handle.name)
+        owned = real_fstat(handle.fileno())
+        handle.close()
+        stage.unlink()
+        held = real_fstat(duplicates[0]) if duplicates else None
+        stage.write_bytes(foreign)
+        observed.append((stage, owned, held, stage.lstat()))
+        if not save_succeeds:
+            raise OSError("original save failure")
+
+    monkeypatch.setattr(cli.os, "dup", duplicate)
+    monkeypatch.setattr(cli.os, "close", close)
+    monkeypatch.setattr(Workbook, "save", substitute)
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 1, result.output
+    assert ("staging file changed" if save_succeeds else "original save failure") in result.output
+    assert "XLSForm written" not in result.output
+    assert out.read_bytes() == original and out.lstat().st_ino == initial.st_ino
+    assert len(observed) == len(duplicates) == 1
+    stage, owned, held, replacement = observed[0]
+    assert held.st_nlink == 0 and (held.st_dev, held.st_ino) == (owned.st_dev, owned.st_ino)
+    assert (replacement.st_dev, replacement.st_ino) != (owned.st_dev, owned.st_ino)
+    assert stage.read_bytes() == foreign and stage.lstat().st_ino == replacement.st_ino
+    assert list(tmp_path.glob("*.tmp")) == [stage]
+    assert closed == duplicates
+    with pytest.raises(OSError) as error:
+        real_fstat(duplicates[0])
+    assert error.value.errno == errno.EBADF
+
+
+def test_build_survey_form_dup_failure_preserves_unproven_stage(tmp_path, monkeypatch):
+    """A failed keepalive acquisition cannot save or delete an unproven path."""
+    import os
+    from pathlib import Path
+    from openpyxl import Workbook
+    from autogis.adapters import cli
+
+    if os.name != "posix":
+        pytest.skip("POSIX descriptor keepalive")
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+    initial = out.lstat()
+    real_open = Path.open
+    stages, saves = [], []
+
+    def open_stage(path, *args, **kwargs):
+        handle = real_open(path, *args, **kwargs)
+        if args and args[0] == "xb":
+            stages.append(path)
+        return handle
+
+    def denied_dup(fd):
+        assert len(stages) == 1 and stages[0].stat().st_size == 0
+        raise PermissionError("stage duplicate denied")
+
+    monkeypatch.setattr(Path, "open", open_stage)
+    monkeypatch.setattr(cli.os, "dup", denied_dup)
+    monkeypatch.setattr(Workbook, "save", lambda *args: saves.append(args))
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 1, result.output
+    assert "stage duplicate denied" in result.output and "XLSForm written" not in result.output
+    assert saves == []
+    assert out.read_bytes() == b"previous form" and out.lstat().st_ino == initial.st_ino
+    assert len(stages) == 1 and stages[0].read_bytes() == b""
     assert list(tmp_path.glob("*.tmp")) == stages
