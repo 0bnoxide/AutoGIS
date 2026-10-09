@@ -767,3 +767,42 @@ def test_build_survey_form_same_owner_needs_no_chown(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "XLSForm written" in result.output
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_build_survey_form_preserves_recreated_stage_after_publication(tmp_path, monkeypatch):
+    """#567: successful replace consumes our stage; its pathname may have a new owner."""
+    import os
+    from pathlib import Path
+    from openpyxl import load_workbook
+    from autogis.adapters import cli
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+    foreign = b"new foreign stage owner"
+    recreated = []
+    real_replace = os.replace
+
+    def publish_then_recreate(source, target):
+        source = Path(source)
+        consumed_inode = source.lstat().st_ino
+        real_replace(source, target)
+        source.write_bytes(foreign)
+        metadata = source.lstat()
+        assert metadata.st_ino != consumed_inode
+        recreated.append((source, metadata.st_ino))
+
+    monkeypatch.setattr(cli.os, "replace", publish_then_recreate)
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 0, result.output
+    assert "XLSForm written" in result.output
+    wb = load_workbook(out)
+    try:
+        assert wb.sheetnames == ["survey", "choices", "settings"]
+    finally:
+        wb.close()
+    assert len(recreated) == 1
+    source, foreign_inode = recreated[0]
+    assert source.exists(), "foreign stage pathname was removed after publication"
+    assert source.read_bytes() == foreign and source.lstat().st_ino == foreign_inode

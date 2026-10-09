@@ -2483,6 +2483,7 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
             # shortcut: check/replace is not atomic CAS against non-cooperating writers;
             # stronger coordination only if required.
             os.replace(tmp, out)
+            tmp = None
         finally:
             # Close our handle before Windows publication or failure cleanup.
             if tmp is not None:
