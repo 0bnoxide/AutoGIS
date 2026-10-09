@@ -5,7 +5,6 @@ import math
 import os
 import stat
 import sys
-import tempfile
 import uuid
 from datetime import datetime as _dt
 from pathlib import Path
@@ -2451,8 +2450,9 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
             raise click.BadParameter(
                 "output must be a single-link regular file; symbolic links and "
                 f"other destinations are not supported: {out_path}", param_hint="--out")
-        return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
-                info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        return {name: getattr(info, name) for name in (
+            "st_dev", "st_ino", "st_mode", "st_nlink", "st_uid", "st_gid",
+            "st_size", "st_mtime_ns", "st_ctime_ns")}
 
     initial_output = output_snapshot()
     from autogis.core.envmon.survey123_form_builder import build_xlsform
@@ -2470,14 +2470,13 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
             candidate = out.with_name(f"{uuid.uuid4().hex}.tmp")
             with candidate.open("xb") as fh:
                 tmp = candidate
-                if os.name == "posix":
-                    try:
-                        output_mode = out.stat().st_mode
-                    except FileNotFoundError:
-                        pass
-                    else:
-                        # Keep existing access before writing workbook content.
-                        os.fchmod(fh.fileno(), stat.S_IMODE(output_mode))
+                if os.name == "posix" and initial_output is not None:
+                    stage_stat = os.fstat(fh.fileno())
+                    owner = (initial_output["st_uid"], initial_output["st_gid"])
+                    if (stage_stat.st_uid, stage_stat.st_gid) != owner:
+                        os.fchown(fh.fileno(), *owner)
+                    # Keep initially accepted access before workbook content.
+                    os.fchmod(fh.fileno(), stat.S_IMODE(initial_output["st_mode"]))
                 wb.save(fh)
             if output_snapshot() != initial_output:
                 raise click.ClickException(f"cannot write {out_path}: output changed during build; retry")

@@ -543,11 +543,12 @@ def test_build_survey_form_uuid_collision_preserves_foreign_stage(tmp_path, monk
     assert out.read_bytes() == b"previous form"
 
 
-@pytest.mark.parametrize("seam", ["stat", "fchmod"])
+@pytest.mark.parametrize("seam", ["fstat", "fchown", "fchmod"])
 def test_build_survey_form_mode_error_preserves_existing_form(tmp_path, monkeypatch, seam):
-    """Permission inspection/copy failure cannot publish or leak our stage."""
+    """Stage metadata failure cannot write content, publish or leak our stage."""
     import os
-    from pathlib import Path
+    from types import SimpleNamespace
+    from openpyxl import Workbook
     from autogis.adapters import cli
 
     if os.name != "posix":
@@ -556,24 +557,26 @@ def test_build_survey_form_mode_error_preserves_existing_form(tmp_path, monkeypa
     obj.write_text("{}\n", encoding="utf-8")
     out = tmp_path / "form.xlsx"
     out.write_bytes(b"previous form")
-    if seam == "stat":
-        real_stat = Path.stat
+    before = out.lstat()
+    if seam == "fchown":
+        monkeypatch.setattr(cli.os, "fstat", lambda fd: SimpleNamespace(
+            st_uid=before.st_uid + 1, st_gid=before.st_gid + 1))
 
-        def denied_stat(path, *args, **kwargs):
-            if path == out and kwargs.get("follow_symlinks", True):
-                raise PermissionError("mode inspection denied")
-            return real_stat(path, *args, **kwargs)
+    def denied(*args):
+        raise PermissionError(f"{seam} denied")
 
-        monkeypatch.setattr(Path, "stat", denied_stat)
-    else:
-        def denied_chmod(fd, mode):
-            raise PermissionError("mode copy denied")
-
-        monkeypatch.setattr(cli.os, "fchmod", denied_chmod)
+    monkeypatch.setattr(cli.os, seam, denied)
+    saves = []
+    monkeypatch.setattr(Workbook, "save", lambda *args: saves.append(args))
     result = _build(tmp_path, obj, obj, obj, out)
     assert result.exit_code == 1, result.output
-    assert f"mode {'inspection' if seam == 'stat' else 'copy'} denied" in result.output
+    assert f"{seam} denied" in result.output
+    assert "XLSForm written" not in result.output
+    assert saves == []
     assert out.read_bytes() == b"previous form"
+    after = out.lstat()
+    assert (after.st_uid, after.st_gid, after.st_mode, after.st_ino) == (
+        before.st_uid, before.st_gid, before.st_mode, before.st_ino)
     assert list(tmp_path.glob("*.tmp")) == []
 
 
@@ -675,3 +678,92 @@ def test_build_survey_form_supports_native_basename_limits(tmp_path, monkeypatch
         assert list(tmp_path.glob("*.tmp")) == []
     finally:
         out.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize("changed_during_build", [False, True])
+def test_build_survey_form_initial_owner_and_mode_before_content(tmp_path, monkeypatch, changed_during_build):
+    """#566: stage access comes from the accepted output, before workbook bytes."""
+    import os
+    import stat
+    from types import SimpleNamespace
+    from openpyxl import Workbook
+    from autogis.adapters import cli
+    from autogis.core.envmon import survey123_form_builder as builder
+
+    if os.name != "posix":
+        pytest.skip("POSIX ownership operations")
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+    out.chmod(0o640)
+    initial = out.lstat()
+    calls = []
+    real_fstat, real_fchown, real_fchmod = os.fstat, os.fchown, os.fchmod
+    real_save, real_build = Workbook.save, builder.build_xlsform
+
+    def stage_owner(fd):
+        calls.append("fstat")
+        return SimpleNamespace(st_uid=initial.st_uid + 1, st_gid=initial.st_gid + 1)
+
+    def copy_owner(fd, uid, gid):
+        assert (uid, gid) == (initial.st_uid, initial.st_gid)
+        calls.append("fchown")
+        real_fchown(fd, uid, gid)
+
+    def copy_mode(fd, mode):
+        assert mode == stat.S_IMODE(initial.st_mode)
+        calls.append("fchmod")
+        real_fchmod(fd, mode)
+
+    def build(*args):
+        wb = real_build(*args)
+        if changed_during_build:
+            out.chmod(0o444)
+        return wb
+
+    def save(wb, handle):
+        metadata = real_fstat(handle.fileno())
+        assert (metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode)) == (
+            initial.st_uid, initial.st_gid, 0o640)
+        assert calls == ["fstat", "fchown", "fchmod"]
+        calls.append("save")
+        return real_save(wb, handle)
+
+    monkeypatch.setattr(cli.os, "fstat", stage_owner)
+    monkeypatch.setattr(cli.os, "fchown", copy_owner)
+    monkeypatch.setattr(cli.os, "fchmod", copy_mode)
+    monkeypatch.setattr(builder, "build_xlsform", build)
+    monkeypatch.setattr(Workbook, "save", save)
+    try:
+        result = _build(tmp_path, obj, obj, obj, out)
+        assert result.exit_code == (1 if changed_during_build else 0), result.output
+        assert calls == ["fstat", "fchown", "fchmod", "save"]
+        if changed_during_build:
+            assert "output changed during build" in result.output
+            assert out.read_bytes() == b"previous form"
+            assert stat.S_IMODE(out.lstat().st_mode) == 0o444
+        assert list(tmp_path.glob("*.tmp")) == []
+    finally:
+        out.chmod(0o666)
+
+
+def test_build_survey_form_same_owner_needs_no_chown(tmp_path, monkeypatch):
+    import os
+    from autogis.adapters import cli
+
+    if os.name != "posix":
+        pytest.skip("POSIX ownership operations")
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+
+    def unexpected_chown(*args):
+        raise AssertionError("same-owner output should not require chown")
+
+    monkeypatch.setattr(cli.os, "fchown", unexpected_chown)
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 0, result.output
+    assert "XLSForm written" in result.output
+    assert list(tmp_path.glob("*.tmp")) == []
