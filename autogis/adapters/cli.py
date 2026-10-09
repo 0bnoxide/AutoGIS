@@ -3,6 +3,7 @@ import dataclasses
 import json
 import math
 import os
+import stat
 import sys
 import tempfile
 import uuid
@@ -2449,10 +2450,17 @@ def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
         # A missing --out directory is created, not an error (#550).
         out.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with tempfile.NamedTemporaryFile(
-                    dir=out.parent, prefix=out.name + ".", suffix=".tmp",
-                    delete=False) as fh:
-                tmp = Path(fh.name)
+            candidate = out.with_name(f"{out.name}.{uuid.uuid4().hex}.tmp")
+            with candidate.open("xb") as fh:
+                tmp = candidate
+                if os.name == "posix":
+                    try:
+                        output_mode = out.stat().st_mode
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        # Keep existing access before writing workbook content.
+                        os.fchmod(fh.fileno(), stat.S_IMODE(output_mode))
                 wb.save(fh)
             os.replace(tmp, out)
         finally:

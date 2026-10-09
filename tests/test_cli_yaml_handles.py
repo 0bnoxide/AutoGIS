@@ -355,3 +355,103 @@ sys.exit(result.exit_code)
     finally:
         wb.close()
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+@pytest.mark.parametrize("umask,existing_mode,expected_mode", [
+    (0o022, None, 0o644), (0o077, None, 0o600),
+    (0o077, 0o640, 0o640), (0o022, 0o600, 0o600)])
+def test_build_survey_form_preserves_posix_output_mode(
+        tmp_path, umask, existing_mode, expected_mode):
+    """#559: real CLI output honors umask or retains the destination mode."""
+    import os
+    import stat
+    import subprocess
+    import sys
+    from openpyxl import load_workbook
+
+    if os.name != "posix":
+        pytest.skip("POSIX permission bits")
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    if existing_mode is not None:
+        out.write_bytes(b"previous form")
+        out.chmod(existing_mode)
+    script = r'''
+import os, runpy, stat, sys
+from openpyxl import Workbook
+real_save = Workbook.save
+def save(self, handle):
+    print(f"STAGING_MODE={stat.S_IMODE(os.fstat(handle.fileno()).st_mode):04o}")
+    return real_save(self, handle)
+Workbook.save = save
+sys.argv = ["autogis", *sys.argv[1:]]
+runpy.run_module("autogis", run_name="__main__")
+'''
+    result = subprocess.run([
+        sys.executable, "-c", script, "envmon", "build-survey-form",
+        "--site", str(obj), "--event", str(obj), "--analytes", str(obj),
+        "--out", str(out)], capture_output=True, text=True,
+        preexec_fn=lambda: os.umask(umask), timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"STAGING_MODE={expected_mode:04o}" in result.stdout
+    assert stat.S_IMODE(out.stat().st_mode) == expected_mode
+    wb = load_workbook(out)
+    try:
+        assert wb.sheetnames == ["survey", "choices", "settings"]
+    finally:
+        wb.close()
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_build_survey_form_uuid_collision_preserves_foreign_stage(tmp_path, monkeypatch):
+    """A failed exclusive open never gives us ownership of another file."""
+    from types import SimpleNamespace
+    from autogis.adapters import cli
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+    stage = tmp_path / "form.xlsx.collision.tmp"
+    stage.write_bytes(b"another owner's file")
+    monkeypatch.setattr(cli.uuid, "uuid4", lambda: SimpleNamespace(hex="collision"))
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 1, result.output
+    assert "cannot write" in result.output
+    assert stage.read_bytes() == b"another owner's file"
+    assert out.read_bytes() == b"previous form"
+
+
+@pytest.mark.parametrize("seam", ["stat", "fchmod"])
+def test_build_survey_form_mode_error_preserves_existing_form(tmp_path, monkeypatch, seam):
+    """Permission inspection/copy failure cannot publish or leak our stage."""
+    import os
+    from pathlib import Path
+    from autogis.adapters import cli
+
+    if os.name != "posix":
+        pytest.skip("POSIX permission operations")
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+    if seam == "stat":
+        real_stat = Path.stat
+
+        def denied_stat(path, *args, **kwargs):
+            if path == out:
+                raise PermissionError("mode inspection denied")
+            return real_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", denied_stat)
+    else:
+        def denied_chmod(fd, mode):
+            raise PermissionError("mode copy denied")
+
+        monkeypatch.setattr(cli.os, "fchmod", denied_chmod)
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 1, result.output
+    assert f"mode {'inspection' if seam == 'stat' else 'copy'} denied" in result.output
+    assert out.read_bytes() == b"previous form"
+    assert list(tmp_path.glob("*.tmp")) == []
