@@ -2438,9 +2438,18 @@ def _load_survey_yaml(path, allow_empty=False):
 def build_survey_form_cmd(site_path, analytes_path, event_path, out_path):
     """Tool 7.1a: generate a Survey123 XLSForm from site/event/analyte config."""
     out = Path(out_path)
-    if os.path.islink(out):
+    try:
+        output_stat = out.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        pass
+    except OSError as exc:
         raise click.BadParameter(
-            f"symbolic link output is not supported: {out_path}", param_hint="--out")
+            f"cannot inspect output {out_path}: {exc}", param_hint="--out") from exc
+    else:
+        if not stat.S_ISREG(output_stat.st_mode) or output_stat.st_nlink != 1:
+            raise click.BadParameter(
+                "output must be a single-link regular file; symbolic links and "
+                f"other destinations are not supported: {out_path}", param_hint="--out")
     from autogis.core.envmon.survey123_form_builder import build_xlsform
     site_cfg = _load_survey_yaml(site_path)
     analytes = _load_survey_yaml(analytes_path)

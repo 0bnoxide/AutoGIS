@@ -152,6 +152,73 @@ def test_build_survey_form_rejects_symlink_output(tmp_path, monkeypatch, target_
     assert not history.exists()
 
 
+@pytest.mark.parametrize("kind", ["hardlink", "fifo", "socket"])
+def test_build_survey_form_rejects_unsafe_destination(tmp_path, monkeypatch, kind):
+    """#561: publication cannot detach aliases or replace special files."""
+    import os
+    import socket
+
+    if kind != "hardlink" and os.name != "posix":
+        pytest.skip("POSIX special files")
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    alias = tmp_path / "consumer.xlsx"
+    connection = None
+    if kind == "hardlink":
+        out.write_bytes(b"previous form")
+        os.link(out, alias)
+    elif kind == "fifo":
+        os.mkfifo(out)
+    else:
+        connection = socket.socket(socket.AF_UNIX)
+        connection.bind(str(out))
+    before = out.lstat()
+    history = tmp_path / "history.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(history))
+    try:
+        result = _build(tmp_path, obj, obj, obj, out)
+        assert result.exit_code == 2, result.output
+        assert isinstance(result.exception, SystemExit), result.exception
+        assert "single-link regular file" in result.output and str(out) in result.output
+        assert "XLSForm written" not in result.output
+        after = out.lstat()
+        assert (after.st_ino, after.st_mode, after.st_nlink, after.st_mtime_ns) == (
+            before.st_ino, before.st_mode, before.st_nlink, before.st_mtime_ns)
+        if kind == "hardlink":
+            assert out.read_bytes() == alias.read_bytes() == b"previous form"
+            assert os.path.samefile(out, alias)
+        assert list(tmp_path.glob("*.tmp")) == []
+        assert not history.exists()
+    finally:
+        if connection:
+            connection.close()
+
+
+def test_build_survey_form_output_inspection_error_is_clean(tmp_path, monkeypatch):
+    from autogis.adapters import cli
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    real_lstat = cli.Path.lstat
+
+    def denied_lstat(path, *args, **kwargs):
+        if path == out:
+            raise PermissionError("output inspection denied")
+        return real_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(cli.Path, "lstat", denied_lstat)
+    history = tmp_path / "history.csv"
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", str(history))
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 2, result.output
+    assert "cannot inspect output" in result.output and "output inspection denied" in result.output
+    assert str(out) in result.output
+    assert not out.exists() and not history.exists()
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
 def test_validate_survey_form_empty_config_still_means_not_supplied(tmp_path):
     from autogis.core.envmon.survey123_form_builder import build_xlsform
     form = tmp_path / "form.xlsx"
@@ -310,7 +377,9 @@ def test_build_survey_form_real_failed_save_removes_owned_stage(tmp_path, monkey
     original = b"previous form"
     out.write_bytes(original)
     stage = tmp_path / "form.xlsx.tmp"
-    os.link(out, stage)
+    protected = tmp_path / "protected.xlsx"
+    protected.write_bytes(original)
+    os.link(protected, stage)
     writers = []
 
     def partial_write(self):
@@ -326,8 +395,9 @@ def test_build_survey_form_real_failed_save_removes_owned_stage(tmp_path, monkey
         assert "No space left on device" in result.output
         assert out.read_bytes() == original
         assert stage.read_bytes() == original
+        assert os.path.samefile(protected, stage)
         assert sorted(p.name for p in tmp_path.iterdir()) == [
-            "form.xlsx", "form.xlsx.tmp", "obj.yaml"]
+            "form.xlsx", "form.xlsx.tmp", "obj.yaml", "protected.xlsx"]
     finally:
         for writer in writers:
             with contextlib.suppress(ValueError):
