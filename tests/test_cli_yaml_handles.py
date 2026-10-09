@@ -543,9 +543,9 @@ def test_build_survey_form_uuid_collision_preserves_foreign_stage(tmp_path, monk
     assert out.read_bytes() == b"previous form"
 
 
-@pytest.mark.parametrize("seam", ["fstat", "fchown", "fchmod"])
+@pytest.mark.parametrize("seam", ["fchown", "fchmod"])
 def test_build_survey_form_mode_error_preserves_existing_form(tmp_path, monkeypatch, seam):
-    """Stage metadata failure cannot write content, publish or leak our stage."""
+    """Ownership/mode failure cannot save, publish or leak an identified stage."""
     import os
     from types import SimpleNamespace
     from openpyxl import Workbook
@@ -559,8 +559,16 @@ def test_build_survey_form_mode_error_preserves_existing_form(tmp_path, monkeypa
     out.write_bytes(b"previous form")
     before = out.lstat()
     if seam == "fchown":
-        monkeypatch.setattr(cli.os, "fstat", lambda fd: SimpleNamespace(
-            st_uid=before.st_uid + 1, st_gid=before.st_gid + 1))
+        real_fstat = os.fstat
+
+        def stage_owner(fd):
+            info = real_fstat(fd)
+            if info.st_ino == before.st_ino:
+                return info  # Destination preflight, not the stage operation.
+            return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino,
+                                   st_uid=before.st_uid + 1, st_gid=before.st_gid + 1)
+
+        monkeypatch.setattr(cli.os, "fstat", stage_owner)
 
     def denied(*args):
         raise PermissionError(f"{seam} denied")
@@ -703,8 +711,12 @@ def test_build_survey_form_initial_owner_and_mode_before_content(tmp_path, monke
     real_save, real_build = Workbook.save, builder.build_xlsform
 
     def stage_owner(fd):
+        info = real_fstat(fd)
+        if info.st_ino == initial.st_ino:
+            return info  # Actual write preflight must retain destination metadata.
         calls.append("fstat")
-        return SimpleNamespace(st_uid=initial.st_uid + 1, st_gid=initial.st_gid + 1)
+        return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino,
+                               st_uid=initial.st_uid + 1, st_gid=initial.st_gid + 1)
 
     def copy_owner(fd, uid, gid):
         assert (uid, gid) == (initial.st_uid, initial.st_gid)
@@ -806,3 +818,120 @@ def test_build_survey_form_preserves_recreated_stage_after_publication(tmp_path,
     source, foreign_inode = recreated[0]
     assert source.exists(), "foreign stage pathname was removed after publication"
     assert source.read_bytes() == foreign and source.lstat().st_ino == foreign_inode
+
+
+def test_build_survey_form_write_authority_precedes_inputs(tmp_path, monkeypatch):
+    """#569: an actual write-only open must succeed before input/build side effects."""
+    import os
+    from pathlib import Path
+    from autogis.adapters import cli
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+    original_open = os.open
+    reads = []
+
+    def denied_output(path, flags, *args, **kwargs):
+        if Path(path) == out:
+            assert flags & os.O_WRONLY and not flags & (os.O_CREAT | os.O_TRUNC)
+            raise PermissionError(13, "destination write denied", str(path))
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(cli.os, "open", denied_output)
+    monkeypatch.setattr(cli, "_load_survey_yaml", lambda path: reads.append(path) or {})
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 2, result.output
+    assert "destination write denied" in result.output
+    assert reads == [] and "XLSForm written" not in result.output
+    assert out.read_bytes() == b"previous form"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+@pytest.mark.parametrize("save_succeeds", [False, True])
+def test_build_survey_form_preserves_substituted_stage(tmp_path, monkeypatch, save_succeeds):
+    """#568: a foreign inode at the stage path is neither published nor cleaned."""
+    from pathlib import Path
+    from openpyxl import Workbook
+    from autogis.adapters import cli
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    original = b"previous form"
+    out.write_bytes(original)
+    original_inode = out.lstat().st_ino
+    foreign = b"foreign stage substitution"
+    stages = []
+    real_save = Workbook.save
+
+    def substituted_save(wb, handle):
+        real_save(wb, handle)
+        stage = Path(handle.name)
+        owned_inode = stage.lstat().st_ino
+        handle.close()
+        stage.rename(tmp_path / "retained-owned-stage.bin")
+        stage.write_bytes(foreign)
+        foreign_inode = stage.lstat().st_ino
+        assert foreign_inode != owned_inode
+        stages.append((stage, foreign_inode))
+        if not save_succeeds:
+            raise OSError("original save failure")
+
+    monkeypatch.setattr(Workbook, "save", substituted_save)
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 1, result.output
+    assert ("staging file changed" if save_succeeds else "original save failure") in result.output
+    assert "XLSForm written" not in result.output
+    assert out.read_bytes() == original and out.lstat().st_ino == original_inode
+    assert len(stages) == 1
+    stage, foreign_inode = stages[0]
+    assert stage.exists() and stage.read_bytes() == foreign
+    assert stage.lstat().st_ino == foreign_inode
+    assert list(tmp_path.glob("*.tmp")) == [stage]
+
+
+@pytest.mark.parametrize("identity_error", ["denied", "unavailable"])
+def test_build_survey_form_unknown_stage_identity_preserves_path(tmp_path, monkeypatch, identity_error):
+    """If descriptor identity fails, no content is saved or unproven path deleted."""
+    import os
+    from pathlib import Path
+    from types import SimpleNamespace
+    from openpyxl import Workbook
+    from autogis.adapters import cli
+
+    obj = tmp_path / "obj.yaml"
+    obj.write_text("{}\n", encoding="utf-8")
+    out = tmp_path / "form.xlsx"
+    out.write_bytes(b"previous form")
+    real_open, real_fstat = Path.open, os.fstat
+    stage_fds, stages, saves = set(), [], []
+
+    def open_stage(path, *args, **kwargs):
+        handle = real_open(path, *args, **kwargs)
+        if args and args[0] == "xb":
+            stages.append(path)
+            stage_fds.add(handle.fileno())
+        return handle
+
+    def denied_identity(fd):
+        info = real_fstat(fd)
+        if fd in stage_fds:
+            if identity_error == "denied":
+                raise PermissionError("stage identity denied")
+            return SimpleNamespace(st_dev=info.st_dev, st_ino=0,
+                                   st_uid=info.st_uid, st_gid=info.st_gid)
+        return info
+
+    monkeypatch.setattr(Path, "open", open_stage)
+    monkeypatch.setattr(cli.os, "fstat", denied_identity)
+    monkeypatch.setattr(Workbook, "save", lambda *args: saves.append(args))
+    result = _build(tmp_path, obj, obj, obj, out)
+    assert result.exit_code == 1, result.output
+    assert ("stage identity denied" if identity_error == "denied" else "cannot establish staging file identity") in result.output
+    assert saves == [] and "XLSForm written" not in result.output
+    assert out.read_bytes() == b"previous form"
+    assert len(stages) == 1 and stages[0].exists()
+    assert stages[0].read_bytes() == b""
+    assert list(tmp_path.glob("*.tmp")) == stages
