@@ -16,7 +16,8 @@ def _sample():
 def test_write_csv(tmp_path):
     path = tmp_path / "manifest.csv"
     _sample().write_csv(str(path))
-    rows = list(csv.DictReader(path.open()))
+    with path.open() as fh:
+        rows = list(csv.DictReader(fh))
     assert rows[0]["objectid"] == "1"
     assert rows[0]["status"] == "downloaded"
     assert rows[1]["status"] == "failed"

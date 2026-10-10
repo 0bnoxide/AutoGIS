@@ -63,7 +63,8 @@ def test_run_history_report_basic(tmp_path):
     ])
     assert result.exit_code == 0, result.output
     assert output_csv.exists()
-    rows = list(csv.DictReader(output_csv.open()))
+    with output_csv.open() as fh:
+        rows = list(csv.DictReader(fh))
     assert len(rows) == 1
     assert rows[0]["TrendVsPrevious"] == "INCREASE"
 
@@ -79,5 +80,6 @@ def test_run_history_report_empty(tmp_path):
         "--output", str(output_csv),
     ])
     assert result.exit_code == 0, result.output
-    rows = list(csv.DictReader(output_csv.open()))
+    with output_csv.open() as fh:
+        rows = list(csv.DictReader(fh))
     assert len(rows) == 0

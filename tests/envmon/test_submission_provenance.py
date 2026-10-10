@@ -62,7 +62,8 @@ def test_cli_traces_delivery_without_claiming_qa_hold_or_double_billing(tmp_path
     assert report['counts']['device_new_ready_client_unique'] == 1
     assert report['counts']['excluded_inbox_rows'] == 1
     assert hashlib.sha256(db.read_bytes()).hexdigest() == before
-    history = list(csv.DictReader((tmp_path / 'history.csv').open()))
+    with (tmp_path / 'history.csv').open() as fh:
+        history = list(csv.DictReader(fh))
     assert history[-1]['status'] == 'success'
 
 

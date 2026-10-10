@@ -21,7 +21,8 @@ def test_points_csv(tmp_path):
     out = tmp_path / "points.csv"
     n = write_points_csv([_rec(), _rec(exif_lat=None, exif_lon=None)], out)
     assert n == 1
-    rows = list(csv.DictReader(out.open(newline="", encoding="utf-8")))
+    with out.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     assert len(rows) == 1
     assert list(rows[0]) == POINT_FIELDS
     assert rows[0]["lat"] == "45.874" and rows[0]["heading_deg"] == "231.5"
