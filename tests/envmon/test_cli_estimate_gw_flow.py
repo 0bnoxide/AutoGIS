@@ -99,7 +99,8 @@ def test_cli_estimate_gw_flow_direction_output_csv(tmp_path):
         f"estimate-gw-flow-direction (output CSV) exited {result.exit_code}:\n{result.output}"
     )
 
-    rows = list(csv.DictReader(open(out_path, encoding="utf-8")))
+    with open(out_path, encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     assert len(rows) == 1, f"Expected 1 row in output CSV, got {len(rows)}"
     assert abs(float(rows[0]["flow_azimuth_deg"]) - 90.0) < 0.01, (
         f"Expected flow_azimuth_deg ≈ 90.0, got {rows[0]['flow_azimuth_deg']}"

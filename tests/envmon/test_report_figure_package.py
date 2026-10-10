@@ -394,7 +394,8 @@ def test_file_geodatabase_directory_is_packaged(tmp_path):
     assert (out_dir / "data" / "source.gdb" / "a00000001.gdbtable").read_bytes() == b"table"
     assert (out_dir / "data" / "source.gdb" / "nested" / "gdb").read_bytes() == b"child"
     assert result.files[0].sha256           # a digest, not an empty string
-    rows = list(csv.DictReader((out_dir / "manifest.csv").open(encoding="utf-8")))
+    with (out_dir / "manifest.csv").open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     assert rows[0]["status"] == "copied"
     assert rows[0]["dest_path"] == str(Path("data") / "source.gdb")
 

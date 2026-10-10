@@ -133,7 +133,8 @@ class TestBatchImportWorkbooks:
         assert r.exit_code == 0, r.output
         manifest_out = out_dir / "batch_manifest.csv"
         assert manifest_out.exists()
-        rows = list(csv.DictReader(manifest_out.open(encoding="utf-8")))
+        with manifest_out.open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
         assert len(rows) == 1
         assert rows[0]["Status"] == "OK"
 
@@ -149,7 +150,8 @@ class TestBatchImportWorkbooks:
                  "--manifest", str(manifest_path),
                  "--output-dir", str(out_dir))
         assert r.exit_code == 0, r.output
-        rows = list(csv.DictReader((out_dir / "batch_manifest.csv").open(encoding="utf-8")))
+        with (out_dir / "batch_manifest.csv").open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
         assert rows[0]["Status"] == "SKIP"
 
     # --- --edd-dir alternate input mode (BatchEDDImport fold, ADR-0048) ---
@@ -170,11 +172,13 @@ class TestBatchImportWorkbooks:
                  "--site", "SITE-A",
                  "--output-dir", str(out_dir))
         assert r.exit_code == 0, r.output
-        rows = list(csv.DictReader((out_dir / "batch_manifest.csv").open(encoding="utf-8")))
+        with (out_dir / "batch_manifest.csv").open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
         assert len(rows) == 2
         assert all(row["Status"] == "OK" for row in rows)
         assert all(row["SiteID"] == "SITE-A" for row in rows)
-        samples = list(csv.DictReader((out_dir / "sample_records.csv").open(encoding="utf-8")))
+        with (out_dir / "sample_records.csv").open(encoding="utf-8") as fh:
+            samples = list(csv.DictReader(fh))
         assert len(samples) == 2
 
     def test_edd_dir_per_file_failure_does_not_abort(self, tmp_path):
@@ -193,10 +197,12 @@ class TestBatchImportWorkbooks:
                  "--site", "SITE-A",
                  "--output-dir", str(out_dir))
         assert r.exit_code == 1  # SEV_ERROR recorded -> fail-on=error default
-        rows = list(csv.DictReader((out_dir / "batch_manifest.csv").open(encoding="utf-8")))
+        with (out_dir / "batch_manifest.csv").open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
         statuses = {Path(row["WorkbookPath"]).name: row["Status"] for row in rows}
         assert statuses == {"good.csv": "OK", "bad.csv": "ERROR"}
-        samples = list(csv.DictReader((out_dir / "sample_records.csv").open(encoding="utf-8")))
+        with (out_dir / "sample_records.csv").open(encoding="utf-8") as fh:
+            samples = list(csv.DictReader(fh))
         assert len(samples) == 1  # good.csv still imported
 
     def test_manifest_and_edd_dir_mutually_exclusive(self, tmp_path):
@@ -265,7 +271,8 @@ class TestMigrateLegacyData:
                  "--site-id", "SITE-A")
         assert r.exit_code == 0, r.output
         assert out.exists()
-        rows = list(csv.DictReader(out.open(encoding="utf-8")))
+        with out.open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
         # MW-01: Benzene + Toluene (Xylenes blank = skipped); MW-02: Toluene + Benzene
         assert len(rows) == 4
         analytes = {r["AnalyteCanonicalName"] for r in rows}
@@ -282,7 +289,8 @@ class TestMigrateLegacyData:
                  "--input-csv", str(wide), "--output", str(out),
                  "--nondetect-prefix", "<")
         assert r.exit_code == 0, r.output
-        rows = list(csv.DictReader(out.open(encoding="utf-8")))
+        with out.open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
         assert rows[0]["IsNondetect"] == "True"
 
     def test_missing_location_skipped(self, tmp_path):
@@ -295,7 +303,8 @@ class TestMigrateLegacyData:
         r = _run("envmon", "migrate-legacy-data",
                  "--input-csv", str(wide), "--output", str(out))
         assert r.exit_code == 0, r.output
-        rows = list(csv.DictReader(out.open(encoding="utf-8")))
+        with out.open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
         assert all(row["LocationID"] == "MW-01" for row in rows)
 
 
@@ -337,10 +346,12 @@ class TestCreateSamplingPlan:
                  "--samples-output", str(samples_out),
                  "--bottles-output", str(bottles_out))
         assert r.exit_code == 0, r.output
-        samples = list(csv.DictReader(samples_out.open(encoding="utf-8")))
+        with samples_out.open(encoding="utf-8") as fh:
+            samples = list(csv.DictReader(fh))
         # 2 wells × 2 groups = 4 planned samples
         assert len(samples) == 4
-        bottles = list(csv.DictReader(bottles_out.open(encoding="utf-8")))
+        with bottles_out.open(encoding="utf-8") as fh:
+            bottles = list(csv.DictReader(fh))
         assert len(bottles) == 2
         voc_row = next(b for b in bottles if b["AnalyteGroup"] == "voc")
         assert int(voc_row["BottleCount"]) == 4  # 2 wells × 2 bottles each
@@ -377,7 +388,8 @@ class TestCreateSamplingPlan:
                  "--samples-output", str(samples_out),
                  "--bottles-output", str(bottles_out))
         assert r.exit_code == 0, r.output
-        samples = list(csv.DictReader(samples_out.open(encoding="utf-8")))
+        with samples_out.open(encoding="utf-8") as fh:
+            samples = list(csv.DictReader(fh))
         # MW-01: only voc (1); MW-02: voc + metals (2) → 3 total
         assert len(samples) == 3
         mw01 = [s for s in samples if s["LocationID"] == "MW-01"]
@@ -421,7 +433,8 @@ class TestReconcileFieldLab:
         ], catch_exceptions=False)
         assert r.exit_code == 1  # errors present → non-zero
         assert out.exists()
-        flags = list(csv.DictReader(out.open(encoding="utf-8")))
+        with out.open(encoding="utf-8") as fh:
+            flags = list(csv.DictReader(fh))
         types = {f["FlagType"] for f in flags}
         assert "FIELD_MISSING_FROM_LAB" in types  # S-002 has no lab result
 
@@ -443,7 +456,8 @@ class TestReconcileFieldLab:
         ], catch_exceptions=False)
         assert r.exit_code == 1  # errors present
         assert out.exists()
-        flags = list(csv.DictReader(out.open(encoding="utf-8")))
+        with out.open(encoding="utf-8") as fh:
+            flags = list(csv.DictReader(fh))
         types = {f["FlagType"] for f in flags}
         assert "LAB_MISSING_FROM_FIELD" in types
 
@@ -465,7 +479,8 @@ class TestReconcileFieldLab:
         ], catch_exceptions=False)
         assert r.exit_code == 1  # warning present and fail-on=warning
         assert out.exists()
-        flags = list(csv.DictReader(out.open(encoding="utf-8")))
+        with out.open(encoding="utf-8") as fh:
+            flags = list(csv.DictReader(fh))
         assert any(f["FlagType"] == "DATE_MISMATCH" for f in flags)
 
     def test_clean_data_no_flags(self, tmp_path):
@@ -482,5 +497,6 @@ class TestReconcileFieldLab:
                  "--lab-csv", str(lab),
                  "--output", str(out))
         assert r.exit_code == 0, r.output
-        flags = list(csv.DictReader(out.open(encoding="utf-8")))
+        with out.open(encoding="utf-8") as fh:
+            flags = list(csv.DictReader(fh))
         assert len(flags) == 0

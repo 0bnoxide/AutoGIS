@@ -199,8 +199,10 @@ def test_cli_produces_three_files(tmp_path):
     assert sub.exists() and rej.exists() and prov.exists()
 
     # one submitted (Benzene), one rejected (Lead, no coords)
-    sub_rows = list(csv.DictReader(sub.open(encoding="utf-8")))
-    rej_rows = list(csv.DictReader(rej.open(encoding="utf-8")))
+    with sub.open(encoding="utf-8") as fh:
+        sub_rows = list(csv.DictReader(fh))
+    with rej.open(encoding="utf-8") as fh:
+        rej_rows = list(csv.DictReader(fh))
     assert len(sub_rows) == 1 and sub_rows[0][COL_CHARACTERISTIC] == "Benzene"
     assert sub_rows[0][COL_ACTIVITY_DATE] == "2026-01-15"
     assert sub_rows[0][COL_METHOD] == "8260"
@@ -235,7 +237,8 @@ def test_cli_multi_event(tmp_path):
         "envmon", "export-wqx", "--results", str(e1), "--results", str(e2),
         "--locations", str(locs), "--out-dir", str(out)])
     assert res.exit_code == 0, res.output
-    sub = list(csv.DictReader((out / "wqx_submission.csv").open(encoding="utf-8")))
+    with (out / "wqx_submission.csv").open(encoding="utf-8") as fh:
+        sub = list(csv.DictReader(fh))
     assert len(sub) == 2
 
 

@@ -69,7 +69,8 @@ def test_happy_path_no_gaps(tmp_path):
     ])
     assert r.exit_code == 0, r.output
     assert out_csv.exists()
-    rows = list(csv.DictReader(out_csv.open(encoding="utf-8")))
+    with out_csv.open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     assert all(r["GapType"] not in ("MISSING_WELL", "MISSED_ANALYTE") for r in rows)
 
 
@@ -114,6 +115,7 @@ def test_dry_wells_csv(tmp_path):
     ])
     # DRY_OR_INACCESSIBLE is INFO; --fail-on error should exit 0
     assert r.exit_code == 0, r.output
-    rows = list(csv.DictReader(out_csv.open(encoding="utf-8")))
+    with out_csv.open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     assert any(row["GapType"] == "DRY_OR_INACCESSIBLE" for row in rows)
     assert not any(row["GapType"] == "MISSING_WELL" for row in rows)

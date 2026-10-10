@@ -61,7 +61,8 @@ def test_happy_path_perfect_loop(tmp_path):
     assert r.exit_code == 0, r.output
     assert run_out.exists()
     assert obs_out.exists()
-    run_rows = list(csv.DictReader(run_out.open(encoding="utf-8")))
+    with run_out.open(encoding="utf-8") as fh:
+        run_rows = list(csv.DictReader(fh))
     assert len(run_rows) == 1
     assert float(run_rows[0]["misclosure_ft"]) == 0.0
 

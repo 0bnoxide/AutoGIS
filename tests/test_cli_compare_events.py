@@ -62,7 +62,8 @@ def test_happy_path(tmp_path):
     ])
     assert r.exit_code == 0, r.output
     assert out_csv.exists()
-    rows = list(csv.DictReader(out_csv.open(encoding="utf-8")))
+    with out_csv.open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     assert len(rows) == 2
     # Verify header has ComparisonRecord fields
     assert "TrendClass" in rows[0]
@@ -86,7 +87,8 @@ def test_current_event_date_option(tmp_path):
         "--current-event-date", "2026-04-01",
     ])
     assert r.exit_code == 0, r.output
-    rows = list(csv.DictReader(out_csv.open(encoding="utf-8")))
+    with out_csv.open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     # Only MW-1 has an April record
     assert len(rows) == 1
     assert rows[0]["LocationID"] == "MW-1"

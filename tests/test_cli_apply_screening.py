@@ -53,7 +53,8 @@ def test_apply_screening_basic(tmp_path):
         "--output", str(output_csv),
     ])
     assert result.exit_code == 0, result.output
-    rows = list(csv.DictReader(output_csv.open()))
+    with output_csv.open() as fh:
+        rows = list(csv.DictReader(fh))
     assert len(rows) == 1
     assert rows[0]["ExceedsScreeningLevel"] == "1"
     assert rows[0]["DisplayColorClass"] == "EXCEED"
@@ -73,7 +74,8 @@ def test_apply_screening_no_exceedance(tmp_path):
         "--output", str(output_csv),
     ])
     assert result.exit_code == 0, result.output
-    rows = list(csv.DictReader(output_csv.open()))
+    with output_csv.open() as fh:
+        rows = list(csv.DictReader(fh))
     assert rows[0]["ExceedsScreeningLevel"] == "0"
     assert rows[0]["DisplayColorClass"] == "OK"
 
@@ -92,7 +94,8 @@ def test_apply_screening_no_match_passthrough(tmp_path):
         "--output", str(output_csv),
     ])
     assert result.exit_code == 0, result.output
-    rows = list(csv.DictReader(output_csv.open()))
+    with output_csv.open() as fh:
+        rows = list(csv.DictReader(fh))
     # No matching screening entry — record passed through unchanged. The input's
     # blank ExceedsScreeningLevel is a tri-state Optional[int] meaning "no
     # screening level / unknown", so it round-trips as None -> "" (not 0, which

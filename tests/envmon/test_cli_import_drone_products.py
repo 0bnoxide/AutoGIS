@@ -61,7 +61,8 @@ def test_validate_drone_products_report_csv(tmp_path):
     ])
     assert result.exit_code == 0, result.output
     assert report.exists()
-    rows = list(csv.DictReader(report.open(encoding="utf-8")))
+    with report.open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
     assert any(r["category"] == "manifest_parsed" for r in rows)
 
 
