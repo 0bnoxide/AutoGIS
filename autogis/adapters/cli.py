@@ -1048,6 +1048,18 @@ def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
     _render_qa(qa, report, fail_on)
 
 
+def _read_csv_rows(path) -> list:
+    """Read a CSV input as DictReader rows. ``click.Path(exists=True)``
+    admits a directory, and a non-UTF-8 file is a usage mistake -- report
+    both as a ClickException, not a raw traceback (#573)."""
+    import csv
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            return list(csv.DictReader(fh))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise click.ClickException(f"cannot read {path}: {exc}")
+
+
 def _read_id_list(path) -> set:
     """One id per line; blanks and '#' comments ignored."""
     if not path:
@@ -1079,12 +1091,10 @@ def _read_id_list(path) -> set:
 def build_gwe_event_cmd(water_levels, event_date, out_path, exclude, perched,
                         anomaly_stdev, report, fail_on):
     """Tool 4.1: build the per-event GW-elevation contour layer with exclusion flags."""
-    import csv as _csv
     from autogis.core.envmon.build_gwe_event import (
         build_gwe_event, write_gwe_event)
 
-    with Path(water_levels).open(newline="", encoding="utf-8") as fh:
-        rows = list(_csv.DictReader(fh))
+    rows = _read_csv_rows(water_levels)
     result = build_gwe_event(
         rows, event_date=event_date,
         exclude_locations=_read_id_list(exclude),
@@ -1587,19 +1597,14 @@ def generate_event_changelog_cmd(
     NEW_EXCEEDANCE, CLEARED_EXCEEDANCE, VALUE_CHANGE, or NO_CHANGE.
     Headless, no arcpy.
     """
-    import csv as _csv
     from autogis.core.envmon.event_changelog import (
         generate_event_changelog,
         write_changelog_csv,
         write_changelog_workbook,
     )
 
-    def _read_csv(path: str) -> list:
-        with open(path, newline="", encoding="utf-8") as fh:
-            return list(_csv.DictReader(fh))
-
-    prior_rows = _read_csv(prior_csv)
-    current_rows = _read_csv(current_csv)
+    prior_rows = _read_csv_rows(prior_csv)
+    current_rows = _read_csv_rows(current_csv)
 
     result = generate_event_changelog(
         prior_rows,
@@ -5460,14 +5465,12 @@ def merge_event_results_cmd(result_paths, results_dir, event_labels,
 def build_max_result_dataset_cmd(results_path, sl_path, analytes, wells,
                                   date_from, date_to, include_nd, out, report):
     """Build max-detected dataset across all events (headless)."""
-    import csv as _csv
     from autogis.core.envmon.max_result_dataset import (
         build_max_result_dataset, write_max_result_csv)
     from autogis.core.common.qa import QACollector
     from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
-    with open(results_path, newline="", encoding="utf-8") as fh:
-        rows = list(_csv.DictReader(fh))
+    rows = _read_csv_rows(results_path)
     try:
         sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
     except ConfigError as exc:
@@ -5490,17 +5493,15 @@ def build_max_result_dataset_cmd(results_path, sl_path, analytes, wells,
 
 @envmon.command("generate-qc-summary")
 @click.option("--results", "results_path", required=True, type=click.Path(exists=True))
-@click.option("--out", required=True, type=click.Path())
+@click.option("--out", required=True, type=click.Path(dir_okay=False))
 @click.option("--report", default=None, type=click.Path())
 def generate_qc_summary_cmd(results_path, out, report):
     """Generate QC data summary workbook (blanks, spikes, duplicates) (headless)."""
-    import csv as _csv
     from autogis.core.envmon.qc_sample_summary import (
         classify_qc_rows, write_qc_summary_workbook, QCSummaryResult)
     from autogis.core.common.qa import QACollector
 
-    with open(results_path, newline="", encoding="utf-8") as fh:
-        rows = list(_csv.DictReader(fh))
+    rows = _read_csv_rows(results_path)
     records = classify_qc_rows(rows)
     qa = QACollector()
     blank_types = frozenset({"method_blank", "field_blank", "trip_blank"})
@@ -5522,13 +5523,11 @@ def generate_qc_summary_cmd(results_path, out, report):
 @click.option("--report", default=None, type=click.Path())
 def build_compliance_table_cmd(results_path, sl_path, analytes, date_from, out, report):
     """Build cross-event compliance summary matrix + detail workbook (headless)."""
-    import csv as _csv
     from autogis.core.envmon.compliance_summary import (
         build_compliance_summary, write_compliance_workbook)
     from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
-    with open(results_path, newline="", encoding="utf-8") as fh:
-        rows = list(_csv.DictReader(fh))
+    rows = _read_csv_rows(results_path)
     try:
         sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
     except ConfigError as exc:
@@ -5557,13 +5556,12 @@ def build_compliance_table_cmd(results_path, sl_path, analytes, date_from, out, 
 def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
                              event_label, out, report):
     """Build regulatory submission pivot table workbook (headless, openpyxl)."""
-    import csv as _csv, yaml as _yaml
+    import yaml as _yaml
     from autogis.core.envmon.regulatory_table_builder import (
         build_regulatory_table_specs, write_regulatory_workbook)
     from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
-    with open(results_path, newline="", encoding="utf-8") as fh:
-        rows = list(_csv.DictReader(fh))
+    rows = _read_csv_rows(results_path)
     try:
         sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
     except ConfigError as exc:
@@ -5586,14 +5584,11 @@ def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
               default="error", show_default=True)
 def validate_field_completeness_cmd(plan_path, results_path, out, report, fail_on):
     """Compare sampling plan vs. lab results for completeness (headless)."""
-    import csv as _csv
     from autogis.core.envmon.field_completeness_validator import (
         validate_field_completeness, write_completeness_report)
 
-    with open(plan_path, newline="", encoding="utf-8") as fh:
-        plan = list(_csv.DictReader(fh))
-    with open(results_path, newline="", encoding="utf-8") as fh:
-        results = list(_csv.DictReader(fh))
+    plan = _read_csv_rows(plan_path)
+    results = _read_csv_rows(results_path)
     result = validate_field_completeness(plan, results)
     write_completeness_report(result, Path(out))
     click.echo(f"Planned: {result.planned_count}  Received: {result.received_count}  "
@@ -5705,17 +5700,13 @@ def evaluate_gw_models_cmd(observations_csv, tolerance_ft, output, report, fail_
 def export_geopackage_cmd(wells_path, results_path, wl_path, out,
                            overwrite, report):
     """Export envmon data to OGC GeoPackage (stdlib sqlite3, headless)."""
-    import csv as _csv
     from autogis.core.envmon.geopackage_exporter import export_env_data_geopackage
 
-    with open(wells_path, newline="", encoding="utf-8") as fh:
-        wells = list(_csv.DictReader(fh))
-    with open(results_path, newline="", encoding="utf-8") as fh:
-        results = list(_csv.DictReader(fh))
+    wells = _read_csv_rows(wells_path)
+    results = _read_csv_rows(results_path)
     wl_rows = None
     if wl_path:
-        with open(wl_path, newline="", encoding="utf-8") as fh:
-            wl_rows = list(_csv.DictReader(fh))
+        wl_rows = _read_csv_rows(wl_path)
     result = export_env_data_geopackage(wells, results, Path(out),
                                          water_level_rows=wl_rows,
                                          overwrite=overwrite)
@@ -5815,13 +5806,11 @@ def verify_report_package_cmd(package_dir, report, fail_on):
 def export_lab_request_cmd(plan_path, groups_path, out, project_code,
                             turnaround, site_id, csv_path, report):
     """Generate lab analytical request workbook from sampling event plan (headless)."""
-    import csv as _csv
     import yaml as _yaml
     from autogis.core.envmon.lab_request_exporter import (
         build_lab_request_rows, write_lab_request_workbook, write_lab_request_csv)
 
-    with open(plan_path, newline="", encoding="utf-8") as fh:
-        plan = list(_csv.DictReader(fh))
+    plan = _read_csv_rows(plan_path)
     groups = _yaml.safe_load(Path(groups_path).read_text(encoding="utf-8"))
     rows = build_lab_request_rows(plan, groups, project_code=project_code,
                                    turnaround_days=turnaround)
@@ -5845,14 +5834,13 @@ def export_lab_request_cmd(plan_path, groups_path, out, project_code,
 def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
                               event_dates, out, report):
     """Build multi-sheet Excel analytical-data appendix (headless)."""
-    import csv as _csv, yaml as _yaml
+    import yaml as _yaml
     from autogis.core.envmon.report_appendix_builder import (
         build_appendix_sheet_specs, write_appendix_workbook)
     from autogis.core.common.qa import QACollector
     from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
-    with open(results_path, newline="", encoding="utf-8") as fh:
-        rows = list(_csv.DictReader(fh))
+    rows = _read_csv_rows(results_path)
     try:
         sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
     except ConfigError as exc:
@@ -5909,14 +5897,12 @@ def build_dashboard_data_mart_cmd(gdb, site_id, event_id, prior_event_id,
 def build_exceedance_event_cmd(results_path, sl_path, rule, event_date,
                                date_from, date_to, out, report):
     """Build exceedance event dataset with ratio/tier enrichment (headless)."""
-    import csv as _csv
     from autogis.core.envmon.build_exceedance_event import (
         build_exceedance_event, write_exceedance_event_csv)
     from autogis.core.common.qa import QACollector
     from autogis.core.common.config import ConfigError, load_flat_screening_levels
 
-    with open(results_path, newline="", encoding="utf-8") as fh:
-        rows = list(_csv.DictReader(fh))
+    rows = _read_csv_rows(results_path)
     try:
         sl = load_flat_screening_levels(Path(sl_path))
     except ConfigError as exc:
@@ -6098,12 +6084,10 @@ def select_soil_intervals_cmd(results_csv, out, analytes, tiers, max_depth_ft,
               default="error", show_default=True)
 def export_comparison_excel_cmd(comparison_csv, output, overwrite, report, fail_on):
     """Export comparison results to a formatted Excel workbook (headless)."""
-    import csv as _csv
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.export_comparison_excel import export_comparison_excel
 
-    with open(comparison_csv, newline="", encoding="utf-8") as fh:
-        records = list(_csv.DictReader(fh))
+    records = _read_csv_rows(comparison_csv)
     qa = QACollector()
     export_comparison_excel(records, Path(output), overwrite=overwrite, qa=qa)
     click.echo(f"Records: {len(records)}  Output: {output}")
