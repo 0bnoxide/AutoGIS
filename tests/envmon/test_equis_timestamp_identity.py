@@ -696,3 +696,172 @@ def test_reverse_alias_blank_contributor_keeps_existing_degraded_key(
     assert batches[0][0] == "PASS" and not qa.has_blocking()
     assert stored["Env_QCResults"] == {
         ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T", "E200.8", token)}
+
+
+def _formula_workbook(tmp_path, role, cache, *, side=None, alias=False, qc=True,
+                      midnight=False, shared=False, sample_only=False):
+    """Write explicit raw cached/uncached formulas without evaluating them."""
+    import xml.etree.ElementTree as ET
+    date, time = dt.date(2025, 3, 17), dt.time(0 if midnight else 9, 0 if midnight else 14)
+    sheets = _sheets(date, time, qc=qc)
+    if sample_only:
+        for name in ("EPAR4_TST_v1", "EPAR4_RES_v1"):
+            sheets[name][0].pop(role)
+    sides = [side] if side else ["EPAR4_TST_v1", "EPAR4_RES_v1"]
+    source = "raw_run" if alias else role
+    for name in sides:
+        if alias:
+            sheets[name][0].pop(role, None)
+        sheets[name][0][source] = date if role == "analysis_date" else time
+    profile = LabEDDProfile.load(PROFILE)
+    if alias:
+        profile.source_aliases.update(_timestamp_alias_pairs(role, "reverse_three"))
+    path = _workbook(tmp_path, sheets)
+
+    def mutate(members):
+        ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+        for name in sides:
+            part = f"xl/worksheets/sheet{list(sheets).index(name) + 1}.xml"
+            root = ET.fromstring(members[part])
+            column = openpyxl.utils.get_column_letter(list(sheets[name][0]).index(source) + 1)
+            cell = root.find(f".//{ns}c[@r='{column}2']")
+            if cache != "blank":
+                formula = ET.SubElement(cell, ns + "f")
+                if shared:
+                    formula.attrib.update(t="shared", si="0")
+                else:
+                    formula.text = "NOW()" if role == "analysis_date" else "TIME(9,14,0)"
+            value = cell.find(ns + "v")
+            if cache in {"absent", "blank"}:
+                cell.remove(value)
+            elif cache in {"empty", "emptytext", "whitespace"}:
+                if cache != "empty":
+                    cell.attrib["t"] = "str"
+                value.text = "   " if cache == "whitespace" else None
+            elif cache == "text":
+                cell.attrib["t"] = "str"
+                value.text = "03/17/2025" if role == "analysis_date" else "00:00" if midnight else "09:14"
+            members[part] = ET.tostring(root)
+
+    _rewrite_xlsx(path, mutate)
+    return path, profile
+
+
+@pytest.mark.parametrize("role", ["analysis_date", "analysis_time"])
+@pytest.mark.parametrize("side", ["EPAR4_FSample_v1", "EPAR4_TST_v1", "EPAR4_RES_v1"])
+@pytest.mark.parametrize("cache", ["absent", "empty", "emptytext", "whitespace"])
+@pytest.mark.parametrize("alias", [False, True])
+def test_formula_without_usable_cache_blocks_all_run_contributors(
+        tmp_path, monkeypatch, role, side, cache, alias):
+    path, profile = _formula_workbook(tmp_path, role, cache, side=side, alias=alias,
+                                      qc=side != "EPAR4_RES_v1", shared=cache == "empty")
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, profile, qa)
+    assert not stored and batches[0][0] == "ERROR"
+    assert all(value == 0 for value in batches[0][1].values())
+    assert any(r.category == "equis_invalid_run_timestamp" and r.source_sheet == side
+               for r in qa.records)
+
+
+@pytest.mark.parametrize("role", ["analysis_date", "analysis_time"])
+@pytest.mark.parametrize("cache", ["native", "text", "blank"])
+@pytest.mark.parametrize("qc", [True, False])
+@pytest.mark.parametrize("midnight", [False, True])
+def test_verified_formula_caches_and_true_blanks_keep_literal_keys(
+        tmp_path, monkeypatch, role, cache, qc, midnight):
+    path, profile = _formula_workbook(tmp_path, role, cache, qc=qc, midnight=midnight)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, profile, qa)
+    date, time = "03/17/2025", "00:00" if midnight else "09:14"
+    if cache == "blank":
+        if role == "analysis_date":
+            date = ""
+        else:
+            time = ""
+    token = f"1|INITIAL|{date}@{time}"
+    key = (("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T", "E200.8", token)
+           if qc else ("SITE", "GW", "MW1", "S1", "2025-03-11", "LEAD", "",
+                       "EQUIS_XLS", "", "T", "", f"1|INITIAL|E200.8|{date}@{time}"))
+    assert stored["Env_QCResults" if qc else "Env_AnalyticalResults"] == {key}
+    assert batches[0][0] == "PASS" and not qa.has_blocking()
+
+
+@pytest.mark.parametrize("role", ["analysis_date", "analysis_time"])
+@pytest.mark.parametrize("cache", ["native", "text", "blank"])
+def test_verified_reverse_alias_formula_cache_preserves_missing_role_key(
+        tmp_path, monkeypatch, role, cache):
+    path, profile = _formula_workbook(tmp_path, role, cache, alias=True)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, profile, qa)
+    token = "1|INITIAL|@09:14" if role == "analysis_date" else "1|INITIAL|03/17/2025@"
+    assert stored["Env_QCResults"] == {
+        ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T", "E200.8", token)}
+    assert batches[0][0] == "PASS" and not qa.has_blocking()
+
+
+@pytest.mark.parametrize("role", ["analysis_date", "analysis_time"])
+@pytest.mark.parametrize("cache", ["native", "text", "blank"])
+def test_verified_sample_only_formula_cache_keeps_inherited_key(tmp_path, monkeypatch, role, cache):
+    path, profile = _formula_workbook(tmp_path, role, cache, side="EPAR4_FSample_v1", sample_only=True)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, profile, qa)
+    token = "1|INITIAL|03/17/2025@09:14"
+    if cache == "blank":
+        token = "1|INITIAL|@09:14" if role == "analysis_date" else "1|INITIAL|03/17/2025@"
+    assert stored["Env_QCResults"] == {
+        ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T", "E200.8", token)}
+    assert batches[0][0] == "PASS" and not qa.has_blocking()
+
+
+@pytest.mark.parametrize("bad_first", [True, False])
+def test_uncached_formula_batch_preserves_valid_siblings_in_both_orders(tmp_path, bad_first):
+    from autogis.core.envmon.batch_workbook_importer import run_batch_import
+    bad, _ = _formula_workbook(tmp_path, "analysis_time", "absent", qc=False)
+    good_sheets = _sheets(qc=False)
+    for rows in good_sheets.values():
+        rows[0]["sys_sample_code"] = "GOOD"
+    good = _workbook(tmp_path, good_sheets, name="good")
+    paths = [bad, good] if bad_first else [good, bad]
+    result = run_batch_import([dict(workbook_path=str(p), profile_path=str(PROFILE), site_id="SITE")
+                               for p in paths])
+    assert {Path(r.WorkbookPath).name: r.Status for r in result.manifest} == {
+        bad.name: "ERROR", good.name: "OK"}
+    assert [r.SampleID for r in result.all_samples] == ["GOOD"]
+    assert [r.SampleID for r in result.all_results] == ["GOOD"]
+
+
+@pytest.mark.parametrize("cache", ["absent", "empty", "whitespace", "native"])
+@pytest.mark.parametrize("mode", ["api", "manifest", "directory"])
+def test_formula_cache_guard_reaches_actual_batch_api_and_cli(tmp_path, monkeypatch, cache, mode):
+    import csv
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis as command
+    from autogis.core.envmon.batch_workbook_importer import run_batch_import
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", "off")
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    path, _ = _formula_workbook(inputs, "analysis_time", cache, qc=False)
+    rows = [dict(workbook_path=str(path), profile_path=str(PROFILE), site_id="SITE")]
+    if mode == "api":
+        result = run_batch_import(rows)
+        assert result.manifest[0].Status == ("OK" if cache == "native" else "ERROR")
+        assert len(result.all_results) == (1 if cache == "native" else 0)
+        assert len(result.all_samples) == (1 if cache == "native" else 0)
+        return
+    manifest = tmp_path / "manifest.csv"
+    with manifest.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    options = (["--manifest", str(manifest)] if mode == "manifest" else
+               ["--edd-dir", str(inputs), "--profile", str(PROFILE), "--site", "SITE"])
+    out = tmp_path / "out"
+    invoked = CliRunner().invoke(command, ["envmon", "batch-import-workbooks", *options,
+                                "--output-dir", str(out)], catch_exceptions=False)
+    assert invoked.exit_code == (0 if cache == "native" else 1)
+    assert (out / "result_records.csv").exists() == (cache == "native")
+    assert (out / "sample_records.csv").exists() == (cache == "native")

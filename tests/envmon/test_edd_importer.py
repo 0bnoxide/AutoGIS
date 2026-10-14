@@ -373,6 +373,132 @@ def test_run_edd_import_uses_caller_qa_collector(tmp_path, monkeypatch):
     assert seen["qa"] is mine
 
 
+def _qa_persistence_writer(monkeypatch, *, late=None):
+    """Execute real batch/QA persistence against only in-memory cursor effects."""
+    import dataclasses
+    from collections import defaultdict
+    from types import SimpleNamespace
+    from autogis.core.envmon import edd_importer as mod, import_to_gdb
+    from autogis.core.envmon.gdb_schema import compute_unique_key
+    tables, appends = defaultdict(list), []
+
+    class Cursor:
+        def __init__(self, table, fields):
+            self.rows, self.fields = tables[Path(table).name], fields
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def insertRow(self, values):
+            self.rows.append(dict(zip(self.fields, values)))
+
+        def __iter__(self):
+            for row in self.rows:
+                self.current = row
+                yield [row.get(field) for field in self.fields]
+
+        def updateRow(self, values):
+            self.current.update(zip(self.fields, values))
+
+    def append(gdb, table, records, qa, batch):
+        appends.append((batch, table, [compute_unique_key(dataclasses.asdict(r), table)
+                                      for r in records]))
+        if late and table == "Env_AnalyticalResults":
+            qa.add(late, "current_append", "Synthetic writer diagnostic", import_batch_id=batch)
+        return len(records), 0
+
+    monkeypatch.setattr(mod, "create_or_update_gdb_schema", lambda *a: None)
+    monkeypatch.setattr(mod, "append_records_idempotent", append)
+    monkeypatch.setattr(import_to_gdb, "_arcpy", lambda: SimpleNamespace(
+        da=SimpleNamespace(InsertCursor=Cursor, UpdateCursor=Cursor)))
+    return tables, appends
+
+
+@pytest.mark.parametrize("prior", ["equis_invalid_run_timestamp", "equis_test_key_collision",
+                                   "ordinary_prior_error"])
+@pytest.mark.parametrize("current", ["valid", "row_error", "late_error", "late_warning"])
+def test_reused_qa_scopes_status_counts_and_persistence_to_current_import(
+        tmp_path, monkeypatch, prior, current):
+    import csv
+    from autogis.core.envmon import edd_importer as mod
+    tables, appends = _qa_persistence_writer(
+        monkeypatch, late=SEV_ERROR if current == "late_error" else
+        SEV_WARNING if current == "late_warning" else None)
+    path = tmp_path / "input.csv"
+    rows = [_BASE_ROW]
+    if current == "row_error":
+        rows.append(dict(_BASE_ROW, SysLocCode=""))
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(_BASE_ROW))
+        writer.writeheader()
+        writer.writerows(rows)
+    qa = QACollector()
+    old = qa.add(SEV_ERROR, prior, "Earlier import", import_batch_id="OLD")
+    batch = mod.run_edd_import(path, _make_profile(_BASE_COLUMNS), tmp_path / "stub.gdb",
+                              "SITE", ANALYTES, SCREENING, qa=qa)
+    record = tables["Env_ImportBatch"][0]
+    assert appends and record["AnalyticalRecordCount"] == 1
+    assert record["QAStatus"] == ("ERROR" if current in {"row_error", "late_error"} else "PASS")
+    current_records = qa.records[1:]
+    assert record["ErrorCount"] == sum(r.severity == SEV_ERROR for r in current_records)
+    assert record["WarningCount"] == sum(r.severity == SEV_WARNING for r in current_records)
+    assert [r["Category"] for r in tables["Env_ImportQA"]] == [r.category for r in current_records]
+    assert all(r["ImportBatchID"] == batch for r in tables["Env_ImportQA"])
+    assert qa.records[0] is old and old.import_batch_id == "OLD"
+    assert qa.has_blocking()  # The caller still owns the complete aggregate.
+
+
+@pytest.mark.parametrize("bad_first", [True, False])
+def test_sequential_equis_imports_keep_aggregate_qa_without_replaying_old_records(
+        tmp_path, monkeypatch, bad_first):
+    import openpyxl
+    import autogis
+    from autogis.core.envmon import edd_importer as mod
+    tables, appends = _qa_persistence_writer(monkeypatch)
+    profile = LabEDDProfile.load(Path(autogis.__file__).parent / "config/lab_profiles/epar4.yaml")
+    qa = QACollector()
+    snapshots = []
+    for number, bad in enumerate([bad_first, not bad_first]):
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+        test = dict(sys_sample_code="S1", lab_anl_method_name="E200.8",
+                    analysis_date="03/17/2025", analysis_time="09:14:17" if bad else "09:14",
+                    total_or_dissolved="T", column_number="NA", test_type="INITIAL", dilution_factor="1")
+        result = dict(test, chemical_name="Lead", result_value="1", result_unit="mg/L",
+                      result_type_code="TRG", reportable_result="Yes", test_batch_id="AB1")
+        sample = dict(sys_sample_code="S1", sys_loc_code="MW1", sample_matrix_code="GW",
+                      sample_date="03/11/2025", sample_source="Field", sample_type_code="N")
+        for title, row in [("EPAR4_FSample_v1", sample), ("EPAR4_TST_v1", test),
+                           ("EPAR4_RES_v1", result)]:
+            sheet = wb.create_sheet(title)
+            sheet.append(list(row))
+            sheet.append(list(row.values()))
+        path = tmp_path / f"input-{number}.xlsx"
+        wb.save(path)
+        wb.close()
+        before, written = list(qa.records), len(tables["Env_ImportQA"])
+        batch = mod.run_edd_import(path, profile, tmp_path / "stub.gdb", "SITE", {}, {}, qa=qa)
+        record = tables["Env_ImportBatch"][-1]
+        new = qa.records[len(before):]
+        assert all(a is b for a, b in zip(before, qa.records))
+        assert [r["Category"] for r in tables["Env_ImportQA"][written:]] == [r.category for r in new]
+        assert all(r["ImportBatchID"] == batch for r in tables["Env_ImportQA"][written:])
+        assert record["ErrorCount"] == sum(r.severity == SEV_ERROR for r in new)
+        assert record["QAStatus"] == ("ERROR" if bad else "PASS")
+        calls = [a for a in appends if a[0] == batch]
+        assert bool(calls) == (not bad)
+        if not bad:
+            analytical = next(a[2] for a in calls if a[1] == "Env_AnalyticalResults")
+            assert analytical == [("SITE", "GW", "MW1", "S1", "2025-03-11", "LEAD", "",
+                                   "EQUIS_XLS", "", "T", "", "1|INITIAL|E200.8|03/17/2025@09:14")]
+        snapshots.append(new)
+    assert qa.records == snapshots[0] + snapshots[1]
+    assert qa.has_blocking()
+
+
 # ---------------------------------------------------------------------------
 # Step-1 canonical expansion (ADR-0075) — 12 new optional fields
 # ---------------------------------------------------------------------------

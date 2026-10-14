@@ -83,3 +83,27 @@ profile, schema, CLI output sequencing or production GDB behavior changes.
 **Revisit if:** Additional reader-level structural failure categories are
 introduced. Actual headless synthetic API/CLI CSV results qualify this repair;
 real exports and native GIS remain separate acceptance gates.
+
+## Issue #581 and shared QA reuse: preserve source and import boundaries
+
+**Decision:** Retain formula presence with the selected raw timestamp cells.
+Reject absent, empty or unusable cached values before the decoded type check;
+accept verified canonical caches, including numeric midnight, and genuine blanks.
+Do not evaluate formulas or change codecs, aliases or key recipes. In the single
+importer, record the caller QA boundary before reading. Scope structural guards,
+status, final counts and persisted QA to this import. Create the consumer view
+after the last producer so late append diagnostics remain included. Preserve the
+original collector for every producer and the caller aggregate; retain its record
+identities and order, and use the original object for a fresh collector.
+
+**Reasoning:** Independent synthetic probes showed uncached formulas decode to
+None and acquire accepted blank keys. They also showed previous timestamp errors
+abort later valid imports and previous QA is replayed into the new batch. A guard
+slice alone cannot fix final status, counts and persistence. Local record views
+are sufficient; the existing finalizer and QA writer do not mutate the collector.
+No global QA policy, schema, batch/CLI behavior or production keys need changing.
+
+**Revisit if:** Concurrent reuse of a collector or formula freshness requires a
+different contract. These sequential synthetic tests qualify cache presence and
+per-import QA consumption, not formula evaluation, real exports or native GIS.
+All rejected attempts and independent probe evidence remain immutable.

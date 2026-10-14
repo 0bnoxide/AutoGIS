@@ -157,11 +157,18 @@ def _load_xlsx_sheets(path: Path, names: list[str],
                            for h in headers if h in timestamp_columns}
                           if identity_columns and proof is None else {})
                 for col, (h, v) in enumerate(zip(headers, values), start=1):
-                    if h in timestamp_columns and isinstance(
-                            v, (datetime.date, datetime.time)):
+                    if h in timestamp_columns:
                         coordinate = f"{openpyxl.utils.get_column_letter(col)}{r}"
-                        issue = _xlsx_timestamp_issue(
-                            v, (proof or {}).get(coordinate), wb.epoch)
+                        source = (proof or {}).get(coordinate)
+                        # data_only maps uncached formulas to None. Their
+                        # nonblank source must not become a genuine blank key.
+                        issue = ""
+                        if source and source[2] and (
+                                source[1] is None or not source[1].strip()
+                                or v is None or isinstance(v, str) and not v.strip()):
+                            issue = "Timestamp formula has no usable cached value"
+                        elif isinstance(v, (datetime.date, datetime.time)):
+                            issue = _xlsx_timestamp_issue(v, source, wb.epoch)
                         if issue:
                             issues[h] = issue
                 row = {h: _xlsx_cell_text(v)
@@ -251,7 +258,8 @@ def _stream_timestamp_cells(archive, member: str, columns: set[str]) -> dict:
                 match = re.fullmatch(r"([A-Z]+)([0-9]+)", coordinate)
                 if match and match[1] in columns and int(match[2]) > 1:
                     proof[coordinate] = (element.attrib.get("t", "n"),
-                                         element.findtext("m:v", None, ns))
+                                         element.findtext("m:v", None, ns),
+                                         element.find("m:f", ns) is not None)
                 element.clear()
             elif event == "end" and element.tag == f"{{{ns['m']}}}row":
                 element.clear()
@@ -268,7 +276,7 @@ def _xlsx_timestamp_issue(value, source, epoch) -> str:
         return "Timestamp has seconds, fractions or a timezone"
     if source is None or source[1] is None:
         return "Timestamp source precision cannot be verified"
-    kind, raw = source
+    kind, raw = source[:2]
     if kind == "n":
         # Accept only the exact minute serialization, never a tolerance that
         # could hide source fractions rounded away by the spreadsheet decoder.
