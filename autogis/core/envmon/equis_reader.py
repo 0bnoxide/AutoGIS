@@ -14,6 +14,8 @@ arcpy-free; xlrd/openpyxl are lazy-imported in the sheet loaders only.
 """
 from __future__ import annotations
 
+import datetime
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -75,8 +77,16 @@ def read_equis_xls(path: Path, profile,
     path = Path(path)
     loader = (_load_xlsx_sheets if path.suffix.casefold() == ".xlsx"
               else _load_xls_sheets)
+    timestamp_columns = {_COL_ANALYSIS_DATE, _COL_ANALYSIS_TIME}
+    while True:
+        expanded = timestamp_columns | {src for src, dst in profile.source_aliases.items()
+                                        if dst in timestamp_columns}
+        if expanded == timestamp_columns:
+            break
+        timestamp_columns = expanded
     sheets = loader(path, [profile.sample_sheet, profile.result_sheet,
-                           profile.batch_sheet, profile.test_sheet])
+                           profile.batch_sheet, profile.test_sheet],
+                    timestamp_columns if profile.test_sheet else ())
     return transform_equis_sheets(sheets.get(profile.sample_sheet, []),
                                   sheets.get(profile.result_sheet, []),
                                   sheets.get(profile.batch_sheet, []),
@@ -84,7 +94,8 @@ def read_equis_xls(path: Path, profile,
                                   test_rows=sheets.get(profile.test_sheet, []))
 
 
-def _load_xls_sheets(path: Path, names: list[str]) -> dict[str, list[dict]]:
+def _load_xls_sheets(path: Path, names: list[str],
+                     timestamp_columns=()) -> dict[str, list[dict]]:
     import xlrd  # required dep, lazy so nothing else pays the import
     wb = xlrd.open_workbook(str(path))
     out: dict[str, list[dict]] = {}
@@ -99,18 +110,37 @@ def _load_xls_sheets(path: Path, names: list[str]) -> dict[str, list[dict]]:
                    for c in sheet.row(0)]
         rows = []
         for r in range(1, sheet.nrows):
+            issues = {}
+            for h, c in zip(headers, sheet.row(r)):
+                if h in timestamp_columns and c.ctype == xlrd.XL_CELL_DATE:
+                    value = xlrd.xldate_as_datetime(c.value, wb.datemode)
+                    if c.value < 1:
+                        issues[h] = "BIFF timestamp has time-origin or sub-minute precision"
+                    else:
+                        try:
+                            expected = xlrd.xldate.xldate_from_date_tuple(
+                                (value.year, value.month, value.day), wb.datemode)
+                            expected += (value.hour * 60 + value.minute) / 1440
+                            if value.second or value.microsecond or c.value != expected:
+                                issues[h] = "BIFF timestamp has sub-minute precision"
+                        except xlrd.xldate.XLDateError:
+                            issues[h] = "BIFF timestamp origin cannot be verified"
             row = {h: _cell_text(c, wb.datemode)
                    for h, c in zip(headers, sheet.row(r)) if h}
+            if timestamp_columns:
+                row["__equis_timestamp_issues"] = issues
             row["__sheet_row"] = r + 1   # 1-based, header = row 1
             rows.append(row)
         out[name] = rows
     return out
 
 
-def _load_xlsx_sheets(path: Path, names: list[str]) -> dict[str, list[dict]]:
+def _load_xlsx_sheets(path: Path, names: list[str],
+                      timestamp_columns=()) -> dict[str, list[dict]]:
     import openpyxl  # required dep, lazy (R1)
     wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
     try:
+        raw = _xlsx_timestamp_sources(path, names) if timestamp_columns else {}
         out: dict[str, list[dict]] = {}
         for name in names:
             if not name:
@@ -123,14 +153,77 @@ def _load_xlsx_sheets(path: Path, names: list[str]) -> dict[str, list[dict]]:
             headers = [_norm_header(_xlsx_cell_text(v)) for v in first]
             rows = []
             for r, values in enumerate(rows_iter, start=2):
+                issues = {}
+                for col, (h, v) in enumerate(zip(headers, values), start=1):
+                    if h in timestamp_columns and isinstance(
+                            v, (datetime.date, datetime.time)):
+                        coordinate = f"{openpyxl.utils.get_column_letter(col)}{r}"
+                        issue = _xlsx_timestamp_issue(
+                            v, raw.get(name, {}).get(coordinate), wb.epoch)
+                        if issue:
+                            issues[h] = issue
                 row = {h: _xlsx_cell_text(v)
                        for h, v in zip(headers, values) if h}
+                if timestamp_columns:
+                    row["__equis_timestamp_issues"] = issues
                 row["__sheet_row"] = r
                 rows.append(row)
             out[name] = rows
         return out
     finally:
         wb.close()
+
+
+def _xlsx_timestamp_sources(path: Path, names: list[str]) -> dict:
+    """Keep raw OOXML precision before openpyxl rounds dates to milliseconds."""
+    import posixpath
+    import xml.etree.ElementTree as ET
+    from zipfile import ZipFile
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    relationship = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+    out = {}
+    with ZipFile(path) as archive:
+        targets = {r.attrib["Id"]: r.attrib["Target"]
+                   for r in ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+                   if r.attrib.get("TargetMode") != "External"}
+        book = ET.fromstring(archive.read("xl/workbook.xml"))
+        for sheet in book.findall("m:sheets/m:sheet", ns):
+            name = sheet.attrib["name"]
+            if name not in names:
+                continue
+            target = targets.get(sheet.attrib[relationship])
+            if target is None:
+                continue
+            member = (target.lstrip("/") if target.startswith("/") else
+                      posixpath.normpath(posixpath.join("xl", target)))
+            root = ET.fromstring(archive.read(member))
+            out[name] = {c.attrib["r"]: (c.attrib.get("t", "n"), c.findtext("m:v", None, ns))
+                         for c in root.findall("m:sheetData/m:row/m:c", ns)
+                         if "r" in c.attrib}
+    return out
+
+
+def _xlsx_timestamp_issue(value, source, epoch) -> str:
+    from decimal import Decimal, InvalidOperation
+    from openpyxl.utils.datetime import to_excel
+    if isinstance(value, (datetime.datetime, datetime.time)) and (
+            value.second or value.microsecond or value.tzinfo is not None):
+        return "Timestamp has seconds, fractions or a timezone"
+    if source is None or source[1] is None:
+        return "Timestamp source precision cannot be verified"
+    kind, raw = source
+    if kind == "n":
+        # Accept only the exact minute serialization, never a tolerance that
+        # could hide source fractions rounded away by the spreadsheet decoder.
+        expected = Decimal(format(to_excel(value, epoch), ".16g"))
+        try:
+            if Decimal(raw) == expected:
+                return ""
+        except InvalidOperation:
+            pass
+    elif kind == "d" and re.fullmatch(re.escape(value.isoformat()) + r"(?:\.0+)?", raw):
+        return ""
+    return "Timestamp source has unsupported or unverifiable precision"
 
 
 def _xlsx_cell_text(value) -> str:
@@ -213,6 +306,11 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
     if profile.source_aliases:
         for rows in (sample_rows, result_rows, batch_rows, test_rows):
             _apply_source_aliases(rows, profile.source_aliases)
+    if profile.test_sheet:
+        for sheet, rows in ((profile.test_sheet, test_rows),
+                            (profile.result_sheet, result_rows)):
+            for row in rows:
+                _validate_run_timestamp(row, sheet, profile, qa)
     sample_index = {}
     for s in sample_rows:
         key = profile.resolve_column(s, "sample_id")
@@ -305,6 +403,33 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
                         qa, row_num, join_date)
         out.append(row)
     return out
+
+
+def _validate_run_timestamp(row: dict, sheet: str, profile,
+                             qa: QACollector) -> None:
+    issues = dict(row.get("__equis_timestamp_issues", {}))
+    for src, dst in profile.source_aliases.items():
+        if src in issues:
+            issues.setdefault(dst, issues[src])
+    for col, pattern, fmt in ((_COL_ANALYSIS_DATE, r"[0-9]{2}/[0-9]{2}/[0-9]{4}", "%m/%d/%Y"),
+                              (_COL_ANALYSIS_TIME, r"[0-9]{2}:[0-9]{2}", "%H:%M")):
+        value = _get(row, col)
+        issue = next((reason for src, reason in issues.items()
+                      if src == col or profile.source_aliases.get(src) == col), "")
+        if value and not issue:
+            try:
+                if not re.fullmatch(pattern, value):
+                    raise ValueError
+                datetime.datetime.strptime(value, fmt)
+            except ValueError:
+                issue = f"Expected separate {fmt} with no seconds or timezone"
+        if issue:
+            qa.add(SEV_ERROR, "equis_invalid_run_timestamp",
+                   f"{sheet} row {row.get('__sheet_row')}: {col}: {issue} — "
+                   "whole import blocked to preserve frozen run identity",
+                   source_sheet=sheet, source_row=row.get("__sheet_row"),
+                   recommended_action="Export separate zero-padded MM/DD/YYYY and HH:MM "
+                                      "fields; review source precision without rounding runs.")
 
 
 def _get_sample_id(row: dict, profile) -> str:

@@ -652,11 +652,11 @@ def run_edd_import(
         bad += detect_overlength_keys(
             qc_records, "Env_QCResults", qa, batch_id)
 
-    # Reader-flagged structural collisions (epar4 duplicate test keys, PR #253)
-    # are batch-integrity failures too — the reader emits the blocking QA but
-    # can't gate the write, so fold them into the same abort.
+    # Reader structural failures must block every append, including valid
+    # siblings; per-row QA.ERROR alone does not gate the writer.
     bad += sum(1 for r in qa.records
-               if r.category == "equis_test_key_collision")
+               if r.category in {"equis_test_key_collision",
+                                 "equis_invalid_run_timestamp"})
 
     if bad:
         # Abort before any append: reject the whole batch for adjudication so
