@@ -63,3 +63,23 @@ sufficient; no additional importer behavior or options are needed.
 **Revisit if:** The owner authorizes changing value alias resolution or frozen
 identity recipes. Current canonical, blank and override outputs retain their
 literal baseline keys. All rejected attempt evidence remains immutable.
+
+## Issue #580: enforce structural reader QA at the headless batch caller
+
+**Decision:** In `run_batch_import`, record the QA position immediately before
+reading each workbook. Reject that workbook before normalization or aggregation
+when the new reader records contain ERROR-level `equis_invalid_run_timestamp`
+or `equis_test_key_collision`. Raise through the existing per-workbook exception
+handler, which emits an ERROR manifest row with zero counts and continues.
+
+**Reasoning:** The batch API and CLI compose the reader directly and therefore
+bypassed the single-import structural guard. CLI exit status alone did not stop
+unsafe normalized records from reaching CSV output. Limit this guard to the
+current workbook's new structural errors; existing QA and ordinary per-row
+errors must preserve the existing continuation policy in Accepted ADR-0048.
+Both manifest and directory input modes use the same guard. No reader, key,
+profile, schema, CLI output sequencing or production GDB behavior changes.
+
+**Revisit if:** Additional reader-level structural failure categories are
+introduced. Actual headless synthetic API/CLI CSV results qualify this repair;
+real exports and native GIS remain separate acceptance gates.

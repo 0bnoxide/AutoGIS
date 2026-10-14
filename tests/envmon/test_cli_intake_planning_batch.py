@@ -250,6 +250,134 @@ class TestBatchImportWorkbooks:
         assert manifest_rows_from_dir(tmp_path, Path("p.yaml"), "SITE-A",
                                       pattern="*.csv") == []
 
+    def _make_equis_workbook(self, path, case="canonical", sample_id="S1"):
+        import autogis as package
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+        time = "09:14:17" if case == "invalid_time" else "09:14"
+        sheets = {
+            "EPAR4_FSample_v1": [dict(sys_sample_code=sample_id, sys_loc_code="MW1",
+                sample_matrix_code="GW", sample_date="03/11/2025",
+                sample_source="Field", sample_type_code="N")],
+            "EPAR4_TST_v1": [dict(sys_sample_code=sample_id, lab_anl_method_name="E200.8",
+                analysis_date="03/17/2025", analysis_time=time, total_or_dissolved="T",
+                column_number="NA", test_type="INITIAL", dilution_factor="1", basis="NA")],
+        }
+        sheets["EPAR4_RES_v1"] = [{k: v for k, v in sheets["EPAR4_TST_v1"][0].items()
+                                  if k not in {"dilution_factor", "basis"}}]
+        sheets["EPAR4_RES_v1"][0].update(chemical_name="Lead", result_value="1",
+            result_unit="mg/L", result_type_code="TRG", reportable_result="Yes",
+            test_batch_type="Analysis", test_batch_id="AB1")
+        if case == "collision":
+            sheets["EPAR4_TST_v1"].append(dict(sheets["EPAR4_TST_v1"][0], dilution_factor="5"))
+        for name, rows in sheets.items():
+            sheet = wb.create_sheet(name)
+            sheet.append(list(rows[0]))
+            for row in rows:
+                sheet.append(list(row.values()))
+        wb.save(path)
+        wb.close()
+        return Path(package.__file__).parent / "config/lab_profiles/epar4.yaml"
+
+    @pytest.mark.parametrize("case", ["canonical", "invalid_time", "collision"])
+    def test_batch_api_rejects_structural_reader_errors_before_aggregation(self, tmp_path, case):
+        from autogis.core.envmon.batch_workbook_importer import run_batch_import
+        path = tmp_path / "input.xlsx"
+        profile = self._make_equis_workbook(path, case)
+        result = run_batch_import([dict(workbook_path=str(path), profile_path=str(profile), site_id="SITE")])
+        row = result.manifest[0]
+        if case == "canonical":
+            assert row.Status == "OK" and row.SampleCount == row.ResultCount == 1
+            assert result.all_results[0].MethodDilutionKey == "1|INITIAL|E200.8|03/17/2025@09:14"
+        else:
+            assert row.Status == "ERROR" and row.SampleCount == row.ResultCount == 0
+            assert not result.all_samples and not result.all_results
+            category = "equis_invalid_run_timestamp" if case == "invalid_time" else "equis_test_key_collision"
+            assert [r for r in result.qa.records if r.category == category and r.severity == "ERROR"]
+
+    @pytest.mark.parametrize("case", ["canonical", "invalid_time", "collision"])
+    @pytest.mark.parametrize("mode", ["manifest", "directory"])
+    def test_batch_cli_never_publishes_structurally_invalid_records(self, tmp_path, monkeypatch, case, mode):
+        monkeypatch.setenv("AUTOGIS_RUN_HISTORY", "off")
+        inputs = tmp_path / "inputs"
+        inputs.mkdir()
+        path = inputs / "input.xlsx"
+        profile = self._make_equis_workbook(path, case)
+        manifest = tmp_path / "manifest.csv"
+        _write_csv(manifest, [dict(workbook_path=str(path), profile_path=str(profile), site_id="SITE")])
+        options = (["--manifest", str(manifest)] if mode == "manifest" else
+                   ["--edd-dir", str(inputs), "--profile", str(profile), "--site", "SITE"])
+        out, report = tmp_path / "out", tmp_path / "qa.json"
+        invoked = _run("envmon", "batch-import-workbooks", *options,
+                       "--output-dir", str(out), "--report", str(report))
+        with (out / "batch_manifest.csv").open(newline="", encoding="utf-8-sig") as fh:
+            rows = list(csv.DictReader(fh))
+        if case == "canonical":
+            assert invoked.exit_code == 0 and rows[0]["Status"] == "OK"
+            with (out / "result_records.csv").open(newline="", encoding="utf-8-sig") as fh:
+                assert [r["MethodDilutionKey"] for r in csv.DictReader(fh)] == [
+                    "1|INITIAL|E200.8|03/17/2025@09:14"]
+        else:
+            assert invoked.exit_code == 1 and rows[0]["Status"] == "ERROR"
+            assert rows[0]["SampleCount"] == rows[0]["ResultCount"] == "0"
+            assert not (out / "sample_records.csv").exists()
+            assert not (out / "result_records.csv").exists()
+            category = "equis_invalid_run_timestamp" if case == "invalid_time" else "equis_test_key_collision"
+            summary = json.loads(report.read_text(encoding="utf-8"))
+            assert summary["counts_by_category"][f"ERROR/{category}"] > 0
+
+    @pytest.mark.parametrize("case", ["invalid_time", "collision"])
+    @pytest.mark.parametrize("bad_first", [True, False])
+    @pytest.mark.parametrize("mode", ["api", "manifest", "directory"])
+    def test_batch_structural_failure_preserves_valid_siblings_in_both_orders(
+            self, tmp_path, monkeypatch, case, bad_first, mode):
+        from autogis.core.envmon.batch_workbook_importer import run_batch_import
+        monkeypatch.setenv("AUTOGIS_RUN_HISTORY", "off")
+        inputs = tmp_path / "inputs"
+        inputs.mkdir()
+        bad = inputs / ("a_bad.xlsx" if bad_first else "z_bad.xlsx")
+        good = inputs / ("z_good.xlsx" if bad_first else "a_good.xlsx")
+        profile = self._make_equis_workbook(bad, case, "BAD")
+        self._make_equis_workbook(good, "canonical", "GOOD")
+        paths = sorted((bad, good))
+        manifest_rows = [dict(workbook_path=str(p), profile_path=str(profile), site_id="SITE") for p in paths]
+        if mode == "api":
+            result = run_batch_import(manifest_rows)
+            states = {Path(r.WorkbookPath).name: r.Status for r in result.manifest}
+            assert states == {bad.name: "ERROR", good.name: "OK"}
+            assert [r.SampleID for r in result.all_samples] == ["GOOD"]
+            assert [r.SampleID for r in result.all_results] == ["GOOD"]
+        else:
+            manifest = tmp_path / "manifest.csv"
+            _write_csv(manifest, manifest_rows)
+            options = (["--manifest", str(manifest)] if mode == "manifest" else
+                       ["--edd-dir", str(inputs), "--profile", str(profile), "--site", "SITE"])
+            out = tmp_path / "out"
+            invoked = _run("envmon", "batch-import-workbooks", *options, "--output-dir", str(out))
+            assert invoked.exit_code == 1
+            with (out / "batch_manifest.csv").open(newline="", encoding="utf-8-sig") as fh:
+                states = {Path(r["WorkbookPath"]).name: r["Status"] for r in csv.DictReader(fh)}
+            assert states == {bad.name: "ERROR", good.name: "OK"}
+            for filename in ("sample_records.csv", "result_records.csv"):
+                with (out / filename).open(newline="", encoding="utf-8-sig") as fh:
+                    assert [r["SampleID"] for r in csv.DictReader(fh)] == ["GOOD"]
+
+    def test_batch_does_not_gate_preexisting_qa_or_ordinary_row_errors(self, tmp_path):
+        from autogis.core.common.qa import QACollector, SEV_ERROR
+        from autogis.core.envmon.batch_workbook_importer import run_batch_import
+        profile, path = tmp_path / "profile.yaml", tmp_path / "input.csv"
+        self._make_edd_profile(profile)
+        self._make_edd_csv(path)
+        with path.open(newline="", encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+        _write_csv(path, rows + [dict(rows[0], SampleID="")])
+        qa = QACollector()
+        qa.add(SEV_ERROR, "equis_invalid_run_timestamp", "Previously recorded failure")
+        result = run_batch_import([dict(workbook_path=str(path), profile_path=str(profile), site_id="SITE")], qa=qa)
+        assert result.manifest[0].Status == "OK"
+        assert len(result.all_samples) == len(result.all_results) == 1
+        assert any(r.category == "edd_missing_required_field" for r in qa.records)
+
 
 # ---------------------------------------------------------------------------
 # 3. migrate-legacy-data (Tool 2.4)
