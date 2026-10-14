@@ -363,3 +363,229 @@ def test_xls_native_date_with_canonical_text_time_keeps_frozen_key(
     assert keys == [("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T",
                      "E200.8", "1|INITIAL|03/17/2025@09:14")]
     assert not qa.has_blocking()
+
+
+def _rewrite_xlsx(path, mutate):
+    with zipfile.ZipFile(path) as archive:
+        members = {n: archive.read(n) for n in archive.namelist()}
+    mutate(members)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("fraction", [100000, 100])
+def test_three_hop_alias_precision_blocks_independent_of_mapping_order(
+        tmp_path, monkeypatch, reverse, fraction):
+    sheets = _sheets(time=dt.time(9, 14, 0, fraction))
+    for name in ("EPAR4_TST_v1", "EPAR4_RES_v1"):
+        row = sheets[name][0]
+        row["raw_run"] = row.pop("analysis_time")
+    path = _workbook(tmp_path, sheets)
+    pairs = [("raw_run", "middle_one"), ("middle_one", "middle_two"),
+             ("middle_two", "analysis_time")]
+    profile = LabEDDProfile.load(PROFILE)
+    profile.source_aliases.update(reversed(pairs) if reverse else pairs)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, profile, qa)
+    assert not stored and batches[0][0] == "ERROR"
+    assert [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("move_sheets", [False, True])
+def test_relocated_opc_workbook_keeps_canonical_key(tmp_path, monkeypatch, native, move_sheets):
+    import xml.etree.ElementTree as ET
+    sheets = _sheets(dt.date(2025, 3, 17), dt.time(9, 14)) if native else _sheets()
+    path = _workbook(tmp_path, sheets)
+
+    def relocate(members):
+        members["custom/book.xml"] = members.pop("xl/workbook.xml")
+        members["custom/_rels/book.xml.rels"] = members.pop("xl/_rels/workbook.xml.rels")
+        relocated_sheets = {}
+        if move_sheets:
+            for i in range(1, 4):
+                old = f"xl/worksheets/sheet{i}.xml"
+                new = f"custom/sheets/sheet{i}.xml"
+                members[new] = members.pop(old)
+                relocated_sheets[old] = new
+            root = ET.fromstring(members["custom/_rels/book.xml.rels"])
+            for rel in root:
+                old = rel.attrib["Target"].lstrip("/")
+                if old in relocated_sheets:
+                    rel.attrib["Target"] = relocated_sheets[old].removeprefix("custom/")
+            members["custom/_rels/book.xml.rels"] = ET.tostring(root)
+        root = ET.fromstring(members["_rels/.rels"])
+        for rel in root:
+            if rel.attrib["Type"].endswith("/officeDocument"):
+                rel.attrib["Target"] = "custom/book.xml"
+        members["_rels/.rels"] = ET.tostring(root)
+        root = ET.fromstring(members["[Content_Types].xml"])
+        for item in root:
+            if item.attrib.get("PartName") == "/xl/workbook.xml":
+                item.attrib["PartName"] = "/custom/book.xml"
+            old = item.attrib.get("PartName", "").lstrip("/")
+            if old in relocated_sheets:
+                item.attrib["PartName"] = "/" + relocated_sheets[old]
+        members["[Content_Types].xml"] = ET.tostring(root)
+
+    _rewrite_xlsx(path, relocate)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, LabEDDProfile.load(PROFILE), qa)
+    assert batches[0][0] == "PASS"
+    assert stored["Env_QCResults"] == {
+        ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T",
+         "E200.8", "1|INITIAL|03/17/2025@09:14")}
+
+
+def test_unavailable_raw_package_proof_finalizes_error_without_append(tmp_path, monkeypatch):
+    # openpyxl locates the workbook through content types, whereas our proof
+    # must establish its package relationship before accepting identity cells.
+    path = _workbook(tmp_path, _sheets())
+    _rewrite_xlsx(path, lambda members: members.pop("_rels/.rels"))
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, LabEDDProfile.load(PROFILE), qa)
+    assert not stored and batches[0][0] == "ERROR"
+    assert [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+
+
+@pytest.mark.parametrize("time", ["09:14", "09:14:17", dt.time(9, 14, 17)])
+def test_sample_only_run_timestamp_is_validated_without_changing_key(
+        tmp_path, monkeypatch, time):
+    sheets = _sheets()
+    for name in ("EPAR4_TST_v1", "EPAR4_RES_v1"):
+        for col in ("analysis_date", "analysis_time"):
+            del sheets[name][0][col]
+    sheets["EPAR4_FSample_v1"][0].update(analysis_date="03/17/2025", analysis_time=time)
+    path = _workbook(tmp_path, sheets)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, LabEDDProfile.load(PROFILE), qa)
+    if time == "09:14":
+        assert batches[0][0] == "PASS"
+        assert stored["Env_QCResults"] == {
+            ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T",
+             "E200.8", "1|INITIAL|03/17/2025@09:14")}
+    else:
+        assert not stored and batches[0][0] == "ERROR"
+        errors = [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+        assert errors and errors[0].source_sheet == "EPAR4_FSample_v1"
+
+
+def test_sample_native_fraction_cannot_be_masked_by_empty_result_metadata(tmp_path, monkeypatch):
+    import xml.etree.ElementTree as ET
+    sheets = _sheets()
+    for name in ("EPAR4_TST_v1", "EPAR4_RES_v1"):
+        for col in ("analysis_date", "analysis_time"):
+            del sheets[name][0][col]
+    sample = sheets["EPAR4_FSample_v1"][0]
+    sample.update(analysis_date=dt.date(2025, 3, 17), analysis_time=dt.time(9, 14))
+    path = _workbook(tmp_path, sheets)
+
+    def add_fraction(members):
+        ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+        root = ET.fromstring(members["xl/worksheets/sheet1.xml"])
+        row = root.find(f"{ns}sheetData/{ns}row[@r='2']")
+        value = list(row)[list(sample).index("analysis_time")].find(f"{ns}v")
+        value.text = str(Decimal(value.text) + Decimal("0.0000000011574074"))
+        members["xl/worksheets/sheet1.xml"] = ET.tostring(root)
+
+    _rewrite_xlsx(path, add_fraction)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, LabEDDProfile.load(PROFILE), qa)
+    assert not stored and batches[0][0] == "ERROR"
+    assert [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+
+
+def test_raw_precision_proof_streams_only_identity_cells(tmp_path, monkeypatch):
+    from autogis.core.envmon import equis_reader
+    sheets = _sheets(dt.date(2025, 3, 17), dt.time(9, 14))
+    for row in sheets["EPAR4_FSample_v1"]:
+        row.update({f"unrelated_{i}": f"value-{i}" for i in range(60)})
+    for i in range(14):
+        sheets["EPAR4_FSample_v1"].append({
+            **sheets["EPAR4_FSample_v1"][0], "sys_sample_code": f"unused-{i}"})
+    path = _workbook(tmp_path, sheets)
+    actual_read = zipfile.ZipFile.read
+
+    def no_worksheet_read(archive, name, *args, **kwargs):
+        assert not str(name).startswith("xl/worksheets/"), "whole worksheet bytes materialized"
+        return actual_read(archive, name, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "read", no_worksheet_read)
+    raw = equis_reader._xlsx_timestamp_sources(
+        path, {"EPAR4_TST_v1": {"C", "D"}, "EPAR4_RES_v1": {"C", "D"}})
+    assert {name: len(cells) for name, cells in raw.items()} == {
+        "EPAR4_TST_v1": 2, "EPAR4_RES_v1": 2}
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, LabEDDProfile.load(PROFILE), qa)
+    assert batches[0][0] == "PASS" and len(stored["Env_QCResults"]) == 1
+
+
+@pytest.mark.parametrize("date", ["03/17/2025 09:14", dt.datetime(2025, 3, 17, 0, 0, 17)])
+def test_bad_sample_date_blocks_even_when_result_overrides_timestamp(tmp_path, monkeypatch, date):
+    sheets = _sheets()
+    sheets["EPAR4_FSample_v1"][0]["analysis_date"] = date
+    path = _workbook(tmp_path, sheets)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, LabEDDProfile.load(PROFILE), qa)
+    assert not stored and batches[0][0] == "ERROR"
+    assert [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+
+
+def test_sample_reverse_alias_precision_is_blocked_before_overrides(tmp_path, monkeypatch):
+    sheets = _sheets()
+    sheets["EPAR4_FSample_v1"][0]["raw_run"] = dt.time(9, 14, 17)
+    path = _workbook(tmp_path, sheets)
+    profile = LabEDDProfile.load(PROFILE)
+    profile.source_aliases.update({"middle_two": "analysis_time", "middle_one": "middle_two",
+                                   "raw_run": "middle_one"})
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, profile, qa)
+    assert not stored and batches[0][0] == "ERROR"
+    errors = [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+    assert errors and errors[0].source_sheet == "EPAR4_FSample_v1"
+
+
+@pytest.mark.parametrize("qc", [True, False])
+def test_invalid_sample_contributor_blocks_valid_sibling_batches(tmp_path, monkeypatch, qc):
+    sheets = _sheets(qc=qc)
+    second = _sheets(qc=qc)
+    for name, rows in second.items():
+        for row in rows:
+            row["sys_sample_code"] = "S2"
+        sheets[name].extend(rows)
+    sheets["EPAR4_FSample_v1"][1]["analysis_time"] = "09:14:17"
+    path = _workbook(tmp_path, sheets)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, LabEDDProfile.load(PROFILE), qa)
+    assert not stored and batches[0][0] == "ERROR"
+    assert all(n == 0 for n in batches[0][1].values())
+
+
+def test_missing_native_cell_coordinate_is_structural_error(tmp_path, monkeypatch):
+    import xml.etree.ElementTree as ET
+    path = _workbook(tmp_path, _sheets(dt.date(2025, 3, 17), dt.time(9, 14)))
+
+    def remove_coordinate(members):
+        ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+        root = ET.fromstring(members["xl/worksheets/sheet3.xml"])
+        row = root.find(f"{ns}sheetData/{ns}row[@r='2']")
+        list(row)[3].attrib.pop("r")
+        members["xl/worksheets/sheet3.xml"] = ET.tostring(root)
+
+    _rewrite_xlsx(path, remove_coordinate)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, LabEDDProfile.load(PROFILE), qa)
+    assert not stored and batches[0][0] == "ERROR"
+    assert [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]

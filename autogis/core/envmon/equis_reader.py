@@ -140,7 +140,6 @@ def _load_xlsx_sheets(path: Path, names: list[str],
     import openpyxl  # required dep, lazy (R1)
     wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
     try:
-        raw = _xlsx_timestamp_sources(path, names) if timestamp_columns else {}
         out: dict[str, list[dict]] = {}
         for name in names:
             if not name:
@@ -151,15 +150,23 @@ def _load_xlsx_sheets(path: Path, names: list[str],
                 out[name] = []
                 continue
             headers = [_norm_header(_xlsx_cell_text(v)) for v in first]
+            identity_columns = {openpyxl.utils.get_column_letter(col)
+                                for col, h in enumerate(headers, start=1)
+                                if h in timestamp_columns}
+            raw = (_xlsx_timestamp_sources(path, {name: identity_columns})
+                   if identity_columns else {})
+            proof = raw.get(name)
             rows = []
             for r, values in enumerate(rows_iter, start=2):
-                issues = {}
+                issues = ({h: "Timestamp package source proof is unavailable"
+                           for h in headers if h in timestamp_columns}
+                          if identity_columns and proof is None else {})
                 for col, (h, v) in enumerate(zip(headers, values), start=1):
                     if h in timestamp_columns and isinstance(
                             v, (datetime.date, datetime.time)):
                         coordinate = f"{openpyxl.utils.get_column_letter(col)}{r}"
                         issue = _xlsx_timestamp_issue(
-                            v, raw.get(name, {}).get(coordinate), wb.epoch)
+                            v, (proof or {}).get(coordinate), wb.epoch)
                         if issue:
                             issues[h] = issue
                 row = {h: _xlsx_cell_text(v)
@@ -174,33 +181,88 @@ def _load_xlsx_sheets(path: Path, names: list[str],
         wb.close()
 
 
-def _xlsx_timestamp_sources(path: Path, names: list[str]) -> dict:
-    """Keep raw OOXML precision before openpyxl rounds dates to milliseconds."""
+def _xlsx_timestamp_sources(path: Path, columns: dict[str, set[str]]) -> dict:
+    """Stream only identity-cell proof from the actual OPC worksheet parts."""
     import posixpath
     import xml.etree.ElementTree as ET
-    from zipfile import ZipFile
-    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-    relationship = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
-    out = {}
-    with ZipFile(path) as archive:
-        targets = {r.attrib["Id"]: r.attrib["Target"]
-                   for r in ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
-                   if r.attrib.get("TargetMode") != "External"}
-        book = ET.fromstring(archive.read("xl/workbook.xml"))
-        for sheet in book.findall("m:sheets/m:sheet", ns):
-            name = sheet.attrib["name"]
-            if name not in names:
-                continue
-            target = targets.get(sheet.attrib[relationship])
-            if target is None:
-                continue
-            member = (target.lstrip("/") if target.startswith("/") else
-                      posixpath.normpath(posixpath.join("xl", target)))
-            root = ET.fromstring(archive.read(member))
-            out[name] = {c.attrib["r"]: (c.attrib.get("t", "n"), c.findtext("m:v", None, ns))
-                         for c in root.findall("m:sheetData/m:row/m:c", ns)
-                         if "r" in c.attrib}
+    from zipfile import BadZipFile, ZipFile
+    out = dict.fromkeys(columns)
+    try:
+        with ZipFile(path) as archive:
+            ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+            relationship = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+            book_part = _xlsx_workbook_part(archive)
+            directory, filename = posixpath.split(book_part)
+            rels_part = posixpath.join(directory, "_rels", filename + ".rels")
+            relations = [r for r in ET.fromstring(archive.read(rels_part))
+                         if r.attrib.get("TargetMode") != "External"]
+            targets = {r.attrib["Id"]: r.attrib["Target"] for r in relations}
+            if len(targets) != len(relations):
+                return out
+            book = ET.fromstring(archive.read(book_part))
+            sheets = book.findall("m:sheets/m:sheet", ns)
+            names = [s.attrib["name"] for s in sheets]
+            if len(names) != len(set(names)):
+                return out
+            for sheet in sheets:
+                name = sheet.attrib["name"]
+                if name not in columns:
+                    continue
+                target = targets.get(sheet.attrib.get(relationship))
+                if target is None:
+                    continue
+                member = (target.lstrip("/") if target.startswith("/") else
+                          posixpath.normpath(posixpath.join(directory, target)))
+                out[name] = _stream_timestamp_cells(archive, member, columns[name])
+    except (BadZipFile, KeyError, ET.ParseError, OSError, ValueError):
+        return dict.fromkeys(columns)
     return out
+
+
+def _xlsx_workbook_part(archive) -> str:
+    import posixpath
+    import xml.etree.ElementTree as ET
+    root_rels = ET.fromstring(archive.read("_rels/.rels"))
+    workbooks = [r.attrib["Target"].lstrip("/") for r in root_rels
+                 if r.attrib.get("Type", "").endswith("/officeDocument")
+                 and r.attrib.get("TargetMode") != "External"]
+    if len(workbooks) != 1:
+        raise ValueError("Ambiguous workbook package relationship")
+    book_part = posixpath.normpath(workbooks[0])
+    workbook_types = {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml",
+        "application/vnd.ms-excel.sheet.macroEnabled.main+xml",
+        "application/vnd.ms-excel.template.macroEnabled.main+xml"}
+    content_types = ET.fromstring(archive.read("[Content_Types].xml"))
+    declared = [p.attrib.get("PartName", "").lstrip("/") for p in content_types
+                if p.attrib.get("ContentType") in workbook_types]
+    if declared != [book_part]:
+        raise ValueError("Workbook relationship disagrees with content types")
+    return book_part
+
+
+def _stream_timestamp_cells(archive, member: str, columns: set[str]) -> dict:
+    import xml.etree.ElementTree as ET
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    proof = {}
+    with archive.open(member) as stream:
+        container = None
+        for event, element in ET.iterparse(stream, events=("start", "end")):
+            if event == "start" and element.tag == f"{{{ns['m']}}}sheetData":
+                container = element
+            elif event == "end" and element.tag == f"{{{ns['m']}}}c":
+                coordinate = element.attrib.get("r", "")
+                match = re.fullmatch(r"([A-Z]+)([0-9]+)", coordinate)
+                if match and match[1] in columns and int(match[2]) > 1:
+                    proof[coordinate] = (element.attrib.get("t", "n"),
+                                         element.findtext("m:v", None, ns))
+                element.clear()
+            elif event == "end" and element.tag == f"{{{ns['m']}}}row":
+                element.clear()
+                if container is not None:
+                    container.remove(element)
+    return proof
 
 
 def _xlsx_timestamp_issue(value, source, epoch) -> str:
@@ -307,7 +369,8 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
         for rows in (sample_rows, result_rows, batch_rows, test_rows):
             _apply_source_aliases(rows, profile.source_aliases)
     if profile.test_sheet:
-        for sheet, rows in ((profile.test_sheet, test_rows),
+        for sheet, rows in ((profile.sample_sheet, sample_rows),
+                            (profile.test_sheet, test_rows),
                             (profile.result_sheet, result_rows)):
             for row in rows:
                 _validate_run_timestamp(row, sheet, profile, qa)
@@ -408,9 +471,12 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
 def _validate_run_timestamp(row: dict, sheet: str, profile,
                              qa: QACollector) -> None:
     issues = dict(row.get("__equis_timestamp_issues", {}))
-    for src, dst in profile.source_aliases.items():
-        if src in issues:
-            issues.setdefault(dst, issues[src])
+    while True:
+        expanded = {dst: issues[src] for src, dst in profile.source_aliases.items()
+                    if src in issues and dst not in issues}
+        if not expanded:
+            break
+        issues.update(expanded)
     for col, pattern, fmt in ((_COL_ANALYSIS_DATE, r"[0-9]{2}/[0-9]{2}/[0-9]{4}", "%m/%d/%Y"),
                               (_COL_ANALYSIS_TIME, r"[0-9]{2}:[0-9]{2}", "%H:%M")):
         value = _get(row, col)

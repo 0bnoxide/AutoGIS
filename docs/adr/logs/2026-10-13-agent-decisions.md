@@ -22,3 +22,25 @@ the owner authorizes any necessary key migration. This synthetic fix does not
 close #244's WMRD rerun or existing-geodatabase gates; no real data or native GIS
 qualification is claimed. XLS controls exercise real cell/loader codecs using
 synthetic xlrd workbook objects, rather than a newly authored BIFF binary.
+
+## Issues #576–#579: close independent timestamp review gaps
+
+**Decision:** Propagate unsafe timestamp evidence to a fixed point independent
+of alias order, and validate FSample contributors before any TST/RES override.
+Keep source alias application and frozen join/run/key recipes unchanged. Resolve
+the actual workbook part through OPC package relationships and require its
+content-type declaration to agree. Follow relative worksheet part relationships;
+unavailable or ambiguous source proof produces structural QA and the existing
+whole-batch append abort.
+
+**Reasoning:** Independent review showed reverse three-hop aliases and inherited
+sample fields could mask precision loss. A valid relocated workbook exposed a
+hardcoded package-layout assumption. The initial proof pass also retained every
+worksheet cell. Use decoded header positions to select identity and alias cells,
+stream worksheet XML, clear cells and detach completed rows. Retain sample proof
+only when sample headers can contribute run identity. This bounds added proof
+retention; the existing loader still materializes decoded row dictionaries.
+
+**Revisit if:** Real exports justify broader timestamp or package contracts. No
+tolerance, key migration, real-data/native GIS qualification or large-memory
+trial is introduced. Frozen rejected attempt evidence remains immutable.

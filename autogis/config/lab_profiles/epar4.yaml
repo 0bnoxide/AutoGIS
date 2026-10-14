@@ -14,6 +14,8 @@
 # analysis_time (either may be blank). Other representations, seconds,
 # fractions, timezones or unverifiable native precision block the whole
 # import; timestamps are never rounded or canonicalized into new keys.
+# Validation includes timestamps inherited from FSample before TST/RES
+# overrides. Raw native proof follows OPC parts and retains identity cells only.
 profile_id: epar4
 lab_name: EPA Region 4 EQuIS
 format: equis_xls
