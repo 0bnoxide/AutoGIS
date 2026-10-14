@@ -44,3 +44,22 @@ retention; the existing loader still materializes decoded row dictionaries.
 **Revisit if:** Real exports justify broader timestamp or package contracts. No
 tolerance, key migration, real-data/native GIS qualification or large-memory
 trial is introduced. Frozen rejected attempt evidence remains immutable.
+
+## Issue #576: validate text sources through transitive timestamp aliases
+
+**Decision:** Reuse one reverse reachability closure for native proof capture
+and per-role validation of every present raw date/time contributor. Validate
+text even if alias order leaves the canonical field absent, or a canonical
+value overrides the raw source. Terminate cycles through finite set closure.
+Preserve actual single-pass source alias values, blank degradation and key
+recipes; do not synthesize missing identity components.
+
+**Reasoning:** Review002 showed metadata-only propagation missed unsafe plain
+text aliases, allowing seconds, fractions, unpadded values and timezone suffixes
+to disappear before validation. Raw text and native loss evidence must follow
+the same declared role reachability. Existing structural QA and batch abort are
+sufficient; no additional importer behavior or options are needed.
+
+**Revisit if:** The owner authorizes changing value alias resolution or frozen
+identity recipes. Current canonical, blank and override outputs retain their
+literal baseline keys. All rejected attempt evidence remains immutable.

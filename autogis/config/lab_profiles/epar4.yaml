@@ -16,6 +16,8 @@
 # import; timestamps are never rounded or canonicalized into new keys.
 # Validation includes timestamps inherited from FSample before TST/RES
 # overrides. Raw native proof follows OPC parts and retains identity cells only.
+# Declared transitive date/time aliases are validated at their raw source too;
+# the existing value-alias and key recipes remain unchanged.
 profile_id: epar4
 lab_name: EPA Region 4 EQuIS
 format: equis_xls

@@ -77,13 +77,8 @@ def read_equis_xls(path: Path, profile,
     path = Path(path)
     loader = (_load_xlsx_sheets if path.suffix.casefold() == ".xlsx"
               else _load_xls_sheets)
-    timestamp_columns = {_COL_ANALYSIS_DATE, _COL_ANALYSIS_TIME}
-    while True:
-        expanded = timestamp_columns | {src for src, dst in profile.source_aliases.items()
-                                        if dst in timestamp_columns}
-        if expanded == timestamp_columns:
-            break
-        timestamp_columns = expanded
+    timestamp_columns = _timestamp_columns(
+        {_COL_ANALYSIS_DATE, _COL_ANALYSIS_TIME}, profile.source_aliases)
     sheets = loader(path, [profile.sample_sheet, profile.result_sheet,
                            profile.batch_sheet, profile.test_sheet],
                     timestamp_columns if profile.test_sheet else ())
@@ -470,25 +465,17 @@ def transform_equis_sheets(sample_rows: list[dict], result_rows: list[dict],
 
 def _validate_run_timestamp(row: dict, sheet: str, profile,
                              qa: QACollector) -> None:
-    issues = dict(row.get("__equis_timestamp_issues", {}))
-    while True:
-        expanded = {dst: issues[src] for src, dst in profile.source_aliases.items()
-                    if src in issues and dst not in issues}
-        if not expanded:
-            break
-        issues.update(expanded)
+    issues = row.get("__equis_timestamp_issues", {})
     for col, pattern, fmt in ((_COL_ANALYSIS_DATE, r"[0-9]{2}/[0-9]{2}/[0-9]{4}", "%m/%d/%Y"),
                               (_COL_ANALYSIS_TIME, r"[0-9]{2}:[0-9]{2}", "%H:%M")):
-        value = _get(row, col)
+        contributors = _timestamp_columns({col}, profile.source_aliases)
         issue = next((reason for src, reason in issues.items()
-                      if src == col or profile.source_aliases.get(src) == col), "")
-        if value and not issue:
-            try:
-                if not re.fullmatch(pattern, value):
-                    raise ValueError
-                datetime.datetime.strptime(value, fmt)
-            except ValueError:
-                issue = f"Expected separate {fmt} with no seconds or timezone"
+                      if src in contributors), "")
+        if not issue:
+            bad_source = next((src for src in sorted(contributors)
+                               if not _timestamp_text_valid(_get(row, src), pattern, fmt)), None)
+            if bad_source is not None:
+                issue = f"{bad_source}: expected separate {fmt} with no seconds or timezone"
         if issue:
             qa.add(SEV_ERROR, "equis_invalid_run_timestamp",
                    f"{sheet} row {row.get('__sheet_row')}: {col}: {issue} — "
@@ -496,6 +483,27 @@ def _validate_run_timestamp(row: dict, sheet: str, profile,
                    source_sheet=sheet, source_row=row.get("__sheet_row"),
                    recommended_action="Export separate zero-padded MM/DD/YYYY and HH:MM "
                                       "fields; review source precision without rounding runs.")
+
+
+def _timestamp_columns(columns: set[str], aliases: dict[str, str]) -> set[str]:
+    """All source columns declared to reach these identity roles, including cycles."""
+    while True:
+        expanded = columns | {src for src, dst in aliases.items() if dst in columns}
+        if expanded == columns:
+            return columns
+        columns = expanded
+
+
+def _timestamp_text_valid(value: str, pattern: str, fmt: str) -> bool:
+    if not value:
+        return True
+    if not re.fullmatch(pattern, value):
+        return False
+    try:
+        datetime.datetime.strptime(value, fmt)
+    except ValueError:
+        return False
+    return True
 
 
 def _get_sample_id(row: dict, profile) -> str:

@@ -589,3 +589,110 @@ def test_missing_native_cell_coordinate_is_structural_error(tmp_path, monkeypatc
     _import(path, LabEDDProfile.load(PROFILE), qa)
     assert not stored and batches[0][0] == "ERROR"
     assert [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+
+
+def _timestamp_alias_pairs(role, shape):
+    if shape == "one_hop":
+        return [("raw_run", role)]
+    count = 6 if shape == "reverse_six" else 3
+    names = ["raw_run"] + [f"middle_{i}" for i in range(1, count)] + [role]
+    pairs = list(zip(names, names[1:]))
+    if shape.startswith("cycle"):
+        pairs.append((role, "raw_run"))
+    return list(reversed(pairs)) if shape.startswith("reverse") or shape == "cycle_reverse" else pairs
+
+
+@pytest.mark.parametrize("role,bad", [
+    ("analysis_time", "09:14:17"), ("analysis_time", "9:14"),
+    ("analysis_time", "09:14:00.0001"), ("analysis_time", "09:14Z"),
+    ("analysis_date", "3/17/2025"), ("analysis_date", "2025-03-17"),
+    ("analysis_date", "03/17/2025 09:14"), ("analysis_date", "02/30/2025")])
+@pytest.mark.parametrize("side", ["EPAR4_FSample_v1", "EPAR4_TST_v1", "EPAR4_RES_v1"])
+def test_reverse_alias_raw_text_is_validated_before_values_disappear(
+        tmp_path, monkeypatch, role, bad, side):
+    sheets = _sheets(qc=side != "EPAR4_RES_v1")
+    for row in sheets[side]:
+        row.pop(role, None)
+        row["raw_run"] = bad
+    profile = LabEDDProfile.load(PROFILE)
+    profile.source_aliases.update(_timestamp_alias_pairs(role, "reverse_three"))
+    path = _workbook(tmp_path, sheets)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, profile, qa)
+    assert not stored and batches[0][0] == "ERROR"
+    errors = [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+    assert errors and errors[0].source_sheet == side
+
+
+@pytest.mark.parametrize("role", ["analysis_date", "analysis_time"])
+@pytest.mark.parametrize("shape", ["one_hop", "forward_three", "reverse_three",
+                                    "reverse_six", "cycle_forward", "cycle_reverse"])
+@pytest.mark.parametrize("invalid", [True, False])
+def test_text_alias_role_reachability_preserves_existing_canonical_keys(
+        tmp_path, monkeypatch, role, shape, invalid):
+    sheets = _sheets()
+    value = "03/17/2025" if role == "analysis_date" else "09:14"
+    if invalid:
+        value = "3/17/2025" if role == "analysis_date" else "09:14:17"
+    for name in ("EPAR4_TST_v1", "EPAR4_RES_v1"):
+        row = sheets[name][0]
+        row["raw_run"] = value
+        del row[role]
+    profile = LabEDDProfile.load(PROFILE)
+    profile.source_aliases.update(_timestamp_alias_pairs(role, shape))
+    path = _workbook(tmp_path, sheets)
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(path, profile, qa)
+    if invalid:
+        assert not stored and batches[0][0] == "ERROR"
+        assert [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+    else:
+        # The real value-alias pass stays single-pass. Preserve its exact
+        # existing missing-field degradation for reverse chains and cycles.
+        token = "1|INITIAL|03/17/2025@09:14"
+        if shape in {"reverse_three", "reverse_six", "cycle_reverse"}:
+            token = "1|INITIAL|@09:14" if role == "analysis_date" else "1|INITIAL|03/17/2025@"
+        assert batches[0][0] == "PASS"
+        assert stored["Env_QCResults"] == {
+            ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T", "E200.8", token)}
+
+
+@pytest.mark.parametrize("raw,blocking", [("", False), ("09:14", False), ("09:14:17", True)])
+def test_alias_raw_text_is_validated_even_when_canonical_value_overrides_it(
+        tmp_path, monkeypatch, raw, blocking):
+    sheets = _sheets(time="16:47")
+    for name in ("EPAR4_TST_v1", "EPAR4_RES_v1"):
+        sheets[name][0]["raw_run"] = raw
+    profile = LabEDDProfile.load(PROFILE)
+    profile.source_aliases["raw_run"] = "analysis_time"
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(_workbook(tmp_path, sheets), profile, qa)
+    if blocking:
+        assert not stored and batches[0][0] == "ERROR"
+    else:
+        assert batches[0][0] == "PASS"
+        assert stored["Env_QCResults"] == {
+            ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T",
+             "E200.8", "1|INITIAL|03/17/2025@16:47")}
+
+
+@pytest.mark.parametrize("role,token", [("analysis_date", "1|INITIAL|@09:14"),
+                                       ("analysis_time", "1|INITIAL|03/17/2025@")])
+def test_reverse_alias_blank_contributor_keeps_existing_degraded_key(
+        tmp_path, monkeypatch, role, token):
+    sheets = _sheets()
+    for name in ("EPAR4_TST_v1", "EPAR4_RES_v1"):
+        row = sheets[name][0]
+        row["raw_run"] = ""
+        del row[role]
+    profile = LabEDDProfile.load(PROFILE)
+    profile.source_aliases.update(_timestamp_alias_pairs(role, "reverse_three"))
+    stored, batches = _writer(monkeypatch)
+    qa = QACollector()
+    _import(_workbook(tmp_path, sheets), profile, qa)
+    assert batches[0][0] == "PASS" and not qa.has_blocking()
+    assert stored["Env_QCResults"] == {
+        ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T", "E200.8", token)}
