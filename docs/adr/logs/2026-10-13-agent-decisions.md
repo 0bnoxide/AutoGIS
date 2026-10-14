@@ -107,3 +107,25 @@ No global QA policy, schema, batch/CLI behavior or production keys need changing
 different contract. These sequential synthetic tests qualify cache presence and
 per-import QA consumption, not formula evaluation, real exports or native GIS.
 All rejected attempts and independent probe evidence remain immutable.
+
+## Issue #581: correlate timestamp proof with inferred worksheet positions
+
+**Decision:** Follow standard row and cell coordinate inference in the existing
+selective XML proof stream. A missing row position follows the preceding row;
+a missing cell position follows the preceding cell column. Explicit positions
+preserve column gaps. Reject noncanonical or inconsistent declared positions
+as unavailable source proof, including when decoding yields None. Keep clearing
+cells and detaching rows, and retain only selected timestamp/alias columns.
+
+**Reasoning:** Independent review confirmed public XLSX decoding accepts omitted
+coordinates while the raw proof pass ignored those cells. Uncached formulas then
+became accepted blanks. Tracking their actual positions closes that provenance
+gap without changing cell text or key recipes. Verified cached native/text and
+numeric midnight cells now retain their original baseline keys with standard
+omitted coordinates; genuine blanks remain accepted. The former conservative
+missing-native-coordinate ERROR control is updated to qualify this proof.
+
+**Revisit if:** A different decoder or nonstandard coordinate convention needs
+support. Unverifiable positions remain structural errors; formula evaluation,
+real exports, native GIS and the WMRD gate are outside this synthetic contract.
+The independently verified per-import QA repair remains byte-identical to 53d.

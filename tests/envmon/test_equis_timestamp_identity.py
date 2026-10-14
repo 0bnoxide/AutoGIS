@@ -572,7 +572,7 @@ def test_invalid_sample_contributor_blocks_valid_sibling_batches(tmp_path, monke
     assert all(n == 0 for n in batches[0][1].values())
 
 
-def test_missing_native_cell_coordinate_is_structural_error(tmp_path, monkeypatch):
+def test_inferred_native_cell_coordinate_keeps_literal_key(tmp_path, monkeypatch):
     import xml.etree.ElementTree as ET
     path = _workbook(tmp_path, _sheets(dt.date(2025, 3, 17), dt.time(9, 14)))
 
@@ -587,8 +587,9 @@ def test_missing_native_cell_coordinate_is_structural_error(tmp_path, monkeypatc
     stored, batches = _writer(monkeypatch)
     qa = QACollector()
     _import(path, LabEDDProfile.load(PROFILE), qa)
-    assert not stored and batches[0][0] == "ERROR"
-    assert [r for r in qa.records if r.category == "equis_invalid_run_timestamp"]
+    assert stored["Env_QCResults"] == {
+        ("SITE", "GW", "AB1", "S1", "LCS", "LEAD", "T", "E200.8", "1|INITIAL|03/17/2025@09:14")}
+    assert batches[0][0] == "PASS" and not qa.has_blocking()
 
 
 def _timestamp_alias_pairs(role, shape):
@@ -865,3 +866,173 @@ def test_formula_cache_guard_reaches_actual_batch_api_and_cli(tmp_path, monkeypa
     assert invoked.exit_code == (0 if cache == "native" else 1)
     assert (out / "result_records.csv").exists() == (cache == "native")
     assert (out / "sample_records.csv").exists() == (cache == "native")
+
+
+def _coordinate_formula_workbook(tmp_path, shape, role="analysis_time", cache="absent",
+                                 *, side=None, alias=False, midnight=False):
+    import xml.etree.ElementTree as ET
+    path, profile = _formula_workbook(tmp_path, role, cache, side=side, alias=alias,
+                                      qc=False, midnight=midnight)
+    names = [side] if side else ["EPAR4_TST_v1", "EPAR4_RES_v1"]
+    source = "raw_run" if alias else role
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    targets = {name: list(next(wb[name].iter_rows(values_only=True))).index(source) + 1
+               for name in names}
+    wb.close()
+
+    def mutate(members):
+        ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+        sheet_order = list(_sheets())
+        for name, column in targets.items():
+            part = f"xl/worksheets/sheet{sheet_order.index(name) + 1}.xml"
+            root = ET.fromstring(members[part])
+            rows = root.findall(f"{ns}sheetData/{ns}row")
+            data = rows[1]
+            target = data.find(f"{ns}c[@r='{openpyxl.utils.get_column_letter(column)}2']")
+            if shape == "gap":
+                for cell in root.iter(ns + "c"):
+                    col, row = openpyxl.utils.cell.coordinate_from_string(cell.attrib["r"])
+                    index = openpyxl.utils.column_index_from_string(col)
+                    cell.attrib["r"] = f"{openpyxl.utils.get_column_letter(index + (index > 1))}{row}"
+                unused = ET.Element(ns + "c", r="B1", t="inlineStr")
+                ET.SubElement(ET.SubElement(unused, ns + "is"), ns + "t").text = "unused"
+                rows[0].insert(1, unused)
+                dimension = root.find(ns + "dimension")
+                bounds = openpyxl.utils.range_boundaries(dimension.attrib["ref"])
+                dimension.attrib["ref"] = f"A1:{openpyxl.utils.get_column_letter(bounds[2] + 1)}2"
+                targets[name] += 1
+            if shape in {"row", "both", "all", "gap"}:
+                data.attrib.pop("r")
+            if shape == "all":
+                rows[0].attrib.pop("r")
+                for cell in root.iter(ns + "c"):
+                    cell.attrib.pop("r")
+            elif shape == "mixed":
+                for index, cell in enumerate(data):
+                    if index % 2 == 0 or cell is target:
+                        cell.attrib.pop("r", None)
+            elif shape != "row":
+                target.attrib.pop("r")
+            if shape == "noncanonical_cell":
+                target.attrib["r"] = f"{openpyxl.utils.get_column_letter(column)}02"
+            elif shape == "inconsistent_cell":
+                target.attrib["r"] = f"{openpyxl.utils.get_column_letter(column)}3"
+            elif shape == "noncanonical_row":
+                data.attrib["r"] = "02"
+            members[part] = ET.tostring(root)
+
+    _rewrite_xlsx(path, mutate)
+    return path, profile, targets
+
+
+_COORDINATE_CASES = (
+    [(shape, "analysis_time", "absent", None, False, False)
+     for shape in ("cell", "row", "both", "mixed", "all", "gap")]
+    + [(shape, "analysis_date", "absent", None, False, False)
+       for shape in ("both", "all", "gap")]
+    + [("cell", "analysis_time", cache, None, False, False) for cache in ("empty", "whitespace")]
+    + [("both", role, "absent", side, True, False) for role, side in (
+        ("analysis_date", "EPAR4_FSample_v1"), ("analysis_time", "EPAR4_FSample_v1"),
+        ("analysis_time", "EPAR4_TST_v1"), ("analysis_time", "EPAR4_RES_v1"))]
+    + [(shape, "analysis_time", "native", None, False, False)
+       for shape in ("cell", "row", "both", "mixed", "all", "gap")]
+    + [("both", role, cache, None, False, False) for role, cache in (
+        ("analysis_date", "text"), ("analysis_time", "text"),
+        ("analysis_date", "blank"), ("analysis_time", "blank"))]
+    + [("all", "analysis_time", cache, None, True, False) for cache in ("native", "text", "blank")]
+    + [("both", "analysis_date", "native", "EPAR4_FSample_v1", False, False)]
+    + [(shape, "analysis_time", "native", None, False, True) for shape in ("all", "gap")]
+    + [(shape, "analysis_time", "absent", None, False, False)
+       for shape in ("noncanonical_cell", "inconsistent_cell", "noncanonical_row")]
+)
+
+
+@pytest.mark.parametrize("shape,role,cache,side,alias,midnight", _COORDINATE_CASES)
+def test_timestamp_proof_tracks_declared_and_inferred_positions(
+        tmp_path, monkeypatch, shape, role, cache, side, alias, midnight):
+    import json
+    from autogis.core.envmon import equis_reader
+    path, profile, targets = _coordinate_formula_workbook(
+        tmp_path, shape, role, cache, side=side, alias=alias, midnight=midnight)
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    decoded = {name: dict(requested_coordinate=f"{openpyxl.utils.get_column_letter(col)}2",
+                          value=repr(wb[name].cell(2, col).value)) for name, col in targets.items()}
+    wb.close()
+    proof = equis_reader._xlsx_timestamp_sources(path, {
+        name: {openpyxl.utils.get_column_letter(col)} for name, col in targets.items()})
+    qa = QACollector()
+    reader = importer.read_edd_file(path, profile, qa)
+    stored, batches = _writer(monkeypatch)
+    _import(path, profile, qa)
+    (tmp_path / "observed.json").write_text(json.dumps(dict(
+        decoded=decoded, proof=proof, reader_keys=[r.get("__equis_method_dilution_key") for r in reader],
+        qa=[dataclasses.asdict(r) for r in qa.records], status=batches[0][0],
+        stored={k: list(v) for k, v in stored.items()}), indent=2, default=str))
+    if cache in {"absent", "empty", "whitespace"}:
+        assert not stored and batches[0][0] == "ERROR"
+        assert any(r.category == "equis_invalid_run_timestamp" for r in qa.records)
+    else:
+        date, time = "03/17/2025", "00:00" if midnight else "09:14"
+        if (cache == "blank" or alias) and side is None:
+            if role == "analysis_date":
+                date = ""
+            else:
+                time = ""
+        assert stored["Env_AnalyticalResults"] == {(
+            "SITE", "GW", "MW1", "S1", "2025-03-11", "LEAD", "", "EQUIS_XLS", "", "T", "",
+            f"1|INITIAL|E200.8|{date}@{time}")}
+        assert batches[0][0] == "PASS" and not qa.has_blocking()
+
+
+@pytest.mark.parametrize("mode", ["api", "manifest", "directory"])
+@pytest.mark.parametrize("cache", ["absent", "native"])
+def test_inferred_formula_proof_reaches_batch_api_and_cli(tmp_path, monkeypatch, mode, cache):
+    import csv
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis as command
+    from autogis.core.envmon.batch_workbook_importer import run_batch_import
+    monkeypatch.setenv("AUTOGIS_RUN_HISTORY", "off")
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    path, _, _ = _coordinate_formula_workbook(inputs, "all", cache=cache)
+    rows = [dict(workbook_path=str(path), profile_path=str(PROFILE), site_id="SITE")]
+    if mode == "api":
+        result = run_batch_import(rows)
+        assert result.manifest[0].Status == ("OK" if cache == "native" else "ERROR")
+        assert len(result.all_results) == (1 if cache == "native" else 0)
+        assert len(result.all_samples) == (1 if cache == "native" else 0)
+        return
+    manifest = tmp_path / "manifest.csv"
+    with manifest.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    options = (["--manifest", str(manifest)] if mode == "manifest" else
+               ["--edd-dir", str(inputs), "--profile", str(PROFILE), "--site", "SITE"])
+    out = tmp_path / "out"
+    invoked = CliRunner().invoke(command, ["envmon", "batch-import-workbooks", *options,
+                                "--output-dir", str(out)], catch_exceptions=False)
+    assert invoked.exit_code == (0 if cache == "native" else 1)
+    assert (out / "result_records.csv").exists() == (cache == "native")
+    if cache == "native":
+        with (out / "result_records.csv").open(newline="", encoding="utf-8-sig") as stream:
+            assert [r["MethodDilutionKey"] for r in csv.DictReader(stream)] == [
+                "1|INITIAL|E200.8|03/17/2025@09:14"]
+    else:
+        assert not (out / "sample_records.csv").exists()
+
+
+@pytest.mark.parametrize("bad_first", [True, False])
+def test_inferred_uncached_formula_batch_keeps_valid_siblings(tmp_path, bad_first):
+    from autogis.core.envmon.batch_workbook_importer import run_batch_import
+    bad, _, _ = _coordinate_formula_workbook(tmp_path, "gap")
+    good_sheets = _sheets(qc=False)
+    for rows in good_sheets.values():
+        rows[0]["sys_sample_code"] = "GOOD"
+    good = _workbook(tmp_path, good_sheets, name="good")
+    result = run_batch_import([dict(workbook_path=str(p), profile_path=str(PROFILE), site_id="SITE")
+                               for p in ([bad, good] if bad_first else [good, bad])])
+    assert {Path(r.WorkbookPath).name: r.Status for r in result.manifest} == {
+        bad.name: "ERROR", good.name: "OK"}
+    assert [r.SampleID for r in result.all_results] == ["GOOD"]
+    assert [r.SampleID for r in result.all_samples] == ["GOOD"]

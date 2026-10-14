@@ -244,19 +244,37 @@ def _xlsx_workbook_part(archive) -> str:
     return book_part
 
 
-def _stream_timestamp_cells(archive, member: str, columns: set[str]) -> dict:
+def _stream_timestamp_cells(archive, member: str, columns: set[str]) -> dict | None:
     import xml.etree.ElementTree as ET
+    from openpyxl.utils.cell import column_index_from_string, get_column_letter
     ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     proof = {}
     with archive.open(member) as stream:
         container = None
+        row_index = column_index = 0
         for event, element in ET.iterparse(stream, events=("start", "end")):
             if event == "start" and element.tag == f"{{{ns['m']}}}sheetData":
                 container = element
+            elif event == "start" and element.tag == f"{{{ns['m']}}}row":
+                declared_row = element.attrib.get("r")
+                if declared_row is not None and not re.fullmatch(r"[1-9][0-9]*", declared_row):
+                    return None
+                row_index = int(declared_row) if declared_row is not None else row_index + 1
+                column_index = 0
             elif event == "end" and element.tag == f"{{{ns['m']}}}c":
-                coordinate = element.attrib.get("r", "")
-                match = re.fullmatch(r"([A-Z]+)([0-9]+)", coordinate)
-                if match and match[1] in columns and int(match[2]) > 1:
+                coordinate = element.attrib.get("r")
+                if coordinate is None:
+                    # Public XLSX decoding infers omitted coordinates from
+                    # the preceding cell column and the current row position.
+                    column_index += 1
+                else:
+                    match = re.fullmatch(r"([A-Z]+)([1-9][0-9]*)", coordinate)
+                    if match is None or int(match[2]) != row_index:
+                        return None
+                    column_index = column_index_from_string(match[1])
+                column = get_column_letter(column_index)
+                coordinate = f"{column}{row_index}"
+                if column in columns and row_index > 1:
                     proof[coordinate] = (element.attrib.get("t", "n"),
                                          element.findtext("m:v", None, ns),
                                          element.find("m:f", ns) is not None)
