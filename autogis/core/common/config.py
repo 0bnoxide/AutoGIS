@@ -38,6 +38,8 @@ def load_config(path: Path) -> dict:
     except UnicodeDecodeError as exc:
         raise ConfigError(
             f"{path} could not be parsed: invalid UTF-8 ({exc})") from None
+    except OSError as exc:  # a directory, or permission denied
+        raise ConfigError(f"{path} could not be read: {exc}") from None
     if path.suffix.lower() in (".yaml", ".yml"):
         try:
             import yaml
@@ -199,6 +201,10 @@ class ParserProfile:
     def load(cls, path: Path) -> "ParserProfile":
         data = load_config(path)
         _require(data, ["profile_id", "sheets"], f"parser profile {path}")
+        if not (isinstance(data["sheets"], list)
+                and all(isinstance(sd, dict) for sd in data["sheets"])):
+            raise ConfigError(
+                f"parser profile {path}: 'sheets' must be a list of mappings")
         sheets = {}
         for sd in data["sheets"]:
             sp = SheetProfile.from_dict(sd)
