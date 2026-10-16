@@ -131,7 +131,14 @@ def run_batch_import(
 
         try:
             profile = LabEDDProfile.load(prof_path)
+            qa_start = len(qa.records)
             raw_rows = read_edd_file(wb_path, profile, qa)
+            # Structural reader failures reject this workbook before records
+            # accumulate; earlier files and ordinary per-row QA do not gate it.
+            if any(r.severity == SEV_ERROR and r.category in {
+                    "equis_invalid_run_timestamp", "equis_test_key_collision"}
+                   for r in qa.records[qa_start:]):
+                raise ValueError("EQuIS run identity failed validation; see QA records")
             samples, results = normalize_edd_rows(
                 raw_rows, profile, site_id, batch_id,
                 analyte_dictionary or {}, screening_levels or {},

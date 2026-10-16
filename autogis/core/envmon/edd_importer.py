@@ -609,6 +609,7 @@ def run_edd_import(
     )
 
     qa = qa if qa is not None else QACollector()
+    qa_start = len(qa.records)
     rows = read_edd_file(edd_path, profile, qa)
 
     # Step-3 QC fork: readers with a QC concept (equis_xls) tag lab-QC rows;
@@ -652,22 +653,23 @@ def run_edd_import(
         bad += detect_overlength_keys(
             qc_records, "Env_QCResults", qa, batch_id)
 
-    # Reader-flagged structural collisions (epar4 duplicate test keys, PR #253)
-    # are batch-integrity failures too — the reader emits the blocking QA but
-    # can't gate the write, so fold them into the same abort.
-    bad += sum(1 for r in qa.records
-               if r.category == "equis_test_key_collision")
+    # Reader structural failures must block every append, including valid
+    # siblings; per-row QA.ERROR alone does not gate the writer.
+    bad += sum(1 for r in qa.records[qa_start:]
+               if r.category in {"equis_test_key_collision",
+                                 "equis_invalid_run_timestamp"})
 
     if bad:
         # Abort before any append: reject the whole batch for adjudication so
         # nothing partial or truncated ever lands. No row is written.
+        import_qa = qa if qa_start == 0 else QACollector(records=qa.records[qa_start:])
         finalize_batch(
-            gdb_path, batch_id, qa,
+            gdb_path, batch_id, import_qa,
             {"analytical_results": 0, "analytical_skipped": 0,
              "samples": 0, "samples_skipped": 0,
              "qc_results": 0, "qc_skipped": 0},
             "ERROR")
-        write_qa_to_gdb(gdb_path, qa, batch_id)
+        write_qa_to_gdb(gdb_path, import_qa, batch_id)
         return batch_id
 
     ins_s, skip_s = append_records_idempotent(
@@ -681,17 +683,19 @@ def run_edd_import(
 
     # Counts reflect what actually landed (inserted/skipped), not the
     # pre-dedup record-list lengths (PR #229 review).
+    # Scope consumers after the last producer, retaining the caller aggregate.
+    import_qa = qa if qa_start == 0 else QACollector(records=qa.records[qa_start:])
     finalize_batch(
         gdb_path,
         batch_id,
-        qa,
+        import_qa,
         {"analytical_results": ins_a, "analytical_skipped": skip_a,
          "samples": ins_s, "samples_skipped": skip_s,
          "qc_results": ins_q, "qc_skipped": skip_q},
-        "ERROR" if qa.has_blocking() else "PASS",
+        "ERROR" if import_qa.has_blocking() else "PASS",
     )
 
-    write_qa_to_gdb(gdb_path, qa, batch_id)
+    write_qa_to_gdb(gdb_path, import_qa, batch_id)
     return batch_id
 
 
