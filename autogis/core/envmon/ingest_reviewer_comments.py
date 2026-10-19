@@ -210,7 +210,8 @@ def parse_comments_geojson(path: Path, *, qa: QACollector) -> list[ReviewerComme
     src = Path(path).name
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     kind = data.get("type") if isinstance(data, dict) else type(data).__name__
-    features = (data.get("features") or []) if isinstance(data, dict) else []
+    features = data.get("features", []) if isinstance(data, dict) else []
+    features = [] if features is None else features
     if kind != "FeatureCollection" or not isinstance(features, list):
         qa.add(SEV_ERROR, "geojson_format",
                f"{src}: root is not a FeatureCollection with a features list "

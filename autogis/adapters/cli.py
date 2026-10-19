@@ -5996,10 +5996,11 @@ def generate_trend_charts_cmd(history_csv, out, analytes, wells, sl_path,
 def _read_tracker_or_fail(path) -> list:
     """read_tracker_csv, with a directory or non-UTF-8 tracker reported as a
     ClickException, not a raw traceback (#585)."""
+    import csv
     from autogis.core.envmon.ingest_reviewer_comments import read_tracker_csv
     try:
         return read_tracker_csv(Path(path))
-    except (OSError, UnicodeDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
         raise click.ClickException(f"cannot read {path}: {exc}")
 
 
@@ -6022,6 +6023,7 @@ def ingest_reviewer_comments_cmd(input_file, out_path, tracker_path, report, fai
     previous --out as --tracker to merge while preserving existing status.
     """
     from autogis.core.common.qa import QACollector
+    import csv
     from zipfile import BadZipFile
     from autogis.core.envmon.ingest_reviewer_comments import (
         ingest_comments, merge_tracker, write_tracker_csv,
@@ -6030,14 +6032,17 @@ def ingest_reviewer_comments_cmd(input_file, out_path, tracker_path, report, fai
     qa = QACollector()
     try:
         incoming = ingest_comments(Path(input_file), qa=qa)
-    except (OSError, ValueError, BadZipFile, KeyError) as exc:
+    except (OSError, ValueError, csv.Error, BadZipFile, KeyError) as exc:
         # ValueError covers JSONDecodeError and UnicodeDecodeError; BadZipFile
         # and KeyError are openpyxl on a file that is not a real .xlsx (#585).
         raise click.ClickException(f"cannot read {input_file}: {exc}")
     existing = _read_tracker_or_fail(tracker_path) if tracker_path else []
     merged = merge_tracker(existing, incoming, qa=qa)
     out = Path(out_path)
-    write_tracker_csv(merged, out)
+    try:
+        write_tracker_csv(merged, out)
+    except OSError as exc:
+        raise click.ClickException(f"cannot write {out}: {exc}")
     click.echo(f"Written: {out}  ({len(merged)} comment(s))")
     click.echo(format_comment_summary(merged))
     _render_qa(qa, report, fail_on)
