@@ -25,7 +25,8 @@ def _clean_exit(result, code):
     ("empty.xlsx", b""),
     ("latin1 é.csv", b"comment\n\xff\xfe\n"),
     ("huge field.csv", b'comment\n"' + b"x" * 200_000 + b'"\n'),
-])
+], ids=["empty-geojson", "bad-json", "empty-xlsx", "latin1-csv",
+        "huge-field-csv"])  # short ids: Windows caps PYTEST_CURRENT_TEST
 def test_unreadable_input_is_a_clean_error(tmp_path, name, content):
     bad = tmp_path / name
     bad.write_bytes(content)
