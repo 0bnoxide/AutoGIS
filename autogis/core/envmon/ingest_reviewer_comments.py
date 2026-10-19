@@ -209,15 +209,24 @@ def parse_comments_geojson(path: Path, *, qa: QACollector) -> list[ReviewerComme
     """
     src = Path(path).name
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    if data.get("type") != "FeatureCollection":
+    kind = data.get("type") if isinstance(data, dict) else type(data).__name__
+    features = (data.get("features") or []) if isinstance(data, dict) else []
+    if kind != "FeatureCollection" or not isinstance(features, list):
         qa.add(SEV_ERROR, "geojson_format",
-               f"{src}: root type is not FeatureCollection — got {data.get('type')!r}",
-               source_workbook=src)
+               f"{src}: root is not a FeatureCollection with a features list "
+               f"— got {kind!r}", source_workbook=src)
         return []
     out: list[ReviewerComment] = []
-    for i, feat in enumerate(data.get("features") or []):
-        props = feat.get("properties") or {}
-        geom = feat.get("geometry") or {}
+    for i, feat in enumerate(features):
+        if not isinstance(feat, dict):
+            qa.add(SEV_ERROR, "geojson_format",
+                   f"{src}: feature {i} is not an object — got {feat!r}",
+                   source_workbook=src)
+            continue
+        props = feat.get("properties")
+        props = props if isinstance(props, dict) else {}
+        geom = feat.get("geometry")
+        geom = geom if isinstance(geom, dict) else {}
         mapped: dict[str, str] = {}
         for k, v in props.items():
             target = _GEOJSON_PROP_MAP.get((k or "").lower().strip())
@@ -225,8 +234,8 @@ def parse_comments_geojson(path: Path, *, qa: QACollector) -> list[ReviewerComme
                 mapped[target] = str(v).strip() if v is not None else ""
         x = y = None
         if geom.get("type") == "Point":
-            coords = geom.get("coordinates") or []
-            if len(coords) >= 2:
+            coords = geom.get("coordinates")
+            if isinstance(coords, list) and len(coords) >= 2:
                 try:
                     x, y = float(coords[0]), float(coords[1])
                 except (TypeError, ValueError):
