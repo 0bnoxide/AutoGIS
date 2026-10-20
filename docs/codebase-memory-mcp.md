@@ -90,6 +90,12 @@ is found and fixed. Newest first.
   `maybe_auto_index`) a session whose project already has a DB is watched before the
   `auto_index` check runs. The SessionStart hook already indexes the canonical root (via
   `--git-common-dir`), so `config set auto_index false` loses nothing.
+- **Symptom 3:** the index sat at 39,061 nodes from 09-28 to 10-15 while `last-index.log` said
+  `ok` every session. **Cause:** the main checkout was 23 commits behind `origin/main`. The
+  SessionStart ff-pull only ran when `git status --porcelain` was empty, and untracked dirs
+  (`.codex/`, local `.agents/skills/*`) kept it from ever running. It also ran *after* the index
+  refresh. **Fix:** the guard now ignores untracked files (`--untracked-files=no`), and the pull
+  runs before indexing.
 
 ### 2026-06-30 — third defect: `index_repository(mode:"full")` silently skips cache-poisoned files
 - **Symptom:** even after PR #91 fixed root causes 1–2 below, the graph was **still** missing the
