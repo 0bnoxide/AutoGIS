@@ -119,6 +119,9 @@ subagent when tools are absent
   conclusions with the author's preflight, publish its own five-probe evidence
   matrix and verdict to the PR, and re-review if the head changes. Resolve every
   `FAIL` before merge.
+- A PR gets at most 10 fix-and-re-review rounds in total; each push that
+  answers review findings is one round. If findings remain after round 10,
+  stop pushing, leave the PR unmerged, and ask the owner how to proceed.
 
 ## Deferred tool groups — phase-gate status
 
