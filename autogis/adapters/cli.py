@@ -1911,7 +1911,6 @@ def event_status_cmd(site_id, event_id, run_history_path, registry_path,
     from autogis.core.common.run_history import RunHistory
     from autogis.core.envmon.source_registry import SourceRegistry
     from autogis.core.envmon import event_status as es
-    from autogis.core.envmon.ingest_reviewer_comments import read_tracker_csv
 
     inputs = {
         "workbook": Path(workbook) if workbook else None,
@@ -1947,7 +1946,7 @@ def event_status_cmd(site_id, event_id, run_history_path, registry_path,
         history = RunHistory(Path(run_history_path))
         open_review = 0
         if tracker_path:  # existence validated at parse (click.Path(exists=True))
-            open_review = sum(1 for c in read_tracker_csv(Path(tracker_path))
+            open_review = sum(1 for c in _read_tracker_or_fail(tracker_path)
                               if c.status in ("OPEN", "IN_REVIEW"))
         report = es.classify_event(
             site_id=site_id, event_id=event_id, inputs=inputs,
@@ -6018,9 +6017,21 @@ def generate_trend_charts_cmd(history_csv, out, analytes, wells, sl_path,
     _render_qa(qa, report, fail_on)
 
 
+def _read_tracker_or_fail(path) -> list:
+    """read_tracker_csv, with a directory or non-UTF-8 tracker reported as a
+    ClickException, not a raw traceback (#585)."""
+    import csv
+    from autogis.core.envmon.ingest_reviewer_comments import read_tracker_csv
+    try:
+        return read_tracker_csv(Path(path))
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        raise click.ClickException(f"cannot read {path}: {exc}")
+
+
 @envmon.command("ingest-reviewer-comments")
 @click.argument("input_file", metavar="INPUT", type=click.Path(exists=True))
-@click.option("--out", "out_path", required=True, type=click.Path(),
+@click.option("--out", "out_path", required=True,
+              type=click.Path(dir_okay=False),
               help="Output tracker CSV path (created or overwritten).")
 @click.option("--tracker", "tracker_path", default=None, type=click.Path(),
               help="Existing comment tracker CSV to merge into (optional).")
@@ -6036,16 +6047,26 @@ def ingest_reviewer_comments_cmd(input_file, out_path, tracker_path, report, fai
     previous --out as --tracker to merge while preserving existing status.
     """
     from autogis.core.common.qa import QACollector
+    import csv
+    from zipfile import BadZipFile
     from autogis.core.envmon.ingest_reviewer_comments import (
-        ingest_comments, read_tracker_csv, merge_tracker,
-        write_tracker_csv, format_comment_summary)
+        ingest_comments, merge_tracker, write_tracker_csv,
+        format_comment_summary)
 
     qa = QACollector()
-    incoming = ingest_comments(Path(input_file), qa=qa)
-    existing = read_tracker_csv(Path(tracker_path)) if tracker_path else []
+    try:
+        incoming = ingest_comments(Path(input_file), qa=qa)
+    except (OSError, ValueError, csv.Error, BadZipFile, KeyError) as exc:
+        # ValueError covers JSONDecodeError and UnicodeDecodeError; BadZipFile
+        # and KeyError are openpyxl on a file that is not a real .xlsx (#585).
+        raise click.ClickException(f"cannot read {input_file}: {exc}")
+    existing = _read_tracker_or_fail(tracker_path) if tracker_path else []
     merged = merge_tracker(existing, incoming, qa=qa)
     out = Path(out_path)
-    write_tracker_csv(merged, out)
+    try:
+        write_tracker_csv(merged, out)
+    except OSError as exc:
+        raise click.ClickException(f"cannot write {out}: {exc}")
     click.echo(f"Written: {out}  ({len(merged)} comment(s))")
     click.echo(format_comment_summary(merged))
     _render_qa(qa, report, fail_on)
