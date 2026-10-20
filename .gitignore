@@ -22,8 +22,11 @@ CLAUDE.local.md
 # Session coordination registry (local-only, never committed)
 .claude/coordination/claims.json*
 
-# Worktrees + stray local artifacts
+# Worktrees + stray local artifacts. Codex puts its worktrees under .codex/;
+# codebase-memory-mcp skips .claude/ itself but only skips .codex/ via this
+# file, so without it every Codex worktree is indexed into the main project.
 .claude/worktrees/
+/.codex/worktrees/
 test_output.txt
 
 # CLI-seam run recorder output (ADR-0054) — runtime artifact, not source

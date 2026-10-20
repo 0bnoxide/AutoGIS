@@ -76,6 +76,21 @@ Python only.
 Append a dated entry whenever the MCP wiring or index setup changes, or a deviation
 is found and fixed. Newest first.
 
+### 2026-10-20 — worktrees polluting the index and spawning stale projects
+- **Symptom 1:** 27,420 of the 39,061 nodes in `C-Users-ichbi-AutoGIS` came from
+  `.codex/worktrees/`. **Cause:** the indexer hard-skips `.claude/` and `.worktrees/` but
+  not `.codex/`, and the only other skip source is the root `.gitignore` (or a `.cbmignore`).
+  **Fix:** `/.codex/worktrees/` in `.gitignore`. Verified against the v0.8.1 matcher
+  (`src/discover/gitignore.c`): the directory matches, so the walker skips the subtree. An
+  existing index keeps the old nodes until `delete_project` + `index_repository`.
+- **Symptom 2:** ~40 stale `*-worktrees-*` projects in `~/.cache/codebase-memory-mcp`.
+  **Cause:** `auto_index=true` makes the server index its startup cwd as a new project when no
+  DB exists for it, so each worktree session created one. **Correction to the 2026-06-30 entry
+  below:** `auto_index` does not gate the watcher. In v0.8.1 (`src/mcp/mcp.c`,
+  `maybe_auto_index`) a session whose project already has a DB is watched before the
+  `auto_index` check runs. The SessionStart hook already indexes the canonical root (via
+  `--git-common-dir`), so `config set auto_index false` loses nothing.
+
 ### 2026-06-30 — third defect: `index_repository(mode:"full")` silently skips cache-poisoned files
 - **Symptom:** even after PR #91 fixed root causes 1–2 below, the graph was **still** missing the
   5 PR #95 modules (`export_comparison_excel`, `ingest_reviewer_comments`, `job_queue`,
