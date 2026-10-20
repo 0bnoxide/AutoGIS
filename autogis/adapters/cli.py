@@ -427,11 +427,17 @@ def inspect_cmd(workbook, scan_rows):
 @click.argument("workbook", type=click.Path(exists=True))
 def parser_profile_cmd(profile, workbook):
     """Tool 9: load a parser profile and open it against a workbook (headless)."""
-    from autogis.core.common.config import ParserProfile
+    from autogis.core.common.config import ConfigError, ParserProfile
     from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
 
-    parser = ParserProfile.load(Path(profile))
-    reader = ProfileWorkbookReader(Path(workbook), parser)
+    try:
+        parser = ParserProfile.load(Path(profile))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+    try:
+        reader = ProfileWorkbookReader(Path(workbook), parser)
+    except Exception as exc:  # the reader's own open guard is this broad too
+        raise click.ClickException(f"cannot open workbook {workbook}: {exc}")
     click.echo(f"Profile '{parser.profile_id}' opened against "
                f"{len(reader.sheet_names())} sheet(s).")
 
@@ -729,7 +735,7 @@ def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
     supplies run-history site identity (ADR-0076), and the .pyt twin reads it
     for the GDB well layer.
     """
-    from autogis.core.common.config import ParserProfile
+    from autogis.core.common.config import ConfigError, ParserProfile
     from autogis.core.envmon.excel_profile_reader import ProfileWorkbookReader
     from autogis.core.envmon.reconcile_locations import (
         extract_location_ids, read_well_ids_csv, reconcile, reconcile_to_qa)
@@ -744,13 +750,25 @@ def reconcile_locations_cmd(site_config, workbook, profile_path, wells_csv, gdb,
         raise click.ClickException("provide --wells-csv PATH (headless) or "
                                    "--gdb (ArcGIS Pro).")
 
-    profile = ParserProfile.load(Path(profile_path))
-    reader = ProfileWorkbookReader(Path(workbook), profile)
+    try:
+        profile = ParserProfile.load(Path(profile_path))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
+    try:
+        reader = ProfileWorkbookReader(Path(workbook), profile)
+    except Exception as exc:  # the reader's own open guard is this broad too
+        raise click.ClickException(f"cannot open workbook {workbook}: {exc}")
     workbook_ids = extract_location_ids(reader, profile)
-    well_ids = read_well_ids_csv(Path(wells_csv))
+    try:
+        well_ids = read_well_ids_csv(Path(wells_csv))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise click.ClickException(f"cannot read {wells_csv}: {exc}")
 
     result = reconcile(workbook_ids, well_ids, threshold=threshold)
     qa = reconcile_to_qa(result)
+    # expected_sheet_missing lives on the reader's QA; dropping it let a
+    # workbook without the profile's sheets report PASS.
+    qa.records = reader.qa.records + qa.records
     _render_qa(qa, report, fail_on)
 
 
@@ -2302,11 +2320,14 @@ def validate_db_cmd(gdb, analytes, report, fail_on):
 @qa_report_options
 def evaluate_rpd_cmd(workbook, profile, site_id, batch_id, threshold, report, fail_on):
     """Evaluate field duplicate RPD values against a threshold (headless)."""
-    from autogis.core.common.config import ParserProfile
+    from autogis.core.common.config import ConfigError, ParserProfile
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.normalize_rpd import normalize_rpd_table
     from autogis.core.envmon.evaluate_rpd import evaluate_rpd_records, rpd_to_qa
-    parser = ParserProfile.load(Path(profile))
+    try:
+        parser = ParserProfile.load(Path(profile))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     qa_import = QACollector()
     records = normalize_rpd_table(Path(workbook), parser, site_id, batch_id, qa_import)
     result = evaluate_rpd_records(records, rpd_threshold_pct=threshold)
@@ -4872,11 +4893,14 @@ def reconcile_survey123_lab_cmd(survey_csv, edd_path, profile_path, site_id,
     """Pre-production: reconcile Survey123 field submissions vs lab EDD (headless)."""
     from autogis.core.envmon.reconcile_survey123_lab import (
         load_survey123_csv, reconcile_field_lab, reconcile_to_qa)
-    from autogis.core.common.config import ParserProfile
+    from autogis.core.common.config import ConfigError, ParserProfile
     from autogis.core.envmon.edd_importer import extract_sample_roster
 
     field_samples = load_survey123_csv(Path(survey_csv))
-    profile = ParserProfile.load(Path(profile_path))
+    try:
+        profile = ParserProfile.load(Path(profile_path))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     lab_samples = extract_sample_roster(Path(edd_path), profile)
 
     # The profile declares its lab's duplicate markers per sheet (e.g.
