@@ -244,6 +244,11 @@ def parse_comments_geojson(path: Path, *, qa: QACollector) -> list[ReviewerComme
                            f"{src}: feature {i} has non-numeric coordinates "
                            f"{coords[:2]!r} — x/y will be null",
                            source_workbook=src)
+            else:
+                qa.add(SEV_WARNING, "geojson_bad_coordinates",
+                       f"{src}: feature {i} Point coordinates {coords!r} are "
+                       f"not an [x, y] list — x/y will be null",
+                       source_workbook=src)
         else:
             qa.add(SEV_WARNING, "geojson_no_geometry",
                    f"{src}: feature {i} has no Point geometry — x/y will be null",

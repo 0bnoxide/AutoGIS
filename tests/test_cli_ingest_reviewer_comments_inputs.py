@@ -75,6 +75,7 @@ def test_non_object_properties_and_geometry_ingest(tmp_path):
     result = _invoke(src, "--out", tmp_path / "o.csv")
     _clean_exit(result, 0)
     assert "geojson_no_geometry" in result.output
+    assert "geojson_bad_coordinates" in result.output
 
 
 def test_unreadable_tracker_is_a_clean_error(tmp_path):
