@@ -5,6 +5,22 @@
 # Always: install project deps.
 set -euo pipefail
 
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+# --- Start every session from a current pull (so sessions + the subagents and
+# worktrees that branch from HEAD develop against up-to-date code). Only on a
+# clean 'main' checkout, fast-forward only; fully guarded so a network/auth/
+# non-ff failure can't abort the rest of setup under `set -e`. Never pull onto a
+# feature branch or worktree. ponytail: ff-only on clean main; nothing fancier.
+# "Clean" ignores untracked files: stray untracked dirs (.codex/, local skills)
+# froze main 23 commits behind for six weeks, and the index with it. ff-only
+# still refuses if an incoming file would overwrite an untracked one.
+# Runs BEFORE the index refresh so the index reflects the pulled tree.
+if [ "$(git -C "$PROJECT_DIR" branch --show-current 2>/dev/null)" = "main" ] \
+   && [ -z "$(git -C "$PROJECT_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+  git -C "$PROJECT_DIR" pull --ff-only >/dev/null 2>&1 || true
+fi
+
 # --- Refresh codebase-memory knowledge graph ------------------------------
 # Resolve the binary from PATH (the npm-global install) instead of a hardcoded
 # path. The old hardcoded path silently rotted to a no-op when the install
@@ -32,18 +48,6 @@ if [ -n "$CBM" ]; then
   fi
 else
   echo "$(date -Iseconds) FAILED codebase-memory-mcp not found on PATH" >> "$CBM_LOG"
-fi
-
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-
-# --- Start every session from a current pull (so sessions + the subagents and
-# worktrees that branch from HEAD develop against up-to-date code). Only on a
-# clean 'main' checkout, fast-forward only; fully guarded so a network/auth/
-# non-ff failure can't abort the rest of setup under `set -e`. Never pull onto a
-# feature branch or worktree. ponytail: ff-only on clean main; nothing fancier.
-if [ "$(git -C "$PROJECT_DIR" branch --show-current 2>/dev/null)" = "main" ] \
-   && [ -z "$(git -C "$PROJECT_DIR" status --porcelain 2>/dev/null)" ]; then
-  git -C "$PROJECT_DIR" pull --ff-only >/dev/null 2>&1 || true
 fi
 
 # --- Warn (never block, never auto-write) if the vendored ponytail skills have
