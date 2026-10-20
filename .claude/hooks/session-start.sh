@@ -41,13 +41,13 @@ CBM_ROOT="$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .)/.." && {
 CBM_KEY="$(printf '%s' "$CBM_ROOT" | sed 's|[:/\\]\{1,\}|-|g')"
 if [ -n "$CBM" ]; then
   if "$CBM" cli index_repository "{\"repo_path\":\"$CBM_ROOT\",\"mode\":\"full\"}" >/dev/null 2>&1; then
-    echo "$(date -Iseconds) ok $("$CBM" cli index_status "{\"project\":\"$CBM_KEY\"}" 2>/dev/null)" >> "$CBM_LOG"
+    echo "$(date -Iseconds) AutoGIS ok $("$CBM" cli index_status "{\"project\":\"$CBM_KEY\"}" 2>/dev/null)" >> "$CBM_LOG"
   else
     rc=$?
-    echo "$(date -Iseconds) FAILED index_repository rc=$rc" >> "$CBM_LOG"
+    echo "$(date -Iseconds) AutoGIS FAILED index_repository rc=$rc" >> "$CBM_LOG"
   fi
 else
-  echo "$(date -Iseconds) FAILED codebase-memory-mcp not found on PATH" >> "$CBM_LOG"
+  echo "$(date -Iseconds) AutoGIS FAILED codebase-memory-mcp not found on PATH" >> "$CBM_LOG"
 fi
 
 # --- Warn (never block, never auto-write) if the vendored ponytail skills have
