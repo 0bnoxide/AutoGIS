@@ -23,6 +23,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 from collections import Counter
 from dataclasses import dataclass, asdict, fields as _fields
 from pathlib import Path
@@ -167,11 +168,19 @@ def write_tracker_csv(comments: list[ReviewerComment], path: Path) -> Path:
     """Write the full comment tracker to a UTF-8 CSV file (creates parent dirs)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=_TRACKER_FIELDS)
-        w.writeheader()
-        for c in comments:
-            w.writerow(asdict(c))
+    # --out is often the previous --tracker: write beside it and publish with
+    # os.replace so a failed write leaves the old tracker intact (#587).
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        with tmp.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=_TRACKER_FIELDS)
+            w.writeheader()
+            for c in comments:
+                w.writerow(asdict(c))
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 

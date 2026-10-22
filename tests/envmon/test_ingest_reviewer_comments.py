@@ -211,6 +211,27 @@ def test_write_tracker_csv_creates_parent_dirs(tmp_path):
     assert out.exists()
 
 
+def test_write_tracker_csv_failed_write_keeps_existing_tracker(tmp_path, monkeypatch):
+    # #587: --out is often the same file as --tracker; a mid-write failure
+    # must not truncate the previous tracker.
+    out = tmp_path / "tracker.csv"
+    keep = ReviewerComment(
+        comment_id="rc-keep", source_file="in.csv", source_format="csv",
+        figure_ref="Figure 1", comment_text="Keep me", reviewer="Alice",
+        status="RESOLVED",
+    )
+    write_tracker_csv([keep], out)
+    before = out.read_bytes()
+
+    def boom(self, row):
+        raise OSError("disk full")
+    monkeypatch.setattr(csv.DictWriter, "writerow", boom)
+    with pytest.raises(OSError, match="disk full"):
+        write_tracker_csv([keep], out)
+    assert out.read_bytes() == before
+    assert list(tmp_path.iterdir()) == [out]
+
+
 def test_parse_comments_geojson_basic(tmp_path):
     data = _make_geojson([
         _point_feature(-87.65, 41.85, content="Fix north arrow", author="Alice",
