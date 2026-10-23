@@ -1,6 +1,8 @@
 """Tests for autogis.core.envmon.ingest_reviewer_comments (Tool 9.4)."""
 import csv
 import json
+import os
+import stat
 import pytest
 from pathlib import Path
 
@@ -230,6 +232,26 @@ def test_write_tracker_csv_failed_write_keeps_existing_tracker(tmp_path, monkeyp
         write_tracker_csv([keep], out)
     assert out.read_bytes() == before
     assert list(tmp_path.iterdir()) == [out]
+
+
+def test_write_tracker_csv_writes_through_symlink_and_keeps_mode(tmp_path):
+    real = tmp_path / "canon.csv"
+    write_tracker_csv([], real)
+    os.chmod(real, 0o640)
+    link = tmp_path / "link.csv"
+    try:
+        link.symlink_to(real)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    keep = ReviewerComment(
+        comment_id="rc-1", source_file="in.csv", source_format="csv",
+        figure_ref="Figure 1", comment_text="x", reviewer="A",
+    )
+    write_tracker_csv([keep], link)
+    assert link.is_symlink()
+    assert [c.comment_id for c in read_tracker_csv(real)] == ["rc-1"]
+    if os.name == "posix":
+        assert stat.S_IMODE(real.stat().st_mode) == 0o640
 
 
 def test_parse_comments_geojson_basic(tmp_path):
