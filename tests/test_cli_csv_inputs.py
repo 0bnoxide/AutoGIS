@@ -39,3 +39,23 @@ def test_generate_qc_summary_rejects_a_directory_out(tmp_path):
     assert result.exit_code == 2, result.output
     assert result.exception is None or isinstance(result.exception,
                                                   SystemExit)
+
+
+@pytest.mark.parametrize("argv", [
+    ["envmon", "drone-checkpoint-qa", "--checkpoints"],
+    ["envmon", "rtk-control-check", "--control-points"],
+])
+def test_checkpoint_csv_bad_input_is_a_clean_error(tmp_path, argv):
+    """#595: unreadable files and malformed rows exit 1 with a message."""
+    wrong_columns = tmp_path / "wrong.csv"
+    wrong_columns.write_text("a,b\n1,2\n", encoding="utf-8")
+    short_row = tmp_path / "short.csv"
+    short_row.write_text(
+        "gcp_id,control_id,expected_x,published_x\nG1\n", encoding="utf-8")
+    for bad, expected in [*((b, "cannot read") for b in _bad_inputs(tmp_path)),
+                          (wrong_columns, "line 2"), (short_row, "line 2")]:
+        result = CliRunner().invoke(autogis, argv + [str(bad)])
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception,
+                                                      SystemExit)
+        assert expected in result.output and str(bad) in result.output

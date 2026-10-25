@@ -77,7 +77,8 @@ def read_control_check_csv(path: Path) -> List[ControlCheckPoint]:
                     surveyed_y=float(row["surveyed_y"]),
                     surveyed_z=float(row["surveyed_z"]),
                 ))
-            except (KeyError, ValueError) as exc:
+            # TypeError: a short row leaves the missing cells as None
+            except (KeyError, ValueError, TypeError) as exc:
                 raise ValueError(
                     f"{path}: line {line_no}: invalid control-check record ({exc})"
                 ) from exc

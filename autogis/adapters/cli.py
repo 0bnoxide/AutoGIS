@@ -1392,7 +1392,12 @@ def drone_checkpoint_qa_cmd(
         write_results_csv,
     )
 
-    checkpoints = read_checkpoint_csv(Path(checkpoints_csv))
+    try:
+        checkpoints = read_checkpoint_csv(Path(checkpoints_csv))
+    except (OSError, UnicodeDecodeError) as exc:  # before ValueError, its base
+        raise click.ClickException(f"cannot read {checkpoints_csv}: {exc}")
+    except ValueError as exc:  # message already names the file and line
+        raise click.ClickException(str(exc))
     qa = QACollector()
     summary = evaluate_gcp_checkpoints(
         checkpoints,
@@ -1442,7 +1447,12 @@ def rtk_control_check_cmd(
         write_results_csv,
     )
 
-    points = read_control_check_csv(Path(control_csv))
+    try:
+        points = read_control_check_csv(Path(control_csv))
+    except (OSError, UnicodeDecodeError) as exc:  # before ValueError, its base
+        raise click.ClickException(f"cannot read {control_csv}: {exc}")
+    except ValueError as exc:  # message already names the file and line
+        raise click.ClickException(str(exc))
     qa = QACollector()
     summary = evaluate_control_check(
         points,
