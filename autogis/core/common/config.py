@@ -235,6 +235,8 @@ ND_QUALIFIERS = frozenset({"ND", "U", "UJ", "BDL"})
 def load_analyte_dictionary(path: Path) -> dict:
     data = load_config(path)
     analytes = data.get("analytes", data)
+    if not isinstance(analytes, dict):
+        raise ConfigError(f"{path}: 'analytes' must be a mapping")
     for name, entry in analytes.items():
         if name.startswith("_"):
             continue
@@ -250,7 +252,12 @@ def load_analyte_dictionary(path: Path) -> dict:
 def load_screening_levels(path: Path) -> dict:
     """Returns {matrix: {canonical_analyte: {value, units, source}}}."""
     data = load_config(path)
-    return data.get("screening_levels", data)
+    levels = data.get("screening_levels", data)
+    if levels is None:  # a blank `screening_levels:` means no levels
+        return {}
+    if not isinstance(levels, dict):
+        raise ConfigError(f"{path}: 'screening_levels' must be a mapping")
+    return levels
 
 
 def screening_for(screening_levels: dict, matrix: str,
