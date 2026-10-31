@@ -565,8 +565,9 @@ def test_build_survey_form_mode_error_preserves_existing_form(tmp_path, monkeypa
             info = real_fstat(fd)
             if info.st_ino == before.st_ino:
                 return info  # Destination preflight, not the stage operation.
-            return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino,
-                                   st_uid=before.st_uid + 1, st_gid=before.st_gid + 1)
+            # Keep every real field: os is global, so pytest's capture fstat reads st_size too.
+            return SimpleNamespace(**{**{k: getattr(info, k) for k in dir(info) if k.startswith("st_")},
+                                      "st_uid": before.st_uid + 1, "st_gid": before.st_gid + 1})
 
         monkeypatch.setattr(cli.os, "fstat", stage_owner)
 
@@ -715,8 +716,9 @@ def test_build_survey_form_initial_owner_and_mode_before_content(tmp_path, monke
         if info.st_ino == initial.st_ino:
             return info  # Actual write preflight must retain destination metadata.
         calls.append("fstat")
-        return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino,
-                               st_uid=initial.st_uid + 1, st_gid=initial.st_gid + 1)
+        # Keep every real field: os is global, so pytest's capture fstat reads st_size too.
+        return SimpleNamespace(**{**{k: getattr(info, k) for k in dir(info) if k.startswith("st_")},
+                                  "st_uid": initial.st_uid + 1, "st_gid": initial.st_gid + 1})
 
     def copy_owner(fd, uid, gid):
         assert (uid, gid) == (initial.st_uid, initial.st_gid)
