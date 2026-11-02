@@ -23,6 +23,8 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
+import shutil
 from collections import Counter
 from dataclasses import dataclass, asdict, fields as _fields
 from pathlib import Path
@@ -167,11 +169,25 @@ def write_tracker_csv(comments: list[ReviewerComment], path: Path) -> Path:
     """Write the full comment tracker to a UTF-8 CSV file (creates parent dirs)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=_TRACKER_FIELDS)
-        w.writeheader()
-        for c in comments:
-            w.writerow(asdict(c))
+    # --out is often the previous --tracker: write beside it and publish with
+    # os.replace so a failed write leaves the old tracker intact (#587).
+    # resolve() keeps writing through a symlinked tracker; the random name +
+    # O_EXCL refuses a planted file/symlink at the temp path.
+    target = path.resolve()
+    tmp = target.with_name(f"{target.name}.{os.urandom(4).hex()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as fh:
+            if target.exists():
+                shutil.copymode(target, tmp)  # keep the old tracker's permissions
+            w = csv.DictWriter(fh, fieldnames=_TRACKER_FIELDS)
+            w.writeheader()
+            for c in comments:
+                w.writerow(asdict(c))
+        os.replace(tmp, target)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
