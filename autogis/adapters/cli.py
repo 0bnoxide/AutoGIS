@@ -1168,12 +1168,15 @@ def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
                              analyte_filter, site_id):
     """Tool 5.5: build the analytical key/legend table (analyte, units, screening, NE)."""
     from autogis.core.common.config import (
-        load_analyte_dictionary, load_screening_levels)
+        ConfigError, load_analyte_dictionary, load_screening_levels)
     from autogis.core.envmon.build_analytical_key import (
         build_analytical_key, format_key_markdown, write_key_csv, write_key_xlsx)
 
-    analytes = load_analyte_dictionary(Path(analyte_dict))
-    screening = load_screening_levels(Path(screening_levels))
+    try:
+        analytes = load_analyte_dictionary(Path(analyte_dict))
+        screening = load_screening_levels(Path(screening_levels))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     flt = ([s.strip() for s in analyte_filter.split(",") if s.strip()]
            if analyte_filter else None)
     rows = build_analytical_key(analytes, screening, matrix=matrix,
@@ -1182,14 +1185,17 @@ def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
         click.echo(format_key_markdown(rows, matrix=matrix, site_id=site_id))
         return
     suffix = Path(out_path).suffix.lower()
-    if suffix == ".csv":
-        write_key_csv(rows, Path(out_path))
-    elif suffix == ".xlsx":
-        write_key_xlsx(rows, Path(out_path), matrix=matrix)
-    else:
-        Path(out_path).write_text(
-            format_key_markdown(rows, matrix=matrix, site_id=site_id),
-            encoding="utf-8")
+    try:
+        if suffix == ".csv":
+            write_key_csv(rows, Path(out_path))
+        elif suffix == ".xlsx":
+            write_key_xlsx(rows, Path(out_path), matrix=matrix)
+        else:
+            Path(out_path).write_text(
+                format_key_markdown(rows, matrix=matrix, site_id=site_id),
+                encoding="utf-8")
+    except OSError as exc:
+        raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"Written: {out_path}  ({len(rows)} analytes, matrix={matrix})")
 
 

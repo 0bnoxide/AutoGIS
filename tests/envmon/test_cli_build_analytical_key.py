@@ -1,4 +1,5 @@
 """CLI test for the headless build-analytical-key command (Tool 5.5)."""
+import pytest
 from click.testing import CliRunner
 
 from autogis.adapters.cli import autogis
@@ -62,3 +63,51 @@ def test_build_analytical_key_csv_out(tmp_path):
     assert out.exists()
     text = out.read_text(encoding="utf-8")
     assert "canonical" in text and "Benzene" in text
+
+
+@pytest.mark.parametrize("which, text", [
+    ("analytes", "analytes: null\n"),
+    ("analytes", "analytes: [a, b]\n"),
+    ("analytes", "a: [\n"),
+    ("analytes", "- a\n"),
+    ("screening", "screening_levels: [a]\n"),
+    ("screening", ""),
+])
+def test_build_analytical_key_bad_input_is_clean_error(tmp_path, which, text):
+    """#598: malformed inputs exit 1 with a clean message, not a traceback."""
+    a, s = _write(tmp_path)
+    (a if which == "analytes" else s).write_text(text, encoding="utf-8")
+    result = CliRunner().invoke(autogis, [
+        "envmon", "build-analytical-key",
+        "--analyte-dict", str(a), "--screening-levels", str(s), "--matrix", "GW",
+    ])
+    assert result.exit_code == 1, result.output
+    assert "Error:" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_build_analytical_key_null_screening_is_not_established(tmp_path):
+    """#598: a blank ``screening_levels:`` means no levels -> every row NE."""
+    a, s = _write(tmp_path)
+    s.write_text("screening_levels: null\n", encoding="utf-8")
+    result = CliRunner().invoke(autogis, [
+        "envmon", "build-analytical-key",
+        "--analyte-dict", str(a), "--screening-levels", str(s), "--matrix", "GW",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Benzene" in result.output and "NE" in result.output
+
+
+@pytest.mark.parametrize("suffix", ["", ".csv", ".xlsx"])
+def test_build_analytical_key_unwritable_out_is_clean_error(tmp_path, suffix):
+    """#598: a directory as --out is a clean 'cannot write' error."""
+    a, s = _write(tmp_path)
+    out = tmp_path / f"out{suffix}"
+    out.mkdir()
+    result = CliRunner().invoke(autogis, [
+        "envmon", "build-analytical-key",
+        "--analyte-dict", str(a), "--screening-levels", str(s),
+        "--matrix", "GW", "--out", str(out),
+    ])
+    assert result.exit_code == 1, result.output
+    assert f"cannot write {out}" in result.output
