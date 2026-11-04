@@ -6293,8 +6293,8 @@ def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
                                output_dir, analytes, screening,
                                event_date, report, fail_on):
     """Tool 2.2: batch-import EDD workbooks from a manifest CSV or a directory (headless)."""
-    import yaml as _yaml
     from datetime import date as _date
+    from autogis.core.common.config import ConfigError, load_config
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import write_records_csv
     from autogis.core.envmon.batch_workbook_importer import (
@@ -6317,11 +6317,17 @@ def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
                 "No EDD files matching %s in %s"
                 % (pattern or "*.csv (or *.xlsx)", edd_dir))
     else:
-        manifest_rows = read_manifest_csv(Path(manifest))
-    analyte_dict = _yaml.safe_load(Path(analytes).read_text(encoding="utf-8")) \
-        if analytes else {}
-    screening_lvls = _yaml.safe_load(Path(screening).read_text(encoding="utf-8")) \
-        if screening else {}
+        try:
+            manifest_rows = read_manifest_csv(Path(manifest))
+        except (OSError, UnicodeDecodeError) as exc:
+            raise click.ClickException(f"cannot read {manifest}: {exc}")
+        except ValueError as exc:  # missing required columns
+            raise click.ClickException(f"{manifest}: {exc}")
+    try:
+        analyte_dict = load_config(Path(analytes)) if analytes else {}
+        screening_lvls = load_config(Path(screening)) if screening else {}
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     ev_date = _date.fromisoformat(event_date) if event_date else None
     qa = QACollector()
 
