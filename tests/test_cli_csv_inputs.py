@@ -39,3 +39,27 @@ def test_generate_qc_summary_rejects_a_directory_out(tmp_path):
     assert result.exit_code == 2, result.output
     assert result.exception is None or isinstance(result.exception,
                                                   SystemExit)
+
+
+def test_batch_import_workbooks_bad_inputs_are_clean_errors(tmp_path):
+    """#601: a bad --manifest / --analytes / --screening was a traceback."""
+    a_dir, latin1 = _bad_inputs(tmp_path)
+    wrong_cols = tmp_path / "wrong.csv"
+    wrong_cols.write_text("foo,bar\n1,2\n", encoding="utf-8")
+    broken_yaml = tmp_path / "broken.yaml"
+    broken_yaml.write_text("a: [\n", encoding="utf-8")
+    manifest = tmp_path / "m.csv"
+    manifest.write_text("workbook_path,profile_path,site_id\n",
+                        encoding="utf-8")
+    cases = [(["--manifest", str(p)], p) for p in (a_dir, latin1, wrong_cols)]
+    cases += [(["--manifest", str(manifest), opt, str(p)], p)
+              for opt in ("--analytes", "--screening")
+              for p in (a_dir, latin1, broken_yaml)]
+    for args, bad in cases:
+        result = CliRunner().invoke(autogis, [
+            "envmon", "batch-import-workbooks", *args,
+            "--output-dir", str(tmp_path / "out")])
+        assert result.exit_code == 1, (args, result.output)
+        assert result.exception is None or isinstance(result.exception,
+                                                      SystemExit), args
+        assert result.output.startswith("Error:") and str(bad) in result.output
