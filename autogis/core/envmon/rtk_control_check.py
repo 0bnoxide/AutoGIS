@@ -66,7 +66,8 @@ def read_control_check_csv(path: Path) -> List[ControlCheckPoint]:
     """
     points = []
     with open(path, newline="", encoding="utf-8") as fh:
-        for line_no, row in enumerate(csv.DictReader(fh), start=2):  # header is line 1
+        reader = csv.DictReader(fh)
+        for row in reader:
             try:
                 points.append(ControlCheckPoint(
                     control_id=row["control_id"],
@@ -80,7 +81,8 @@ def read_control_check_csv(path: Path) -> List[ControlCheckPoint]:
             # TypeError: a short row leaves the missing cells as None
             except (KeyError, ValueError, TypeError) as exc:
                 raise ValueError(
-                    f"{path}: line {line_no}: invalid control-check record ({exc})"
+                    f"{path}: line {reader.line_num}: "
+                    f"invalid control-check record ({exc})"
                 ) from exc
     return points
 

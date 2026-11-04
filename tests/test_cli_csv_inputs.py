@@ -52,8 +52,14 @@ def test_checkpoint_csv_bad_input_is_a_clean_error(tmp_path, argv):
     short_row = tmp_path / "short.csv"
     short_row.write_text(
         "gcp_id,control_id,expected_x,published_x\nG1\n", encoding="utf-8")
+    after_blank = tmp_path / "blank.csv"  # bad row on file line 3
+    after_blank.write_text("a,b\n\n1,2\n", encoding="utf-8")
+    huge_field = tmp_path / "huge.csv"  # over csv's 131072-char field limit
+    huge_field.write_text('a\n"' + "x" * 200_000 + '"\n', encoding="utf-8")
     for bad, expected in [*((b, "cannot read") for b in _bad_inputs(tmp_path)),
-                          (wrong_columns, "line 2"), (short_row, "line 2")]:
+                          (huge_field, "cannot read"),
+                          (wrong_columns, "line 2"), (short_row, "line 2"),
+                          (after_blank, "line 3")]:
         result = CliRunner().invoke(autogis, argv + [str(bad)])
         assert result.exit_code == 1, result.output
         assert result.exception is None or isinstance(result.exception,
