@@ -1385,6 +1385,7 @@ def drone_checkpoint_qa_cmd(
     checkpoints_csv, hrms_threshold, vrms_threshold, output, report, fail_on
 ):
     """Tool 8.7: evaluate GCP checkpoint accuracy (headless)."""
+    import csv
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.drone_checkpoint_qa import (
         evaluate_gcp_checkpoints,
@@ -1392,7 +1393,12 @@ def drone_checkpoint_qa_cmd(
         write_results_csv,
     )
 
-    checkpoints = read_checkpoint_csv(Path(checkpoints_csv))
+    try:
+        checkpoints = read_checkpoint_csv(Path(checkpoints_csv))
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:  # before ValueError
+        raise click.ClickException(f"cannot read {checkpoints_csv}: {exc}")
+    except ValueError as exc:  # message already names the file and line
+        raise click.ClickException(str(exc))
     qa = QACollector()
     summary = evaluate_gcp_checkpoints(
         checkpoints,
@@ -1435,6 +1441,7 @@ def rtk_control_check_cmd(
     report, fail_on,
 ):
     """Compare RTK-surveyed control shots to published benchmarks (headless)."""
+    import csv
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.rtk_control_check import (
         evaluate_control_check,
@@ -1442,7 +1449,12 @@ def rtk_control_check_cmd(
         write_results_csv,
     )
 
-    points = read_control_check_csv(Path(control_csv))
+    try:
+        points = read_control_check_csv(Path(control_csv))
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:  # before ValueError
+        raise click.ClickException(f"cannot read {control_csv}: {exc}")
+    except ValueError as exc:  # message already names the file and line
+        raise click.ClickException(str(exc))
     qa = QACollector()
     summary = evaluate_control_check(
         points,
