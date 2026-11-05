@@ -65,7 +65,7 @@ def read_control_check_csv(path: Path) -> List[ControlCheckPoint]:
                       surveyed_x, surveyed_y, surveyed_z
     """
     points = []
-    with open(path, newline="", encoding="utf-8") as fh:
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         for line_no, row in enumerate(csv.DictReader(fh), start=2):  # header is line 1
             try:
                 points.append(ControlCheckPoint(
