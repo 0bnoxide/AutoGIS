@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 from click.testing import CliRunner
 import pytest
@@ -58,13 +59,14 @@ def test_cli_dry_run_and_mutual_exclusion(monkeypatch,tmp_path):
     assert not (tmp_path/'out.tif').exists()
 
 
-def test_backend_preflight_before_download(monkeypatch,tmp_path):
-    from autogis.core.envmon import msl_raster
+@pytest.mark.parametrize('missing_dependency',['rasterio','pyproj'])
+def test_backend_preflight_before_download(monkeypatch,tmp_path,missing_dependency):
+    # Exercise the actual import guard even when this environment has the extras.
+    monkeypatch.setitem(sys.modules,'rasterio',object())
+    monkeypatch.setitem(sys.modules,missing_dependency,None)
     client=Client(archive_bytes())
-    def missing():raise RuntimeError('pip install autogis[msl]')
-    monkeypatch.setattr(msl_raster,'require_rasterio',missing)
     with pytest.raises(RuntimeError,match='pip install'):m.run_msl_download(bbox=BBOX,out_path=tmp_path/'out.tif',client=client)
-    assert client.gets==0
+    assert client.gets==0 and not (tmp_path/'out.tif').exists()
 
 
 def test_overwrite_rejects_sidecar_directory_without_modifying_contents(tmp_path):
@@ -77,7 +79,11 @@ def test_overwrite_rejects_sidecar_directory_without_modifying_contents(tmp_path
     assert client.gets==0
 
 
-def test_three_dimensional_output_crs_rejected_before_download(tmp_path):
+def test_three_dimensional_output_crs_rejected_before_download(tmp_path,monkeypatch):
+    pytest.importorskip('pyproj')
+    from autogis.core.envmon import msl_raster
+    # CRS validation uses real pyproj, but does not need to open any raster.
+    monkeypatch.setattr(msl_raster,'require_rasterio',lambda:None)
     client=Client(archive_bytes())
     with pytest.raises(ValueError,match='two-dimensional|horizontal'):
         m.run_msl_download(bbox=BBOX,out_path=tmp_path/'out.tif',client=client,output_crs='EPSG:4979',resolution=1)
