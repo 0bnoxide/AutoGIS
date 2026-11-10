@@ -189,7 +189,7 @@ def process_msl_dem(sources, aoi, out_path, *, output_crs=None, resolution=None,
         top=origin_y+math.ceil((top-origin_y)/ry-1e-8)*ry
         width=round((right-left)/rx);height=round((top-bottom)/ry)
         if width<1 or height<1: raise ValueError('AOI is smaller than the output grid')
-        dtype='float64' if any(m['dtype']=='float64' for m in metadata) else 'float32'
+        dtype='float64' if any(m['dtype'] in ('float64','int32','uint32') for m in metadata) else 'float32'
         bytes_needed=width*height*np.dtype(dtype).itemsize
         disk=out.parent
         while not disk.exists():disk=disk.parent
@@ -197,8 +197,8 @@ def process_msl_dem(sources, aoi, out_path, *, output_crs=None, resolution=None,
             raise ValueError('Insufficient disk space for uncompressed output raster and processing reserve')
         transform=Affine(rx,0,left,0,-ry,top)
         resampling=Resampling.nearest if output_crs is None and resolution is None else Resampling.bilinear
-        vrts=[stack.enter_context(WarpedVRT(ds,crs=target_crs.to_wkt(),transform=transform,width=width,height=height,
-                nodata=float('nan'),dtype=dtype,resampling=resampling)) for ds in datasets]
+        vrts=[stack.enter_context(WarpedVRT(ds,src_crs=metadata[i]['horizontal_crs'],crs=target_crs.to_wkt(),transform=transform,width=width,height=height,
+                nodata=float('nan'),dtype=dtype,resampling=resampling)) for i,ds in enumerate(datasets)]
         profile={'driver':'GTiff','width':width,'height':height,'count':1,'dtype':dtype,
             'crs':target_crs.to_wkt(),'transform':transform,'nodata':float('nan'),
             'tiled':True,'blockxsize':512,'blockysize':512,'compress':'deflate','BIGTIFF':'IF_SAFER'}

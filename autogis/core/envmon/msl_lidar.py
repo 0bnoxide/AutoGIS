@@ -523,7 +523,7 @@ def inventory_quality_evidence(record):
         evidence.append({'field':name,'label':fields.get(name,{}).get('alias',name),'value':value,
             'raw_value':record.raw_attributes.get(name),'status':'publisher_reported',
             'units':'m' if name.casefold().endswith('_m') and 'density' not in name.casefold() else None,
-            'confidence_level':None,'source':record.source_url,
+            'confidence_level':None,'scope':'project-level; not a site-specific guarantee','source':record.source_url,
             'report_url':record.attributes.get('ReportLink'),'metadata_url':record.attributes.get('MetadataLink')})
     return evidence
 

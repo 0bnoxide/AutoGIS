@@ -77,6 +77,7 @@ class Toolbox(object):
             ExportContoursForCivil3D,  # tool 8.10 TIN -> LandXML surface
             TransformLandXMLSurface,   # tool 8.10a LandXML -> LandXML
             BuildCADExportPackage,   # tool 8.9
+            DownloadMSLDEM,
             DownloadOpenTopoDEM,     # OpenTopography DEM fetch + add-to-map
         ]
 
@@ -1572,3 +1573,85 @@ class DownloadOpenTopoDEM(object):
             messages.addMessage(
                 f"Added {add_path} to map '{active_map.name}'"
                 + (" and zoomed to it." if zoomed else "."))
+
+
+class DownloadMSLDEM(object):
+    """Archive-first MSL HFDEM acquisition with geometry and source evidence."""
+    def __init__(self):
+        self.label = "Download Montana State Library DEM"
+        self.description = "Download HFDEM archives, preserve selected polygon geometry, clip/mosaic compatible rasters, and write resolution/accuracy evidence. Preview first; choose explicit projects when multiple collections intersect. No OpenTopography key."
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        parameters = [
+            _param("aoi_source", "AOI source", "GPString", default="Active map extent", domain=("Active map extent", "Feature layer (selection if any)", "Manual bbox")),
+            _param("aoi_layer", "AOI polygon layer", "GPFeatureLayer", required=False),
+            _param("manual_bbox", "WGS84 bbox (W S E N)", "GPString", required=False),
+            _param("product", "DEM product", "GPString", default="HFDEM", domain=("HFDEM",)),
+            _param("projects", "Exact LiDAR projects (semicolon separated, priority order)", "GPString", required=False),
+            _param("out_raster", "Output GeoTIFF (.tif)", "DEFile", direction="Output"),
+            _param("cache_dir", "Archive cache directory", "DEFolder", required=False),
+            _param("preview", "Preview download plan only", "GPBoolean", required=False, default=False),
+            _param("allow_large_download", "Allow large or unknown-size downloads", "GPBoolean", required=False, default=False),
+            _param("large_download_gib", "Large-download threshold (GiB)", "GPDouble", required=False, default=1.0),
+            _param("reproject", "Reproject to active map CRS", "GPBoolean", required=False, default=False),
+            _param("output_crs", "Explicit horizontal output CRS (EPSG code or WKT)", "GPString", required=False),
+            _param("output_resolution", "Explicit output cell size (target CRS units)", "GPDouble", required=False),
+            _param("z_units", "Output elevation units", "GPString", default="native", domain=("native", "m", "int-ft", "us-ft")),
+            _param("add_to_map", "Add output to active map", "GPBoolean", required=False, default=True),
+            _param("overwrite", "Replace existing output and provenance", "GPBoolean", required=False, default=False),
+        ]
+        parameters[1].filter.list = ["Polygon"]
+        return parameters
+
+    def updateParameters(self, parameters):
+        p = {q.name: q for q in parameters}
+        source = p["aoi_source"].valueAsText or "Active map extent"
+        p["aoi_layer"].enabled = source.startswith("Feature layer")
+        p["manual_bbox"].enabled = source == "Manual bbox"
+        p["output_crs"].enabled = not bool(p["reproject"].value)
+
+    @toolbox_core.record_pyt_run("download-msl-dem", site_config_param=None)
+    def execute(self, parameters, messages):
+        from autogis.core.envmon.msl_lidar import run_msl_download
+        p = {q.name: q for q in parameters}
+        try:
+            aoi = toolbox_core.resolve_msl_arcpy_aoi(arcpy, p["aoi_source"].valueAsText,
+                layer=p["aoi_layer"].value, bbox=p["manual_bbox"].valueAsText)
+            aprx = arcpy.mp.ArcGISProject("CURRENT")
+            output_crs = p["output_crs"].valueAsText or None
+            if bool(p["reproject"].value):
+                if aprx.activeMap is None:
+                    raise ValueError("Open an active map before requesting its CRS")
+                output_crs = aprx.activeMap.spatialReference.exportToString()
+            def processor(sources, geometry, out, **options):
+                return toolbox_core.process_msl_dem_arcpy(arcpy, sources, geometry, out, **options)
+            last = [-1]
+            def progress(done, total):
+                step = done // (10 * 1024 ** 2)
+                if step != last[0]:
+                    last[0] = step
+                    messages.addMessage(f"Downloaded {done:,} / {total if total is not None else 'unknown'} bytes")
+            result = run_msl_download(geometry=aoi, out_path=p["out_raster"].valueAsText,
+                projects=[name.strip().strip("'") for name in (p["projects"].valueAsText or "").split(";") if name.strip()],
+                cache_dir=p["cache_dir"].valueAsText or None,
+                product=p["product"].valueAsText or "HFDEM", dry_run=bool(p["preview"].value),
+                overwrite=bool(p["overwrite"].value), allow_large_download=bool(p["allow_large_download"].value),
+                threshold_bytes=float(p["large_download_gib"].value or 1) * 1024 ** 3,
+                output_crs=output_crs, resolution=float(p["output_resolution"].value) if p["output_resolution"].value is not None else None,
+                z_units=p["z_units"].valueAsText or "native", processor=processor, on_progress=progress)
+            if bool(p["preview"].value):
+                messages.addMessage(json.dumps(result.plan.to_dict(), indent=2))
+                messages.addMessage("Preview only: no downloads or files written.")
+                return
+            _msg(messages, result.qa)
+            p["out_raster"].value = str(result.out_path)
+            messages.addMessage(f"Wrote {result.out_path} and provenance .json sidecar")
+            if bool(p["add_to_map"].value) and aprx.activeMap is not None:
+                layer = aprx.activeMap.addDataFromPath(str(result.out_path))
+                view = aprx.activeView
+                if view is not None and hasattr(view, "getLayerExtent") and view.map.URI == aprx.activeMap.URI:
+                    view.camera.setExtent(view.getLayerExtent(layer, False, False))
+        except (ValueError, RuntimeError, OSError) as exc:
+            messages.addErrorMessage(str(exc))
+            raise

@@ -67,3 +67,11 @@ def test_invalid_crs_or_empty_aoi_fails_before_output(tmp_path):
     src=source(tmp_path);out=tmp_path/'bad.tif'
     with pytest.raises((ValueError,rasterio.errors.CRSError)):r.process_msl_dem([src],m.resolve_msl_aoi(bbox=(0,0,2,2)),out,output_crs='garbage',resolution=1)
     assert not out.exists()
+
+
+def test_int32_native_values_are_not_rounded_to_float32(tmp_path):
+    src=source(tmp_path)
+    with rasterio.open(src.path,'w',driver='GTiff',width=2,height=2,count=1,dtype='int32',crs='EPSG:4326',transform=from_origin(0,2,1,1),nodata=-9999) as ds:ds.write(np.array([[16777217,1],[2,3]],dtype='int32'),1)
+    out=tmp_path/'exact.tif'
+    r.process_msl_dem([src],m.resolve_msl_aoi(bbox=(0,0,2,2)),out)
+    with rasterio.open(out) as ds:assert float(ds.read(1)[0,0])==16777217
