@@ -88,7 +88,10 @@ def build_analytical_key(
                 f"analyte '{canonical}': display_order must be an integer") from None
 
         sl_entry = matrix_screening.get(canonical)
-        if sl_entry and isinstance(sl_entry, dict):
+        if sl_entry is not None and not isinstance(sl_entry, dict):
+            raise ConfigError(
+                f"screening_levels.{matrix}.{canonical} must be a mapping")
+        if sl_entry:
             screening_value = sl_entry.get("value")
             screening_units = sl_entry.get("units", "")
             screening_source = sl_entry.get("source", "")

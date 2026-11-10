@@ -74,6 +74,8 @@ def test_build_analytical_key_csv_out(tmp_path):
     ("screening", ""),
     ("screening", "screening_levels: {GW: [a]}\n"),
     ("screening", "screening_levels: {GW: 5}\n"),
+    ("screening", "screening_levels: {GW: {Benzene: 5}}\n"),
+    ("screening", "screening_levels: {GW: {Benzene: 0}}\n"),
     ("analytes", "analytes: {1: {include_in_default_figures: true}}\n"),
     ("analytes", "analytes: {B: {include_in_default_figures: true, "
                  "default_units_by_matrix: [x]}}\n"),
