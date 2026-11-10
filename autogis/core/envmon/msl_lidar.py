@@ -305,3 +305,210 @@ def build_msl_download_plan(aoi, *, projects=(), cache_dir=None, source='quads',
         while not disk.exists(): disk=disk.parent
         plan.disk_free_bytes=shutil.disk_usage(disk).free
     return plan
+
+# Archive acquisition intentionally does not import a raster engine.
+@dataclass
+class ArchiveDownload:
+    path: Path
+    archive: ArchivePlan
+    sha256: str
+    downloaded_at: str
+
+
+@dataclass
+class RasterSource:
+    path: Path
+    project: str
+    archive_url: str
+    archive_sha256: str
+    member: str
+    quad: str | None = None
+    downloaded_at: str | None = None
+
+
+def _sha256(path):
+    import hashlib
+    digest=hashlib.sha256()
+    with Path(path).open('rb') as handle:
+        for chunk in iter(lambda:handle.read(1024**2),b''): digest.update(chunk)
+    return digest.hexdigest()
+
+
+def inspect_msl_archives(path, *, max_expanded_bytes=200*1024**3):
+    """Verify every CRC, rejecting unsafe names/types before decompression."""
+    import stat
+    import zipfile
+    seen=set()
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries=archive.infolist()
+            if len(entries)>100000 or sum(i.file_size for i in entries)>max_expanded_bytes:
+                raise ValueError('ZIP expanded size exceeds the safety/disk limit')
+            for entry in entries:
+                name=entry.orig_filename
+                parts=name.rstrip('/').split('/')
+                if (not name or name.startswith('/') or '\\' in name
+                    or any(p in ('','.','..') or p[-1:] in (' ','.') or re.search(r'[<>:"|?*\x00-\x1f]',p)
+                           or re.fullmatch(r'(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?',p) for p in parts)
+                    or stat.S_ISLNK(entry.external_attr>>16) or entry.flag_bits & 1):
+                    raise ValueError(f'Unsafe ZIP member: {name!r}')
+                key=name.rstrip('/').casefold()
+                if key in seen:
+                    raise ValueError(f'Unsafe duplicate/case-colliding ZIP member: {name!r}')
+                seen.add(key)
+                if entry.file_size>1024**2 and entry.file_size>max(entry.compress_size,1)*10000:
+                    raise ValueError(f'Unsafe ZIP compression ratio: {name}')
+            bad=archive.testzip()
+            if bad:
+                raise ValueError(f'Corrupt ZIP member CRC: {bad}')
+            return entries
+    except (zipfile.BadZipFile,NotImplementedError,RuntimeError) as exc:
+        raise ValueError(f'Invalid ZIP archive: {path}: {exc}') from exc
+
+
+def _cached_download(archive, cache):
+    path=cache/archive.name
+    receipt=path.with_suffix(path.suffix+'.json')
+    if not path.exists() and not receipt.exists(): return None
+    if path.is_symlink() or receipt.is_symlink():
+        raise ValueError(f'Unsafe cache symlink: {path}')
+    if not path.is_file() or not receipt.is_file():
+        raise FileExistsError(f'Unrecognized cache file/receipt: {path}; choose a new cache directory')
+    try:
+        data=json.loads(receipt.read_text(encoding='utf-8'))
+        digest=_sha256(path)
+        if (data['url']!=archive.url or data['sha256']!=digest
+                or data['size_bytes']!=path.stat().st_size
+                or (archive.size_bytes is not None and archive.size_bytes!=path.stat().st_size)
+                or data.get('validators')!=archive.validators):
+            raise ValueError('cache identity, content, or server validators differ')
+        inspect_msl_archives(path)
+        return ArchiveDownload(path,archive,digest,data['downloaded_at'])
+    except (ValueError,KeyError) as exc:
+        raise ValueError(f'Invalid cache entry {path}: {exc}; preserve it and choose a fresh cache directory') from exc
+
+
+def download_msl_archives(plan, cache_dir, *, allow_large_download=False,
+                          threshold_bytes=DEFAULT_THRESHOLD, client=None,
+                          on_progress=None, sleep=time.sleep):
+    """Stream validated archives; cache collisions never overwrite user files."""
+    import hashlib
+    import os
+    import tempfile
+    from datetime import datetime,timezone
+    if not isinstance(threshold_bytes,(int,float)) or not math.isfinite(threshold_bytes) or threshold_bytes<=0:
+        raise ValueError('Large-download threshold must be finite and positive')
+    client=client or HTTPClient()
+    cache=Path(cache_dir)
+    cached=[_cached_download(a,cache) for a in plan.archives]
+    missing=[a for a,c in zip(plan.archives,cached) if c is None]
+    total=None if any(a.size_bytes is None for a in missing) else sum(a.size_bytes for a in missing)
+    if missing and (total is None or total>threshold_bytes) and not allow_large_download:
+        raise ValueError('Large or unknown-size download: inspect the plan and pass --allow-large-download to authorize')
+    cache.mkdir(parents=True,exist_ok=True)
+    if total is not None and shutil.disk_usage(cache).free<total+64*1024**2:
+        raise ValueError('Insufficient disk space for archive downloads (plus 64 MiB reserve)')
+    result=[]
+    for archive,hit in zip(plan.archives,cached):
+        if hit is not None:
+            result.append(hit); continue
+        target=cache/archive.name
+        last_error=None
+        for attempt in range(3):
+            fd,tempname=tempfile.mkstemp(prefix='.'+archive.name+'.',suffix='.part',dir=cache)
+            temp=Path(tempname)
+            try:
+                digest=hashlib.sha256(); count=0
+                with os.fdopen(fd,'wb') as output, client.stream(archive.url) as response:
+                    headers=_headers(response.headers)
+                    if 'html' in headers.get('content-type','').lower():
+                        raise ValueError('Archive download returned HTML')
+                    expected=headers.get('content-length')
+                    if expected is not None and not str(expected).isdigit():
+                        raise ValueError('Invalid download Content-Length')
+                    expected=int(expected) if expected else None
+                    if archive.size_bytes is not None and expected is not None and archive.size_bytes!=expected:
+                        raise ValueError('Download byte count changed after preflight; rebuild plan')
+                    for key,value in archive.validators.items():
+                        if headers.get(key) is not None and headers[key]!=value:
+                            raise ValueError('Archive server validator changed after preflight; rebuild plan')
+                    while True:
+                        chunk=response.read(1024**2)
+                        if not chunk: break
+                        count+=len(chunk)
+                        if (expected is not None and count>expected) or (archive.size_bytes is not None and count>archive.size_bytes):
+                            raise ValueError('Download byte count exceeds advertised length')
+                        if not allow_large_download and count>threshold_bytes:
+                            raise ValueError('Download exceeds authorized threshold; use --allow-large-download')
+                        output.write(chunk); digest.update(chunk)
+                        if on_progress: on_progress(count,expected or archive.size_bytes)
+                if (expected is not None and count!=expected) or (archive.size_bytes is not None and count!=archive.size_bytes):
+                    raise ValueError('Download byte count does not match advertised length')
+                inspect_msl_archives(temp)
+                timestamp=datetime.now(timezone.utc).isoformat()
+                # Exclusive publication prevents race-time overwrite on all platforms.
+                with target.open('xb') as output, temp.open('rb') as source:
+                    shutil.copyfileobj(source,output,1024**2)
+                try:
+                    receipt=target.with_suffix(target.suffix+'.json')
+                    with receipt.open('x',encoding='utf-8') as handle:
+                        json.dump({'url':archive.url,'size_bytes':count,'sha256':digest.hexdigest(),
+                                   'downloaded_at':timestamp,'validators':archive.validators},handle,indent=2)
+                except BaseException:
+                    target.unlink(missing_ok=True)
+                    raise
+                result.append(ArchiveDownload(target,archive,digest.hexdigest(),timestamp))
+                last_error=None
+                break
+            except (TimeoutError,ConnectionError,URLError,OSError) as exc:
+                last_error=exc
+                if isinstance(exc,FileExistsError) or attempt==2: raise
+                sleep(min(2**attempt,4))
+            finally:
+                temp.unlink(missing_ok=True)
+        if last_error: raise last_error
+    return result
+
+
+def select_msl_dem_rasters(archives, projects, work_dir):
+    """Extract exactly attributed HFDEM products and exact companion metadata."""
+    import zipfile
+    selected=[]
+    work=Path(work_dir)
+    work.mkdir(parents=True,exist_ok=True)
+    for downloaded in archives:
+        entries=inspect_msl_archives(downloaded.path,max_expanded_bytes=shutil.disk_usage(work).free)
+        names={e.filename:e for e in entries if not e.is_dir()}
+        wanted=[]
+        for name in names:
+            parts=name.split('/')
+            if not name.lower().endswith(('.tif','.tiff')):
+                continue
+            is_hfdem=any(p.casefold()=='hfdem' for p in parts[:-1])
+            if downloaded.archive.project:
+                is_hfdem=True  # explicit official project Mosaics/HFDEM.zip only
+            if not is_hfdem: continue
+            project=downloaded.archive.project or parts[0]
+            if project.casefold()=='quads':
+                raise ValueError(f'HFDEM attribution is ambiguous for {name} in {downloaded.archive.url}; use an explicitly identified project mosaic')
+            if project not in projects: continue
+            wanted.append((name,project))
+        if not wanted:
+            raise ValueError(f'No HFDEM for selected projects in {downloaded.archive.url}')
+        # Unique directory per archive preserves duplicate quad filenames safely.
+        destination=work/downloaded.sha256[:16]
+        if destination.exists():
+            raise FileExistsError(f'Extraction target already exists: {destination}')
+        destination.mkdir()
+        with zipfile.ZipFile(downloaded.path) as archive:
+            for name,project in wanted:
+                path=destination/name
+                for member in (name,name+'.xml',name+'.aux.xml'):
+                    if member not in names: continue
+                    target=destination/member
+                    target.parent.mkdir(parents=True,exist_ok=True)
+                    with archive.open(member) as source,target.open('xb') as output:
+                        shutil.copyfileobj(source,output,1024**2)
+                selected.append(RasterSource(path,project,downloaded.archive.url,downloaded.sha256,name,
+                                             downloaded.archive.quad,downloaded.downloaded_at))
+    return selected
