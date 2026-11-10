@@ -175,7 +175,9 @@ def write_tracker_csv(comments: list[ReviewerComment], path: Path) -> Path:
     # O_EXCL refuses a planted file/symlink at the temp path.
     target = path.resolve()
     tmp = target.with_name(f"{target.name}.{os.urandom(4).hex()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    # O_BINARY: a Windows text-mode fd would turn every "\n" into "\r\n".
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = os.open(tmp, flags, 0o666)
     try:
         with os.fdopen(fd, "w", newline="", encoding="utf-8") as fh:
             if target.exists():

@@ -254,6 +254,19 @@ def test_write_tracker_csv_writes_through_symlink_and_keeps_mode(tmp_path):
         assert stat.S_IMODE(real.stat().st_mode) == 0o640
 
 
+def test_write_tracker_csv_keeps_newlines_byte_exact(tmp_path):
+    # Windows text-mode fd would write "\r\r\n" rows and grow "\r" in fields.
+    out = tmp_path / "tracker.csv"
+    keep = ReviewerComment(
+        comment_id="rc-1", source_file="in.csv", source_format="csv",
+        figure_ref="Figure 1", comment_text="a\nb", reviewer="A",
+    )
+    write_tracker_csv([keep], out)
+    data = out.read_bytes()
+    assert b"\r\r\n" not in data and b"a\nb" in data
+    assert read_tracker_csv(out)[0].comment_text == "a\nb"
+
+
 def test_parse_comments_geojson_basic(tmp_path):
     data = _make_geojson([
         _point_feature(-87.65, 41.85, content="Fix north arrow", author="Alice",
