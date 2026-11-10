@@ -4412,6 +4412,58 @@ def draft_lithology_from_scan_cmd(scan_path, out_dir, handwritten, report, fail_
     _render_qa(result.qa, report, fail_on)
 
 
+@envmon.command("download-msl-dem")
+@click.option("--bbox", nargs=4, type=float, metavar="W S E N")
+@click.option("--aoi", type=click.Path(exists=True, dir_okay=False), help="WGS84 GeoJSON or polygon shapefile; actual geometry is clipped.")
+@click.option("--project", "projects", multiple=True, help="Exact inventory project name; repeat in overlap priority order.")
+@click.option("--product", type=click.Choice(["HFDEM"]), default="HFDEM")
+@click.option("--source", type=click.Choice(["quads", "projects"]), default="quads", show_default=True)
+@click.option("--out", "out_path", required=True, type=click.Path(dir_okay=False))
+@click.option("--cache-dir", type=click.Path(file_okay=False), help="Default: .msl-cache beside output; archives are retained.")
+@click.option("--overwrite", is_flag=True)
+@click.option("--dry-run", is_flag=True, help="Query inventory and archive sizes; do not download or write files.")
+@click.option("--download-only", is_flag=True, help="Download validated archives, without claiming a clipped DEM.")
+@click.option("--allow-large-download", is_flag=True, help="Authorize total downloads over threshold or with unknown sizes.")
+@click.option("--large-download-gib", type=click.FloatRange(min=0, min_open=True), default=1.0, show_default=True)
+@click.option("--output-crs", help="Horizontal CRS, e.g. EPSG:6514. Requires --resolution.")
+@click.option("--resolution", type=click.FloatRange(min=0, min_open=True), help="Explicit output pixel size in output CRS units; otherwise native grid.")
+@click.option("--z-units", type=click.Choice(["native", "m", "int-ft", "us-ft"]), default="native", show_default=True)
+@qa_report_options
+def download_msl_dem_cmd(bbox, aoi, projects, product, source, out_path, cache_dir,
+                         overwrite, dry_run, download_only, allow_large_download,
+                         large_download_gib, output_crs, resolution, z_units, report, fail_on):
+    """Download MSL HFDEM archives and create one clipped GeoTIFF (no API key).
+
+    Multiple inventory projects require explicit selection. Resolution is not
+    elevation accuracy: provenance retains publisher claims and unknown values.
+    Install autogis[msl] for headless processing, or use --download-only.
+    """
+    from autogis.core.envmon.msl_lidar import run_msl_download
+    last=[-1]
+    def progress(done,total):
+        step=done//(10*1024**2)
+        if step!=last[0]:
+            last[0]=step
+            click.echo(f"Downloaded {done:,} / {total if total is not None else 'unknown'} bytes")
+    try:
+        result=run_msl_download(bbox=bbox,aoi_path=aoi,projects=projects,product=product,
+            source=source,out_path=out_path,cache_dir=cache_dir,overwrite=overwrite,
+            dry_run=dry_run,download_only=download_only,allow_large_download=allow_large_download,
+            threshold_bytes=large_download_gib*1024**3,output_crs=output_crs,
+            resolution=resolution,z_units=z_units,on_progress=progress)
+    except (ValueError,RuntimeError,OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    if dry_run:
+        click.echo(json.dumps(result.plan.to_dict(),indent=2))
+        click.echo("Dry run: no archives downloaded and no files written.")
+        return
+    if result.out_path:
+        click.echo(f"Wrote {result.out_path} + {result.out_path}.json")
+    else:
+        click.echo(f"Downloaded {len(result.archives)} validated archives; no DEM produced.")
+    _render_qa(result.qa,report,fail_on)
+
+
 @envmon.command("download-dem")
 @click.option("--dataset", default=DEFAULT_DATASET, show_default=True,
               metavar="CODE",

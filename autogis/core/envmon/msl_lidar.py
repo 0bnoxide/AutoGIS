@@ -191,7 +191,7 @@ class DownloadPlan:
         return None if any(a.size_bytes is None for a in self.archives) else sum(a.size_bytes for a in self.archives)
 
     def to_dict(self):
-        return {**asdict(self), 'total_bytes':self.total_bytes, 'product':'HFDEM',
+        return {**asdict(self), 'projects':[{**asdict(r),'quality_evidence':inventory_quality_evidence(r)} for r in self.projects], 'total_bytes':self.total_bytes, 'product':'HFDEM',
                 'source_agency':'Montana State Library', 'selection_policy':'explicit when multiple projects',
                 'accuracy_note':'Pixel spacing and QualityLevel are not measured elevation accuracy. Unknown accuracy/confidence is not estimated.'}
 
@@ -512,3 +512,128 @@ def select_msl_dem_rasters(archives, projects, work_dir):
                 selected.append(RasterSource(path,project,downloaded.archive.url,downloaded.sha256,name,
                                              downloaded.archive.quad,downloaded.downloaded_at))
     return selected
+
+
+def inventory_quality_evidence(record):
+    """Publisher claims with exact field labels; no inferred units/confidence."""
+    fields={f['name']:f for f in record.fields}
+    evidence=[]
+    for name,value in record.attributes.items():
+        if value is None or not re.search(r'accuracy|rmse|pulse|quality|meets3dep',name,re.I): continue
+        evidence.append({'field':name,'label':fields.get(name,{}).get('alias',name),'value':value,
+            'raw_value':record.raw_attributes.get(name),'status':'publisher_reported',
+            'units':'m' if name.casefold().endswith('_m') and 'density' not in name.casefold() else None,
+            'confidence_level':None,'source':record.source_url,
+            'report_url':record.attributes.get('ReportLink'),'metadata_url':record.attributes.get('MetadataLink')})
+    return evidence
+
+
+@dataclass
+class MSLResult:
+    plan: DownloadPlan
+    out_path: Path | None
+    archives: list[ArchiveDownload]
+    qa: object
+
+
+def _publish_pair(staged, sidecar, out, *, overwrite):
+    """Publish a prepared raster/JSON pair; restore old files on ordinary failure."""
+    import os
+    targets=[out,Path(str(out)+'.json')]
+    sources=[staged,sidecar]
+    backups={};published=[]
+    try:
+        for target in targets:
+            if target.is_symlink(): raise ValueError(f'Refusing output symlink: {target}')
+            if target.exists():
+                if not overwrite: raise FileExistsError(f'Output exists: {target}')
+                backup=staged.parent/(target.name+'.previous')
+                os.replace(target,backup);backups[target]=backup
+        for source,target in zip(sources,targets):
+            # link is exclusive, unlike os.replace. Both paths are same-volume.
+            os.link(source,target);published.append(target)
+    except BaseException:
+        for target in reversed(published): target.unlink(missing_ok=True)
+        for target,backup in backups.items(): os.replace(backup,target)
+        raise
+
+
+def run_msl_download(*, bbox=None, aoi_path=None, geometry=None, out_path,
+                     projects=(), cache_dir=None, source='quads', product='HFDEM',
+                     overwrite=False, dry_run=False, download_only=False,
+                     allow_large_download=False, threshold_bytes=DEFAULT_THRESHOLD,
+                     output_crs=None, resolution=None, z_units='native',
+                     client=None, on_progress=None, processor=None):
+    """Shared CLI/Pro workflow. A download-only result is never labeled a DEM."""
+    import os
+    import tempfile
+    from datetime import datetime,timezone
+    from ..common.qa import QACollector,SEV_WARNING,SEV_INFO
+    from .msl_raster import require_rasterio,process_msl_dem,Z_METERS
+    aoi=resolve_msl_aoi(bbox=bbox,aoi_path=aoi_path,geometry=geometry)
+    out=Path(out_path).absolute()
+    if out.suffix.lower() not in ('.tif','.tiff'): raise ValueError('Output must be a GeoTIFF .tif or .tiff path')
+    if product!='HFDEM': raise ValueError('Only HFDEM is supported')
+    if z_units not in ('native',*Z_METERS): raise ValueError('Unsupported elevation units')
+    if resolution is not None and (not math.isfinite(resolution) or resolution<=0):raise ValueError('Resolution must be finite and positive')
+    if output_crs is not None and resolution is None:raise ValueError('Output CRS requires explicit output resolution in target CRS units')
+    if not dry_run and not download_only:
+        for path in (out,Path(str(out)+'.json')):
+            if path.is_symlink(): raise ValueError(f'Refusing output symlink: {path}')
+            if path.exists() and not overwrite: raise FileExistsError(f'Output exists: {path}; use --overwrite to replace')
+        if processor is None:
+            require_rasterio()
+            if output_crs:
+                from pyproj import CRS
+                from pyproj.exceptions import CRSError
+                try:
+                    crs=CRS.from_user_input(output_crs)
+                    if crs.is_compound or crs.is_vertical:raise ValueError('Output CRS must be horizontal; no vertical transformation is supported')
+                except CRSError as exc:raise ValueError(f'Invalid output CRS: {output_crs}') from exc
+            processor=process_msl_dem
+    cache=Path(cache_dir).absolute() if cache_dir else out.parent/'.msl-cache'
+    plan=build_msl_download_plan(aoi,projects=projects,cache_dir=cache,source=source,client=client)
+    qa=QACollector()
+    for warning in plan.warnings:qa.add(SEV_WARNING,'MSL_COVERAGE',warning)
+    if dry_run:return MSLResult(plan,None,[],qa)
+    archives=download_msl_archives(plan,cache,allow_large_download=allow_large_download,
+        threshold_bytes=threshold_bytes,client=client,on_progress=on_progress)
+    if download_only:
+        qa.add(SEV_INFO,'MSL_DOWNLOAD_ONLY','Validated archives downloaded; no clipped DEM was produced')
+        return MSLResult(plan,None,archives,qa)
+    out.parent.mkdir(parents=True,exist_ok=True)
+    lock=out.with_name('.'+out.name+'.msl.lock')
+    fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY)
+    os.close(fd)
+    try:
+        with tempfile.TemporaryDirectory(prefix='.msl-',dir=out.parent) as temporary:
+            work=Path(temporary)
+            sources=select_msl_dem_rasters(archives,plan.selected_projects,work/'sources')
+            # User's explicit project order is the documented overlap priority.
+            sources.sort(key=lambda s:(plan.selected_projects.index(s.project),s.quad or '',s.member))
+            staged=work/'output.tif'
+            processed=processor(sources,aoi,staged,output_crs=output_crs,resolution=resolution,z_units=z_units)
+            if not staged.is_file() or staged.stat().st_size==0:raise ValueError('Raster processor did not produce a nonempty GeoTIFF')
+            for warning in processed.get('warnings',[]):qa.add(SEV_WARNING,'MSL_RASTER_QA',warning)
+            # Evidence links survive temporary extraction cleanup.
+            for metadata in processed.get('sources',[]):
+                source_item=next((s for s in sources if str(s.path)==metadata.get('path')),None)
+                if source_item:
+                    for evidence in metadata.get('vertical_evidence',[])+metadata.get('accuracy_evidence',[]):
+                        local=evidence.get('source','')
+                        suffix=local[len(str(source_item.path)):] if local.startswith(str(source_item.path)) else ''
+                        evidence['source']=source_item.archive_url+'!'+source_item.member+suffix
+                    metadata.pop('path',None)
+            provenance={'source_agency':'Montana State Library','product':'HFDEM',
+                'created_at':datetime.now(timezone.utc).isoformat(),'output_path':str(out),
+                'output_sha256':_sha256(staged),'inventory':plan.to_dict(),'aoi':aoi,
+                'archives':[{'url':a.archive.url,'sha256':a.sha256,'downloaded_at':a.downloaded_at,
+                    'size_bytes':a.path.stat().st_size,'validators':a.archive.validators} for a in archives],
+                **processed,'qa':[asdict(record) for record in qa.records],
+                'accuracy_disclaimer':'Resolution is measured pixel spacing, not accuracy. Inventory/XML accuracy is publisher-reported, not independently verified; missing confidence and units remain unknown.'}
+            side=work/'output.tif.json'
+            side.write_text(json.dumps(provenance,indent=2,allow_nan=False),encoding='utf-8')
+            _publish_pair(staged,side,out,overwrite=overwrite)
+    finally:
+        lock.unlink(missing_ok=True)
+    return MSLResult(plan,out,archives,qa)

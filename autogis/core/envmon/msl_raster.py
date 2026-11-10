@@ -126,3 +126,120 @@ def validate_raster_compatibility(metadata, *, output_crs=None, resolution=None,
     factor=1.0 if z_units=='native' else Z_METERS[first['z_units']]/Z_METERS[z_units]
     return {'z_units':output_units,'vertical_datum':first.get('vertical_datum'),'scale_factors':[factor]*len(metadata),
             'vertical_transformation':None}
+
+
+def require_rasterio():
+    try:
+        import rasterio
+        import pyproj
+    except ImportError as exc:
+        raise RuntimeError('Clipped headless DEM processing requires pip install "autogis[msl]"; use --download-only for archives, or use the ArcGIS Pro toolbox') from exc
+    return rasterio
+
+
+def process_msl_dem(sources, aoi, out_path, *, output_crs=None, resolution=None, z_units='native'):
+    """Windowed mosaic/mask preserving native grids unless resampling is explicit.
+
+    First source wins overlaps; provenance quantifies overlap and discrepancies.
+    Working memory is bounded to one 512x512 block per input and output.
+    """
+    import numpy as np
+    import shutil
+    from contextlib import ExitStack
+    from dataclasses import asdict
+    from .msl_lidar import resolve_msl_aoi
+    rasterio=require_rasterio()
+    from pyproj import CRS
+    from pyproj.exceptions import CRSError
+    from rasterio.features import geometry_mask, bounds
+    from rasterio.transform import Affine
+    from rasterio.warp import transform_geom, Resampling
+    from rasterio.vrt import WarpedVRT
+    aoi=resolve_msl_aoi(geometry=aoi)
+    out=Path(out_path)
+    if out.exists(): raise FileExistsError(f'Output already exists: {out}')
+    with ExitStack() as stack:
+        datasets=[stack.enter_context(rasterio.open(source.path)) for source in sources]
+        metadata=[]
+        for source,ds in zip(sources,datasets):
+            if ds.crs is None: raise ValueError(f'Raster CRS missing: {source.path}')
+            if ds.transform.b or ds.transform.d or ds.transform.a<=0 or ds.transform.e>=0:
+                raise ValueError('Rotated/flipped source grids require explicit preprocessing')
+            horizontal=CRS.from_wkt(ds.crs.to_wkt()).to_2d()
+            metadata.append({**asdict(source),'path':str(source.path),
+                'horizontal_crs':horizontal.to_wkt(),'resolution':list(ds.res),
+                'resolution_units':horizontal.axis_info[0].unit_name if horizontal.axis_info else None,
+                'origin':[ds.transform.c,ds.transform.f], 'dtype':ds.dtypes[0], 'bands':ds.count,
+                'nodata':ds.nodata if ds.nodata is None or math.isfinite(ds.nodata) else 'NaN',
+                **inspect_vertical_metadata(source.path,ds.crs.to_wkt())})
+        compatibility=validate_raster_compatibility(metadata,output_crs=output_crs,resolution=resolution,z_units=z_units)
+        try:
+            target_crs=CRS.from_user_input(output_crs or metadata[0]['horizontal_crs'])
+        except CRSError as exc:
+            raise ValueError(f'Invalid output CRS: {output_crs}') from exc
+        if target_crs.is_compound or target_crs.is_vertical:
+            raise ValueError('Specify a horizontal output CRS; vertical datum transformation is unsupported')
+        target_geom=transform_geom('EPSG:4326',target_crs.to_wkt(),aoi,precision=-1)
+        left,bottom,right,top=bounds(target_geom)
+        rx,ry=(resolution,resolution) if resolution is not None else metadata[0]['resolution']
+        origin_x,origin_y=metadata[0]['origin'] if output_crs is None else (0,0)
+        left=origin_x+math.floor((left-origin_x)/rx+1e-8)*rx
+        right=origin_x+math.ceil((right-origin_x)/rx-1e-8)*rx
+        bottom=origin_y+math.floor((bottom-origin_y)/ry+1e-8)*ry
+        top=origin_y+math.ceil((top-origin_y)/ry-1e-8)*ry
+        width=round((right-left)/rx);height=round((top-bottom)/ry)
+        if width<1 or height<1: raise ValueError('AOI is smaller than the output grid')
+        dtype='float64' if any(m['dtype']=='float64' for m in metadata) else 'float32'
+        bytes_needed=width*height*np.dtype(dtype).itemsize
+        disk=out.parent
+        while not disk.exists():disk=disk.parent
+        if bytes_needed+64*1024**2>shutil.disk_usage(disk).free:
+            raise ValueError('Insufficient disk space for uncompressed output raster and processing reserve')
+        transform=Affine(rx,0,left,0,-ry,top)
+        resampling=Resampling.nearest if output_crs is None and resolution is None else Resampling.bilinear
+        vrts=[stack.enter_context(WarpedVRT(ds,crs=target_crs.to_wkt(),transform=transform,width=width,height=height,
+                nodata=float('nan'),dtype=dtype,resampling=resampling)) for ds in datasets]
+        profile={'driver':'GTiff','width':width,'height':height,'count':1,'dtype':dtype,
+            'crs':target_crs.to_wkt(),'transform':transform,'nodata':float('nan'),
+            'tiled':True,'blockxsize':512,'blockysize':512,'compress':'deflate','BIGTIFF':'IF_SAFER'}
+        out.parent.mkdir(parents=True,exist_ok=True)
+        aoi_cells=valid_cells=overlap_cells=0;max_difference=0.0
+        try:
+            with rasterio.open(out,'w',**profile) as dst:
+                for _,window in dst.block_windows(1):
+                    shape=(int(window.height),int(window.width))
+                    mask=geometry_mask([target_geom],out_shape=shape,transform=dst.window_transform(window),invert=True,all_touched=False)
+                    merged=np.full(shape,np.nan,dtype=dtype)
+                    overlap=np.zeros(shape,dtype=bool)
+                    for vrt,factor in zip(vrts,compatibility['scale_factors']):
+                        values=vrt.read(1,window=window,masked=True).astype(dtype)*factor
+                        usable=mask & ~np.ma.getmaskarray(values) & np.isfinite(values.data)
+                        both=usable & np.isfinite(merged)
+                        if both.any():
+                            max_difference=max(max_difference,float(np.max(np.abs(values.data[both]-merged[both]))))
+                        overlap |= both
+                        take=usable & ~np.isfinite(merged)
+                        merged[take]=values.data[take]
+                    aoi_cells+=int(mask.sum());valid_cells+=int(np.isfinite(merged).sum());overlap_cells+=int(overlap.sum())
+                    dst.write(merged,1,window=window)
+            if not aoi_cells: raise ValueError('AOI contains no output pixel centers; choose an explicit finer resolution if appropriate')
+            if not valid_cells: raise ValueError('No valid HFDEM cells cover the AOI; output not published')
+        except BaseException:
+            out.unlink(missing_ok=True)
+            raise
+    warnings=[]
+    if valid_cells<aoi_cells:warnings.append(f'Incomplete raster coverage: {aoi_cells-valid_cells} of {aoi_cells} AOI pixel centers are NoData')
+    if any(m['vertical_datum'] is None or m['z_units'] is None for m in metadata):
+        warnings.append('Artifact vertical datum or elevation units are unknown; native values preserved, accuracy not independently assessed')
+    if overlap_cells:warnings.append(f'{overlap_cells} overlapping cells; first selected source wins; largest difference {max_difference:g} output Z units')
+    return {'sources':metadata,'output':{'horizontal_crs':target_crs.to_wkt(),'resolution':[rx,ry],
+        'resolution_units':target_crs.axis_info[0].unit_name if target_crs.axis_info else None,
+        'width':width,'height':height,'dtype':dtype,'nodata':'NaN',**compatibility},
+        'coverage':{'aoi_cells':aoi_cells,'valid_cells':valid_cells,'fraction':valid_cells/aoi_cells,
+            'complete':valid_cells==aoi_cells,'method':'output pixel centers inside true AOI polygon',
+            'overlap_cells':overlap_cells,'max_overlap_difference':max_difference},
+        'operations':[{'operation':'mosaic','priority':[s.project+':'+s.member for s in sources],'method':'first valid'},
+            {'operation':'clip','geometry':aoi,'all_touched':False},
+            {'operation':'horizontal_resampling','method':resampling.name,'explicit':output_crs is not None or resolution is not None},
+            {'operation':'elevation_unit_conversion','scale_factors':compatibility['scale_factors'],'vertical_datum_transformation':False}],
+        'warnings':warnings,'backend':f'rasterio {rasterio.__version__}'}
