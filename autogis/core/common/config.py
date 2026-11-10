@@ -238,6 +238,8 @@ def load_analyte_dictionary(path: Path) -> dict:
     if not isinstance(analytes, dict):
         raise ConfigError(f"{path}: 'analytes' must be a mapping")
     for name, entry in analytes.items():
+        if not isinstance(name, str):
+            raise ConfigError(f"{path}: analyte name {name!r} must be a string")
         if name.startswith("_"):
             continue
         if not isinstance(entry, dict):

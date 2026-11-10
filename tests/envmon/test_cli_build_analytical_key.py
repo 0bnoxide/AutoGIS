@@ -72,6 +72,13 @@ def test_build_analytical_key_csv_out(tmp_path):
     ("analytes", "- a\n"),
     ("screening", "screening_levels: [a]\n"),
     ("screening", ""),
+    ("screening", "screening_levels: {GW: [a]}\n"),
+    ("screening", "screening_levels: {GW: 5}\n"),
+    ("analytes", "analytes: {1: {include_in_default_figures: true}}\n"),
+    ("analytes", "analytes: {B: {include_in_default_figures: true, "
+                 "default_units_by_matrix: [x]}}\n"),
+    ("analytes", "analytes: {B: {include_in_default_figures: true, "
+                 "display_order: abc}}\n"),
 ])
 def test_build_analytical_key_bad_input_is_clean_error(tmp_path, which, text):
     """#598: malformed inputs exit 1 with a clean message, not a traceback."""

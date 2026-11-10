@@ -1175,12 +1175,12 @@ def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
     try:
         analytes = load_analyte_dictionary(Path(analyte_dict))
         screening = load_screening_levels(Path(screening_levels))
+        flt = ([s.strip() for s in analyte_filter.split(",") if s.strip()]
+               if analyte_filter else None)
+        rows = build_analytical_key(analytes, screening, matrix=matrix,
+                                    analyte_filter=flt)
     except ConfigError as exc:
         raise click.ClickException(str(exc))
-    flt = ([s.strip() for s in analyte_filter.split(",") if s.strip()]
-           if analyte_filter else None)
-    rows = build_analytical_key(analytes, screening, matrix=matrix,
-                                analyte_filter=flt)
     if not out_path:
         click.echo(format_key_markdown(rows, matrix=matrix, site_id=site_id))
         return
