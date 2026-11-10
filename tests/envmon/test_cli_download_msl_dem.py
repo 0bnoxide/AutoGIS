@@ -88,3 +88,48 @@ def test_three_dimensional_output_crs_rejected_before_download(tmp_path,monkeypa
     with pytest.raises(ValueError,match='two-dimensional|horizontal'):
         m.run_msl_download(bbox=BBOX,out_path=tmp_path/'out.tif',client=client,output_crs='EPSG:4979',resolution=1)
     assert client.gets==0
+
+
+def test_cli_download_only_reports_archive_progress_and_no_dem(monkeypatch,tmp_path):
+    client=Client(archive_bytes());monkeypatch.setattr(m,'HTTPClient',lambda:client)
+    out=tmp_path/'out.tif';report=tmp_path/'qa.json'
+    result=CliRunner().invoke(autogis,['envmon','download-msl-dem','--bbox',*map(str,BBOX),
+        '--out',str(out),'--cache-dir',str(tmp_path/'cache'),'--download-only','--report',str(report)])
+    assert result.exit_code==0,result.output
+    assert 'Downloaded 1 validated archives; no DEM produced.' in result.output
+    assert 'bytes' in result.output and 'Status: PASS' in result.output
+    assert client.gets==1 and not out.exists() and report.exists()
+
+
+def test_cli_publishes_raster_and_reports_warning_failure(monkeypatch,tmp_path):
+    client=Client(archive_bytes());original=m.run_msl_download
+    def processor(sources,aoi,path,**options):
+        path.write_bytes(b'processed raster')
+        return {'output':{'z_units':None},'coverage':{'complete':False},
+                'warnings':['source vertical units unknown'],'sources':[]}
+    def run(**options):
+        return original(**options,client=client,processor=processor)
+    monkeypatch.setattr(m,'run_msl_download',run)
+    out=tmp_path/'out.tif'
+    result=CliRunner().invoke(autogis,['envmon','download-msl-dem','--bbox',*map(str,BBOX),
+        '--out',str(out),'--project','PROJECT_A','--cache-dir',str(tmp_path/'cache'),
+        '--allow-large-download','--large-download-gib','0.1','--fail-on','warning'])
+    assert result.exit_code==1,result.output
+    assert f'Wrote {out} + {out}.json' in result.output
+    assert 'source vertical units unknown' in result.output and 'Status: FAIL' in result.output
+    assert out.read_bytes()==b'processed raster' and Path(str(out)+'.json').is_file()
+
+
+@pytest.mark.parametrize('failure',['invalid_bbox','existing_output','missing_backend'])
+def test_cli_preflight_errors_are_actionable_without_download(monkeypatch,tmp_path,failure):
+    client=Client(archive_bytes());monkeypatch.setattr(m,'HTTPClient',lambda:client)
+    out=tmp_path/'out.tif';bbox=BBOX
+    if failure=='invalid_bbox':bbox=(0,1,0,2)
+    elif failure=='existing_output':out.write_bytes(b'existing')
+    else:monkeypatch.setitem(sys.modules,'rasterio',None)
+    result=CliRunner().invoke(autogis,['envmon','download-msl-dem','--bbox',*map(str,bbox),'--out',str(out)])
+    assert result.exit_code==1 and 'Error:' in result.output
+    assert 'Traceback' not in result.output and client.gets==0
+    if failure=='existing_output':assert out.read_bytes()==b'existing'
+    else:assert not out.exists()
+    if failure=='missing_backend':assert 'autogis[msl]' in result.output

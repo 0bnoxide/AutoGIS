@@ -9,7 +9,15 @@ Date: 2026-11-10. Branch: feat/msl-hfdem-download. Base: abdc219350184a93e1ff940
 - Live partial coverage: bbox (-107.001,44.99,-106.9998,44.9984), same cached archives. 34,935 of 105,643 AOI pixel centers valid (33.0689%); 70,708 remain NoData. 349 overlap cells have zero difference. Explicit scale factors 1.0 preserve source values.
 - Final complete suite at bf0ed240517fa5ba77a52f401bfecd6be91b5dd8: **4053 passed, 27 skipped**, 62.69 seconds. Base-dependency installed-wheel smoke: PASS.
 - Independent exact-code-head review: **PASS**; 65 focused tests passed. BOUNDARY_SHAPE, CONTRACT_REACHABILITY, IDENTITY_PROVENANCE, SIDE_EFFECT_SAFETY and ENVIRONMENT_SEAM all PASS. Six initial findings were corrected and re-probed, including unrelated-directory protection and interrupted ZIP/receipt publication. No remaining code blockers were reported.
-- ADR allocation was reserved locally with strict scan (0137). The CI-specific ADR policy command cannot run locally without its GitHub event file; no CI/push/PR has been performed.
+- ADR allocation was reserved locally with strict scan (0137). The required hosted ADR policy subsequently passed on [PR #612](https://github.com/0bnoxide/AutoGIS/pull/612).
+
+## Publication follow-up
+- PR #612 was published ready for review on owner authorization, without merging.
+- Initial hosted CI found one test that assumed optional rasterio availability. The test-only correction separately exercises real CRS validation and missing-backend imports. Both dependency configurations passed locally; hosted commit 5ad9364 subsequently passed 3,914 tests with 32 skipped, plus wheel smoke, ADR policy and repository self-check.
+- Sonar measured 66.3% new-code coverage against the unchanged 80% gate. This follow-up enables the MSL extra in the existing CI job and adds focused CLI/native adapter/toolbox execution tests. ArcPy I/O doubles are explicit and do not claim to implement Esri raster algorithms or prove interactive UI acceptance.
+- Base-configuration follow-up without optional rasterio: **4,104 passed, 28 skipped**, with one upstream pytest-plugin deprecation warning.
+- Integrated follow-up suite with optional MSL dependencies: **4,111 passed, 27 skipped** (45 dependency/resource warnings). Local changed-line coverage is **933/1,050 = 88.86%**: CLI/toolbox execution 100%, native adapter 96.65%, archive core 84.02%, raster processor 90.82%. These are local measurements; hosted Sonar results remain authoritative.
+- In-memory mutation checks rejected removed NoData double-reading, vertical reprojection, reversed conversion factor, omitted license check-in, omitted polygon union, wrong-map zooming and bypassed license preflight. Production logic and coverage exclusions were not changed.
 
 ## Native Pro validation
 Initial sandboxed imports reported an uninitialized product license. Normal authorized desktop execution of the same cloned Python initializes existing Pro 3.6.1 correctly; no sign-in, license or settings changes were required.

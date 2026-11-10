@@ -14,6 +14,7 @@ Use archive-first, polygon-preserving discovery and acquisition with strict size
 - Reproducible source bytes, project identity and metadata links are retained in .tif.json.
 - Missing/ambiguous artifacts and incompatible metadata stop instead of silently substituting or blending.
 - Optional dependencies do not affect unrelated AutoGIS tools; native license constraints remain visible.
+- CI installs the MSL extra to run real raster integration tests; offline native adapter tests complement live ArcPy QA. Coverage thresholds and exclusions remain unchanged.
 - Some projects cannot safely convert elevation units without better artifact metadata; report PDFs remain human-interpreted evidence.
 - Explicit project-mosaic acquisition is available but does not silently replace quadrangle failures.
 - Native ArcPy processing passed live QA; this ADR remains Proposed until final review and interactive Pro acceptance.
