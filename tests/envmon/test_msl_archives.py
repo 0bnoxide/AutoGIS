@@ -141,3 +141,18 @@ def test_http_incomplete_read_retries_but_network_attempts_stay_bounded(tmp_path
     monkeypatch.setattr(m,'urlopen',unavailable);monkeypatch.setattr(m.time,'sleep',lambda n:None)
     with pytest.raises(OSError):m.download_msl_archives(plan,tmp_path/'offline',client=m.HTTPClient(),sleep=lambda n:None)
     assert len(calls)==3
+
+
+def test_partial_cache_receipt_is_never_published(tmp_path,monkeypatch):
+    client,plan=setup();original=json.dump;calls=[]
+    def interrupted(data,handle,**kw):
+        calls.append(1)
+        if len(calls)==1:
+            handle.write('{"url":');raise OSError('receipt disk write failed')
+        return original(data,handle,**kw)
+    monkeypatch.setattr(json,'dump',interrupted)
+    results=m.download_msl_archives(plan,tmp_path,client=client,sleep=lambda n:None)
+    assert len(results)==1 and client.gets==2
+    receipt=Path(str(results[0].path)+'.json')
+    assert json.loads(receipt.read_text())['sha256']==results[0].sha256
+    assert not list(tmp_path.glob('*.part*'))

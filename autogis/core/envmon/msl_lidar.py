@@ -470,7 +470,7 @@ def download_msl_archives(plan, cache_dir, *, allow_large_download=False,
         last_error=None
         for attempt in range(3):
             fd,tempname=tempfile.mkstemp(prefix='.'+archive.name+'.',suffix='.part',dir=cache)
-            temp=Path(tempname)
+            temp=Path(tempname);receipt_temp=None
             try:
                 digest=hashlib.sha256(); count=0
                 with os.fdopen(fd,'wb') as output, client.stream(archive.url) as response:
@@ -500,13 +500,17 @@ def download_msl_archives(plan, cache_dir, *, allow_large_download=False,
                     raise ValueError('Download byte count does not match advertised length')
                 inspect_msl_archives(temp)
                 timestamp=datetime.now(timezone.utc).isoformat()
-                # Exclusive publication prevents race-time overwrite on all platforms.
+                receipt=target.with_suffix(target.suffix+'.json')
+                receipt_fd,receipt_name=tempfile.mkstemp(prefix='.'+archive.name+'.',suffix='.receipt.part',dir=cache)
+                receipt_temp=Path(receipt_name)
+                with os.fdopen(receipt_fd,'w',encoding='utf-8') as handle:
+                    json.dump({'url':archive.url,'size_bytes':count,'sha256':digest.hexdigest(),
+                               'downloaded_at':timestamp,'validators':archive.validators},handle,indent=2)
+                # Both complete files publish exclusively; failed receipt publication
+                # removes only this attempt's ZIP, never an existing receipt.
                 os.link(temp,target)
                 try:
-                    receipt=target.with_suffix(target.suffix+'.json')
-                    with receipt.open('x',encoding='utf-8') as handle:
-                        json.dump({'url':archive.url,'size_bytes':count,'sha256':digest.hexdigest(),
-                                   'downloaded_at':timestamp,'validators':archive.validators},handle,indent=2)
+                    os.link(receipt_temp,receipt)
                 except BaseException:
                     target.unlink(missing_ok=True)
                     raise
@@ -519,6 +523,7 @@ def download_msl_archives(plan, cache_dir, *, allow_large_download=False,
                 sleep(min(2**attempt,4))
             finally:
                 temp.unlink(missing_ok=True)
+                if receipt_temp is not None:receipt_temp.unlink(missing_ok=True)
         if last_error: raise last_error
     return result
 
