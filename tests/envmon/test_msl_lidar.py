@@ -119,3 +119,19 @@ def test_quad_url_validation_and_project_archive_mode():
         with pytest.raises(ValueError): m.resolve_msl_download_urls(bad)
     plan=m.build_msl_download_plan(m.resolve_msl_aoi(bbox=BBOX),client=Inventory(),source='projects')
     assert plan.archives[0].url.endswith('/PROJECT_A/Mosaics/HFDEM.zip')
+
+
+@pytest.mark.parametrize('rings', [
+    [[[0,0],[2,0],[2,2],[0,2],[0,0]],[[3,0],[4,0],[4,1],[3,1],[3,0]]],
+    [[[0,-1],[3,2],[0,2],[2,-1],[0,-1]]],
+    [[[0,0],[4,0],[4,4],[0,4],[0,0]],[[1,1],[3,1],[3,3],[1,3],[1,1]],[[1.5,1.5],[2,1.5],[2,2],[1.5,2],[1.5,1.5]]],
+])
+def test_invalid_polygon_topology_is_rejected_before_query(rings):
+    with pytest.raises(ValueError,match='topology'):
+        m.resolve_msl_aoi(geometry={'type':'Polygon','coordinates':rings})
+
+
+def test_project_archive_filename_cannot_escape_cache():
+    client=Inventory(projects=[project('../escape')])
+    with pytest.raises(ValueError,match='project identifier'):
+        m.build_msl_download_plan(m.resolve_msl_aoi(bbox=BBOX),source='projects',client=client)

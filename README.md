@@ -910,3 +910,7 @@ mypy autogis/
 ```
 
 See [`docs/adr/README.md`](docs/adr/README.md) for architectural guidelines before adding new tools.
+
+## Montana State Library HFDEM
+
+Use `autogis envmon download-msl-dem` or **Download Montana State Library DEM** in the Pro toolbox. Archive-first acquisition preserves polygon selections, requires explicit project choices, checks large downloads, and writes source/accuracy provenance. Install `autogis[msl]` for headless clipping. See [usage and limits](docs/msl-dem.md) and [QA/native acceptance status](docs/qa/msl-dem.md). OpenTopography `download-dem` remains unchanged.

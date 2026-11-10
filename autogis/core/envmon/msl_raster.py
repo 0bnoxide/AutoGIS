@@ -177,7 +177,7 @@ def process_msl_dem(sources, aoi, out_path, *, output_crs=None, resolution=None,
             target_crs=CRS.from_user_input(output_crs or metadata[0]['horizontal_crs'])
         except CRSError as exc:
             raise ValueError(f'Invalid output CRS: {output_crs}') from exc
-        if target_crs.is_compound or target_crs.is_vertical:
+        if target_crs.is_compound or target_crs.is_vertical or len(target_crs.axis_info)!=2 or not (target_crs.is_projected or target_crs.is_geographic):
             raise ValueError('Specify a horizontal output CRS; vertical datum transformation is unsupported')
         target_geom=transform_geom('EPSG:4326',target_crs.to_wkt(),aoi,precision=-1)
         left,bottom,right,top=bounds(target_geom)

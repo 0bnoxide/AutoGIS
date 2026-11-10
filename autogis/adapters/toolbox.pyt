@@ -1624,6 +1624,11 @@ class DownloadMSLDEM(object):
                 if aprx.activeMap is None:
                     raise ValueError("Open an active map before requesting its CRS")
                 output_crs = aprx.activeMap.spatialReference.exportToString()
+            if output_crs:
+                toolbox_core.msl_arcpy_output_sr(arcpy, output_crs)
+            if not bool(p["preview"].value) and p["z_units"].valueAsText not in (None, "native"):
+                if not any(arcpy.CheckExtension(code) == "Available" for code in ("Spatial", "ImageAnalyst")):
+                    raise ValueError("Elevation conversion requires Spatial Analyst or Image Analyst; choose native units or headless autogis[msl]")
             def processor(sources, geometry, out, **options):
                 return toolbox_core.process_msl_dem_arcpy(arcpy, sources, geometry, out, **options)
             last = [-1]

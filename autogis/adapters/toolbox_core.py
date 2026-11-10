@@ -609,6 +609,25 @@ def _msl_native_coverage(arcpy_module,path,geometries):
         'overlap_cells':None,'max_overlap_difference':None}
 
 
+def _msl_validate_target_sr(sr):
+    import re
+    dimensions=re.findall(r'\bCS\s*\[[^,]+,\s*(\d+)\s*\]',sr.exportToString(),re.I)
+    if (not sr or sr.name=='Unknown' or sr.type not in ('Projected','Geographic')
+            or getattr(sr,'VCS',None) or any(int(n)!=2 for n in dimensions)):
+        raise ValueError('Output CRS must be a two-dimensional horizontal geographic/projected CRS')
+    return sr
+
+
+def msl_arcpy_output_sr(arcpy_module,output_crs):
+    text=str(output_crs)
+    if text.upper().startswith('EPSG:') or text.isdigit():
+        target=arcpy_module.SpatialReference(int(text.split(':')[-1]))
+    else:
+        target=arcpy_module.SpatialReference()
+        target.loadFromString(text)
+    return _msl_validate_target_sr(target)
+
+
 def process_msl_dem_arcpy(arcpy_module,sources,aoi,out_path,*,output_crs=None,resolution=None,z_units='native'):
     """Native Pro raster backend; no imports of rasterio, pyproj or arcpy itself."""
     from dataclasses import asdict
@@ -630,13 +649,7 @@ def process_msl_dem_arcpy(arcpy_module,sources,aoi,out_path,*,output_crs=None,re
             'bands':desc.bandCount,'nodata':nodata if nodata is None or math.isfinite(nodata) else 'NaN',
             **inspect_vertical_metadata(source.path,desc.spatialReference.exportToString())})
     compatibility=validate_raster_compatibility(metadata,output_crs=output_crs,resolution=resolution,z_units=z_units)
-    target=references[0]
-    if output_crs:
-        text=str(output_crs)
-        target=arcpy_module.SpatialReference()
-        if text.upper().startswith('EPSG:') or text.isdigit():target=arcpy_module.SpatialReference(int(text.split(':')[-1]))
-        else:target.loadFromString(text)
-        if getattr(target,'VCS',None):raise ValueError('Specify horizontal output CRS; vertical transformation is unsupported')
+    target=msl_arcpy_output_sr(arcpy_module,output_crs) if output_crs else _msl_validate_target_sr(references[0])
     shapes=[];transformations=[]
     for polygon in _polygons(aoi):
         shape=arcpy_module.AsShape({'type':'Polygon','coordinates':polygon},False)

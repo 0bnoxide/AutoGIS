@@ -203,3 +203,5 @@ When proposing a new ADR:
 judgment calls** for audit — a *supplement* to ADRs, **not** a substitute. A
 tool-batch or architectural decision still needs an ADR here (logging the
 judgment calls does not discharge it). See [`logs/README.md`](logs/README.md).
+
+| [137](0137-msl-hfdem-download.md) | Archive-first MSL HFDEM download with artifact provenance | Proposed | 2026-11-10 |

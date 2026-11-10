@@ -65,3 +65,20 @@ def test_backend_preflight_before_download(monkeypatch,tmp_path):
     monkeypatch.setattr(msl_raster,'require_rasterio',missing)
     with pytest.raises(RuntimeError,match='pip install'):m.run_msl_download(bbox=BBOX,out_path=tmp_path/'out.tif',client=client)
     assert client.gets==0
+
+
+def test_overwrite_rejects_sidecar_directory_without_modifying_contents(tmp_path):
+    client=Client(archive_bytes());out=tmp_path/'out.tif'
+    out.write_bytes(b'old raster');side=Path(str(out)+'.json');side.mkdir();(side/'precious.txt').write_text('keep')
+    def processor(sources,aoi,path,**kw):path.write_bytes(b'new');return {'warnings':[]}
+    with pytest.raises((FileExistsError,ValueError)):
+        m.run_msl_download(bbox=BBOX,out_path=out,client=client,processor=processor,overwrite=True)
+    assert out.read_bytes()==b'old raster' and (side/'precious.txt').read_text()=='keep'
+    assert client.gets==0
+
+
+def test_three_dimensional_output_crs_rejected_before_download(tmp_path):
+    client=Client(archive_bytes())
+    with pytest.raises(ValueError,match='two-dimensional|horizontal'):
+        m.run_msl_download(bbox=BBOX,out_path=tmp_path/'out.tif',client=client,output_crs='EPSG:4979',resolution=1)
+    assert client.gets==0

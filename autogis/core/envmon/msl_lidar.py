@@ -7,6 +7,7 @@ import math
 import re
 import shutil
 import time
+from http.client import IncompleteRead
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -25,9 +26,10 @@ class HTTPClient:
     def __init__(self, timeout=60, retries=2):
         self.timeout, self.retries = timeout, retries
 
-    def open(self, url, method='GET', data=None):
+    def open(self, url, method='GET', data=None, *, retry=True):
         _official_url(url)
-        for attempt in range(self.retries + 1):
+        retries=self.retries if retry else 0
+        for attempt in range(retries + 1):
             try:
                 response = urlopen(Request(url, data=data, method=method,
                     headers={'User-Agent': 'AutoGIS-MSL/1.0', 'Accept-Encoding': 'identity'}), timeout=self.timeout)
@@ -37,10 +39,11 @@ class HTTPClient:
                     raise ValueError(f'MSL HTTP response was not 200: {url}')
                 return response
             except HTTPError as exc:
-                if exc.code not in (408, 429, 500, 502, 503, 504) or attempt == self.retries:
+                if not retry and exc.code in (408,429,500,502,503,504): raise
+                if exc.code not in (408, 429, 500, 502, 503, 504) or attempt == retries:
                     raise ValueError(f'MSL HTTP {exc.code}: {url}') from exc
             except (URLError, TimeoutError, ConnectionError):
-                if attempt == self.retries:
+                if attempt == retries:
                     raise
             time.sleep(min(2 ** attempt, 4))
 
@@ -61,7 +64,7 @@ class HTTPClient:
             return dict(response.headers)
 
     def stream(self, url):
-        return self.open(url)
+        return self.open(url,retry=False)
 
 
 def _official_url(url):
@@ -87,6 +90,50 @@ def _polygons(geometry):
 
 def _ring_area(ring):
     return sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(ring,ring[1:])) / 2
+
+
+def _validate_polygon_topology(polygon):
+    """Reject crossing rings and invalid holes without optional GIS imports.
+
+    Bounding-box sweep avoids comparing spatially separated edges. Worst-case
+    dense intersections remain quadratic and fail on the first intersection.
+    Each selected feature is validated independently; multipart features may
+    overlap and are interpreted as a union by the processing backends.
+    """
+    def cross(a,b,c):return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
+    def on(a,b,c):return cross(a,b,c)==0 and min(a[0],b[0])<=c[0]<=max(a[0],b[0]) and min(a[1],b[1])<=c[1]<=max(a[1],b[1])
+    def intersects(a,b,c,d):
+        ab1,ab2,cd1,cd2=cross(a,b,c),cross(a,b,d),cross(c,d,a),cross(c,d,b)
+        return (ab1*ab2<0 and cd1*cd2<0) or on(a,b,c) or on(a,b,d) or on(c,d,a) or on(c,d,b)
+    def inside(point,ring):
+        x,y=point;result=False
+        for (ax,ay),(bx,by) in zip(ring,ring[1:]):
+            if (ay>y)!=(by>y) and x<(bx-ax)*(y-ay)/(by-ay)+ax:result=not result
+        return result
+    edges=[]
+    for r,ring in enumerate(polygon):
+        if len(set(map(tuple,ring[:-1])))!=len(ring)-1:
+            raise ValueError('Invalid AOI topology: repeated ring vertex')
+        count=len(ring)-1
+        for i,(a,b) in enumerate(zip(ring,ring[1:])):
+            c=ring[(i+2)%count]
+            if cross(a,b,c)==0 and (a[0]-b[0])*(c[0]-b[0])+(a[1]-b[1])*(c[1]-b[1])>0:
+                raise ValueError('Invalid AOI topology: backtracking ring edge')
+            edges.append((min(a[0],b[0]),max(a[0],b[0]),min(a[1],b[1]),max(a[1],b[1]),r,i,a,b))
+    active=[]
+    for edge in sorted(edges):
+        xmin,xmax,ymin,ymax,r,i,a,b=edge
+        active=[e for e in active if e[1]>=xmin]
+        for other in active:
+            _,_,oymin,oymax,rr,j,c,d=other
+            if oymax<ymin or ymax<oymin:continue
+            if r==rr and (abs(i-j)==1 or {i,j}=={0,len(polygon[r])-2}):continue
+            if intersects(a,b,c,d):raise ValueError('Invalid AOI topology: intersecting or touching rings')
+        active.append(edge)
+    for i,hole in enumerate(polygon[1:],1):
+        if not inside(hole[0],polygon[0]):raise ValueError('Invalid AOI topology: hole lies outside exterior')
+        if any(inside(hole[0],other) or inside(other[0],hole) for other in polygon[1:i]):
+            raise ValueError('Invalid AOI topology: nested/overlapping holes')
 
 
 def resolve_msl_aoi(*, bbox=None, aoi_path=None, geometry=None):
@@ -145,6 +192,7 @@ def resolve_msl_aoi(*, bbox=None, aoi_path=None, geometry=None):
                     raise ValueError('AOI positions must be finite WGS84 longitude/latitude pairs')
             if not _ring_area(ring) or any(abs(a[0]-b[0])>180 for a,b in zip(ring,ring[1:])):
                 raise ValueError('AOI polygon is degenerate or crosses the antimeridian')
+        _validate_polygon_topology(polygon)
     return geometry
 
 
@@ -280,6 +328,8 @@ def build_msl_download_plan(aoi, *, projects=(), cache_dir=None, source='quads',
             raise ValueError('No downloadable MSL quadrangle coverage; inspect project availability')
     elif source=='projects':
         for name in selected:
+            if re.search(r'[\\/<>:"|?*\x00-\x1f]',name) or name[-1:] in (' ','.'):
+                raise ValueError(f'Unsafe MSL project identifier: {name!r}')
             url=str(available[name].attributes.get('ProjectDownload') or '')
             expected=DOWNLOAD_ROOT+'Projects/'+name+'/'
             if url.rstrip('/')+'/' != expected:
@@ -400,6 +450,10 @@ def download_msl_archives(plan, cache_dir, *, allow_large_download=False,
         raise ValueError('Large-download threshold must be finite and positive')
     client=client or HTTPClient()
     cache=Path(cache_dir)
+    for archive in plan.archives:
+        if (not archive.name.lower().endswith('.zip') or re.search(r'[\\/<>:"|?*\x00-\x1f]',archive.name)
+                or archive.name[-1:] in (' ','.')):
+            raise ValueError(f'Unsafe cache archive filename: {archive.name!r}')
     cached=[_cached_download(a,cache) for a in plan.archives]
     missing=[a for a,c in zip(plan.archives,cached) if c is None]
     total=None if any(a.size_bytes is None for a in missing) else sum(a.size_bytes for a in missing)
@@ -447,8 +501,7 @@ def download_msl_archives(plan, cache_dir, *, allow_large_download=False,
                 inspect_msl_archives(temp)
                 timestamp=datetime.now(timezone.utc).isoformat()
                 # Exclusive publication prevents race-time overwrite on all platforms.
-                with target.open('xb') as output, temp.open('rb') as source:
-                    shutil.copyfileobj(source,output,1024**2)
+                os.link(temp,target)
                 try:
                     receipt=target.with_suffix(target.suffix+'.json')
                     with receipt.open('x',encoding='utf-8') as handle:
@@ -460,7 +513,7 @@ def download_msl_archives(plan, cache_dir, *, allow_large_download=False,
                 result.append(ArchiveDownload(target,archive,digest.hexdigest(),timestamp))
                 last_error=None
                 break
-            except (TimeoutError,ConnectionError,URLError,OSError) as exc:
+            except (TimeoutError,ConnectionError,URLError,OSError,IncompleteRead) as exc:
                 last_error=exc
                 if isinstance(exc,FileExistsError) or attempt==2: raise
                 sleep(min(2**attempt,4))
@@ -479,7 +532,7 @@ def select_msl_dem_rasters(archives, projects, work_dir):
     for downloaded in archives:
         entries=inspect_msl_archives(downloaded.path,max_expanded_bytes=shutil.disk_usage(work).free)
         names={e.filename:e for e in entries if not e.is_dir()}
-        wanted=[]
+        wanted=[]; other_project_hfdem=False
         for name in names:
             parts=name.split('/')
             if not name.lower().endswith(('.tif','.tiff')):
@@ -491,8 +544,12 @@ def select_msl_dem_rasters(archives, projects, work_dir):
             project=downloaded.archive.project or parts[0]
             if project.casefold()=='quads':
                 raise ValueError(f'HFDEM attribution is ambiguous for {name} in {downloaded.archive.url}; use an explicitly identified project mosaic')
-            if project not in projects: continue
+            if project not in projects:
+                other_project_hfdem=True
+                continue
             wanted.append((name,project))
+        if not wanted and other_project_hfdem:
+            continue
         if not wanted:
             raise ValueError(f'No HFDEM for selected projects in {downloaded.archive.url}')
         # Unique directory per archive preserves duplicate quad filenames safely.
@@ -511,6 +568,8 @@ def select_msl_dem_rasters(archives, projects, work_dir):
                         shutil.copyfileobj(source,output,1024**2)
                 selected.append(RasterSource(path,project,downloaded.archive.url,downloaded.sha256,name,
                                              downloaded.archive.quad,downloaded.downloaded_at))
+    if not selected:
+        raise ValueError('No HFDEM for selected projects in downloaded archives')
     return selected
 
 
@@ -546,6 +605,7 @@ def _publish_pair(staged, sidecar, out, *, overwrite):
         for target in targets:
             if target.is_symlink(): raise ValueError(f'Refusing output symlink: {target}')
             if target.exists():
+                if not target.is_file(): raise ValueError(f'Output target is not a regular file: {target}')
                 if not overwrite: raise FileExistsError(f'Output exists: {target}')
                 backup=staged.parent/(target.name+'.previous')
                 os.replace(target,backup);backups[target]=backup
@@ -580,6 +640,7 @@ def run_msl_download(*, bbox=None, aoi_path=None, geometry=None, out_path,
     if not dry_run and not download_only:
         for path in (out,Path(str(out)+'.json')):
             if path.is_symlink(): raise ValueError(f'Refusing output symlink: {path}')
+            if path.exists() and not path.is_file(): raise ValueError(f'Output target is not a regular file: {path}')
             if path.exists() and not overwrite: raise FileExistsError(f'Output exists: {path}; use --overwrite to replace')
         if processor is None:
             require_rasterio()
@@ -588,7 +649,7 @@ def run_msl_download(*, bbox=None, aoi_path=None, geometry=None, out_path,
                 from pyproj.exceptions import CRSError
                 try:
                     crs=CRS.from_user_input(output_crs)
-                    if crs.is_compound or crs.is_vertical:raise ValueError('Output CRS must be horizontal; no vertical transformation is supported')
+                    if crs.is_compound or crs.is_vertical or len(crs.axis_info)!=2 or not (crs.is_projected or crs.is_geographic):raise ValueError('Output CRS must be horizontal; no vertical transformation is supported')
                 except CRSError as exc:raise ValueError(f'Invalid output CRS: {output_crs}') from exc
             processor=process_msl_dem
     cache=Path(cache_dir).absolute() if cache_dir else out.parent/'.msl-cache'
@@ -610,6 +671,10 @@ def run_msl_download(*, bbox=None, aoi_path=None, geometry=None, out_path,
             work=Path(temporary)
             sources=select_msl_dem_rasters(archives,plan.selected_projects,work/'sources')
             # User's explicit project order is the documented overlap priority.
+            selected_urls={s.archive_url for s in sources}
+            for archive in archives:
+                if archive.archive.url not in selected_urls:
+                    qa.add(SEV_WARNING,'MSL_PROJECT_SELECTION',f'Archive contains only unselected-project HFDEM and was excluded: {archive.archive.url}')
             sources.sort(key=lambda s:(plan.selected_projects.index(s.project),s.quad or '',s.member))
             staged=work/'output.tif'
             processed=processor(sources,aoi,staged,output_crs=output_crs,resolution=resolution,z_units=z_units)

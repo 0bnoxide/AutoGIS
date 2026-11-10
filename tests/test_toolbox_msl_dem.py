@@ -47,3 +47,9 @@ def test_toolbox_has_required_msl_parameters_and_preserves_opentopo():
     # Structural check complements live Pro Parameter construction QA.
     for name in ['large_download_gib','projects','preview','output_resolution','z_units']:
         assert '"'+name+'"' in text
+
+
+def test_native_target_rejects_three_dimensional_reference():
+    sr=NS(name='WGS84 3D',type='Geographic',VCS=None,exportToString=lambda:'GEOGCRS["WGS84",CS[ellipsoidal,3]]')
+    with pytest.raises(ValueError,match='two-dimensional'):
+        t._msl_validate_target_sr(sr)
