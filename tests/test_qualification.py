@@ -38,6 +38,10 @@ class _Parameter:
         self.value = None
         self.enabled = True
 
+    @property
+    def valueAsText(self):
+        return None if self.value is None else str(self.value)
+
 
 class _ArcPy:
     Parameter = _Parameter
@@ -99,8 +103,8 @@ def test_toolbox_probes_all_registered_tools(monkeypatch):
     checks = qualification.check_toolbox()
 
     assert checks[0].id == "toolbox.import"
-    assert checks[1].detail == "21 registered tool(s)"
-    assert len(checks) == 23
+    assert checks[1].detail == "22 registered tool(s)"
+    assert len(checks) == 24
     assert all(check.outcome == "pass" for check in checks)
 
 

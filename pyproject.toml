@@ -22,6 +22,7 @@ report-docx = ["python-docx", "Pillow>=9.0"]   # DOCX photographic log (envmon p
 gui = ["PySide6"]   # unified GUI adapter (ADR-0050); not needed for CLI/.pyt use
 profile = ["matplotlib>=3.7"]   # profile/sticklog rendering (generate-subsurface-profile, gen-sticklogs)
 ocr = ["torch", "transformers", "pillow", "pymupdf"]   # boring-log OCR digitization assist (draft-lithology-from-scan); DRAFT tool, see docs/superpowers/specs/2026-07-08-draft-lithology-from-scan-design.md
+msl = ["rasterio>=1.3", "pyproj>=3.4", "pyshp>=2.3"]   # optional headless HFDEM processing and polygon shapefile AOIs
 opentopo = ["pyproj"]   # non-WGS84 AOI reprojection for envmon download-dem (lazy import; stdlib urllib covers the download itself)
 landxml = ["pyproj>=3.4"]   # extent-ranked CRS operations for LandXML TIN surfaces
 notebook = ["nbclient", "ipykernel"]   # Phase 4 monitoring-event review notebook (ADR-0105): real-kernel restart-run-all test; opt-in, not a default dep

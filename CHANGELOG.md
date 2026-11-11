@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Montana State Library HFDEM
+
+- Add archive-first `download-msl-dem` and `DownloadMSLDEM` with true polygon AOIs, explicit project selection, download preflight, verified cache/ZIP safety and paired provenance.
+- Add optional `msl` headless raster dependencies; preserve native grids/NoData, report coverage, and distinguish measured resolution from project-level published accuracy/confidence.
+- Native Pro adapter implemented and live raster processing validated; interactive map acceptance is tracked separately. No ImageServer fallback or vertical datum transformation. Existing OpenTopography remains unchanged.
+
 ## Unreleased â€” Environmental Monitoring suite merge
 
 Folded the Environmental Monitoring toolbox (formerly a standalone ArcGIS Pro
