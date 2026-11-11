@@ -172,22 +172,30 @@ def resolve_msl_aoi(*, bbox=None, aoi_path=None, geometry=None):
     if geometry.get('type') == 'Feature':
         return resolve_msl_aoi(geometry=geometry.get('geometry'))
     if geometry.get('type') == 'FeatureCollection':
+        features = geometry.get('features')
+        if not isinstance(features, (list, tuple)):
+            raise ValueError('AOI FeatureCollection features must be an array')
         polygons = []
-        for feature in geometry.get('features', []):
+        for feature in features:
             polygons.extend(_polygons(resolve_msl_aoi(geometry=feature)))
         geometry = {'type':'MultiPolygon','coordinates':polygons}
     if geometry.get('type') not in ('Polygon','MultiPolygon'):
         raise ValueError('AOI must contain polygons, not points or lines')
-    if not geometry.get('coordinates'):
+    if not isinstance(geometry.get('coordinates'), (list, tuple)):
+        raise ValueError('AOI polygon coordinates must be an array')
+    if not geometry['coordinates']:
         raise ValueError('AOI polygon is empty')
     for polygon in _polygons(geometry):
+        if not isinstance(polygon, (list, tuple)):
+            raise ValueError('AOI polygon must be an array of rings')
         if not polygon:
             raise ValueError('AOI polygon is empty')
         for ring in polygon:
-            if len(ring) < 4 or ring[0] != ring[-1]:
+            if not isinstance(ring, (list, tuple)) or len(ring) < 4 or ring[0] != ring[-1]:
                 raise ValueError('AOI polygon rings must be closed with at least four positions')
             for point in ring:
-                if (len(point) != 2 or any(not isinstance(x,(int,float)) or not math.isfinite(x) for x in point)
+                if (not isinstance(point, (list, tuple)) or len(point) != 2
+                        or any(isinstance(x, bool) or not isinstance(x, (int, float)) for x in point)
                         or not -180 <= point[0] <= 180 or not -90 <= point[1] <= 90):
                     raise ValueError('AOI positions must be finite WGS84 longitude/latitude pairs')
             if not _ring_area(ring) or any(abs(a[0]-b[0])>180 for a,b in zip(ring,ring[1:])):

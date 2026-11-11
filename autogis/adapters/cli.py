@@ -108,6 +108,28 @@ def _reject_report_path_in_artifact(report, artifact_dir) -> None:
             "--report must be outside the package directory")
 
 
+def _reject_msl_report_collision(report, out_path, aoi, cache_dir):
+    """Keep the optional QA report separate from DEM artifacts and inputs."""
+    if not report:
+        return
+    target = Path(report).resolve(strict=False)
+    out = Path(out_path).absolute()
+    protected = [out, Path(str(out) + ".json")]
+    if aoi:
+        source = Path(aoi).absolute()
+        protected.append(source)
+        if source.suffix.lower() == ".shp":
+            from glob import escape
+            protected.extend(source.parent.glob(escape(source.stem) + ".*"))
+    for path in protected:
+        if (str(target).casefold() == str(path.resolve(strict=False)).casefold()
+                or (target.exists() and path.exists() and target.samefile(path))):
+            raise click.ClickException(
+                "--report must not overwrite the DEM, provenance or AOI input")
+    cache = Path(cache_dir) if cache_dir else Path(out_path).absolute().parent / ".msl-cache"
+    _reject_report_path_in_artifact(report, cache)
+
+
 def run(config_path, where, out, incremental, *, harvest_fn=None):
     if harvest_fn is None:
         from autogis.core.harvest.harvester import harvest as harvest_fn
@@ -4446,11 +4468,14 @@ def download_msl_dem_cmd(bbox, aoi, projects, product, source, out_path, cache_d
             last[0]=step
             click.echo(f"Downloaded {done:,} / {total if total is not None else 'unknown'} bytes")
     try:
+        _reject_msl_report_collision(report, out_path, aoi, cache_dir)
         result=run_msl_download(bbox=bbox,aoi_path=aoi,projects=projects,product=product,
             source=source,out_path=out_path,cache_dir=cache_dir,overwrite=overwrite,
             dry_run=dry_run,download_only=download_only,allow_large_download=allow_large_download,
             threshold_bytes=large_download_gib*1024**3,output_crs=output_crs,
             resolution=resolution,z_units=z_units,on_progress=progress)
+        # Recheck identities after processing before the report opens any file.
+        _reject_msl_report_collision(report, out_path, aoi, cache_dir)
     except (ValueError,RuntimeError,OSError) as exc:
         raise click.ClickException(str(exc)) from exc
     if dry_run:

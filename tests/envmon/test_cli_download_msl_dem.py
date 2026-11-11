@@ -133,3 +133,109 @@ def test_cli_preflight_errors_are_actionable_without_download(monkeypatch,tmp_pa
     if failure=='existing_output':assert out.read_bytes()==b'existing'
     else:assert not out.exists()
     if failure=='missing_backend':assert 'autogis[msl]' in result.output
+
+@pytest.mark.parametrize('target', ['output', 'sidecar', 'relative', 'case', 'aoi', 'shapefile_companion', 'bracket_companion', 'cache_archive', 'cache_receipt', 'default_cache'])
+def test_cli_report_collisions_fail_before_download_or_writes(monkeypatch, tmp_path, target):
+    client = Client(archive_bytes())
+    monkeypatch.setattr(m, 'HTTPClient', lambda: client)
+    out = tmp_path / 'out.tif'
+    aoi = tmp_path / 'site.geojson'
+    aoi.write_text(json.dumps(m.resolve_msl_aoi(bbox=BBOX)))
+    cache = tmp_path / 'cache'
+    report = {'output': out, 'sidecar': Path(str(out) + '.json'),
+              'relative': tmp_path / 'unused' / '..' / 'out.tif',
+              'case': tmp_path / 'OUT.TIF', 'aoi': aoi,
+              'cache_archive': cache / '44107h1.zip',
+              'cache_receipt': cache / '44107h1.zip.json',
+              'default_cache': tmp_path / '.msl-cache' / 'qa.md'}.get(target)
+    if target in ('shapefile_companion', 'bracket_companion'):
+        stem = 'site[1]' if target == 'bracket_companion' else 'site'
+        aoi = tmp_path / (stem + '.shp')
+        aoi.write_bytes(b'preserve shape')
+        report = tmp_path / (stem + '.dbf')
+        report.write_bytes(b'preserve attributes')
+    before = {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    args = ['envmon', 'download-msl-dem', '--aoi', str(aoi), '--out', str(out),
+            '--download-only', '--report', str(report)]
+    if target != 'default_cache':
+        args += ['--cache-dir', str(cache)]
+    result = CliRunner().invoke(autogis, args)
+    assert result.exit_code == 1 and '--report' in result.output, result.output
+    assert client.calls == [] and client.gets == 0
+    assert {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()} == before
+    assert not cache.exists() and not (tmp_path / '.msl-cache').exists()
+
+
+@pytest.mark.parametrize('target', ['output', 'sidecar', 'aoi', 'cache'])
+def test_cli_report_hardlink_collisions_preserve_files(monkeypatch, tmp_path, target):
+    import os
+    client = Client(archive_bytes())
+    monkeypatch.setattr(m, 'HTTPClient', lambda: client)
+    out = tmp_path / 'out.tif'
+    aoi = tmp_path / 'site.geojson'
+    aoi.write_text(json.dumps(m.resolve_msl_aoi(bbox=BBOX)))
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    victim = {'output': out, 'sidecar': Path(str(out) + '.json'),
+              'aoi': aoi, 'cache': cache / 'retained.zip'}[target]
+    if victim != aoi:
+        victim.write_bytes(b'preserve existing bytes')
+    report = tmp_path / 'report.md'
+    os.link(victim, report)
+    before = {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    result = CliRunner().invoke(autogis, ['envmon', 'download-msl-dem', '--aoi', str(aoi),
+        '--out', str(out), '--cache-dir', str(cache), '--download-only', '--report', str(report)])
+    assert result.exit_code == 1 and '--report' in result.output, result.output
+    assert client.calls == [] and client.gets == 0
+    assert {p: p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()} == before
+
+
+def test_cli_distinct_report_preserves_real_raster_and_provenance(monkeypatch, tmp_path):
+    import hashlib
+    import numpy as np
+    rasterio = pytest.importorskip('rasterio')
+    from rasterio.io import MemoryFile
+    from rasterio.transform import from_bounds
+    with MemoryFile() as memory:
+        with memory.open(driver='GTiff', width=2, height=2, count=1,
+                         dtype='float32', crs='EPSG:4326',
+                         transform=from_bounds(*BBOX, 2, 2)) as dataset:
+            dataset.write(np.array([[1, 2], [3, 4]], dtype='float32'), 1)
+        payload = archive_bytes({'PROJECT_A/HFDEM/44107h1_HFDEM.tif': memory.read()})
+    client = Client(payload)
+    monkeypatch.setattr(m, 'HTTPClient', lambda: client)
+    out = tmp_path / 'out.tif'
+    report = tmp_path / 'qa.json'
+    result = CliRunner().invoke(autogis, ['envmon', 'download-msl-dem', '--bbox',
+        *map(str, BBOX), '--out', str(out), '--report', str(report)])
+    assert result.exit_code == 0, result.output
+    with rasterio.open(out) as dataset:
+        np.testing.assert_array_equal(dataset.read(1), [[1, 2], [3, 4]])
+    metadata = json.loads(Path(str(out) + '.json').read_text())
+    assert metadata['output_sha256'] == hashlib.sha256(out.read_bytes()).hexdigest()
+    assert json.loads(report.read_text()) != metadata
+    assert 'Status: PASS' in result.output
+
+
+def test_cli_report_identity_rechecked_after_processing(monkeypatch, tmp_path):
+    import hashlib
+    client = Client(archive_bytes())
+    original = m.run_msl_download
+    out = tmp_path / 'out.tif'
+    report = tmp_path / 'qa.md'
+    def processor(sources, aoi, path, **options):
+        path.write_bytes(b'preserve processed raster')
+        return {'warnings': [], 'coverage': {'complete': True}, 'sources': []}
+    def run(**options):
+        result = original(**options, client=client, processor=processor)
+        # Model a second writer introducing an alias while processing was running.
+        report.hardlink_to(out)
+        return result
+    monkeypatch.setattr(m, 'run_msl_download', run)
+    result = CliRunner().invoke(autogis, ['envmon', 'download-msl-dem', '--bbox',
+        *map(str, BBOX), '--out', str(out), '--report', str(report)])
+    assert result.exit_code == 1 and '--report' in result.output
+    assert 'Status: PASS' not in result.output
+    assert out.read_bytes() == report.read_bytes() == b'preserve processed raster'
+    metadata = json.loads(Path(str(out) + '.json').read_text())
+    assert metadata['output_sha256'] == hashlib.sha256(out.read_bytes()).hexdigest()

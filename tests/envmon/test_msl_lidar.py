@@ -135,3 +135,48 @@ def test_project_archive_filename_cannot_escape_cache():
     client=Inventory(projects=[project('../escape')])
     with pytest.raises(ValueError,match='project identifier'):
         m.build_msl_download_plan(m.resolve_msl_aoi(bbox=BBOX),source='projects',client=client)
+
+
+@pytest.mark.parametrize('geometry', [
+    {'type':'FeatureCollection','features':None},
+    {'type':'FeatureCollection','features':1},
+    {'type':'FeatureCollection','features':{'type':'Feature'}},
+    {'type':'Polygon','coordinates':1},
+    {'type':'Polygon','coordinates':{'ring':[]}},
+    {'type':'Polygon','coordinates':[1]},
+    {'type':'Polygon','coordinates':[None]},
+    {'type':'Polygon','coordinates':[[1,2,3,1]]},
+    {'type':'Polygon','coordinates':[[None,None,None,None]]},
+    {'type':'MultiPolygon','coordinates':[1]},
+    {'type':'MultiPolygon','coordinates':[[1]]},
+    {'type':'Polygon','coordinates':[[[False,0],[1,0],[1,1],[False,0]]]},
+    {'type':'Polygon','coordinates':[[[0,0],[True,0],[1,1],[0,0]]]},
+    {'type':'Polygon','coordinates':[[[0,0],[10**400,0],[1,1],[0,0]]]},
+])
+def test_malformed_geojson_file_fails_cleanly_before_inventory(tmp_path, monkeypatch, geometry):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    path=tmp_path/'aoi.geojson'
+    path.write_text(json.dumps(geometry),encoding='utf-8')
+    original=path.read_bytes()
+    client=Inventory()
+    monkeypatch.setattr(m,'HTTPClient',lambda:client)
+    with pytest.raises(ValueError):
+        m.resolve_msl_aoi(aoi_path=path)
+    out=tmp_path/'out.tif'
+    result=CliRunner().invoke(autogis,['envmon','download-msl-dem','--aoi',str(path),
+        '--out',str(out),'--dry-run'])
+    assert result.exit_code==1 and 'Error:' in result.output
+    assert 'Traceback' not in result.output
+    assert client.calls==[] and not out.exists()
+    assert path.read_bytes()==original
+
+
+def test_feature_collection_preserves_valid_multipart_and_holes():
+    polygon=m.resolve_msl_aoi(bbox=BBOX)
+    hole=[[-107.08,44.92],[-107.08,44.98],[-107.02,44.98],[-107.02,44.92],[-107.08,44.92]]
+    polygon['coordinates'].append(hole)
+    other=m.resolve_msl_aoi(bbox=(-106.9,44.9,-106.8,45))
+    multi={'type':'MultiPolygon','coordinates':[polygon['coordinates'],other['coordinates']]}
+    collection={'type':'FeatureCollection','features':[{'type':'Feature','geometry':multi}]}
+    assert m.resolve_msl_aoi(geometry=collection)==multi
