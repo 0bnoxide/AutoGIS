@@ -122,3 +122,11 @@ def test_compute_trend_negative_and_zero_mean():
     dates = ["2024-01", "2024-02", "2024-03"]
     assert compute_trend([-5.0, -3.0, -1.0], dates) == "worsening"  # e.g. ORP rising
     assert compute_trend([0.0, 0.0, 0.0], dates) == "stable"
+
+
+def test_compute_trend_boundary_is_unit_independent():
+    dates = ["2024-01", "2024-02", "2024-03"]
+    for vals in ([101.0, 100.0, 99.0], [99.0, 100.0, 101.0]):
+        verdicts = {compute_trend([v * k for v in vals], dates)
+                    for k in (1, 1e-3, 1e-6, 1e3)}
+        assert verdicts == {"stable"}
