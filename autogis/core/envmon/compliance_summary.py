@@ -58,7 +58,7 @@ def _month_ordinal(d: str) -> float:
     return months
 
 
-def compute_trend(values: list, dates: list, min_points: int = 3) -> str:
+def compute_trend(values: list, dates: list, min_points: int = 4) -> str:
     if len(values) < min_points:
         return "insufficient_data"
     try:
@@ -101,7 +101,7 @@ def build_compliance_summary(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     nd_qualifiers: frozenset = ND_QUALIFIERS,
-    min_events_for_trend: int = 3,
+    min_events_for_trend: int = 4,
     qa: Optional[QACollector] = None,
 ) -> ComplianceSummaryResult:
     if qa is None:
@@ -159,7 +159,25 @@ def build_compliance_summary(
             max_date = ""
             max_ratio = None
 
-        trend = compute_trend(det_values, det_dates, min_points=min_events_for_trend)
+        # Non-detects enter the trend at half the reporting limit (#615 policy).
+        trend_vals, trend_dates = list(det_values), list(det_dates)
+        nd_no_limit = 0
+        for r in grp:
+            if r.get("ResultQualifier", "").upper().strip() not in nd_qualifiers:
+                continue
+            limit = _parse_float(r.get("ReportingLimit", "")) or \
+                _parse_float(r.get("DetectionLimit", ""))
+            if limit is None:
+                nd_no_limit += 1
+                continue
+            trend_vals.append(limit / 2)
+            trend_dates.append(r.get("SampleDate", ""))
+        if nd_no_limit:
+            qa.add(SEV_INFO, "trend_nondetect_no_limit",
+                   f"{loc}/{analyte}: {nd_no_limit} nondetect(s) without "
+                   "ReportingLimit/DetectionLimit left out of the trend",
+                   location_id=loc)
+        trend = compute_trend(trend_vals, trend_dates, min_points=min_events_for_trend)
         units = grp[0].get("ReportedUnits", "") if grp else ""
 
         records.append(ComplianceRecord(
