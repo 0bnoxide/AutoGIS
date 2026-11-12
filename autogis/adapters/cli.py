@@ -6452,14 +6452,12 @@ def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
     write_records_csv(result.manifest,
                       out_dir / "batch_manifest.csv",
                       record_class=BatchManifestRow)
-    if result.all_samples:
-        write_records_csv(result.all_samples,
-                          out_dir / "sample_records.csv",
-                          record_class=type(result.all_samples[0]))
-    if result.all_results:
-        write_records_csv(result.all_results,
-                          out_dir / "result_records.csv",
-                          record_class=type(result.all_results[0]))
+    for name, recs in (("sample_records.csv", result.all_samples),
+                       ("result_records.csv", result.all_results)):
+        if recs:
+            write_records_csv(recs, out_dir / name, record_class=type(recs[0]))
+        else:  # don't leave a previous run's records beside this manifest (#631)
+            (out_dir / name).unlink(missing_ok=True)
 
     ok = sum(1 for m in result.manifest if m.Status == "OK")
     click.echo(f"Batch import: {ok}/{len(result.manifest)} OK  "
