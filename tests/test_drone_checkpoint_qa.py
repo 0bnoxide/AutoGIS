@@ -134,3 +134,19 @@ def test_write_results_csv(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "gcp_id" in text
     assert "GCP-1" in text
+
+
+@pytest.mark.parametrize("row", [
+    "GCP-1,not_a_number,200.0,50.0,100.0,200.0,50.0",
+    "GCP-1,100.0,200.0",
+])
+def test_read_checkpoint_csv_malformed_row_reports_line_number(tmp_path, row):
+    csv_path = tmp_path / "checkpoints.csv"
+    csv_path.write_text(
+        "gcp_id,expected_x,expected_y,expected_z,"
+        "measured_x,measured_y,measured_z\n"
+        "GCP-0,100.0,200.0,50.0,100.0,200.0,50.0\n" + row + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="line 3"):
+        read_checkpoint_csv(csv_path)
