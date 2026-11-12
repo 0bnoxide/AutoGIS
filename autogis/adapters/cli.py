@@ -10,8 +10,8 @@ from datetime import datetime as _dt
 from pathlib import Path
 
 import click
-import yaml
 
+from autogis.core.common.config import yaml_load
 from autogis.adapters.guard import require_runtime, RuntimeUnavailable
 from autogis.adapters.param_types import CommaList, IsoDate, SuggestedChoice
 from autogis.core.common.config import HarvestConfig, load_config
@@ -134,7 +134,7 @@ def run(config_path, where, out, incremental, *, harvest_fn=None):
     if harvest_fn is None:
         from autogis.core.harvest.harvester import harvest as harvest_fn
 
-    raw = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
+    raw = yaml_load(Path(config_path).read_text(encoding="utf-8"))
     profile = (raw.get("connection") or {}).get("profile")
 
     config = HarvestConfig.load(Path(config_path))
@@ -1254,14 +1254,13 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
     """Tool 4.10: report missing wells/analytes vs an expected schedule."""
     import csv as _csv
     from datetime import date as _date
-    import yaml as _yaml
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
     from autogis.core.envmon.data_gaps import identify_data_gaps, DataGapRecord
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
-    sched = _yaml.safe_load(Path(schedule).read_text(encoding="utf-8"))
+    sched = yaml_load(Path(schedule).read_text(encoding="utf-8"))
     dry: dict = {}
     if dry_wells:
         with Path(dry_wells).open(newline="", encoding="utf-8-sig") as fh:
@@ -1308,11 +1307,10 @@ def run_history_report_cmd(results_csv, output, report, fail_on):
 def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
     """Validate monitoring schedule YAML structure and analyte names."""
     import csv as _csv
-    import yaml as _yaml
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.validate_schedule import validate_schedule
 
-    schedule = _yaml.safe_load(Path(schedule_path).read_text(encoding="utf-8"))
+    schedule = yaml_load(Path(schedule_path).read_text(encoding="utf-8"))
     adict = None
     if analyte_dict:
         with Path(analyte_dict).open(newline="", encoding="utf-8-sig") as fh:
@@ -1343,14 +1341,13 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
 def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
                         report, fail_on):
     """Re-evaluate ExceedsScreeningLevel on result records (headless)."""
-    import yaml as _yaml
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
     from autogis.core.envmon.apply_screening import apply_screening_levels
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
-    screening = _yaml.safe_load(Path(screening_path).read_text(encoding="utf-8"))
+    screening = yaml_load(Path(screening_path).read_text(encoding="utf-8"))
     qa = QACollector()
     updated = apply_screening_levels(results, screening, qa=qa)
     out = write_records_csv(updated, Path(output),
@@ -2491,7 +2488,7 @@ def _load_survey_yaml(path, allow_empty=False):
     if not path:
         return None
     try:
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        data = yaml_load(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise click.ClickException(f"cannot read {path}: {exc}")
     if data is None and allow_empty:
@@ -2656,7 +2653,6 @@ def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
     destructive. Exit 0 none-or-safe, 2 review-required, 3 destructive."""
     import dataclasses
     import json
-    import yaml
     from autogis.core.envmon.survey_schema import (
         CLASS_DESTRUCTIVE, CLASS_REVIEW, diff_forms, diff_form_vs_layer,
         read_xlsform, worst_classification,
@@ -2672,7 +2668,7 @@ def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
         if baseline_path:
             changes += diff_forms(read_xlsform(baseline_path), new)
         if spec_path:
-            spec = yaml.safe_load(Path(spec_path).read_text(encoding="utf-8"))
+            spec = yaml_load(Path(spec_path).read_text(encoding="utf-8"))
             changes += diff_form_vs_layer(new, spec)
     except click.ClickException:
         raise
@@ -3179,7 +3175,6 @@ def build_fieldmaps_cmd(site_path, event_path, gdb_path, dry_run, report,
     provisions them in --gdb. Publish the GDB to Field Maps with
     `agol publish-layer` (6.1).
     """
-    import yaml
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.fieldmaps_plan import (
         plan_fieldmaps_project, provision_fieldmaps_layers)
@@ -3189,9 +3184,9 @@ def build_fieldmaps_cmd(site_path, event_path, gdb_path, dry_run, report,
             "Provide --gdb (ArcGIS Pro) or --dry-run for a headless "
             "plan preview.")
 
-    cfg = yaml.safe_load(Path(site_path).read_text(encoding="utf-8")) or {}
+    cfg = yaml_load(Path(site_path).read_text(encoding="utf-8")) or {}
     if event_path:
-        cfg.update(yaml.safe_load(Path(event_path).read_text(encoding="utf-8")) or {})
+        cfg.update(yaml_load(Path(event_path).read_text(encoding="utf-8")) or {})
     plans = plan_fieldmaps_project(cfg)
     for p in plans:
         click.echo(f"{p.name} ({p.geometry}): "
@@ -3500,7 +3495,7 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
     import json
     from autogis.core.agol.dashboard_refresh import refresh_dashboard_data
 
-    layer_map = yaml.safe_load(Path(layer_map_path).read_text(encoding="utf-8"))
+    layer_map = yaml_load(Path(layer_map_path).read_text(encoding="utf-8"))
     mart_tables = {
         p.stem: json.loads(p.read_text(encoding="utf-8"))
         for p in Path(mart_dir).glob("Dash_*.json")
@@ -3547,7 +3542,7 @@ def publish_dashboard_cmd(profile, spec, dry_run, report):
     import json
     from autogis.core.agol.dashboard_publish import publish_dashboard
 
-    spec_dict = yaml.safe_load(Path(spec).read_text(encoding="utf-8"))
+    spec_dict = yaml_load(Path(spec).read_text(encoding="utf-8"))
     # dry_run never touches gis (see publish_dashboard), so skip session setup entirely
     gis = None if dry_run else agol_from_profile(profile)
     result = publish_dashboard(gis, spec_dict, dry_run=dry_run)
@@ -3588,7 +3583,7 @@ def promote_cmd(profile, stage_map_path, layer, from_stage, to_stage,
             "--approved-by alone is silently ignored otherwise).")
 
     gis = agol_from_profile(profile)
-    stage_map = yaml.safe_load(Path(stage_map_path).read_text(encoding="utf-8"))
+    stage_map = yaml_load(Path(stage_map_path).read_text(encoding="utf-8"))
     result = promote_layer(
         gis, layer=layer, stage_map=stage_map,
         from_stage=from_stage, to_stage=to_stage,
@@ -3632,7 +3627,7 @@ def create_views_cmd(profile, view_spec_path, report):
     """Tool 6.11: create/update audience-specific hosted views (sensitive-field leak is blocking)."""
     from autogis.core.agol.hosted_views import create_stakeholder_view, load_view_specs
     from autogis.core.common.qa import QACollector
-    data = yaml.safe_load(Path(view_spec_path).read_text(encoding="utf-8"))
+    data = yaml_load(Path(view_spec_path).read_text(encoding="utf-8"))
     try:
         specs = load_view_specs(data)
     except ValueError as exc:
@@ -5687,7 +5682,6 @@ def build_compliance_table_cmd(results_path, sl_path, analytes, date_from, out, 
 def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
                              event_label, out, report):
     """Build regulatory submission pivot table workbook (headless, openpyxl)."""
-    import yaml as _yaml
     from autogis.core.envmon.regulatory_table_builder import (
         build_regulatory_table_specs, write_regulatory_workbook)
     from autogis.core.common.config import ConfigError, load_flat_screening_levels
@@ -5697,7 +5691,7 @@ def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
         sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
     except ConfigError as exc:
         raise click.ClickException(str(exc))
-    gm = _yaml.safe_load(Path(gm_path).read_text(encoding="utf-8")) if gm_path else None
+    gm = yaml_load(Path(gm_path).read_text(encoding="utf-8")) if gm_path else None
     specs = build_regulatory_table_specs(rows, group_map=gm, screening_levels=sl)
     result = write_regulatory_workbook(rows, specs, Path(out), site_id=site_id,
                                         event_label=event_label, screening_levels=sl)
@@ -5937,12 +5931,11 @@ def verify_report_package_cmd(package_dir, report, fail_on):
 def export_lab_request_cmd(plan_path, groups_path, out, project_code,
                             turnaround, site_id, csv_path, report):
     """Generate lab analytical request workbook from sampling event plan (headless)."""
-    import yaml as _yaml
     from autogis.core.envmon.lab_request_exporter import (
         build_lab_request_rows, write_lab_request_workbook, write_lab_request_csv)
 
     plan = _read_csv_rows(plan_path)
-    groups = _yaml.safe_load(Path(groups_path).read_text(encoding="utf-8"))
+    groups = yaml_load(Path(groups_path).read_text(encoding="utf-8"))
     rows = build_lab_request_rows(plan, groups, project_code=project_code,
                                    turnaround_days=turnaround)
     result = write_lab_request_workbook(rows, Path(out), site_id=site_id)
@@ -5965,7 +5958,6 @@ def export_lab_request_cmd(plan_path, groups_path, out, project_code,
 def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
                               event_dates, out, report):
     """Build multi-sheet Excel analytical-data appendix (headless)."""
-    import yaml as _yaml
     from autogis.core.envmon.report_appendix_builder import (
         build_appendix_sheet_specs, write_appendix_workbook)
     from autogis.core.common.qa import QACollector
@@ -5976,7 +5968,7 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
         sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
     except ConfigError as exc:
         raise click.ClickException(str(exc))
-    group_map = (_yaml.safe_load(Path(group_map_path).read_text())
+    group_map = (yaml_load(Path(group_map_path).read_text())
                  if group_map_path else None)
     dates = [d.strip() for d in event_dates.split(",")] if event_dates else None
     qa = QACollector()
@@ -6261,7 +6253,7 @@ def generate_job_queue_cmd(manifest, output, report, fail_on):
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.job_queue import generate_job_queue
 
-    spec = yaml.safe_load(Path(manifest).read_text(encoding="utf-8")) or {}
+    spec = yaml_load(Path(manifest).read_text(encoding="utf-8")) or {}
     if not isinstance(spec, dict):
         raise click.ClickException(
             f"--manifest {manifest} must be a YAML mapping with 'sites'/'tools' "
@@ -6497,7 +6489,6 @@ def migrate_legacy_data_cmd(input_csv, output, location_col, date_col,
                              default_matrix, default_units, nondetect_prefix,
                              units_yaml, report, fail_on):
     """Tool 2.4: convert wide-format legacy CSV to long-format result records (headless)."""
-    import yaml as _yaml
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import write_records_csv
     from autogis.core.envmon.legacy_migrator import (
@@ -6509,7 +6500,7 @@ def migrate_legacy_data_cmd(input_csv, output, location_col, date_col,
         site_id=site_id, default_matrix=default_matrix,
         default_units=default_units, nondetect_prefix=nondetect_prefix,
     )
-    units_map = _yaml.safe_load(Path(units_yaml).read_text(encoding="utf-8")) \
+    units_map = yaml_load(Path(units_yaml).read_text(encoding="utf-8")) \
         if units_yaml else {}
     qa = QACollector()
 
@@ -6542,7 +6533,6 @@ def create_sampling_plan_cmd(wells_csv, analyte_groups, event_date, site_id,
                               prior_event_date, samples_output, bottles_output,
                               report, fail_on):
     """Tool 7.2: generate planned sample list and bottle count for an event (headless)."""
-    import yaml as _yaml
     from datetime import date as _date
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import write_records_csv
@@ -6551,7 +6541,7 @@ def create_sampling_plan_cmd(wells_csv, analyte_groups, event_date, site_id,
         PlannedSample, BottleCountRow)
 
     wells = read_well_network_csv(Path(wells_csv))
-    groups = _yaml.safe_load(Path(analyte_groups).read_text(encoding="utf-8"))
+    groups = yaml_load(Path(analyte_groups).read_text(encoding="utf-8"))
     ev_date = _date.fromisoformat(event_date)
     prior = _date.fromisoformat(prior_event_date) if prior_event_date else None
     qa = QACollector()

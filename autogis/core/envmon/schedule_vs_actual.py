@@ -25,6 +25,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from ..common.config import yaml_load
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .gdb_schema import AnalyticalResultRecord
 from .canonical_read import canonical_records
@@ -42,9 +43,8 @@ class ScheduleGapRecord:
 
 def load_schedule_yaml(path: Path) -> dict:
     """Load schedule dict from a YAML file."""
-    import yaml  # PyYAML
     with open(path, encoding="utf-8") as fh:
-        return yaml.safe_load(fh) or {}
+        return yaml_load(fh) or {}
 
 
 def compare_schedule_vs_actual(

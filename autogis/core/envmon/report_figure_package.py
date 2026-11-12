@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from ..common.config import yaml_load
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
 
 DELIVERABLE_ROLES = (
@@ -85,9 +86,8 @@ def _sha256_tree(path: Path) -> str:
 
 
 def load_deliverable_spec(spec_path: Path) -> list:
-    import yaml
     # safe_load returns None for an empty / comment-only file — fall back to {}.
-    data = yaml.safe_load(Path(spec_path).read_text(encoding="utf-8")) or {}
+    data = yaml_load(Path(spec_path).read_text(encoding="utf-8")) or {}
     return data.get("files", [])
 
 
