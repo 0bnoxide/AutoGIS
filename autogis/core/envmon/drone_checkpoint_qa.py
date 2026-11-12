@@ -60,16 +60,24 @@ def read_checkpoint_csv(path: Path) -> List[CheckpointRecord]:
     """
     records = []
     with open(path, newline="", encoding="utf-8-sig") as fh:
-        for row in csv.DictReader(fh):
-            records.append(CheckpointRecord(
-                gcp_id=row["gcp_id"],
-                expected_x=float(row["expected_x"]),
-                expected_y=float(row["expected_y"]),
-                expected_z=float(row["expected_z"]),
-                measured_x=float(row["measured_x"]),
-                measured_y=float(row["measured_y"]),
-                measured_z=float(row["measured_z"]),
-            ))
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                records.append(CheckpointRecord(
+                    gcp_id=row["gcp_id"],
+                    expected_x=float(row["expected_x"]),
+                    expected_y=float(row["expected_y"]),
+                    expected_z=float(row["expected_z"]),
+                    measured_x=float(row["measured_x"]),
+                    measured_y=float(row["measured_y"]),
+                    measured_z=float(row["measured_z"]),
+                ))
+            # TypeError: a short row leaves the missing cells as None
+            except (KeyError, ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"{path}: line {reader.line_num}: "
+                    f"invalid checkpoint record ({exc})"
+                ) from exc
     return records
 
 
