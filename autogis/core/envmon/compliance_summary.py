@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import math
-
+from calendar import monthrange
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -45,13 +46,24 @@ class ComplianceSummaryResult:
     qa: QACollector
 
 
+def _month_ordinal(d: str) -> float:
+    """YYYY*12+MM, plus the elapsed fraction of the month for YYYY-MM-DD (#617)."""
+    months = float(d[:4]) * 12 + float(d[5:7])
+    if len(d) >= 10 and d[7] == "-":
+        try:
+            day = date.fromisoformat(d[:10])
+        except ValueError:
+            return months  # impossible day (e.g. 2023-02-29): keep month resolution
+        months += (day.day - 1) / monthrange(day.year, day.month)[1]
+    return months
+
+
 def compute_trend(values: list, dates: list, min_points: int = 3) -> str:
     if len(values) < min_points:
         return "insufficient_data"
-    # Ordinal from ISO date prefix (first 7 chars YYYY-MM)
     try:
-        xs = [float(d[:4]) * 12 + float(d[5:7]) for d in dates]
-    except (ValueError, IndexError):
+        xs = [_month_ordinal(d) for d in dates]
+    except (ValueError, IndexError, TypeError):
         xs = list(range(len(values)))
     n = len(xs)
     mean = abs(sum(values) / n)
