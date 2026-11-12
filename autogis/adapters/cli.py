@@ -6423,7 +6423,7 @@ def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
             manifest_rows = read_manifest_csv(Path(manifest))
         except (OSError, UnicodeDecodeError) as exc:
             raise click.ClickException(f"cannot read {manifest}: {exc}")
-        except ValueError as exc:  # missing required columns
+        except ValueError as exc:  # missing columns, rows or values
             raise click.ClickException(f"{manifest}: {exc}")
     try:
         analyte_dict = load_config(Path(analytes)) if analytes else {}

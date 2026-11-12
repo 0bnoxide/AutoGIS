@@ -40,12 +40,20 @@ class BatchImportResult:
 
 def read_manifest_csv(path: Path) -> list[dict]:
     """Read batch manifest CSV. Required columns: workbook_path, profile_path, site_id."""
+    required = ("workbook_path", "profile_path", "site_id")
     with Path(path).open(newline="", encoding="utf-8") as fh:
-        rows = list(csv.DictReader(fh))
-    missing = [k for k in ("workbook_path", "profile_path", "site_id")
-               if rows and k not in rows[0]]
+        reader = csv.DictReader(fh)
+        rows = list(reader)
+        fieldnames = reader.fieldnames or []
+    missing = [k for k in required if k not in fieldnames]
     if missing:
         raise ValueError(f"Manifest missing columns: {missing}")
+    if not rows:
+        raise ValueError("Manifest has no data rows")
+    for n, row in enumerate(rows, start=1):
+        blank = [k for k in required if not (row.get(k) or "").strip()]
+        if blank:
+            raise ValueError(f"Manifest data row {n}: missing value for {blank}")
     return rows
 
 
