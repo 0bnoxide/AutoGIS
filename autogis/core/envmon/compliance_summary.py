@@ -1,6 +1,8 @@
 """compliance_summary.py — cross-event compliance matrix with trend analysis."""
 from __future__ import annotations
 
+import math
+
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -72,9 +74,10 @@ def compute_trend(values: list, dates: list, min_points: int = 3) -> str:
 
 def _parse_float(v: str) -> Optional[float]:
     try:
-        return float(v)
+        x = float(v)
     except (TypeError, ValueError):
         return None
+    return x if math.isfinite(x) else None  # "nan"/"inf" are not results (#618)
 
 
 def build_compliance_summary(
