@@ -681,11 +681,15 @@ def validate_config_cmd(site_config, profiles, figures, analytes, screening,
 @qa_report_options
 def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
     """Tool: validate / inspect the analyte dictionary (read-only, headless)."""
+    from autogis.core.common.config import ConfigError
     from autogis.core.envmon.manage_analyte_dict import (
         check_analyte_dictionary, list_analytes)
 
     if do_list:
-        rows = list_analytes(Path(analytes))
+        try:
+            rows = list_analytes(Path(analytes))
+        except ConfigError as exc:
+            raise click.ClickException(str(exc))
         header = f"{'display':>7}  {'canonical':<24} {'abbr':<8} {'group':<14} aliases"
         click.echo(header)
         for row in rows:
@@ -695,7 +699,10 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
         if not do_check:
             return
     # Default to check when --list was not requested, or when both given.
-    qa = check_analyte_dictionary(Path(analytes))
+    try:
+        qa = check_analyte_dictionary(Path(analytes))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     _render_qa(qa, report, fail_on)
 
 
