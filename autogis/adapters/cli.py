@@ -1213,6 +1213,12 @@ def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
     if not out_path:
         click.echo(format_key_markdown(rows, matrix=matrix, site_id=site_id))
         return
+    target = Path(out_path).resolve(strict=False)
+    for src in (analyte_dict, screening_levels):
+        if (str(target).casefold() == str(Path(src).resolve()).casefold()
+                or (target.exists() and target.samefile(src))):
+            raise click.ClickException(
+                f"--out must not overwrite an input file: {src}")
     suffix = Path(out_path).suffix.lower()
     try:
         if suffix == ".csv":
