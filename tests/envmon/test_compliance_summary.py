@@ -130,3 +130,12 @@ def test_compute_trend_boundary_is_unit_independent():
         verdicts = {compute_trend([v * k for v in vals], dates)
                     for k in (1, 1e-3, 1e-6, 1e3)}
         assert verdicts == {"stable"}
+
+
+def test_compute_trend_resolves_days_within_a_month():
+    """#617: same-month samples shared one x and always read stable."""
+    days = ["2024-01-01", "2024-01-15", "2024-01-30"]
+    assert compute_trend([1.0, 2.0, 3.0], days) == "worsening"
+    assert compute_trend([3.0, 2.0, 1.0], days) == "improving"
+    # mixed precision still parses; month-only dates keep their old meaning
+    assert compute_trend([1.0, 2.0, 3.0], ["2024-01", "2024-06-15", "2025-01"]) == "worsening"
