@@ -60,6 +60,11 @@ def compute_trend(values: list, dates: list, min_points: int = 3) -> str:
     if denom == 0:
         return "stable"
     slope = (n * sum_xy - sum_x * sum_y) / denom
+    mean = sum_y / n
+    if mean <= 0:
+        return "stable"
+    # Relative slope (fraction of the mean per month) so the verdict is unit-independent (#615).
+    slope /= mean
     if slope > 0.01:
         return "worsening"
     if slope < -0.01:
