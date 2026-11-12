@@ -70,7 +70,7 @@ def test_batch_import_workbooks_bad_inputs_are_clean_errors(tmp_path):
     broken_yaml = tmp_path / "broken.yaml"
     broken_yaml.write_text("a: [\n", encoding="utf-8")
     manifest = tmp_path / "m.csv"
-    manifest.write_text("workbook_path,profile_path,site_id\n",
+    manifest.write_text("workbook_path,profile_path,site_id\nx.xlsx,p.yaml,S1\n",
                         encoding="utf-8")
     cases = [(["--manifest", str(p)], p) for p in (a_dir, latin1, wrong_cols)]
     cases += [(["--manifest", str(manifest), opt, str(p)], p)
@@ -110,3 +110,22 @@ def test_checkpoint_csv_bad_input_is_a_clean_error(tmp_path, argv):
         assert result.exception is None or isinstance(result.exception,
                                                       SystemExit)
         assert expected in result.output and str(bad) in result.output
+
+
+def test_batch_import_workbooks_ragged_or_empty_manifest_is_clean_error(tmp_path):
+    """#611: short rows tracebacked; empty/header-only manifests were a false PASS."""
+    header = "workbook_path,profile_path,site_id\n"
+    for name, text in [("empty.csv", ""), ("header.csv", header),
+                       ("short.csv", header + "x.xlsx\n"),
+                       ("blank_site.csv", header + "x.xlsx,p.yaml,\n")]:
+        bad = tmp_path / name
+        bad.write_text(text, encoding="utf-8")
+        result = CliRunner().invoke(autogis, [
+            "envmon", "batch-import-workbooks", "--manifest", str(bad),
+            "--output-dir", str(tmp_path / "out")])
+        assert result.exit_code == 1, (name, result.output)
+        assert result.exception is None or isinstance(result.exception,
+                                                      SystemExit), name
+        assert result.output.startswith("Error:") and str(bad) in result.output
+        assert "PASS" not in result.output
+        assert not (tmp_path / "out").exists()
