@@ -120,3 +120,30 @@ def test_build_analytical_key_unwritable_out_is_clean_error(tmp_path, suffix):
     ])
     assert result.exit_code == 1, result.output
     assert f"cannot write {out}" in result.output
+
+
+@pytest.mark.parametrize("which", ["analytes", "screening"])
+def test_build_analytical_key_out_cannot_overwrite_input(tmp_path, which):
+    """#610: --out equal to an input replaced it with markdown and exited 0."""
+    a, s = _write(tmp_path)
+    src = a if which == "analytes" else s
+    before = src.read_bytes()
+    result = CliRunner().invoke(autogis, [
+        "envmon", "build-analytical-key", "--analyte-dict", str(a),
+        "--screening-levels", str(s), "--matrix", "GW", "--out", str(src)])
+    assert result.exit_code == 1, result.output
+    assert "must not overwrite" in result.output
+    assert src.read_bytes() == before
+
+
+def test_build_analytical_key_quoted_bool_include_flag_is_error(tmp_path):
+    """#610: include_in_default_figures: "false" was truthy and included the analyte."""
+    a, s = _write(tmp_path)
+    a.write_text(_ANALYTE_YAML.replace("include_in_default_figures: false",
+                                       'include_in_default_figures: "false"'),
+                 encoding="utf-8")
+    result = CliRunner().invoke(autogis, [
+        "envmon", "build-analytical-key", "--analyte-dict", str(a),
+        "--screening-levels", str(s), "--matrix", "GW"])
+    assert result.exit_code == 1, result.output
+    assert result.output.startswith("Error:") and "include_in_default_figures" in result.output

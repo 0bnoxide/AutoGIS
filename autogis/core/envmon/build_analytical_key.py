@@ -73,8 +73,13 @@ def build_analytical_key(
         if analyte_filter is not None:
             if canonical not in analyte_filter:
                 continue
-        elif not entry.get("include_in_default_figures", False):
-            continue
+        else:
+            include = entry.get("include_in_default_figures", False)
+            if not isinstance(include, bool):  # a quoted "false" is truthy (#610)
+                raise ConfigError(
+                    f"analyte '{canonical}': include_in_default_figures must be true or false")
+            if not include:
+                continue
 
         units_by_matrix = entry.get("default_units_by_matrix") or {}
         if not isinstance(units_by_matrix, dict):
