@@ -126,7 +126,7 @@ def collect_concentration_points(
                          f"{surface_unit!r}")
     coords = load_well_coords(coords_path)
     best: Dict[str, float] = {}
-    with Path(results_path).open(newline="", encoding="utf-8") as fh:
+    with Path(results_path).open(newline="", encoding="utf-8-sig") as fh:
         for row in canonical_result_rows(list(csv.DictReader(fh)), qa):
             if row.get("SiteID", "").strip() != site_id:
                 continue

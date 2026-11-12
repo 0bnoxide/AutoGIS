@@ -150,7 +150,7 @@ def generate_site_narrative(
         qa = QACollector()
 
     def _read_csv(path):
-        with Path(path).open(newline="", encoding="utf-8") as fh:
+        with Path(path).open(newline="", encoding="utf-8-sig") as fh:
             return list(csv.DictReader(fh))
 
     mr_rows = max_result_rows or (_read_csv(max_result_path) if max_result_path else [])

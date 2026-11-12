@@ -128,7 +128,7 @@ def verify_report_package(
                f"Package README not found: {readme}")
 
     try:
-        with manifest.open(newline="", encoding="utf-8") as fh:
+        with manifest.open(newline="", encoding="utf-8-sig") as fh:
             reader = csv.DictReader(fh)
             fields = reader.fieldnames or []
             if len(fields) != len(set(fields)) or not _MANIFEST_FIELDS <= set(fields):

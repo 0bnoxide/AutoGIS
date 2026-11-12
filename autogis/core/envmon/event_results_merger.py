@@ -74,7 +74,7 @@ def merge_event_results(
                                            event_date="", sha256="", row_count=0))
             continue
         sha = _sha256_file(src)
-        with src.open(newline="", encoding="utf-8") as fh:
+        with src.open(newline="", encoding="utf-8-sig") as fh:
             rows = list(csv.DictReader(fh))
         if add_source_column:
             for r in rows:

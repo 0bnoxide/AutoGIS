@@ -205,7 +205,7 @@ def build_argv(path: Sequence[str], values: Mapping[str, object], *,
 def _read_qa_rows(qa_csv: str | Path | None) -> tuple[dict, ...]:
     if qa_csv is None or not Path(qa_csv).exists():
         return ()
-    with Path(qa_csv).open(newline="", encoding="utf-8") as fh:
+    with Path(qa_csv).open(newline="", encoding="utf-8-sig") as fh:
         return tuple(csv.DictReader(fh))
 
 

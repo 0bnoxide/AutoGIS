@@ -96,7 +96,7 @@ def read_records_csv(path: Path, record_class: Type[T]) -> List[T]:
     hints = {k: v for k, v in typing.get_type_hints(record_class).items()
              if k in _instance_fields}
     rows = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             kwargs = {}
             for fname, hint in hints.items():

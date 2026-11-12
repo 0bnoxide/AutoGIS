@@ -166,7 +166,7 @@ def load_survey123_csv_submissions(
     all_samp: list[dict] = []
     path = Path(path)
     try:
-        with path.open(newline="", encoding="utf-8") as fh:
+        with path.open(newline="", encoding="utf-8-sig") as fh:
             for i, row in enumerate(csv.DictReader(fh)):
                 step_batch = f"{batch_id}_{i}"
                 wl, samp = normalize_survey123_submission(

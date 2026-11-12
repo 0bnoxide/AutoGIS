@@ -24,7 +24,7 @@ from .canonical_read import canonical_records
 def load_well_coords(path: Path) -> Dict[str, Tuple[float, float]]:
     """Load location_id -> (x, y) from a CSV with columns: location_id, x, y."""
     coords: Dict[str, Tuple[float, float]] = {}
-    with open(path, newline="", encoding="utf-8") as fh:
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             coords[row["location_id"]] = (float(row["x"]), float(row["y"]))
     return coords

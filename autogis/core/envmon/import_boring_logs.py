@@ -39,7 +39,7 @@ def _f(row: dict, key: str) -> Optional[float]:
 
 def parse_boring_locations_csv(path: Path) -> list[BoringLocation]:
     out: list[BoringLocation] = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             out.append(BoringLocation(
                 boring_id=_s(row, "BoringID"),
@@ -61,7 +61,7 @@ def parse_lithology_csv(
     dropped; if *qa* is supplied the drop is surfaced (never silent)."""
     out: list[LithologyInterval] = []
     dropped = 0
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             top = _f(row, "TopDepth_ft")
             bot = _f(row, "BottomDepth_ft")
@@ -91,7 +91,7 @@ def parse_boring_samples_csv(
     if *qa* is supplied the drop is surfaced (never silent)."""
     out: list[BoringSample] = []
     dropped = 0
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             top = _f(row, "TopDepth_ft")
             bot = _f(row, "BottomDepth_ft")

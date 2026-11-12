@@ -56,7 +56,7 @@ def load_history_csv(path: Path) -> list[TrendSeries]:
     path = Path(path)
     groups: dict[tuple[str, str], TrendSeries] = {}
 
-    with path.open(newline="", encoding="utf-8") as fh:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
         for row in normalize_report_rows(list(csv.DictReader(fh))):
             loc = row.get("LocationID", "").strip()
             analyte = row.get("AnalyteName", "").strip()

@@ -51,7 +51,7 @@ def load_survey123_csv(
 ) -> list[Survey123Sample]:
     hm = {**DEFAULT_HEADER_MAP, **(header_map or {})}
     out: list[Survey123Sample] = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             out.append(Survey123Sample(
