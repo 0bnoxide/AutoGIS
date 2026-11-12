@@ -155,6 +155,7 @@ Each ADR follows this structure:
 | [134](0134-gen-sticklogs-2d-boring-sticklog.md) | GenerateBoringSticklogs: 2D per-boring sticklog from the 8.0a database | Accepted | 2026-08-20 |
 | [135](0135-site-required-informational-keys-and-reporter-status.md) | Site-config required keys narrowed to consumed keys; Reporter declared future-use | Accepted | 2026-08-28 |
 | [136](0136-survey123-submission-provenance.md) | Survey123 device-to-client provenance tracer: complete snapshots, exact identities, conservative progress counts; real-device/live acceptance pending | Proposed | 2026-09-12 |
+| [137](0137-msl-hfdem-download.md) | Archive-first MSL HFDEM download with artifact provenance | Proposed | 2026-11-10 |
 
 ## File naming
 

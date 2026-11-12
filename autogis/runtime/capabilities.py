@@ -66,6 +66,7 @@ TOOLS: dict[str, Runtime] = {
     "register-source-doc": Runtime.CLOUD,      # tool 2.5 headless registry
     "validate-boring-logs": Runtime.CLOUD,     # tool 8.0b headless validate
     "draft-lithology-from-scan": Runtime.CLOUD,  # tool headless OCR draft
+    "download-msl-dem": Runtime.CLOUD,  # stdlib acquisition; optional rasterio processing
     "download-dem": Runtime.CLOUD,  # OpenTopography DEM fetch — stdlib urllib, headless
     "import-boring-logs": Runtime.LOCAL,       # tool 8.0b GDB write
     "create-boring-log-db": Runtime.CLOUD,     # tool 8.0a headless SQLite scaffold
@@ -326,6 +327,8 @@ _REGISTRY_SEED = [
      "intake", "Validate a boring-log CSV package (headless)"),
     ("draft-lithology-from-scan", "DraftLithologyFromScan", "", "CLOUD", "draft",
      "intake", "DRAFT: OCR a scanned boring log into a draft lithology.csv (headless)"),
+    ("download-msl-dem", "DownloadMSLDEM", "", "CLOUD", "stable",
+     "intake", "Download and clip Montana State Library HFDEM archives"),
     ("download-dem", "DownloadOpenTopographyDEM", "", "CLOUD", "stable",
      "intake", "Download an OpenTopography DEM GeoTIFF for an AOI (headless)"),
     ("import-boring-logs", "ImportFieldBoringLogs", "8.0b", "LOCAL", "stable",

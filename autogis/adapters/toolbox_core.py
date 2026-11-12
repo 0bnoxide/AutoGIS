@@ -489,3 +489,227 @@ def record_pyt_run(tool_name: str, *, gdb_param: str = "gdb",
                 return execute(self, parameters, recording_messages)
         return wrapped
     return decorator
+
+# MSL-specific native adapter. New calls verified against Pro >=3.5 docs;
+# references and native acceptance results are recorded in docs/qa/msl-dem.md.
+def _msl_project_geometry(arcpy_module, geometry, target):
+    source=geometry.spatialReference
+    if not source or source.name=='Unknown':
+        raise ValueError('AOI has an unknown spatial reference')
+    if source.factoryCode and source.factoryCode==target.factoryCode:
+        return geometry,None
+    transformations=arcpy_module.ListTransformations(source,target,geometry.extent,False,True)
+    transformation=transformations[0] if transformations else None
+    if not transformation and source.GCS.datumName!=target.GCS.datumName:
+        raise ValueError(f'No available horizontal transformation from {source.name} to {target.name}')
+    return (geometry.projectAs(target,transformation) if transformation else geometry.projectAs(target)),transformation
+
+
+def _msl_esri_to_geojson(rings):
+    from autogis.core.envmon.msl_lidar import _ring_area
+    outers=[ring for ring in rings if _ring_area(ring)<0]
+    holes=[ring for ring in rings if _ring_area(ring)>0]
+    polygons=[[outer] for outer in outers]
+    def inside(point,ring):
+        x,y=point;result=False
+        for (ax,ay),(bx,by) in zip(ring,ring[1:]):
+            if (ay>y)!=(by>y) and x<(bx-ax)*(y-ay)/(by-ay)+ax:result=not result
+        return result
+    for hole in holes:
+        candidates=[p for p in polygons if inside(hole[0],p[0])]
+        if not candidates:raise ValueError('AOI hole has no enclosing exterior ring')
+        min(candidates,key=lambda p:abs(_ring_area(p[0]))).append(hole)
+    if not polygons:raise ValueError('AOI contains no polygon exterior rings')
+    return {'type':'MultiPolygon','coordinates':polygons}
+
+
+def resolve_msl_arcpy_aoi(arcpy_module,source,*,layer=None,bbox=None):
+    """Retain selected features, multipart geometry and holes through discovery."""
+    from autogis.core.envmon.msl_lidar import resolve_msl_aoi
+    if source=='Manual bbox':
+        return resolve_msl_aoi(bbox=tuple(float(x) for x in str(bbox or '').split()))
+    target=arcpy_module.SpatialReference(4326)
+    if source.startswith('Feature layer'):
+        if layer is None:raise ValueError('Choose an AOI polygon feature layer')
+        polygons=[]
+        with arcpy_module.da.SearchCursor(layer,['SHAPE@']) as cursor:
+            for (shape,) in cursor:
+                if shape is None:continue
+                projected,_=_msl_project_geometry(arcpy_module,shape,target)
+                geometry=json.loads(projected.JSON)
+                if 'rings' not in geometry:raise ValueError('AOI must be polygon features with linear rings; densify true curves before downloading')
+                polygons.extend(_msl_esri_to_geojson(geometry['rings'])['coordinates'])
+        if not polygons:raise ValueError('AOI layer has no selected/visible features')
+        return resolve_msl_aoi(geometry={'type':'MultiPolygon','coordinates':polygons})
+    view=arcpy_module.mp.ArcGISProject('CURRENT').activeView
+    if view is None or not hasattr(view,'getLayerExtent') or not hasattr(view,'camera'):
+        raise ValueError('No active map view; open a map or choose another AOI source')
+    extent=view.camera.getExtent()
+    sr=extent.spatialReference
+    if not sr or sr.name=='Unknown':raise ValueError('Active map extent has unknown spatial reference')
+    shape=arcpy_module.AsShape({'rings':[[[extent.XMin,extent.YMin],[extent.XMin,extent.YMax],
+        [extent.XMax,extent.YMax],[extent.XMax,extent.YMin],[extent.XMin,extent.YMin]]],
+        'spatialReference':{'wkt':sr.exportToString()}},True)
+    projected,_=_msl_project_geometry(arcpy_module,shape,target)
+    return resolve_msl_aoi(geometry=_msl_esri_to_geojson(json.loads(projected.JSON)['rings']))
+
+
+def msl_polygon_center_mask(rings,left,top,dx,dy,width,height):
+    """Even-odd mask for linear Esri rings, including holes, bounded to a block."""
+    import numpy as np
+    xs=left+(np.arange(width)+.5)*dx
+    ys=top-(np.arange(height)+.5)*dy
+    x,y=np.meshgrid(xs,ys);mask=np.zeros((height,width),dtype=bool)
+    for ring in rings:
+        part=np.zeros_like(mask)
+        for (ax,ay),(bx,by) in zip(ring,ring[1:]):
+            if by==ay:continue
+            part^=((ay>y)!=(by>y)) & (x<(bx-ax)*(y-ay)/(by-ay)+ax)
+        mask^=part
+    return mask
+
+
+def _msl_horizontal_sr(arcpy_module,sr):
+    if not sr or sr.name=='Unknown':raise ValueError('Raster has unknown horizontal CRS')
+    if sr.factoryCode:
+        return arcpy_module.SpatialReference(sr.factoryCode)
+    if getattr(sr,'VCS',None):
+        raise ValueError('Custom compound CRS requires a verified horizontal CRS before processing')
+    return sr
+
+
+def _msl_native_coverage(arcpy_module,path,geometries):
+    import numpy as np
+    raster=arcpy_module.Raster(str(path))
+    dx,dy=raster.meanCellWidth,raster.meanCellHeight
+    extent=raster.extent
+    rings=[ring for geometry in geometries for ring in json.loads(geometry.JSON)['rings']]
+    points=[point for ring in rings for point in ring]
+    left=extent.XMin+math.floor((min(p[0] for p in points)-extent.XMin)/dx+1e-8)*dx
+    bottom=extent.YMin+math.floor((min(p[1] for p in points)-extent.YMin)/dy+1e-8)*dy
+    right=extent.XMin+math.ceil((max(p[0] for p in points)-extent.XMin)/dx-1e-8)*dx
+    top=extent.YMin+math.ceil((max(p[1] for p in points)-extent.YMin)/dy-1e-8)*dy
+    width=round((right-left)/dx);height=round((top-bottom)/dy)
+    expected=valid=0
+    for row in range(0,height,512):
+        nrows=min(512,height-row)
+        for col in range(0,width,512):
+            ncols=min(512,width-col)
+            blockleft=left+col*dx;blocktop=top-row*dy
+            mask=msl_polygon_center_mask(rings,blockleft,blocktop,dx,dy,ncols,nrows)
+            point=arcpy_module.Point(blockleft,blocktop-nrows*dy)
+            a=arcpy_module.RasterToNumPyArray(raster,point,ncols,nrows,0)
+            b=arcpy_module.RasterToNumPyArray(raster,point,ncols,nrows,1)
+            expected+=int(mask.sum());valid+=int((mask & (a==b) & np.isfinite(a)).sum())
+    del raster
+    if not expected:raise ValueError('AOI contains no output pixel centers')
+    if not valid:raise ValueError('No valid HFDEM cells cover AOI')
+    return {'aoi_cells':expected,'valid_cells':valid,'fraction':valid/expected,'complete':valid==expected,
+        'method':'output pixel centers inside true AOI polygon, including outside raster extent',
+        'overlap_cells':None,'max_overlap_difference':None}
+
+
+def _msl_validate_target_sr(sr):
+    import re
+    dimensions=re.findall(r'\bCS\s*\[[^,]+,\s*(\d+)\s*\]',sr.exportToString(),re.I)
+    if (not sr or sr.name=='Unknown' or sr.type not in ('Projected','Geographic')
+            or getattr(sr,'VCS',None) or any(int(n)!=2 for n in dimensions)):
+        raise ValueError('Output CRS must be a two-dimensional horizontal geographic/projected CRS')
+    return sr
+
+
+def msl_arcpy_output_sr(arcpy_module,output_crs):
+    text=str(output_crs)
+    if text.upper().startswith('EPSG:') or text.isdigit():
+        target=arcpy_module.SpatialReference(int(text.split(':')[-1]))
+    else:
+        target=arcpy_module.SpatialReference()
+        target.loadFromString(text)
+    return _msl_validate_target_sr(target)
+
+
+def process_msl_dem_arcpy(arcpy_module,sources,aoi,out_path,*,output_crs=None,resolution=None,z_units='native'):
+    """Native Pro raster backend; no imports of rasterio, pyproj or arcpy itself."""
+    from dataclasses import asdict
+    from autogis.core.envmon.msl_lidar import _polygons
+    from autogis.core.envmon.msl_raster import inspect_vertical_metadata,validate_raster_compatibility
+    out=Path(out_path)
+    if out.exists():raise FileExistsError(f'Output exists: {out}')
+    metadata=[];references=[]
+    dtypes={'F32':'float32','F64':'float64','S16':'int16','S32':'int32','U16':'uint16','U32':'uint32'}
+    for source in sources:
+        desc=arcpy_module.Describe(str(source.path))
+        sr=_msl_horizontal_sr(arcpy_module,desc.spatialReference);references.append(sr)
+        nodata=getattr(desc,'noDataValue',None)
+        try:nodata=float(nodata) if nodata not in (None,'') else None
+        except (ValueError,TypeError):raise ValueError(f'Unrecognized source NoData metadata: {nodata}')
+        metadata.append({**asdict(source),'path':str(source.path),'horizontal_crs':sr.exportToString(),
+            'resolution':[desc.meanCellWidth,desc.meanCellHeight],'resolution_units':sr.linearUnitName if sr.type=='Projected' else sr.angularUnitName,
+            'origin':[desc.extent.XMin,desc.extent.YMax],'dtype':dtypes.get(desc.pixelType,desc.pixelType),
+            'bands':desc.bandCount,'nodata':nodata if nodata is None or math.isfinite(nodata) else 'NaN',
+            **inspect_vertical_metadata(source.path,desc.spatialReference.exportToString())})
+    compatibility=validate_raster_compatibility(metadata,output_crs=output_crs,resolution=resolution,z_units=z_units)
+    target=msl_arcpy_output_sr(arcpy_module,output_crs) if output_crs else _msl_validate_target_sr(references[0])
+    shapes=[];transformations=[]
+    for polygon in _polygons(aoi):
+        shape=arcpy_module.AsShape({'type':'Polygon','coordinates':polygon},False)
+        shape,transform=_msl_project_geometry(arcpy_module,shape,target)
+        shapes.append(shape)
+        if transform:transformations.append({'purpose':'AOI','name':transform})
+    # Union preserves holes but avoids XOR cancellation when selected features overlap.
+    union=shapes[0]
+    for shape in shapes[1:]:union=union.union(shape)
+    shapes=[union]
+    work=out.parent/'native-processing';work.mkdir()
+    polygon_fc=str(work/'aoi.shp')
+    arcpy_module.management.CopyFeatures(shapes,polygon_fc)
+    inputs=[]
+    dx=resolution or metadata[0]['resolution'][0]
+    if resolution is None and not math.isclose(metadata[0]['resolution'][0],metadata[0]['resolution'][1],rel_tol=1e-8):
+        raise ValueError('Native ArcPy mosaic requires square cells; select an explicit resolution')
+    for index,(source,sr) in enumerate(zip(sources,references)):
+        path=source.path
+        if output_crs is not None or resolution is not None:
+            options=arcpy_module.ListTransformations(sr,target,arcpy_module.Describe(str(path)).extent,False,True)
+            transformation=options[0] if options else None
+            if not transformation and sr.GCS.datumName!=target.GCS.datumName:
+                raise ValueError('No available horizontal raster transformation for requested CRS')
+            projected=work/f'projected-{index}.tif'
+            arcpy_module.management.ProjectRaster(str(path),str(projected),target,
+                resampling_type='BILINEAR',cell_size=dx,geographic_transform=transformation or '',vertical='NO_VERTICAL')
+            path=projected
+            if transformation:transformations.append({'purpose':source.member,'name':transformation})
+        inputs.append(str(path))
+    mosaic=work/'mosaic.tif';clipped=work/'clipped.tif'
+    pixel_type='64_BIT' if any(m['dtype'] in ('float64','int32','uint32') for m in metadata) else '32_BIT_FLOAT'
+    with arcpy_module.EnvManager(snapRaster=inputs[0],outputCoordinateSystem=target,extent=union.extent,cellSize=dx):
+        arcpy_module.management.MosaicToNewRaster(inputs,str(work),mosaic.name,
+            coordinate_system_for_the_raster=target,pixel_type=pixel_type,cellsize=dx,
+            number_of_bands=1,mosaic_method='FIRST',mosaic_colormap_mode='FIRST')
+        arcpy_module.management.Clip(str(mosaic),'#',str(clipped),polygon_fc,
+            clipping_geometry='ClippingGeometry',maintain_clipping_extent='NO_MAINTAIN_EXTENT')
+        factor=compatibility['scale_factors'][0]
+        if factor!=1:
+            extension=next((x for x in ('Spatial','ImageAnalyst') if arcpy_module.CheckExtension(x)=='Available'),None)
+            if extension is None:raise ValueError('Elevation conversion requires Spatial Analyst or Image Analyst; use native units or headless autogis[msl]')
+            if arcpy_module.CheckOutExtension(extension)!='CheckedOut':raise ValueError('Elevation conversion license checkout failed')
+            try:arcpy_module.sa.Times(str(clipped),float(factor)).save(str(out))
+            finally:arcpy_module.CheckInExtension(extension)
+        else:
+            # CopyRaster is unnecessary: same-volume local file copy preserves pixels.
+            import shutil
+            shutil.copyfile(clipped,out)
+    arcpy_module.management.DefineProjection(str(out),target)
+    coverage=_msl_native_coverage(arcpy_module,out,shapes)
+    desc=arcpy_module.Describe(str(out))
+    warnings=['ArcPy overlap difference statistics are not measured; first explicit project/source wins overlaps']
+    if not coverage['complete']:warnings.append(f"Incomplete raster coverage: {coverage['aoi_cells']-coverage['valid_cells']} AOI pixel centers are NoData")
+    if compatibility['z_units'] is None or compatibility['vertical_datum'] is None:
+        warnings.append('Artifact vertical datum or units unknown; unchanged native values retained')
+    return {'sources':metadata,'output':{'horizontal_crs':target.exportToString(),
+        'resolution':[desc.meanCellWidth,desc.meanCellHeight],**compatibility},'coverage':coverage,
+        'operations':[{'operation':'mosaic','method':'FIRST','priority':[s.project+':'+s.member for s in sources]},
+            {'operation':'clip','geometry':aoi,'maintain_clipping_extent':False},
+            {'operation':'horizontal_transformations','selected_by':'Esri overlap/accuracy rank','transformations':transformations},
+            {'operation':'unit_conversion','scale_factors':compatibility['scale_factors'],'vertical_transformation':False}],
+        'warnings':warnings,'backend':'ArcPy'}
