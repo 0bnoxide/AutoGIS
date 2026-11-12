@@ -139,3 +139,10 @@ def test_compute_trend_resolves_days_within_a_month():
     assert compute_trend([3.0, 2.0, 1.0], days) == "improving"
     # mixed precision still parses; month-only dates keep their old meaning
     assert compute_trend([1.0, 2.0, 3.0], ["2024-01", "2024-06-15", "2025-01"]) == "worsening"
+
+
+def test_compute_trend_impossible_day_keeps_month_resolution():
+    """#624 review: a bad day must not drop the series to row-order index fallback."""
+    # newest row first; values rise over time
+    assert compute_trend([3.0, 2.0, 1.0],
+                         ["2024-06-15", "2024-03-15", "2023-02-29"]) == "worsening"
