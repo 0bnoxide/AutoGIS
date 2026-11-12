@@ -7,7 +7,6 @@ then used for export.
 
 from __future__ import annotations
 
-from ..common.config import yaml_load
 import math
 import re
 import shutil
@@ -15,6 +14,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from ..common.config import yaml_load
 from ..common.logging import get_logger
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
 

@@ -1,7 +1,6 @@
 """report_figure_package.py — deliverable folder assembler with manifest."""
 from __future__ import annotations
 
-from ..common.config import yaml_load
 import csv
 import hashlib
 import ntpath
@@ -14,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from ..common.config import yaml_load
 from ..common.qa import QACollector, QARecord, SEV_INFO, SEV_WARNING
 
 DELIVERABLE_ROLES = (

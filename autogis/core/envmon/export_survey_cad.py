@@ -15,7 +15,6 @@ Civil3D points leg (issue #166, ADR-0088).
 """
 from __future__ import annotations
 
-from ..common.config import yaml_load
 import csv
 import dataclasses
 import json
@@ -23,6 +22,7 @@ import re
 from pathlib import Path
 from typing import Dict, List
 
+from autogis.core.common.config import yaml_load
 from autogis.core.common.landxml import CgPoint, write_cgpoints
 from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .import_rtk_survey import RTKPoint

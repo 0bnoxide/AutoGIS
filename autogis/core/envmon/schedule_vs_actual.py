@@ -19,13 +19,13 @@ No arcpy dependency.
 """
 from __future__ import annotations
 
-from ..common.config import yaml_load
 import dataclasses
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from ..common.config import yaml_load
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .gdb_schema import AnalyticalResultRecord
 from .canonical_read import canonical_records

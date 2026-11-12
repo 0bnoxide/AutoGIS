@@ -382,5 +382,5 @@ def test_no_direct_yaml_safe_load_outside_config():
     hits = [f"{f.relative_to(root)}:{n}"
             for f in root.rglob("*.py") if f.name != "config.py"
             for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1)
-            if re.search(r"\byaml\.safe_load\(", line)]
+            if re.search(r"yaml\.safe_load\(", line)]
     assert not hits, hits

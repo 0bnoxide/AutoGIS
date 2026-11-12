@@ -9,11 +9,10 @@ Reuses the canonical ``DroneFlight`` dataclass from
 """
 from __future__ import annotations
 
-from ..common.config import yaml_load
 from datetime import date, datetime
 from pathlib import Path
 
-
+from ..common.config import yaml_load
 from ..common.qa import QACollector, SEV_ERROR
 from ..common.schema.drone import DroneFlight
 
