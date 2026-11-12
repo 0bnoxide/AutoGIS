@@ -177,6 +177,9 @@ def run_batch_import(
                    f"{wb_path.name}: {exc}", site_id=site_id)
 
     ok = sum(1 for m in result.manifest if m.Status == "OK")
+    if result.manifest and not ok:  # all rows skipped/failed must not PASS (#621)
+        qa.add(SEV_ERROR, "no_workbooks_imported",
+               f"None of the {len(result.manifest)} manifest row(s) imported")
     qa.add(SEV_INFO, "batch_complete",
            f"Batch import: {ok}/{len(result.manifest)} workbooks OK, "
            f"{len(result.all_samples)} samples, {len(result.all_results)} results")
