@@ -158,3 +158,11 @@ def test_non_finite_result_is_not_a_detection(bad):
     assert rec.detection_count == 2
     assert rec.max_value == 2.0
     assert rec.exceedance_count == 0
+
+
+def test_compute_trend_drops_unparseable_dates_instead_of_row_order():
+    """#626: a bad date sent the series to a row-order index, flipping newest-first input."""
+    assert compute_trend([3.0, 2.0, 1.0],
+                         ["2024-06-15", "2024-03-15", "2024-13-05"]) == "insufficient_data"
+    assert compute_trend([4.0, 3.0, 9.0, 1.0],
+                         ["2024-06-15", "2024-03-15", None, "2024-01-15"]) == "worsening"

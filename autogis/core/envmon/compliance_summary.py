@@ -48,7 +48,10 @@ class ComplianceSummaryResult:
 
 def _month_ordinal(d: str) -> float:
     """YYYY*12+MM, plus the elapsed fraction of the month for YYYY-MM-DD (#617)."""
-    months = float(d[:4]) * 12 + float(d[5:7])
+    month = int(d[5:7])
+    if not 1 <= month <= 12:
+        raise ValueError(f"month out of range: {d!r}")
+    months = int(d[:4]) * 12 + month
     if len(d) >= 10 and d[7] == "-":
         try:
             day = date.fromisoformat(d[:10])
@@ -59,12 +62,17 @@ def _month_ordinal(d: str) -> float:
 
 
 def compute_trend(values: list, dates: list, min_points: int = 3) -> str:
-    if len(values) < min_points:
+    # Drop points whose date won't parse; a row-order index is not time (#626).
+    pts = []
+    for v, d in zip(values, dates):
+        try:
+            pts.append((_month_ordinal(d), v))
+        except (ValueError, IndexError, TypeError):
+            pass
+    if len(pts) < min_points:
         return "insufficient_data"
-    try:
-        xs = [_month_ordinal(d) for d in dates]
-    except (ValueError, IndexError, TypeError):
-        xs = list(range(len(values)))
+    xs = [x for x, _ in pts]
+    values = [v for _, v in pts]
     n = len(xs)
     mean = abs(sum(values) / n)
     if mean == 0:
