@@ -15,6 +15,7 @@ Civil3D points leg (issue #166, ADR-0088).
 """
 from __future__ import annotations
 
+from ..common.config import yaml_load
 import csv
 import dataclasses
 import json
@@ -64,8 +65,7 @@ def load_feature_code_map(path: Path) -> Dict[str, str]:
     An optional ``"default"`` key is used for unmapped feature codes in place
     of the built-in ``Miscellaneous`` fallback.
     """
-    import yaml
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    raw = yaml_load(Path(path).read_text(encoding="utf-8")) or {}
     return {str(k): str(v) for k, v in raw.items()}
 
 

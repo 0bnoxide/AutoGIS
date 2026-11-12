@@ -1,6 +1,7 @@
 """report_figure_package.py — deliverable folder assembler with manifest."""
 from __future__ import annotations
 
+from ..common.config import yaml_load
 import csv
 import hashlib
 import ntpath
@@ -85,9 +86,8 @@ def _sha256_tree(path: Path) -> str:
 
 
 def load_deliverable_spec(spec_path: Path) -> list:
-    import yaml
     # safe_load returns None for an empty / comment-only file — fall back to {}.
-    data = yaml.safe_load(Path(spec_path).read_text(encoding="utf-8")) or {}
+    data = yaml_load(Path(spec_path).read_text(encoding="utf-8")) or {}
     return data.get("files", [])
 
 

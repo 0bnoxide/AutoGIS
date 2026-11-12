@@ -9,10 +9,10 @@ Reuses the canonical ``DroneFlight`` dataclass from
 """
 from __future__ import annotations
 
+from ..common.config import yaml_load
 from datetime import date, datetime
 from pathlib import Path
 
-import yaml
 
 from ..common.qa import QACollector, SEV_ERROR
 from ..common.schema.drone import DroneFlight
@@ -55,7 +55,7 @@ def _as_int(value, default: int = 0) -> int:
 
 def load_flight_yaml(path: Path) -> DroneFlight:
     """Load a drone flight inventory YAML into a :class:`DroneFlight`."""
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    data = yaml_load(Path(path).read_text(encoding="utf-8")) or {}
     return DroneFlight(
         flight_id=str(data.get("flight_id", "")),
         project_id=str(data.get("project_id", "")),

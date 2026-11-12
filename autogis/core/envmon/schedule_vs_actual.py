@@ -19,6 +19,7 @@ No arcpy dependency.
 """
 from __future__ import annotations
 
+from ..common.config import yaml_load
 import dataclasses
 from collections import defaultdict
 from datetime import date, timedelta
@@ -42,9 +43,8 @@ class ScheduleGapRecord:
 
 def load_schedule_yaml(path: Path) -> dict:
     """Load schedule dict from a YAML file."""
-    import yaml  # PyYAML
     with open(path, encoding="utf-8") as fh:
-        return yaml.safe_load(fh) or {}
+        return yaml_load(fh) or {}
 
 
 def compare_schedule_vs_actual(
