@@ -326,6 +326,7 @@ def test_known_sheet_data_types_matches_dispatched_set():
     ("dup_analyte.yaml", "analytes:\n  Benzene: {}\n  Benzene: {}\n"),
     ("dup_level.yaml", "screening_levels:\n  GW:\n    Benzene: {value: 5}\n    Benzene: {value: 50}\n"),
     ("dup.json", '{"analytes": {"Benzene": {}, "Benzene": {}}}'),
+    ("dup_in_merge_source.yaml", "analytes: {<<: {Benzene: {}, Benzene: {}}}\n"),
 ])
 def test_load_config_rejects_duplicate_keys(tmp_path, name, text):
     """#609: duplicate mapping keys were silently collapsed (last wins)."""
@@ -341,6 +342,14 @@ def test_load_config_keeps_yaml_merge_override(tmp_path):
     p = tmp_path / "merge.yaml"
     p.write_text("a: &x {b: 1}\nc:\n  <<: *x\n  b: 2\n", encoding="utf-8")
     assert load_config(p) == {"a": {"b": 1}, "c": {"b": 2}}
+
+
+def test_load_config_merge_override_in_aliased_source(tmp_path):
+    """#625 review: an anchored source flattened once must not read as duplicate when aliased."""
+    from autogis.core.common.config import load_config
+    p = tmp_path / "alias.yaml"
+    p.write_text("a: {<<: &b {<<: {x: 1}, x: 2}}\nb: *b\n", encoding="utf-8")
+    assert load_config(p) == {"a": {"x": 2}, "b": {"x": 2}}
 
 
 def test_manage_analyte_dict_duplicate_key_is_not_pass(tmp_path):

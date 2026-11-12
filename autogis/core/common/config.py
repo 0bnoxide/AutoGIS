@@ -45,22 +45,27 @@ def _unique_json_object(pairs):
 def _unique_key_loader(yaml):
     """SafeLoader that rejects duplicate mapping keys instead of keeping the last (#609)."""
     class UniqueKeyLoader(yaml.SafeLoader):
-        def construct_mapping(self, node, deep=False):
-            seen = set()
-            for key_node, _ in node.value:
-                if key_node.tag == "tag:yaml.org,2002:merge":
-                    continue  # '<<' merge keys may be overridden explicitly
-                key = self.construct_object(key_node, deep=True)
-                try:
-                    hash(key)
-                except TypeError:
-                    continue  # SafeLoader reports unhashable keys itself
-                if key in seen:
-                    raise yaml.constructor.ConstructorError(
-                        "while constructing a mapping", node.start_mark,
-                        f"found duplicate key {key!r}", key_node.start_mark)
-                seen.add(key)
-            return super().construct_mapping(node, deep=deep)
+        # Check in flatten_mapping, before '<<' merges mutate the node: it also
+        # visits each merge source, and a node reused via an alias is checked once.
+        def flatten_mapping(self, node):
+            checked = self.__dict__.setdefault("_checked", set())
+            if id(node) not in checked:
+                checked.add(id(node))
+                seen = set()
+                for key_node, _ in node.value:
+                    if key_node.tag == "tag:yaml.org,2002:merge":
+                        continue  # merged keys may be overridden explicitly
+                    key = self.construct_object(key_node, deep=True)
+                    try:
+                        hash(key)
+                    except TypeError:
+                        continue  # SafeLoader reports unhashable keys itself
+                    if key in seen:
+                        raise yaml.constructor.ConstructorError(
+                            "while constructing a mapping", node.start_mark,
+                            f"found duplicate key {key!r}", key_node.start_mark)
+                    seen.add(key)
+            super().flatten_mapping(node)
     return UniqueKeyLoader
 
 
