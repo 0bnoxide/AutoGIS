@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ..common.config import load_config
+from ..common.config import ConfigError, load_config
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
 
 
@@ -18,9 +18,21 @@ class ScreeningEntry:
     source: str
 
 
+def _levels(path: Path) -> dict:
+    """``screening_levels`` as {matrix: {analyte: entry}}; wrong shapes are ConfigError (#606)."""
+    sl = load_config(path).get("screening_levels", {})
+    if sl is None:  # blank `screening_levels:` means no levels
+        return {}
+    if not isinstance(sl, dict):
+        raise ConfigError(f"{path}: 'screening_levels' must be a mapping")
+    for matrix, analytes in sl.items():
+        if analytes is not None and not isinstance(analytes, dict):
+            raise ConfigError(f"{path}: screening_levels.{matrix} must be a mapping")
+    return sl
+
+
 def load_screening_entries(path: Path) -> list[ScreeningEntry]:
-    data = load_config(path)
-    sl = data.get("screening_levels", {})
+    sl = _levels(path)
     out: list[ScreeningEntry] = []
     for matrix, analytes in sl.items():
         for analyte, entry in (analytes or {}).items():
@@ -37,8 +49,7 @@ def check_screening_levels(
     analytes_path: Optional[Path] = None,
 ) -> QACollector:
     qa = QACollector()
-    data = load_config(screening_path)
-    sl = data.get("screening_levels", {})
+    sl = _levels(screening_path)
 
     for matrix, analytes in sl.items():
         for analyte, entry in (analytes or {}).items():
