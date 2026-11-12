@@ -65,7 +65,7 @@ def read_control_check_csv(path: Path) -> List[ControlCheckPoint]:
                       surveyed_x, surveyed_y, surveyed_z
     """
     points = []
-    with open(path, newline="", encoding="utf-8") as fh:
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             try:

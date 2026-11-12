@@ -80,14 +80,15 @@ def test_qa_info_emitted_on_completion():
     assert any(r.category == "control_check_complete" for r in qa.records)
 
 
-def test_read_control_check_csv(tmp_path):
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+def test_read_control_check_csv(tmp_path, encoding):
     csv_path = tmp_path / "control.csv"
     csv_path.write_text(
         "control_id,published_x,published_y,published_z,"
         "surveyed_x,surveyed_y,surveyed_z\n"
         "CP-1,1000.0,2000.0,500.0,1000.01,2000.01,500.02\n"
         "CP-2,1010.0,2010.0,502.0,1010.0,2010.0,502.0\n",
-        encoding="utf-8",
+        encoding=encoding,
     )
     points = read_control_check_csv(csv_path)
     assert len(points) == 2

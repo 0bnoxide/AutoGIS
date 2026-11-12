@@ -7,6 +7,27 @@ from click.testing import CliRunner
 from autogis.adapters.cli import autogis
 
 
+@pytest.mark.parametrize(("command", "flag", "csv_body"), [
+    (
+        "drone-checkpoint-qa", "--checkpoints",
+        "gcp_id,expected_x,expected_y,expected_z,measured_x,measured_y,measured_z\n"
+        "GCP-1,1,2,3,1,2,3\n",
+    ),
+    (
+        "rtk-control-check", "--control-points",
+        "control_id,published_x,published_y,published_z,surveyed_x,surveyed_y,surveyed_z\n"
+        "CP-1,1,2,3,1,2,3\n",
+    ),
+])
+def test_checkpoint_commands_accept_utf8_bom_csv(tmp_path, command, flag, csv_body):
+    csv_path = tmp_path / "excel-export.csv"
+    csv_path.write_text(csv_body, encoding="utf-8-sig")
+
+    result = CliRunner().invoke(autogis, ["envmon", command, flag, str(csv_path)])
+    assert result.exit_code == 0, result.output
+    assert "Overall: PASS" in result.output
+
+
 def _bad_inputs(tmp_path):
     a_dir = tmp_path / "a dir é"
     a_dir.mkdir()

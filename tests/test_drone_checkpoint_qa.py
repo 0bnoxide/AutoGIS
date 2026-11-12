@@ -108,14 +108,15 @@ def test_qa_info_emitted():
     assert any(r.category == "checkpoint_qa_complete" for r in qa.records)
 
 
-def test_read_checkpoint_csv(tmp_path):
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+def test_read_checkpoint_csv(tmp_path, encoding):
     csv_path = tmp_path / "checkpoints.csv"
     csv_path.write_text(
         "gcp_id,expected_x,expected_y,expected_z,"
         "measured_x,measured_y,measured_z\n"
         "GCP-1,100.0,200.0,50.0,100.01,200.01,50.02\n"
         "GCP-2,110.0,210.0,52.0,110.0,210.0,52.0\n",
-        encoding="utf-8",
+        encoding=encoding,
     )
     records = read_checkpoint_csv(csv_path)
     assert len(records) == 2

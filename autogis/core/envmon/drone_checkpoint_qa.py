@@ -59,7 +59,7 @@ def read_checkpoint_csv(path: Path) -> List[CheckpointRecord]:
                       measured_x, measured_y, measured_z
     """
     records = []
-    with open(path, newline="", encoding="utf-8") as fh:
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             try:
