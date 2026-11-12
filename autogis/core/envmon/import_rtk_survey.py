@@ -147,7 +147,7 @@ def _resolve_coord_order(coord1_vals: list[float], coord2_vals: list[float], fmt
 
 def _parse_headered_csv(path: Path, cm: RTKColumnMap) -> list[RTKPoint]:
     out: list[RTKPoint] = []
-    with path.open(newline="", encoding="utf-8") as fh:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             n = _f(row, cm.northing)
@@ -175,7 +175,7 @@ def _parse_headerless_csv(
     extra_columns: Optional[list[str]],
     qa: Optional[QACollector],
 ) -> list[RTKPoint]:
-    with path.open(newline="", encoding="utf-8") as fh:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
         rows = [r for r in csv.reader(fh) if any(c.strip() for c in r)]
     if not rows:
         return []
@@ -264,7 +264,7 @@ def parse_rtk_csv(
 ) -> list[RTKPoint]:
     cm = column_map or RTKColumnMap()
     path = Path(path)
-    with path.open(newline="", encoding="utf-8") as fh:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
         first_row = next(csv.reader(fh), None)
     if first_row is None:
         return []

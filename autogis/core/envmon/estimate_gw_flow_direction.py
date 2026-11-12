@@ -205,7 +205,7 @@ def parse_wells_csv(path: Path) -> List[WellWaterLevel]:
         If a numeric field cannot be parsed as float.
     """
     wells: List[WellWaterLevel] = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             wells.append(WellWaterLevel(

@@ -121,7 +121,7 @@ def evaluate_readiness(
     if qa_csv is not None and Path(qa_csv).exists():
         error_count = 0
         try:
-            with Path(qa_csv).open(newline="", encoding="utf-8") as fh:
+            with Path(qa_csv).open(newline="", encoding="utf-8-sig") as fh:
                 for row in csv.DictReader(fh):
                     if row.get("severity", "").upper() == "ERROR":
                         error_count += 1

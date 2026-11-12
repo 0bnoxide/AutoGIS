@@ -40,7 +40,7 @@ def _load_csv(path: Optional[Path]) -> list:
     """Load CSV rows as list of dicts. Returns [] if path is None or absent."""
     if not path or not Path(path).exists():
         return []
-    with open(path, newline="", encoding="utf-8") as fh:
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         return list(csv.DictReader(fh))
 
 

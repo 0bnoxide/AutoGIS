@@ -39,7 +39,7 @@ def parse_product_manifest(path: Path, flight_id: str) -> list[DroneProductRecor
     not read from the CSV. A unique product_id (UUID4) is generated per row.
     """
     out: list[DroneProductRecord] = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             res_raw = _s(row, "resolution_m")
             try:
@@ -137,7 +137,7 @@ def parse_gcp_csv(path: Path, flight_id: str) -> list[DroneControlPoint]:
             return None
 
     out: list[DroneControlPoint] = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             n, e, z = (_opt_float(row, "northing"), _opt_float(row, "easting"),
                        _opt_float(row, "elevation"))

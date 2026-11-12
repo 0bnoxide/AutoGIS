@@ -41,7 +41,7 @@ class BatchImportResult:
 def read_manifest_csv(path: Path) -> list[dict]:
     """Read batch manifest CSV. Required columns: workbook_path, profile_path, site_id."""
     required = ("workbook_path", "profile_path", "site_id")
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         rows = list(reader)
         fieldnames = reader.fieldnames or []

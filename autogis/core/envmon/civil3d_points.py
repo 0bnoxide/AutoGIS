@@ -28,7 +28,7 @@ class PNEZDPoint:
 
 
 def load_gwe_points_csv(path: Path) -> list:
-    with open(path, newline="", encoding="utf-8") as fh:
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         return list(csv.DictReader(fh))
 
 

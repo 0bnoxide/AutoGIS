@@ -45,7 +45,7 @@ def read_gw_model_csv(path: Path) -> List[ObservationRow]:
     prediction for that well (skipped from that model's stats, not an error).
     """
     rows: List[ObservationRow] = []
-    with open(path, newline="", encoding="utf-8") as fh:
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         model_names = [f for f in (reader.fieldnames or [])
                        if f not in ("well_id", "observed_ft")]

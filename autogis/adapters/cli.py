@@ -1075,7 +1075,7 @@ def gw_level_summary_cmd(elevations_csv, output, event_date, toc_csv,
     qa = QACollector()
     toc: dict = {}
     if toc_csv:
-        with Path(toc_csv).open(newline="", encoding="utf-8") as fh:
+        with Path(toc_csv).open(newline="", encoding="utf-8-sig") as fh:
             for row in _csv.DictReader(fh):
                 loc = (row.get("location_id") or "").strip()
                 raw = (row.get("toc_elevation") or "").strip()
@@ -1101,7 +1101,7 @@ def _read_csv_rows(path) -> list:
     both as a ClickException, not a raw traceback (#573)."""
     import csv
     try:
-        with open(path, newline="", encoding="utf-8") as fh:
+        with open(path, newline="", encoding="utf-8-sig") as fh:
             return list(csv.DictReader(fh))
     except (OSError, UnicodeDecodeError) as exc:
         raise click.ClickException(f"cannot read {path}: {exc}")
@@ -1112,7 +1112,7 @@ def _read_id_list(path) -> set:
     if not path:
         return set()
     out = set()
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for line in Path(path).read_text(encoding="utf-8-sig").splitlines():
         s = line.strip()
         if s and not s.startswith("#"):
             out.add(s)
@@ -1264,7 +1264,7 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
     sched = _yaml.safe_load(Path(schedule).read_text(encoding="utf-8"))
     dry: dict = {}
     if dry_wells:
-        with Path(dry_wells).open(newline="", encoding="utf-8") as fh:
+        with Path(dry_wells).open(newline="", encoding="utf-8-sig") as fh:
             for row in _csv.DictReader(fh):
                 dry[row["location_id"]] = row.get("reason", "")
     qa = QACollector()
@@ -1315,7 +1315,7 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
     schedule = _yaml.safe_load(Path(schedule_path).read_text(encoding="utf-8"))
     adict = None
     if analyte_dict:
-        with Path(analyte_dict).open(newline="", encoding="utf-8") as fh:
+        with Path(analyte_dict).open(newline="", encoding="utf-8-sig") as fh:
             adict = {row["AnalyteCanonicalName"]
                      for row in _csv.DictReader(fh)
                      if row.get("AnalyteCanonicalName")}
@@ -2946,7 +2946,7 @@ def coc_reconcile_cmd(store_path, coc, actor, received_ids, received_file):
         raise click.ClickException("Provide exactly one of --received-ids or --received-file")
     if received_file:
         received = [ln.strip() for ln in Path(received_file).read_text(
-            encoding="utf-8").splitlines() if ln.strip()]
+            encoding="utf-8-sig").splitlines() if ln.strip()]
     else:
         received = [s.strip() for s in received_ids.split(",") if s.strip()]
 
@@ -4828,7 +4828,7 @@ def _ids_arg(value: str) -> list:
     p = Path(value)
     if p.is_file():
         return [ln.strip() for ln in
-                p.read_text(encoding="utf-8").splitlines()
+                p.read_text(encoding="utf-8-sig").splitlines()
                 if ln.strip() and not ln.strip().startswith("#")]
     return [v.strip() for v in value.split(",") if v.strip()]
 

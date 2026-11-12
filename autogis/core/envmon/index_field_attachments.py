@@ -51,7 +51,7 @@ def load_manifest(path: Path) -> list[dict]:
                     f"Malformed manifest {p}: expected a JSON array of rows, "
                     f"got {type(rows).__name__} (#503)")
             return rows
-        with p.open(newline="", encoding="utf-8") as fh:
+        with p.open(newline="", encoding="utf-8-sig") as fh:
             # strict: a manifest truncated inside a quoted field must raise
             # csv.Error (-> ValueError below), not yield a silent partial row
             # (#502 review).

@@ -83,7 +83,7 @@ def load_exceedance_points_csv(path: Path) -> list[ExceedancePoint]:
     pre-filtering to exceedances only).
     """
     pts: list[ExceedancePoint] = []
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             pts.append(ExceedancePoint(
                 location_id=row["location_id"].strip(),
@@ -114,7 +114,7 @@ def filter_results_to_exceedance_points(
     coords = load_well_coords(coords_path)
     seen: set[str] = set()
     pts: list[ExceedancePoint] = []
-    with Path(results_path).open(newline="", encoding="utf-8") as fh:
+    with Path(results_path).open(newline="", encoding="utf-8-sig") as fh:
         # Canonical-read before the per-well exceedance dedup: resolve fraction
         # pairs and drop QC rows so a well exceeding only on the non-preferred
         # fraction (or in a QC blank) never seeds a plume vertex (ADR-0075).
