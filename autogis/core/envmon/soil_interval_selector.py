@@ -128,7 +128,7 @@ def load_soil_results_csv(path) -> list:
     """
     path = Path(path)
     intervals = []
-    with path.open(newline="", encoding="utf-8") as fh:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
         for row in normalize_report_rows(list(csv.DictReader(fh))):
             qualifier = str(row.get("ResultQualifier", "")).strip().upper()
             result_value = _parse_float(str(row.get("ResultValue", "")).strip())

@@ -100,7 +100,7 @@ class SourceRegistry:
         if not self._path.exists():
             return []
         try:
-            with self._path.open(newline="", encoding="utf-8") as fh:
+            with self._path.open(newline="", encoding="utf-8-sig") as fh:
                 return [_decode(row) for row in csv.DictReader(fh)]
         except (OSError, KeyError, ValueError) as exc:
             raise SourceRegistryError(

@@ -199,7 +199,7 @@ def read_tracker_csv(path: Path) -> list[ReviewerComment]:
     if not p.exists():
         return []
     out: list[ReviewerComment] = []
-    with p.open(newline="", encoding="utf-8") as fh:
+    with p.open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             out.append(ReviewerComment(
                 comment_id=row.get("comment_id", ""),

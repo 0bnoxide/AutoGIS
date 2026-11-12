@@ -320,3 +320,43 @@ def test_known_sheet_data_types_matches_dispatched_set():
             re.findall(r'sheets_of_type\(\s*"([A-Z_]+)"',
                        py.read_text(encoding="utf-8")))
     assert dispatched == cv.KNOWN_SHEET_DATA_TYPES
+
+
+@pytest.mark.parametrize("name,text", [
+    ("dup_analyte.yaml", "analytes:\n  Benzene: {}\n  Benzene: {}\n"),
+    ("dup_level.yaml", "screening_levels:\n  GW:\n    Benzene: {value: 5}\n    Benzene: {value: 50}\n"),
+    ("dup.json", '{"analytes": {"Benzene": {}, "Benzene": {}}}'),
+    ("dup_in_merge_source.yaml", "analytes: {<<: {Benzene: {}, Benzene: {}}}\n"),
+])
+def test_load_config_rejects_duplicate_keys(tmp_path, name, text):
+    """#609: duplicate mapping keys were silently collapsed (last wins)."""
+    from autogis.core.common.config import ConfigError, load_config
+    p = tmp_path / name
+    p.write_text(text, encoding="utf-8")
+    with pytest.raises(ConfigError, match="duplicate key"):
+        load_config(p)
+
+
+def test_load_config_keeps_yaml_merge_override(tmp_path):
+    from autogis.core.common.config import load_config
+    p = tmp_path / "merge.yaml"
+    p.write_text("a: &x {b: 1}\nc:\n  <<: *x\n  b: 2\n", encoding="utf-8")
+    assert load_config(p) == {"a": {"b": 1}, "c": {"b": 2}}
+
+
+def test_load_config_merge_override_in_aliased_source(tmp_path):
+    """#625 review: an anchored source flattened once must not read as duplicate when aliased."""
+    from autogis.core.common.config import load_config
+    p = tmp_path / "alias.yaml"
+    p.write_text("a: {<<: &b {<<: {x: 1}, x: 2}}\nb: *b\n", encoding="utf-8")
+    assert load_config(p) == {"a": {"x": 2}, "b": {"x": 2}}
+
+
+def test_manage_analyte_dict_duplicate_key_is_not_pass(tmp_path):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    p = tmp_path / "d.yaml"
+    p.write_text("analytes:\n  Benzene: {}\n  Benzene: {}\n", encoding="utf-8")
+    result = CliRunner().invoke(autogis, ["envmon", "manage-analyte-dict", str(p)])
+    assert result.exit_code == 1 and "duplicate key" in result.output
+    assert "PASS" not in result.output
