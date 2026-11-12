@@ -29,6 +29,41 @@ class ConfigError(Exception):
     """Blocking configuration problem (missing file/keys, bad column refs)."""
 
 
+class _DuplicateKey(ValueError):
+    pass
+
+
+def _unique_json_object(pairs):
+    out = {}
+    for k, v in pairs:
+        if k in out:
+            raise _DuplicateKey(repr(k))
+        out[k] = v
+    return out
+
+
+def _unique_key_loader(yaml):
+    """SafeLoader that rejects duplicate mapping keys instead of keeping the last (#609)."""
+    class UniqueKeyLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            seen = set()
+            for key_node, _ in node.value:
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    continue  # '<<' merge keys may be overridden explicitly
+                key = self.construct_object(key_node, deep=True)
+                try:
+                    hash(key)
+                except TypeError:
+                    continue  # SafeLoader reports unhashable keys itself
+                if key in seen:
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping", node.start_mark,
+                        f"found duplicate key {key!r}", key_node.start_mark)
+                seen.add(key)
+            return super().construct_mapping(node, deep=deep)
+    return UniqueKeyLoader
+
+
 def load_config(path: Path) -> dict:
     path = Path(path)
     if not path.exists():
@@ -49,14 +84,16 @@ def load_config(path: Path) -> dict:
                 f"'conda install pyyaml' in the ArcGIS Pro environment or "
                 f"provide the same configuration as .json.") from exc
         try:
-            data = yaml.safe_load(text)
+            data = yaml.load(text, Loader=_unique_key_loader(yaml))  # noqa: S506 - SafeLoader subclass
         except yaml.YAMLError as exc:
             raise ConfigError(f"{path} could not be parsed: {exc}") from None
     else:
         try:
-            data = json.loads(text)
+            data = json.loads(text, object_pairs_hook=_unique_json_object)
         except json.JSONDecodeError as exc:
             raise ConfigError(f"{path} could not be parsed: {exc}") from None
+        except _DuplicateKey as exc:
+            raise ConfigError(f"{path} could not be parsed: duplicate key {exc}") from None
     if not isinstance(data, dict):
         raise ConfigError(f"{path} must contain a mapping at the top level")
     return data
