@@ -1,3 +1,4 @@
+import pytest
 import yaml
 from click.testing import CliRunner
 
@@ -27,3 +28,26 @@ def test_manage_analyte_dict_list_prints_table(tmp_path):
     r = CliRunner().invoke(autogis, ["envmon", "manage-analyte-dict", p, "--list"])
     assert r.exit_code == 0
     assert "Benzene" in r.output
+
+
+@pytest.mark.parametrize("content", [
+    b"",                       # empty document
+    b"- benzene\n",            # list at the top level
+    b"a: [\n",                 # invalid YAML
+    b"\xff\xfe",               # not UTF-8
+    b"analytes:\n  Benzene:\n",  # null entry
+])
+@pytest.mark.parametrize("flags", [[], ["--list"]])
+def test_manage_analyte_dict_bad_yaml_exits_cleanly(tmp_path, content, flags):
+    p = tmp_path / "analytes dict ü.yaml"
+    p.write_bytes(content)
+    r = CliRunner().invoke(autogis, ["envmon", "manage-analyte-dict", str(p), *flags])
+    assert r.exit_code == 1
+    assert isinstance(r.exception, SystemExit)  # clean exit, not a traceback
+    assert "Error:" in r.output
+
+
+def test_manage_analyte_dict_directory_exits_cleanly(tmp_path):
+    r = CliRunner().invoke(autogis, ["envmon", "manage-analyte-dict", str(tmp_path)])
+    assert r.exit_code == 1
+    assert "could not be read" in r.output

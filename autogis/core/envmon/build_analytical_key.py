@@ -21,6 +21,8 @@ from typing import Optional
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
+from autogis.core.common.config import ConfigError
+
 _BOLD = Font(bold=True)
 _DRAFT_FILL = PatternFill(fill_type="solid", fgColor="FFF2CC")  # light amber
 _MAX_COL_WIDTH = 40
@@ -61,6 +63,8 @@ def build_analytical_key(
     ``matrix`` is required — units and screening lookups are both keyed by it.
     """
     matrix_screening = (screening_levels.get(matrix) or {})
+    if not isinstance(matrix_screening, dict):
+        raise ConfigError(f"screening_levels.{matrix} must be a mapping")
 
     rows: list = []
     for canonical, entry in analytes.items():
@@ -72,10 +76,22 @@ def build_analytical_key(
         elif not entry.get("include_in_default_figures", False):
             continue
 
-        units = (entry.get("default_units_by_matrix") or {}).get(matrix, "")
+        units_by_matrix = entry.get("default_units_by_matrix") or {}
+        if not isinstance(units_by_matrix, dict):
+            raise ConfigError(
+                f"analyte '{canonical}': default_units_by_matrix must be a mapping")
+        units = units_by_matrix.get(matrix, "")
+        try:
+            display_order = int(entry.get("display_order", 9999))
+        except (TypeError, ValueError):
+            raise ConfigError(
+                f"analyte '{canonical}': display_order must be an integer") from None
 
         sl_entry = matrix_screening.get(canonical)
-        if sl_entry and isinstance(sl_entry, dict):
+        if sl_entry is not None and not isinstance(sl_entry, dict):
+            raise ConfigError(
+                f"screening_levels.{matrix}.{canonical} must be a mapping")
+        if sl_entry:
             screening_value = sl_entry.get("value")
             screening_units = sl_entry.get("units", "")
             screening_source = sl_entry.get("source", "")
@@ -87,7 +103,7 @@ def build_analytical_key(
         rows.append(AnalyticalKeyRow(
             canonical=canonical,
             abbreviation=str(entry.get("abbreviation", canonical)),
-            display_order=int(entry.get("display_order", 9999)),
+            display_order=display_order,
             units=units,
             screening_value=screening_value,
             screening_units=screening_units,

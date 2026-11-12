@@ -681,11 +681,15 @@ def validate_config_cmd(site_config, profiles, figures, analytes, screening,
 @qa_report_options
 def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
     """Tool: validate / inspect the analyte dictionary (read-only, headless)."""
+    from autogis.core.common.config import ConfigError
     from autogis.core.envmon.manage_analyte_dict import (
         check_analyte_dictionary, list_analytes)
 
     if do_list:
-        rows = list_analytes(Path(analytes))
+        try:
+            rows = list_analytes(Path(analytes))
+        except ConfigError as exc:
+            raise click.ClickException(str(exc))
         header = f"{'display':>7}  {'canonical':<24} {'abbr':<8} {'group':<14} aliases"
         click.echo(header)
         for row in rows:
@@ -695,7 +699,10 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
         if not do_check:
             return
     # Default to check when --list was not requested, or when both given.
-    qa = check_analyte_dictionary(Path(analytes))
+    try:
+        qa = check_analyte_dictionary(Path(analytes))
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     _render_qa(qa, report, fail_on)
 
 
@@ -1190,28 +1197,34 @@ def build_analytical_key_cmd(analyte_dict, screening_levels, matrix, out_path,
                              analyte_filter, site_id):
     """Tool 5.5: build the analytical key/legend table (analyte, units, screening, NE)."""
     from autogis.core.common.config import (
-        load_analyte_dictionary, load_screening_levels)
+        ConfigError, load_analyte_dictionary, load_screening_levels)
     from autogis.core.envmon.build_analytical_key import (
         build_analytical_key, format_key_markdown, write_key_csv, write_key_xlsx)
 
-    analytes = load_analyte_dictionary(Path(analyte_dict))
-    screening = load_screening_levels(Path(screening_levels))
-    flt = ([s.strip() for s in analyte_filter.split(",") if s.strip()]
-           if analyte_filter else None)
-    rows = build_analytical_key(analytes, screening, matrix=matrix,
-                                analyte_filter=flt)
+    try:
+        analytes = load_analyte_dictionary(Path(analyte_dict))
+        screening = load_screening_levels(Path(screening_levels))
+        flt = ([s.strip() for s in analyte_filter.split(",") if s.strip()]
+               if analyte_filter else None)
+        rows = build_analytical_key(analytes, screening, matrix=matrix,
+                                    analyte_filter=flt)
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     if not out_path:
         click.echo(format_key_markdown(rows, matrix=matrix, site_id=site_id))
         return
     suffix = Path(out_path).suffix.lower()
-    if suffix == ".csv":
-        write_key_csv(rows, Path(out_path))
-    elif suffix == ".xlsx":
-        write_key_xlsx(rows, Path(out_path), matrix=matrix)
-    else:
-        Path(out_path).write_text(
-            format_key_markdown(rows, matrix=matrix, site_id=site_id),
-            encoding="utf-8")
+    try:
+        if suffix == ".csv":
+            write_key_csv(rows, Path(out_path))
+        elif suffix == ".xlsx":
+            write_key_xlsx(rows, Path(out_path), matrix=matrix)
+        else:
+            Path(out_path).write_text(
+                format_key_markdown(rows, matrix=matrix, site_id=site_id),
+                encoding="utf-8")
+    except OSError as exc:
+        raise click.ClickException(f"cannot write {out_path}: {exc}")
     click.echo(f"Written: {out_path}  ({len(rows)} analytes, matrix={matrix})")
 
 
@@ -1407,6 +1420,7 @@ def drone_checkpoint_qa_cmd(
     checkpoints_csv, hrms_threshold, vrms_threshold, output, report, fail_on
 ):
     """Tool 8.7: evaluate GCP checkpoint accuracy (headless)."""
+    import csv
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.drone_checkpoint_qa import (
         evaluate_gcp_checkpoints,
@@ -1414,7 +1428,12 @@ def drone_checkpoint_qa_cmd(
         write_results_csv,
     )
 
-    checkpoints = read_checkpoint_csv(Path(checkpoints_csv))
+    try:
+        checkpoints = read_checkpoint_csv(Path(checkpoints_csv))
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:  # before ValueError
+        raise click.ClickException(f"cannot read {checkpoints_csv}: {exc}")
+    except ValueError as exc:  # message already names the file and line
+        raise click.ClickException(str(exc))
     qa = QACollector()
     summary = evaluate_gcp_checkpoints(
         checkpoints,
@@ -1457,6 +1476,7 @@ def rtk_control_check_cmd(
     report, fail_on,
 ):
     """Compare RTK-surveyed control shots to published benchmarks (headless)."""
+    import csv
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.rtk_control_check import (
         evaluate_control_check,
@@ -1464,7 +1484,12 @@ def rtk_control_check_cmd(
         write_results_csv,
     )
 
-    points = read_control_check_csv(Path(control_csv))
+    try:
+        points = read_control_check_csv(Path(control_csv))
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:  # before ValueError
+        raise click.ClickException(f"cannot read {control_csv}: {exc}")
+    except ValueError as exc:  # message already names the file and line
+        raise click.ClickException(str(exc))
     qa = QACollector()
     summary = evaluate_control_check(
         points,
