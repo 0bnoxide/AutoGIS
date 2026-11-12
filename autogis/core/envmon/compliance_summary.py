@@ -52,14 +52,17 @@ def compute_trend(values: list, dates: list, min_points: int = 3) -> str:
     except (ValueError, IndexError):
         xs = list(range(len(values)))
     n = len(xs)
-    sum_x = sum(xs)
-    sum_y = sum(values)
-    sum_xy = sum(x * y for x, y in zip(xs, values))
-    sum_xx = sum(x * x for x in xs)
-    denom = n * sum_xx - sum_x ** 2
+    mean = abs(sum(values) / n)
+    if mean == 0:
+        return "stable"
+    # Relative slope (fraction of |mean| per month/sample) so the verdict is unit-independent (#615).
+    ys = [v / mean for v in values]
+    mx, my = sum(xs) / n, sum(ys) / n
+    denom = sum((x - mx) ** 2 for x in xs)
     if denom == 0:
         return "stable"
-    slope = (n * sum_xy - sum_x * sum_y) / denom
+    # Centered OLS avoids cancellation; rounding keeps the exact +/-1% boundary unit-independent.
+    slope = round(sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom, 9)
     if slope > 0.01:
         return "worsening"
     if slope < -0.01:

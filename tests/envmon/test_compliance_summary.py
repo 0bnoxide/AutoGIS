@@ -107,3 +107,26 @@ def test_write_workbook(tmp_path):
 def test_write_workbook_has_no_silent_group_map_keyword():
     assert "group_map" not in inspect.signature(
         write_compliance_workbook).parameters
+
+
+def test_compute_trend_is_unit_independent():
+    dates = ["2024-01", "2024-02", "2024-03"]
+    ug = [1.0, 1.5, 2.0]
+    mg = [v / 1000 for v in ug]
+    assert compute_trend(ug, dates) == compute_trend(mg, dates) == "worsening"
+    flat = [100.0, 100.5, 101.0]  # +0.5/month on ~100 is <1%/month
+    assert compute_trend(flat, dates) == "stable"
+
+
+def test_compute_trend_negative_and_zero_mean():
+    dates = ["2024-01", "2024-02", "2024-03"]
+    assert compute_trend([-5.0, -3.0, -1.0], dates) == "worsening"  # e.g. ORP rising
+    assert compute_trend([0.0, 0.0, 0.0], dates) == "stable"
+
+
+def test_compute_trend_boundary_is_unit_independent():
+    dates = ["2024-01", "2024-02", "2024-03"]
+    for vals in ([101.0, 100.0, 99.0], [99.0, 100.0, 101.0]):
+        verdicts = {compute_trend([v * k for v in vals], dates)
+                    for k in (1, 1e-3, 1e-6, 1e3)}
+        assert verdicts == {"stable"}
