@@ -116,3 +116,9 @@ def test_compute_trend_is_unit_independent():
     assert compute_trend(ug, dates) == compute_trend(mg, dates) == "worsening"
     flat = [100.0, 100.5, 101.0]  # +0.5/month on ~100 is <1%/month
     assert compute_trend(flat, dates) == "stable"
+
+
+def test_compute_trend_negative_and_zero_mean():
+    dates = ["2024-01", "2024-02", "2024-03"]
+    assert compute_trend([-5.0, -3.0, -1.0], dates) == "worsening"  # e.g. ORP rising
+    assert compute_trend([0.0, 0.0, 0.0], dates) == "stable"
