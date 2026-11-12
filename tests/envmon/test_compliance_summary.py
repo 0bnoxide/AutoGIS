@@ -130,3 +130,15 @@ def test_compute_trend_boundary_is_unit_independent():
         verdicts = {compute_trend([v * k for v in vals], dates)
                     for k in (1, 1e-3, 1e-6, 1e3)}
         assert verdicts == {"stable"}
+
+
+@pytest.mark.parametrize("bad", ["nan", "NaN", "inf", "-inf", "Infinity"])
+def test_non_finite_result_is_not_a_detection(bad):
+    """#618: float("nan"/"inf") parsed, so they counted as detections/exceedances."""
+    rows = [{"LocationID": "MW-9", "AnalyteName": "Benzene", "ResultValue": v,
+             "ResultQualifier": "", "ReportedUnits": "ug/L", "SampleDate": d}
+            for v, d in ((bad, "2025-01-15"), ("1", "2025-02-15"), ("2", "2025-03-15"))]
+    rec = build_compliance_summary(rows, screening_levels={"Benzene": 5.0}).records[0]
+    assert rec.detection_count == 2
+    assert rec.max_value == 2.0
+    assert rec.exceedance_count == 0
