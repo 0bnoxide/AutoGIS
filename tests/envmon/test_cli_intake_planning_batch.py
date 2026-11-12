@@ -149,7 +149,8 @@ class TestBatchImportWorkbooks:
         r = _run("envmon", "batch-import-workbooks",
                  "--manifest", str(manifest_path),
                  "--output-dir", str(out_dir))
-        assert r.exit_code == 0, r.output
+        # sole row skipped -> nothing imported -> not a PASS (#621)
+        assert r.exit_code == 1, r.output
         with (out_dir / "batch_manifest.csv").open(encoding="utf-8") as fh:
             rows = list(csv.DictReader(fh))
         assert rows[0]["Status"] == "SKIP"

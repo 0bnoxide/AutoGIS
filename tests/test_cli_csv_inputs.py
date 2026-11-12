@@ -129,3 +129,16 @@ def test_batch_import_workbooks_ragged_or_empty_manifest_is_clean_error(tmp_path
         assert result.output.startswith("Error:") and str(bad) in result.output
         assert "PASS" not in result.output
         assert not (tmp_path / "out").exists()
+
+
+def test_batch_import_workbooks_all_rows_skipped_is_not_pass(tmp_path):
+    """#621: every workbook missing gave 0/N OK but Status: PASS, exit 0."""
+    manifest = tmp_path / "m.csv"
+    manifest.write_text("workbook_path,profile_path,site_id\nnope.xlsx,nope.yaml,S1\n",
+                        encoding="utf-8")
+    result = CliRunner().invoke(autogis, [
+        "envmon", "batch-import-workbooks", "--manifest", str(manifest),
+        "--output-dir", str(tmp_path / "out")])
+    assert result.exit_code == 1, result.output
+    assert "no_workbooks_imported" in result.output
+    assert "Status: PASS" not in result.output
