@@ -376,7 +376,7 @@ def test_analyte_scalar_alias_is_one_alias(tmp_path):
     assert load_analyte_dictionary(p)["Benzene"]["aliases"] == ["benzol"]
 
 
-@pytest.mark.parametrize("entry", ["{aliases: 5}", "{display_order: abc}",
+@pytest.mark.parametrize("entry", ["{aliases: 5}", "{aliases: [[x]]}", "{display_order: abc}",
                                    "{display_order: true}"])
 def test_analyte_wrong_shape_is_clean_error(tmp_path, entry):
     """#606 policy: other wrong shapes are a ConfigError, not a traceback."""
