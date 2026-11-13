@@ -2,14 +2,21 @@ import inspect
 from pathlib import Path
 import pytest
 import openpyxl
+import functools
+from autogis.core.envmon import compliance_summary as cs
 from autogis.core.envmon.compliance_summary import (
     ComplianceRecord, ComplianceSummaryResult,
-    compute_trend, build_compliance_summary, write_compliance_workbook,
+    build_compliance_summary, write_compliance_workbook,
 )
+
+# Slope-logic tests below use 3-point series; the production default is 4 (#615).
+compute_trend = functools.partial(cs.compute_trend, min_points=3)
 
 _SL = {"Benzene": 5.0}
 _ROWS = [
     # MW-01 Benzene: detected, exceeds, trend worsening
+    {"LocationID": "MW-01", "AnalyteName": "Benzene", "ResultValue": "1.0",
+     "ResultQualifier": "", "ReportedUnits": "ug/L", "SampleDate": "2024-06-15"},
     {"LocationID": "MW-01", "AnalyteName": "Benzene", "ResultValue": "3.0",
      "ResultQualifier": "", "ReportedUnits": "ug/L", "SampleDate": "2025-01-15"},
     {"LocationID": "MW-01", "AnalyteName": "Benzene", "ResultValue": "6.0",
@@ -20,6 +27,8 @@ _ROWS = [
     {"LocationID": "MW-02", "AnalyteName": "Benzene", "ResultValue": "ND",
      "ResultQualifier": "ND", "ReportedUnits": "ug/L", "SampleDate": "2026-01-15"},
     # MW-03 Benzene: improving trend (below MCL)
+    {"LocationID": "MW-03", "AnalyteName": "Benzene", "ResultValue": "4.5",
+     "ResultQualifier": "", "ReportedUnits": "ug/L", "SampleDate": "2024-06-15"},
     {"LocationID": "MW-03", "AnalyteName": "Benzene", "ResultValue": "4.0",
      "ResultQualifier": "", "ReportedUnits": "ug/L", "SampleDate": "2025-01-15"},
     {"LocationID": "MW-03", "AnalyteName": "Benzene", "ResultValue": "2.0",
@@ -158,3 +167,48 @@ def test_non_finite_result_is_not_a_detection(bad):
     assert rec.detection_count == 2
     assert rec.max_value == 2.0
     assert rec.exceedance_count == 0
+
+
+def test_trend_requires_four_points_by_default():
+    """#615 policy: a trend needs at least 4 points."""
+    d = ["2024-01", "2024-02", "2024-03", "2024-04"]
+    assert cs.compute_trend([1.0, 2.0, 3.0], d[:3]) == "insufficient_data"
+    assert cs.compute_trend([1.0, 2.0, 3.0, 4.0], d) == "worsening"
+
+
+def test_nondetects_enter_trend_at_half_rl():
+    """#615 policy: NDs count at RL/2, so a well going to ND reads improving."""
+    rows = [{"LocationID": "MW-7", "AnalyteName": "Benzene", "ResultValue": v,
+             "ResultQualifier": q, "ReportedUnits": "ug/L", "SampleDate": d,
+             "ReportingLimit": "1.0"}
+            for v, q, d in (("8", "", "2024-01-15"), ("6", "", "2024-02-15"),
+                            ("ND", "ND", "2024-03-15"), ("ND", "ND", "2024-04-15"))]
+    rec = build_compliance_summary(rows, screening_levels={"Benzene": 5.0}).records[0]
+    assert rec.trend == "improving"
+    assert rec.detection_count == 2  # NDs feed the trend only, not detection stats
+    rows[2].pop("ReportingLimit")
+    rows[3].pop("ReportingLimit")
+    res = build_compliance_summary(rows, screening_levels={"Benzene": 5.0})
+    assert res.records[0].trend == "insufficient_data"
+    assert any(r.category == "trend_nondetect_no_limit" for r in res.qa.records)
+
+
+def test_nondetect_trend_keeps_row_order_with_bad_date():
+    """#636 review: NDs appended after detects flipped the index-fallback trend."""
+    rows = [{"LocationID": "MW-8", "AnalyteName": "Benzene", "ResultValue": v,
+             "ResultQualifier": q, "ReportedUnits": "ug/L", "SampleDate": d,
+             "ReportingLimit": "1.0"}
+            for v, q, d in (("ND", "ND", "2023-01-15"), ("ND", "ND", "2023-02-15"),
+                            ("5", "", "1/15/2024"), ("6", "", "2024-02-15"),
+                            ("7", "", "2024-03-15"))]
+    assert build_compliance_summary(rows).records[0].trend == "worsening"
+
+
+def test_nondetect_detection_limit_fallback():
+    rows = [{"LocationID": "MW-9", "AnalyteName": "Benzene", "ResultValue": v,
+             "ResultQualifier": q, "ReportedUnits": "ug/L", "SampleDate": d,
+             "ReportingLimit": "0", "DetectionLimit": "2.0"}
+            for v, q, d in (("1", "", "2024-01-15"), ("2", "", "2024-02-15"),
+                            ("3", "U", "2024-03-15"), ("4", "", "2024-04-15"))]
+    # U row enters at DL/2 = 1.0 (RL of 0 is not a usable limit), not at its 3
+    assert build_compliance_summary(rows).records[0].trend == "worsening"
