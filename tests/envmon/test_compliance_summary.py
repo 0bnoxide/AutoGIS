@@ -191,3 +191,24 @@ def test_nondetects_enter_trend_at_half_rl():
     res = build_compliance_summary(rows, screening_levels={"Benzene": 5.0})
     assert res.records[0].trend == "insufficient_data"
     assert any(r.category == "trend_nondetect_no_limit" for r in res.qa.records)
+
+
+def test_nondetect_trend_keeps_row_order_with_bad_date():
+    """#636 review: NDs appended after detects flipped the index-fallback trend."""
+    rows = [{"LocationID": "MW-8", "AnalyteName": "Benzene", "ResultValue": v,
+             "ResultQualifier": q, "ReportedUnits": "ug/L", "SampleDate": d,
+             "ReportingLimit": "1.0"}
+            for v, q, d in (("ND", "ND", "2023-01-15"), ("ND", "ND", "2023-02-15"),
+                            ("5", "", "1/15/2024"), ("6", "", "2024-02-15"),
+                            ("7", "", "2024-03-15"))]
+    assert build_compliance_summary(rows).records[0].trend == "worsening"
+
+
+def test_nondetect_detection_limit_fallback():
+    rows = [{"LocationID": "MW-9", "AnalyteName": "Benzene", "ResultValue": v,
+             "ResultQualifier": q, "ReportedUnits": "ug/L", "SampleDate": d,
+             "ReportingLimit": "0", "DetectionLimit": "2.0"}
+            for v, q, d in (("1", "", "2024-01-15"), ("2", "", "2024-02-15"),
+                            ("3", "U", "2024-03-15"), ("4", "", "2024-04-15"))]
+    # U row enters at DL/2 = 1.0 (RL of 0 is not a usable limit), not at its 3
+    assert build_compliance_summary(rows).records[0].trend == "worsening"

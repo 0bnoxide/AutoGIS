@@ -8,7 +8,7 @@
 Before this change, `compliance_summary.compute_trend` fitted only detected values and gave a direction label from as few as 3 points (#615). A well that went from detects to all non-detects therefore had its trend fitted on the remaining detects, and a few noisy points could produce a label in the compliance workbook. #616 already made the slope unit-independent. The owner was asked how non-detects should count and how many points a trend needs.
 
 ## Decision
-- The trend series includes non-detects at half the reporting limit (`ReportingLimit`, falling back to `DetectionLimit`). This matches the existing `half_rl` rule in `concentration_surface`.
+- The trend series includes non-detects at half the reporting limit (`ReportingLimit`, falling back to `DetectionLimit`; a zero or negative limit counts as missing). This matches the existing `half_rl` rule in `concentration_surface`.
 - A non-detect with neither limit is left out of the trend and noted with an INFO QA record (`trend_nondetect_no_limit`). It is INFO rather than WARNING because these rows were always left out, and result files without limits must not start failing.
 - A trend needs at least 4 points (`compute_trend` `min_points` and `build_compliance_summary` `min_events_for_trend` both default to 4). Fewer points give `insufficient_data`.
 - Non-detects change only the trend. Detection, exceedance and maximum statistics still use detected values only.

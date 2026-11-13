@@ -159,22 +159,27 @@ def build_compliance_summary(
             max_date = ""
             max_ratio = None
 
-        # Non-detects enter the trend at half the reporting limit (#615 policy).
-        trend_vals, trend_dates = list(det_values), list(det_dates)
+        # Non-detects enter the trend at half the reporting limit (#615 policy);
+        # one pass in row order so an index fallback in compute_trend stays honest.
+        trend_vals, trend_dates = [], []
         nd_no_limit = 0
         for r in grp:
-            if r.get("ResultQualifier", "").upper().strip() not in nd_qualifiers:
-                continue
-            limit = _parse_float(r.get("ReportingLimit", "")) or \
-                _parse_float(r.get("DetectionLimit", ""))
-            if limit is None:
-                nd_no_limit += 1
-                continue
-            trend_vals.append(limit / 2)
+            if r.get("ResultQualifier", "").upper().strip() in nd_qualifiers:
+                limits = [_parse_float(r.get(k, "")) for k in ("ReportingLimit", "DetectionLimit")]
+                limit = next((x for x in limits if x is not None and x > 0), None)
+                if limit is None:
+                    nd_no_limit += 1
+                    continue
+                val = limit / 2
+            else:
+                val = _parse_float(r.get("ResultValue", ""))
+                if val is None:
+                    continue
+            trend_vals.append(val)
             trend_dates.append(r.get("SampleDate", ""))
         if nd_no_limit:
             qa.add(SEV_INFO, "trend_nondetect_no_limit",
-                   f"{loc}/{analyte}: {nd_no_limit} nondetect(s) without "
+                   f"{loc}/{analyte}: {nd_no_limit} nondetect(s) without a positive "
                    "ReportingLimit/DetectionLimit left out of the trend",
                    location_id=loc)
         trend = compute_trend(trend_vals, trend_dates, min_points=min_events_for_trend)
