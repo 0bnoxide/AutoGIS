@@ -360,3 +360,47 @@ def test_manage_analyte_dict_duplicate_key_is_not_pass(tmp_path):
     result = CliRunner().invoke(autogis, ["envmon", "manage-analyte-dict", str(p)])
     assert result.exit_code == 1 and "duplicate key" in result.output
     assert "PASS" not in result.output
+
+
+def _cli(*args):
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    return CliRunner().invoke(autogis, ["envmon", *args])
+
+
+def test_analyte_scalar_alias_is_one_alias(tmp_path):
+    """#606 policy: a bare string alias means [alias], not set(of its characters)."""
+    from autogis.core.common.config import load_analyte_dictionary
+    p = tmp_path / "a.yaml"
+    p.write_text("analytes:\n  Benzene: {aliases: benzol}\n", encoding="utf-8")
+    assert load_analyte_dictionary(p)["Benzene"]["aliases"] == ["benzol"]
+
+
+@pytest.mark.parametrize("entry", ["{aliases: 5}", "{aliases: [[x]]}", "{display_order: abc}",
+                                   "{display_order: true}"])
+def test_analyte_wrong_shape_is_clean_error(tmp_path, entry):
+    """#606 policy: other wrong shapes are a ConfigError, not a traceback."""
+    p = tmp_path / "a.yaml"
+    p.write_text(f"analytes:\n  Benzene: {entry}\n  Toluene: {{display_order: 2}}\n",
+                 encoding="utf-8")
+    for extra in ([], ["--list"]):
+        r = _cli("manage-analyte-dict", str(p), *extra)
+        assert r.exit_code == 1 and "Error:" in r.output, r.output
+        assert not isinstance(r.exception, (TypeError, AttributeError))
+
+
+@pytest.mark.parametrize("body", ["screening_levels: [1]\n",
+                                  "screening_levels:\n  water: [1]\n"])
+def test_screening_wrong_shape_is_clean_error(tmp_path, body):
+    p = tmp_path / "s.yaml"
+    p.write_text(body, encoding="utf-8")
+    for extra in ([], ["--list"]):
+        r = _cli("manage-screening-levels", str(p), *extra)
+        assert r.exit_code == 1 and "must be a mapping" in r.output, r.output
+
+
+def test_screening_blank_is_no_levels(tmp_path):
+    p = tmp_path / "s.yaml"
+    p.write_text("screening_levels:\n", encoding="utf-8")
+    r = _cli("manage-screening-levels", str(p))
+    assert r.exit_code == 0, r.output

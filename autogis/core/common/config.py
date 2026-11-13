@@ -290,6 +290,19 @@ def load_analyte_dictionary(path: Path) -> dict:
         entry.setdefault("aliases", [])
         entry.setdefault("abbreviation", name)
         entry.setdefault("display_order", 9999)
+        # #606: a bare string alias means one alias; any other wrong shape is rejected.
+        if isinstance(entry["aliases"], str):
+            entry["aliases"] = [entry["aliases"]]
+        elif entry["aliases"] is None:
+            entry["aliases"] = []
+        elif not isinstance(entry["aliases"], list) or \
+                not all(isinstance(a, str) for a in entry["aliases"]):
+            raise ConfigError(f"{path}: '{name}' aliases must be a list of strings, "
+                              f"got {entry['aliases']!r}")
+        order = entry["display_order"]
+        if isinstance(order, bool) or not isinstance(order, (int, float)):
+            raise ConfigError(f"{path}: '{name}' display_order must be a number, "
+                              f"got {order!r}")
     return analytes
 
 
