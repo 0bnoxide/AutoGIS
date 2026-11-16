@@ -1,6 +1,8 @@
 """CSV inputs that pass ``click.Path(exists=True)`` but cannot be read -- a
 directory, a non-UTF-8 file -- are a clean CLI error, not a traceback (#573).
 """
+from pathlib import Path
+
 import pytest
 from click.testing import CliRunner
 
@@ -142,3 +144,27 @@ def test_batch_import_workbooks_all_rows_skipped_is_not_pass(tmp_path):
     assert result.exit_code == 1, result.output
     assert "no_workbooks_imported" in result.output
     assert "Status: PASS" not in result.output
+
+
+def test_batch_import_workbooks_unwraps_shipped_yaml(tmp_path, monkeypatch):
+    """#638: wrapped analyte/screening YAML reached run_batch_import raw."""
+    from types import SimpleNamespace
+    import autogis.core.envmon.batch_workbook_importer as bwi
+    seen = {}
+
+    def fake_run(rows, **kw):
+        seen.update(kw)
+        return SimpleNamespace(manifest=[], all_samples=[], all_results=[])
+
+    monkeypatch.setattr(bwi, "run_batch_import", fake_run)
+    manifest = tmp_path / "m.csv"
+    manifest.write_text("workbook_path,profile_path,site_id\nx.xlsx,p.yaml,S1\n",
+                        encoding="utf-8")
+    cfg = Path(__file__).resolve().parents[1] / "autogis" / "config"
+    CliRunner().invoke(autogis, [
+        "envmon", "batch-import-workbooks", "--manifest", str(manifest),
+        "--analytes", str(cfg / "analytes" / "analyte_dictionary.yaml"),
+        "--screening", str(cfg / "screening_levels" / "screening_levels.yaml"),
+        "--output-dir", str(tmp_path / "out")])
+    assert "Benzene" in seen["analyte_dictionary"]
+    assert "screening_levels" not in seen["screening_levels"]

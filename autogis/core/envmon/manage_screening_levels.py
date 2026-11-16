@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ..common.config import load_config
+from ..common.config import load_analyte_dictionary, load_config
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
 
 
@@ -62,7 +62,7 @@ def check_screening_levels(
                                 recommended_action="Replace with citation before production use"))
 
     if analytes_path is not None:
-        analytes_data = load_config(analytes_path)
+        analytes_data = load_analyte_dictionary(analytes_path)
         covered: set[tuple[str, str]] = set()
         for matrix, ents in sl.items():
             for analyte in (ents or {}):
