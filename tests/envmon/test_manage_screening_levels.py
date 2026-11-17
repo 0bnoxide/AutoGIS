@@ -120,3 +120,16 @@ def test_cli_valid_screening_exits_zero(tmp_path):
     f.write_text(_VALID_YAML, encoding="utf-8")
     result = CliRunner().invoke(autogis, ["envmon", "manage-screening-levels", str(f)])
     assert result.exit_code == 0, result.output
+
+
+def test_wrapped_analyte_dictionary_coverage_check(tmp_path):
+    """#638: the shipped `analytes:`-wrapped dictionary silently covered nothing."""
+    sl = tmp_path / "sl.yaml"
+    sl.write_text(_VALID_YAML, encoding="utf-8")
+    an = tmp_path / "an.yaml"
+    an.write_text("analytes:\n" + "".join("  " + line + "\n"
+                                          for line in _ANALYTES_YAML.splitlines()),
+                  encoding="utf-8")
+    qa = check_screening_levels(sl, an)
+    missing = [r.message for r in qa.records if r.category == "analyte_not_covered"]
+    assert len(missing) == 1 and "Toluene" in missing[0]

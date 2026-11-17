@@ -2422,12 +2422,16 @@ def import_edd_cmd(edd_path, profile_path, site_id, gdb_path,
     _guard("import-edd")
     from autogis.core.envmon.edd_profile import LabEDDProfile
     from autogis.core.envmon.edd_importer import run_edd_import
-    from autogis.core.common.config import load_config
+    from autogis.core.common.config import (
+        ConfigError, load_analyte_dictionary, load_screening_levels)
     from autogis.core.common.qa import QACollector
 
     profile = LabEDDProfile.load(Path(profile_path))
-    analyte_dictionary = load_config(Path(analytes)) if analytes else {}
-    screening_levels = load_config(Path(screening)) if screening else {}
+    try:  # unwrap `analytes:` / `screening_levels:` (#638)
+        analyte_dictionary = load_analyte_dictionary(Path(analytes)) if analytes else {}
+        screening_levels = load_screening_levels(Path(screening)) if screening else {}
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
 
     override = None
     if event_date:
@@ -6410,7 +6414,7 @@ def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
                                event_date, report, fail_on):
     """Tool 2.2: batch-import EDD workbooks from a manifest CSV or a directory (headless)."""
     from datetime import date as _date
-    from autogis.core.common.config import ConfigError, load_config
+    from autogis.core.common.config import ConfigError, load_analyte_dictionary, load_screening_levels
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import write_records_csv
     from autogis.core.envmon.batch_workbook_importer import (
@@ -6440,8 +6444,8 @@ def batch_import_workbooks_cmd(manifest, edd_dir, profile, site, pattern,
         except ValueError as exc:  # missing columns, rows or values
             raise click.ClickException(f"{manifest}: {exc}")
     try:
-        analyte_dict = load_config(Path(analytes)) if analytes else {}
-        screening_lvls = load_config(Path(screening)) if screening else {}
+        analyte_dict = load_analyte_dictionary(Path(analytes)) if analytes else {}
+        screening_lvls = load_screening_levels(Path(screening)) if screening else {}
     except ConfigError as exc:
         raise click.ClickException(str(exc))
     ev_date = _date.fromisoformat(event_date) if event_date else None
