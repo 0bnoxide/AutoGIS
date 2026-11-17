@@ -190,3 +190,25 @@ def test_import_edd_unwraps_shipped_yaml(tmp_path, monkeypatch):
     assert r.exit_code == 0, r.output
     assert "Benzene" in seen["analyte_dictionary"]
     assert "screening_levels" not in seen["screening_levels"]
+
+
+@pytest.mark.parametrize("body", ["sites: [\n", "sites: []\nsites: []\n"])
+def test_direct_yaml_load_malformed_is_clean_error(tmp_path, body):
+    """#635: malformed / duplicate-key YAML escaped as a raw parser traceback."""
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(body, encoding="utf-8")
+    r = CliRunner().invoke(autogis, ["envmon", "generate-job-queue", "--manifest", str(bad),
+                                     "--output", str(tmp_path / "q.csv")])
+    assert r.exit_code == 1 and "cannot read" in r.output, r.output
+
+
+def test_validate_db_bad_analyte_dictionary_is_clean_error(tmp_path, monkeypatch):
+    """#639: a malformed --analytes escaped validate-db as a ConfigError traceback."""
+    import autogis.adapters.cli as cli_mod
+    monkeypatch.setattr(cli_mod, "_guard", lambda name: None)
+    bad = tmp_path / "a.yaml"
+    bad.write_text("analytes: [1]\n", encoding="utf-8")
+    r = CliRunner().invoke(autogis, ["envmon", "validate-db", str(tmp_path / "x.gdb"),
+                                     "--analytes", str(bad)])
+    assert r.exit_code == 1 and "Error:" in r.output, r.output
+    assert not r.exception or isinstance(r.exception, SystemExit)
