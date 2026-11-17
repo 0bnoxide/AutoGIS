@@ -117,3 +117,18 @@ def test_shipped_canonical_screening_file_flags_exceedance(tmp_path):
     with open(out, encoding="utf-8") as fh:
         row = next(csv.DictReader(fh))
     assert row["ExceedsScreeningLevel"] == "1" and row["ScreeningLevel"] in ("5", "5.0")
+    assert row["ScreeningLevelSource"].startswith("Montana DEQ")
+
+
+def test_unwrapped_canonical_screening_file_flags_exceedance(tmp_path):
+    """#648 review: a canonical file without the screening_levels: wrapper screened nothing."""
+    results = tmp_path / "r.csv"
+    _write_csv(results, [_result_row(num="100")])
+    sl = tmp_path / "s.yaml"
+    sl.write_text("GW:\n  Benzene: {value: 5, units: ug/L, source: X}\n", encoding="utf-8")
+    out = tmp_path / "o.csv"
+    r = CliRunner().invoke(autogis, ["envmon", "apply-screening", "--results-csv",
+                                     str(results), "--screening", str(sl), "--output", str(out)])
+    assert r.exit_code == 0, r.output
+    with open(out, encoding="utf-8") as fh:
+        assert next(csv.DictReader(fh))["ExceedsScreeningLevel"] == "1"

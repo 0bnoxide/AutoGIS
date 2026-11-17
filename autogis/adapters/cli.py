@@ -1353,12 +1353,13 @@ def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
     from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
     from autogis.core.common.config import ConfigError, load_screening_levels
-    from autogis.core.envmon.apply_screening import apply_screening_levels, from_canonical
+    from autogis.core.envmon.apply_screening import (
+        apply_screening_levels, from_canonical, is_canonical)
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
     screening = _read_yaml(screening_path)
-    if isinstance(screening, dict) and "screening_levels" in screening:
-        try:  # the shipped/canonical file shape (#646)
+    if is_canonical(screening):
+        try:  # the shipped/canonical file shape, wrapped or not (#646)
             screening = from_canonical(load_screening_levels(Path(screening_path)))
         except ConfigError as exc:
             raise click.ClickException(str(exc))

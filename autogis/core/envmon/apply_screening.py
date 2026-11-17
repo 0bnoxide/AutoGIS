@@ -18,13 +18,27 @@ def from_canonical(levels: dict) -> dict:
     ``{analyte: {matrix: {level, unit, source}}}`` shape (#646)."""
     out: dict = {}
     for matrix, analytes in levels.items():
-        for analyte, e in (analytes or {}).items():
-            if analyte.startswith("_") or not isinstance(e, dict):
+        if str(matrix).startswith("_") or not isinstance(analytes, dict):
+            continue
+        for analyte, e in analytes.items():
+            if str(analyte).startswith("_") or not isinstance(e, dict):
                 continue
             out.setdefault(analyte, {})[matrix] = {
                 "level": e.get("value"), "unit": e.get("units", ""),
                 "source": e.get("source", "")}
     return out
+
+
+def is_canonical(data) -> bool:
+    """True for the canonical file shape, wrapped or not: leaf entries carry
+    ``value`` (canonical) rather than ``level`` (this tool's shape)."""
+    if not isinstance(data, dict):
+        return False
+    if "screening_levels" in data:
+        return True
+    return any(isinstance(e, dict) and "value" in e
+               for inner in data.values() if isinstance(inner, dict)
+               for e in inner.values())
 
 
 def apply_screening_levels(
@@ -44,14 +58,21 @@ def apply_screening_levels(
     updated = []
     changed = matched = 0
     for r in results:
-        sl_entry = (screening_levels
-                    .get(r.AnalyteCanonicalName, {})
-                    .get(r.Matrix, {}))
+        by_matrix = screening_levels.get(r.AnalyteCanonicalName)
+        sl_entry = by_matrix.get(r.Matrix) if isinstance(by_matrix, dict) else None
         if not sl_entry:
             updated.append(r)
             continue
         matched += 1
-        sl_val = sl_entry.get("level")
+        sl_val = sl_entry.get("level") if isinstance(sl_entry, dict) else None
+        if (not isinstance(sl_entry, dict) or isinstance(sl_val, bool)
+                or (sl_val is not None and not isinstance(sl_val, (int, float)))):
+            qa.add(SEV_WARNING, "invalid_screening_entry",  # #650
+                   f"{r.AnalyteCanonicalName}/{r.Matrix}: screening entry must be a "
+                   f"mapping with a numeric level, got {sl_entry!r}",
+                   location_id=r.LocationID, analyte_name=r.AnalyteCanonicalName)
+            updated.append(r)
+            continue
         sl_unit = sl_entry.get("unit", r.Units)
         sl_source = sl_entry.get("source", "")
         if sl_val is None:
