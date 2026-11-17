@@ -714,17 +714,24 @@ def manage_analyte_dict_cmd(analytes, do_list, do_check, report, fail_on):
 @qa_report_options
 def manage_screening_levels_cmd(screening, analytes, do_list, report, fail_on):
     """Validate and inspect the screening levels YAML (headless)."""
+    from autogis.core.common.config import ConfigError
     from autogis.core.envmon.manage_screening_levels import (
         check_screening_levels, load_screening_entries)
     if do_list:
-        entries = load_screening_entries(Path(screening))
+        try:
+            entries = load_screening_entries(Path(screening))
+        except ConfigError as exc:
+            raise click.ClickException(str(exc))
         click.echo(f"{'analyte':<28} {'matrix':<6} {'value':>10}  units")
         for e in sorted(entries, key=lambda x: (x.matrix, x.analyte)):
             v = str(e.value) if e.value is not None else "null"
             click.echo(f"{e.analyte:<28} {e.matrix:<6} {v:>10}  {e.units}")
         if not analytes:
             return
-    qa = check_screening_levels(Path(screening), Path(analytes) if analytes else None)
+    try:
+        qa = check_screening_levels(Path(screening), Path(analytes) if analytes else None)
+    except ConfigError as exc:
+        raise click.ClickException(str(exc))
     _render_qa(qa, report, fail_on)
 
 
@@ -2348,13 +2355,16 @@ def full_pipeline_cmd(site_config, workbook):
 def validate_db_cmd(gdb, analytes, report, fail_on):
     """Tool 8: validate the GDB schema and cross-table integrity (ArcGIS Pro)."""
     _guard("validate-db")
-    from autogis.core.common.config import load_analyte_dictionary
+    from autogis.core.common.config import ConfigError, load_analyte_dictionary
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.validate_database import validate_database
 
     analyte_dict = {}
     if analytes:
-        analyte_dict = load_analyte_dictionary(Path(analytes)) or {}
+        try:
+            analyte_dict = load_analyte_dictionary(Path(analytes)) or {}
+        except ConfigError as exc:  # #639
+            raise click.ClickException(str(exc))
     qa = QACollector()
     validate_database(Path(gdb), qa, analyte_dict)
     _render_qa(qa, report, fail_on)
