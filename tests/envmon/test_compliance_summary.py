@@ -194,7 +194,7 @@ def test_nondetects_enter_trend_at_half_rl():
 
 
 def test_nondetect_trend_keeps_row_order_with_bad_date():
-    """#636 review: NDs appended after detects flipped the index-fallback trend."""
+    """#636 review: NDs must keep row order with detects; the bad-date row is dropped (#626)."""
     rows = [{"LocationID": "MW-8", "AnalyteName": "Benzene", "ResultValue": v,
              "ResultQualifier": q, "ReportedUnits": "ug/L", "SampleDate": d,
              "ReportingLimit": "1.0"}
@@ -212,3 +212,11 @@ def test_nondetect_detection_limit_fallback():
                             ("3", "U", "2024-03-15"), ("4", "", "2024-04-15"))]
     # U row enters at DL/2 = 1.0 (RL of 0 is not a usable limit), not at its 3
     assert build_compliance_summary(rows).records[0].trend == "worsening"
+
+
+def test_compute_trend_drops_unparseable_dates_instead_of_row_order():
+    """#626: a bad date sent the series to a row-order index, flipping newest-first input."""
+    assert compute_trend([3.0, 2.0, 1.0],
+                         ["2024-06-15", "2024-03-15", "2024-13-05"]) == "insufficient_data"
+    assert compute_trend([4.0, 3.0, 9.0, 1.0],
+                         ["2024-06-15", "2024-03-15", None, "2024-01-15"]) == "worsening"

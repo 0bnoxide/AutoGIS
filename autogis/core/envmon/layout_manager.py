@@ -14,6 +14,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from ..common.config import yaml_load
 from ..common.logging import get_logger
 from ..common.qa import QACollector, QARecord, SEV_ERROR, SEV_INFO, SEV_WARNING
 
@@ -273,7 +274,7 @@ def load_layout_text_yaml(path: Path) -> Dict[str, str]:
     import yaml
 
     try:
-        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        raw = yaml_load(Path(path).read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         # A wrong *shape* already gets a message naming the file and the
         # accepted forms; a wrong *character* escaped as a raw ParserError
