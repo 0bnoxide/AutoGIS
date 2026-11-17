@@ -147,7 +147,7 @@ analytes:
     result_format_rule: "sig_figs"
     include_in_default_figures: false
   EDB:
-    aliases: [edb, 1,2-dibromoethane, ethylene dibromide]
+    aliases: [edb, "1,2-dibromoethane", ethylene dibromide]
     abbreviation: EDB
     analytical_group: VOC
     method_group: "8011/8260"
