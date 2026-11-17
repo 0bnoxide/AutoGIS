@@ -87,3 +87,43 @@ def test_empty_results():
     qa = QACollector()
     results = apply_screening_levels([], SCREENING, qa=qa)
     assert results == []
+
+
+def test_no_match_at_all_warns():
+    """#646: a file that matched nothing must not pass silently."""
+    qa = QACollector()
+    apply_screening_levels([_r("Toluene", 99.0)], SCREENING, qa=qa)
+    assert any(r.category == "no_screening_match" for r in qa.records)
+    qa = QACollector()
+    apply_screening_levels([_r("Benzene", 9.0), _r("Toluene", 99.0)], SCREENING, qa=qa)
+    assert not any(r.category == "no_screening_match" for r in qa.records)
+
+
+def test_from_canonical_skips_malformed_parts():
+    """#648 review: notes, list matrices and non-str keys must not crash."""
+    from autogis.core.envmon.apply_screening import from_canonical
+    out = from_canonical({"_note": "hi", "SOIL": [1],
+                          "GW": {1: {"value": 2}, "Benzene": {"value": 5, "units": "ug/L"}}})
+    assert out["Benzene"] == {"GW": {"level": 5, "unit": "ug/L", "source": ""}}
+    assert "SOIL" not in str(out) and "_note" not in out
+
+
+def test_is_canonical_detects_unwrapped_shape():
+    from autogis.core.envmon.apply_screening import is_canonical
+    assert is_canonical({"GW": {"Benzene": {"value": 5, "units": "ug/L"}}})
+    assert is_canonical({"screening_levels": {}})
+    assert not is_canonical(SCREENING)
+
+
+import pytest
+
+
+@pytest.mark.parametrize("entry", [{"GW": {"unit": "ug/L", "level": "5"}},
+                                   {"GW": [1]}, {"GW": {"level": True}}, [1]])
+def test_invalid_entry_warns_not_crashes(entry):
+    """#650: a non-numeric level or non-mapping entry raised a raw TypeError/AttributeError."""
+    qa = QACollector()
+    out = apply_screening_levels([_r("Benzene", 100.0)], {"Benzene": entry}, qa=qa)
+    assert out[0].ExceedsScreeningLevel is None
+    if isinstance(entry, dict):
+        assert any(r.category == "invalid_screening_entry" for r in qa.records)
