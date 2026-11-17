@@ -134,7 +134,7 @@ def run(config_path, where, out, incremental, *, harvest_fn=None):
     if harvest_fn is None:
         from autogis.core.harvest.harvester import harvest as harvest_fn
 
-    raw = yaml_load(Path(config_path).read_text(encoding="utf-8"))
+    raw = _read_yaml(config_path)
     profile = (raw.get("connection") or {}).get("profile")
 
     config = HarvestConfig.load(Path(config_path))
@@ -1260,7 +1260,7 @@ def identify_data_gaps_cmd(results_csv, schedule, output, event_date,
     from autogis.core.envmon.data_gaps import identify_data_gaps, DataGapRecord
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
-    sched = yaml_load(Path(schedule).read_text(encoding="utf-8"))
+    sched = _read_yaml(schedule)
     dry: dict = {}
     if dry_wells:
         with Path(dry_wells).open(newline="", encoding="utf-8-sig") as fh:
@@ -1310,7 +1310,7 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.validate_schedule import validate_schedule
 
-    schedule = yaml_load(Path(schedule_path).read_text(encoding="utf-8"))
+    schedule = _read_yaml(schedule_path)
     adict = None
     if analyte_dict:
         with Path(analyte_dict).open(newline="", encoding="utf-8-sig") as fh:
@@ -1347,7 +1347,7 @@ def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
     from autogis.core.envmon.apply_screening import apply_screening_levels
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
-    screening = yaml_load(Path(screening_path).read_text(encoding="utf-8"))
+    screening = _read_yaml(screening_path)
     qa = QACollector()
     updated = apply_screening_levels(results, screening, qa=qa)
     out = write_records_csv(updated, Path(output),
@@ -2477,6 +2477,16 @@ def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
     click.echo(format_manifest(manifest))
 
 
+def _read_yaml(path):
+    """Read a YAML input file; unreadable or malformed YAML is a clean
+    ClickException, not a raw traceback (#635)."""
+    import yaml
+    try:
+        return yaml_load(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise click.ClickException(f"cannot read {path}: {exc}")
+
+
 def _load_survey_yaml(path, allow_empty=False):
     """Read a survey-form YAML input. ``click.Path(exists=True)`` admits a
     directory, and malformed YAML is a usage mistake -- report both as a
@@ -2484,13 +2494,9 @@ def _load_survey_yaml(path, allow_empty=False):
     mapping; an empty one is only accepted with ``allow_empty`` (returns
     None), never coerced to {} -- that would build a form with no site,
     wells or analytes and still exit 0 (#549)."""
-    import yaml
     if not path:
         return None
-    try:
-        data = yaml_load(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        raise click.ClickException(f"cannot read {path}: {exc}")
+    data = _read_yaml(path)
     if data is None and allow_empty:
         return None
     if not isinstance(data, dict):
@@ -2668,7 +2674,7 @@ def diff_survey_schema_cmd(form_xlsx, baseline_path, spec_path, report):
         if baseline_path:
             changes += diff_forms(read_xlsform(baseline_path), new)
         if spec_path:
-            spec = yaml_load(Path(spec_path).read_text(encoding="utf-8"))
+            spec = _read_yaml(spec_path)
             changes += diff_form_vs_layer(new, spec)
     except click.ClickException:
         raise
@@ -3184,9 +3190,9 @@ def build_fieldmaps_cmd(site_path, event_path, gdb_path, dry_run, report,
             "Provide --gdb (ArcGIS Pro) or --dry-run for a headless "
             "plan preview.")
 
-    cfg = yaml_load(Path(site_path).read_text(encoding="utf-8")) or {}
+    cfg = _read_yaml(site_path) or {}
     if event_path:
-        cfg.update(yaml_load(Path(event_path).read_text(encoding="utf-8")) or {})
+        cfg.update(_read_yaml(event_path) or {})
     plans = plan_fieldmaps_project(cfg)
     for p in plans:
         click.echo(f"{p.name} ({p.geometry}): "
@@ -3495,7 +3501,7 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
     import json
     from autogis.core.agol.dashboard_refresh import refresh_dashboard_data
 
-    layer_map = yaml_load(Path(layer_map_path).read_text(encoding="utf-8"))
+    layer_map = _read_yaml(layer_map_path)
     mart_tables = {
         p.stem: json.loads(p.read_text(encoding="utf-8"))
         for p in Path(mart_dir).glob("Dash_*.json")
@@ -3542,7 +3548,7 @@ def publish_dashboard_cmd(profile, spec, dry_run, report):
     import json
     from autogis.core.agol.dashboard_publish import publish_dashboard
 
-    spec_dict = yaml_load(Path(spec).read_text(encoding="utf-8"))
+    spec_dict = _read_yaml(spec)
     # dry_run never touches gis (see publish_dashboard), so skip session setup entirely
     gis = None if dry_run else agol_from_profile(profile)
     result = publish_dashboard(gis, spec_dict, dry_run=dry_run)
@@ -3583,7 +3589,7 @@ def promote_cmd(profile, stage_map_path, layer, from_stage, to_stage,
             "--approved-by alone is silently ignored otherwise).")
 
     gis = agol_from_profile(profile)
-    stage_map = yaml_load(Path(stage_map_path).read_text(encoding="utf-8"))
+    stage_map = _read_yaml(stage_map_path)
     result = promote_layer(
         gis, layer=layer, stage_map=stage_map,
         from_stage=from_stage, to_stage=to_stage,
@@ -3627,7 +3633,7 @@ def create_views_cmd(profile, view_spec_path, report):
     """Tool 6.11: create/update audience-specific hosted views (sensitive-field leak is blocking)."""
     from autogis.core.agol.hosted_views import create_stakeholder_view, load_view_specs
     from autogis.core.common.qa import QACollector
-    data = yaml_load(Path(view_spec_path).read_text(encoding="utf-8"))
+    data = _read_yaml(view_spec_path)
     try:
         specs = load_view_specs(data)
     except ValueError as exc:
@@ -5691,7 +5697,7 @@ def generate_reg_tables_cmd(results_path, sl_path, gm_path, site_id,
         sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
     except ConfigError as exc:
         raise click.ClickException(str(exc))
-    gm = yaml_load(Path(gm_path).read_text(encoding="utf-8")) if gm_path else None
+    gm = _read_yaml(gm_path) if gm_path else None
     specs = build_regulatory_table_specs(rows, group_map=gm, screening_levels=sl)
     result = write_regulatory_workbook(rows, specs, Path(out), site_id=site_id,
                                         event_label=event_label, screening_levels=sl)
@@ -5935,7 +5941,7 @@ def export_lab_request_cmd(plan_path, groups_path, out, project_code,
         build_lab_request_rows, write_lab_request_workbook, write_lab_request_csv)
 
     plan = _read_csv_rows(plan_path)
-    groups = yaml_load(Path(groups_path).read_text(encoding="utf-8"))
+    groups = _read_yaml(groups_path)
     rows = build_lab_request_rows(plan, groups, project_code=project_code,
                                    turnaround_days=turnaround)
     result = write_lab_request_workbook(rows, Path(out), site_id=site_id)
@@ -5968,7 +5974,7 @@ def build_report_appendix_cmd(results_path, sl_path, group_map_path, site_id,
         sl = load_flat_screening_levels(Path(sl_path)) if sl_path else None
     except ConfigError as exc:
         raise click.ClickException(str(exc))
-    group_map = (yaml_load(Path(group_map_path).read_text())
+    group_map = (_read_yaml(group_map_path)
                  if group_map_path else None)
     dates = [d.strip() for d in event_dates.split(",")] if event_dates else None
     qa = QACollector()
@@ -6253,7 +6259,7 @@ def generate_job_queue_cmd(manifest, output, report, fail_on):
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.job_queue import generate_job_queue
 
-    spec = yaml_load(Path(manifest).read_text(encoding="utf-8")) or {}
+    spec = _read_yaml(manifest) or {}
     if not isinstance(spec, dict):
         raise click.ClickException(
             f"--manifest {manifest} must be a YAML mapping with 'sites'/'tools' "
@@ -6498,7 +6504,7 @@ def migrate_legacy_data_cmd(input_csv, output, location_col, date_col,
         site_id=site_id, default_matrix=default_matrix,
         default_units=default_units, nondetect_prefix=nondetect_prefix,
     )
-    units_map = yaml_load(Path(units_yaml).read_text(encoding="utf-8")) \
+    units_map = _read_yaml(units_yaml) \
         if units_yaml else {}
     qa = QACollector()
 
@@ -6539,7 +6545,7 @@ def create_sampling_plan_cmd(wells_csv, analyte_groups, event_date, site_id,
         PlannedSample, BottleCountRow)
 
     wells = read_well_network_csv(Path(wells_csv))
-    groups = yaml_load(Path(analyte_groups).read_text(encoding="utf-8"))
+    groups = _read_yaml(analyte_groups)
     ev_date = _date.fromisoformat(event_date)
     prior = _date.fromisoformat(prior_event_date) if prior_event_date else None
     qa = QACollector()
