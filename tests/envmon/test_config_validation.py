@@ -428,3 +428,11 @@ def test_no_direct_yaml_safe_load_outside_config():
             for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1)
             if re.search(r"yaml\.safe_load\(", line)]
     assert not hits, hits
+
+
+def test_screening_list_scalar_entry_is_clean_error(tmp_path):
+    """#640: --list printed a scalar entry (`Benzene: 5`) as null and exited 0."""
+    p = tmp_path / "s.yaml"
+    p.write_text("screening_levels:\n  water:\n    Benzene: 5\n", encoding="utf-8")
+    r = _cli("manage-screening-levels", str(p), "--list")
+    assert r.exit_code == 1 and "must be a mapping" in r.output, r.output

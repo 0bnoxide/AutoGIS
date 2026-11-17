@@ -36,11 +36,13 @@ def load_screening_entries(path: Path) -> list[ScreeningEntry]:
     out: list[ScreeningEntry] = []
     for matrix, analytes in sl.items():
         for analyte, entry in (analytes or {}).items():
-            v = entry.get("value") if isinstance(entry, dict) else None
-            u = entry.get("units", "") if isinstance(entry, dict) else ""
-            s = entry.get("source", "") if isinstance(entry, dict) else ""
+            if not isinstance(entry, dict):  # don't list a set level as null (#640)
+                raise ConfigError(f"{path}: screening_levels.{matrix}.{analyte} "
+                                  f"must be a mapping, got {type(entry).__name__}")
             out.append(ScreeningEntry(analyte=analyte, matrix=matrix,
-                                      value=v, units=u, source=s))
+                                      value=entry.get("value"),
+                                      units=entry.get("units", ""),
+                                      source=entry.get("source", "")))
     return out
 
 
