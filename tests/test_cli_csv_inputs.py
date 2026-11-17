@@ -164,3 +164,12 @@ def test_validate_db_bad_analyte_dictionary_is_clean_error(tmp_path, monkeypatch
                                      "--analytes", str(bad)])
     assert r.exit_code == 1 and "Error:" in r.output, r.output
     assert not r.exception or isinstance(r.exception, SystemExit)
+
+
+@pytest.mark.parametrize("body", ["", "- 1\n"])
+def test_direct_yaml_load_non_mapping_is_clean_error(tmp_path, body):
+    """#647: an empty or list YAML crashed validate-schedule with AttributeError."""
+    p = tmp_path / "s.yaml"
+    p.write_text(body, encoding="utf-8")
+    r = CliRunner().invoke(autogis, ["envmon", "validate-schedule", "--schedule", str(p)])
+    assert r.exit_code == 1 and "expected a YAML mapping" in r.output, r.output

@@ -116,4 +116,4 @@ def test_cli_manifest_non_dict_errors(tmp_path):
         "--manifest", str(manifest), "--output", str(out),
     ])
     assert result.exit_code != 0
-    assert "must be a YAML mapping" in result.output
+    assert "expected a YAML mapping" in result.output

@@ -2487,14 +2487,23 @@ def export_snapshot_cmd(gdb, site_id, event_id, out_dir, compress):
     click.echo(format_manifest(manifest))
 
 
-def _read_yaml(path):
-    """Read a YAML input file; unreadable or malformed YAML is a clean
-    ClickException, not a raw traceback (#635)."""
+def _read_yaml(path, allow_empty=False):
+    """Read a YAML input file that must hold a mapping. Unreadable or
+    malformed YAML (#635) and a non-mapping document (#647) are a clean
+    ClickException, not a raw traceback. An empty document is an error
+    unless ``allow_empty`` (then None)."""
     import yaml
     try:
-        return yaml_load(Path(path).read_text(encoding="utf-8"))
+        data = yaml_load(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise click.ClickException(f"cannot read {path}: {exc}")
+    if data is None and allow_empty:
+        return None
+    if not isinstance(data, dict):
+        got = "an empty document" if data is None else type(data).__name__
+        raise click.ClickException(
+            f"{path}: expected a YAML mapping, got {got}")
+    return data
 
 
 def _load_survey_yaml(path, allow_empty=False):
@@ -2506,14 +2515,7 @@ def _load_survey_yaml(path, allow_empty=False):
     wells or analytes and still exit 0 (#549)."""
     if not path:
         return None
-    data = _read_yaml(path)
-    if data is None and allow_empty:
-        return None
-    if not isinstance(data, dict):
-        got = "an empty document" if data is None else type(data).__name__
-        raise click.ClickException(
-            f"{path}: expected a YAML mapping, got {got}")
-    return data
+    return _read_yaml(path, allow_empty=allow_empty)
 
 
 @envmon.command("build-survey-form")
@@ -3200,9 +3202,9 @@ def build_fieldmaps_cmd(site_path, event_path, gdb_path, dry_run, report,
             "Provide --gdb (ArcGIS Pro) or --dry-run for a headless "
             "plan preview.")
 
-    cfg = _read_yaml(site_path) or {}
+    cfg = _read_yaml(site_path, allow_empty=True) or {}
     if event_path:
-        cfg.update(_read_yaml(event_path) or {})
+        cfg.update(_read_yaml(event_path, allow_empty=True) or {})
     plans = plan_fieldmaps_project(cfg)
     for p in plans:
         click.echo(f"{p.name} ({p.geometry}): "
@@ -6269,11 +6271,7 @@ def generate_job_queue_cmd(manifest, output, report, fail_on):
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.job_queue import generate_job_queue
 
-    spec = _read_yaml(manifest) or {}
-    if not isinstance(spec, dict):
-        raise click.ClickException(
-            f"--manifest {manifest} must be a YAML mapping with 'sites'/'tools' "
-            f"keys, got {type(spec).__name__}.")
+    spec = _read_yaml(manifest, allow_empty=True) or {}
     site_ids = spec.get("sites") or []
     tool_names = spec.get("tools") or []
     extra_args = spec.get("args") or {}
