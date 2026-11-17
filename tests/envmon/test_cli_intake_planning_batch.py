@@ -155,6 +155,36 @@ class TestBatchImportWorkbooks:
             rows = list(csv.DictReader(fh))
         assert rows[0]["Status"] == "SKIP"
 
+    def _run_one(self, tmp_path, wb_path, out_dir):
+        prof_path = tmp_path / "profile.yaml"
+        self._make_edd_profile(prof_path)
+        manifest_path = tmp_path / "manifest.csv"
+        _write_csv(manifest_path, [{"workbook_path": str(wb_path),
+                                    "profile_path": str(prof_path),
+                                    "site_id": "SITE-A"}])
+        return _run("envmon", "batch-import-workbooks",
+                    "--manifest", str(manifest_path), "--output-dir", str(out_dir))
+
+    def test_header_only_workbook_is_not_pass(self, tmp_path):
+        """#630: a workbook yielding 0 records was OK and the batch PASSed."""
+        wb = tmp_path / "empty.csv"
+        wb.write_text("SampleID,LocationID,SampleDate,Matrix,Analyte,Result,Units,Qualifier,RL\n",
+                      encoding="utf-8")
+        r = self._run_one(tmp_path, wb, tmp_path / "out")
+        assert r.exit_code == 1, r.output
+        assert "workbook_no_records" in r.output and "no_workbooks_imported" in r.output
+
+    def test_rerun_with_no_records_removes_stale_record_csvs(self, tmp_path):
+        """#631: a previous run's record CSVs survived beside a fresh manifest."""
+        out_dir = tmp_path / "out"
+        good = tmp_path / "lab_edd.csv"
+        self._make_edd_csv(good)
+        assert self._run_one(tmp_path, good, out_dir).exit_code == 0
+        assert (out_dir / "sample_records.csv").exists()
+        self._run_one(tmp_path, tmp_path / "missing.csv", out_dir)
+        assert not (out_dir / "sample_records.csv").exists()
+        assert not (out_dir / "result_records.csv").exists()
+
     # --- --edd-dir alternate input mode (BatchEDDImport fold, ADR-0048) ---
 
     def test_edd_dir_mode_imports_directory(self, tmp_path):
