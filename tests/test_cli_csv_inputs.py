@@ -144,6 +144,16 @@ def test_batch_import_workbooks_all_rows_skipped_is_not_pass(tmp_path):
     assert "Status: PASS" not in result.output
 
 
+@pytest.mark.parametrize("body", ["sites: [\n", "sites: []\nsites: []\n"])
+def test_direct_yaml_load_malformed_is_clean_error(tmp_path, body):
+    """#635: malformed / duplicate-key YAML escaped as a raw parser traceback."""
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(body, encoding="utf-8")
+    r = CliRunner().invoke(autogis, ["envmon", "generate-job-queue", "--manifest", str(bad),
+                                     "--output", str(tmp_path / "q.csv")])
+    assert r.exit_code == 1 and "cannot read" in r.output, r.output
+
+
 def test_validate_db_bad_analyte_dictionary_is_clean_error(tmp_path, monkeypatch):
     """#639: a malformed --analytes escaped validate-db as a ConfigError traceback."""
     import autogis.adapters.cli as cli_mod
