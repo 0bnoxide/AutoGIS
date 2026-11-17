@@ -404,3 +404,27 @@ def test_screening_blank_is_no_levels(tmp_path):
     p.write_text("screening_levels:\n", encoding="utf-8")
     r = _cli("manage-screening-levels", str(p))
     assert r.exit_code == 0, r.output
+
+
+def test_yaml_load_rejects_duplicate_keys():
+    """#627: direct YAML loads collapsed duplicate keys silently."""
+    import io
+    import yaml
+    from autogis.core.common.config import yaml_load
+    assert yaml_load("a: 1\nb: 2\n") == {"a": 1, "b": 2}
+    for src in ("a: 1\na: 2\n", io.StringIO("a: 1\na: 2\n")):
+        with pytest.raises(yaml.YAMLError, match="duplicate key"):
+            yaml_load(src)
+
+
+def test_no_direct_yaml_safe_load_outside_config():
+    """#627 guard: YAML input goes through the duplicate-key-checking loader."""
+    import re
+    from pathlib import Path
+    import autogis
+    root = Path(autogis.__file__).parent
+    hits = [f"{f.relative_to(root)}:{n}"
+            for f in root.rglob("*.py") if f.name != "config.py"
+            for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1)
+            if re.search(r"yaml\.safe_load\(", line)]
+    assert not hits, hits

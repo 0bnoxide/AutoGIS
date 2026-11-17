@@ -69,6 +69,12 @@ def _unique_key_loader(yaml):
     return UniqueKeyLoader
 
 
+def yaml_load(stream):
+    """``yaml.safe_load`` that raises on duplicate mapping keys (#609, #627)."""
+    import yaml
+    return yaml.load(stream, Loader=_unique_key_loader(yaml))  # noqa: S506 - SafeLoader subclass
+
+
 def load_config(path: Path) -> dict:
     path = Path(path)
     if not path.exists():

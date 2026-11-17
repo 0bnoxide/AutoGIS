@@ -161,6 +161,9 @@ def run_batch_import(
                 ErrorSummary="",
                 ProcessedAt=datetime.now(UTC).isoformat(),
             ))
+            if not samples:  # header-only / fully filtered workbook (#630)
+                qa.add(SEV_WARNING, "workbook_no_records",
+                       f"{wb_path.name}: parsed but yielded 0 samples", site_id=site_id)
             qa.add(SEV_INFO, "workbook_imported",
                    f"{wb_path.name}: {len(samples)} samples, "
                    f"{len(results)} results",
@@ -177,9 +180,9 @@ def run_batch_import(
                    f"{wb_path.name}: {exc}", site_id=site_id)
 
     ok = sum(1 for m in result.manifest if m.Status == "OK")
-    if result.manifest and not ok:  # all rows skipped/failed must not PASS (#621)
+    if result.manifest and not result.all_samples:  # nothing imported must not PASS (#621, #630)
         qa.add(SEV_ERROR, "no_workbooks_imported",
-               f"None of the {len(result.manifest)} manifest row(s) imported")
+               f"None of the {len(result.manifest)} manifest row(s) imported any samples")
     qa.add(SEV_INFO, "batch_complete",
            f"Batch import: {ok}/{len(result.manifest)} workbooks OK, "
            f"{len(result.all_samples)} samples, {len(result.all_results)} results")
