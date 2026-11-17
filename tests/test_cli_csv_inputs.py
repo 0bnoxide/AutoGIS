@@ -168,3 +168,25 @@ def test_batch_import_workbooks_unwraps_shipped_yaml(tmp_path, monkeypatch):
         "--output-dir", str(tmp_path / "out")])
     assert "Benzene" in seen["analyte_dictionary"]
     assert "screening_levels" not in seen["screening_levels"]
+
+
+def test_import_edd_unwraps_shipped_yaml(tmp_path, monkeypatch):
+    """#638: import-edd passed wrapped analyte/screening YAML to run_edd_import raw."""
+    import autogis.adapters.cli as cli_mod
+    import autogis.core.envmon.edd_importer as ei
+    import autogis.core.envmon.edd_profile as ep
+    seen = {}
+    monkeypatch.setattr(cli_mod, "_guard", lambda name: None)
+    monkeypatch.setattr(ep.LabEDDProfile, "load", classmethod(lambda cls, p: None))
+    monkeypatch.setattr(ei, "run_edd_import", lambda **kw: seen.update(kw) or "B1")
+    edd = tmp_path / "e.csv"
+    edd.write_text("x", encoding="utf-8")
+    cfg = Path(__file__).resolve().parents[1] / "autogis" / "config"
+    r = CliRunner().invoke(autogis, [
+        "envmon", "import-edd", "--edd", str(edd), "--profile-path", str(edd),
+        "--site", "S1", "--gdb", str(tmp_path / "o.gdb"),
+        "--analytes", str(cfg / "analytes" / "analyte_dictionary.yaml"),
+        "--screening", str(cfg / "screening_levels" / "screening_levels.yaml")])
+    assert r.exit_code == 0, r.output
+    assert "Benzene" in seen["analyte_dictionary"]
+    assert "screening_levels" not in seen["screening_levels"]
