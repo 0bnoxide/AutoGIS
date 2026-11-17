@@ -2348,13 +2348,16 @@ def full_pipeline_cmd(site_config, workbook):
 def validate_db_cmd(gdb, analytes, report, fail_on):
     """Tool 8: validate the GDB schema and cross-table integrity (ArcGIS Pro)."""
     _guard("validate-db")
-    from autogis.core.common.config import load_analyte_dictionary
+    from autogis.core.common.config import ConfigError, load_analyte_dictionary
     from autogis.core.common.qa import QACollector
     from autogis.core.envmon.validate_database import validate_database
 
     analyte_dict = {}
     if analytes:
-        analyte_dict = load_analyte_dictionary(Path(analytes)) or {}
+        try:
+            analyte_dict = load_analyte_dictionary(Path(analytes)) or {}
+        except ConfigError as exc:  # #639
+            raise click.ClickException(str(exc))
     qa = QACollector()
     validate_database(Path(gdb), qa, analyte_dict)
     _render_qa(qa, report, fail_on)
