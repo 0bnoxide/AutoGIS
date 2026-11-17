@@ -1334,7 +1334,8 @@ def validate_schedule_cmd(schedule_path, analyte_dict, report, fail_on):
               help="CSV export of Env_AnalyticalResults.")
 @click.option("--screening", "screening_path", required=True,
               type=click.Path(exists=True),
-              help="Screening levels YAML (analyte -> matrix -> {unit, level, source}).")
+              help="Screening levels YAML: the canonical screening_levels.yaml, or "
+                   "analyte -> matrix -> {unit, level, source}.")
 @click.option("--output", required=True, type=click.Path(),
               help="Output CSV path (updated records).")
 @click.option("--site", "site_id", default="",
@@ -1351,10 +1352,16 @@ def apply_screening_cmd(results_csv, screening_path, output, site_id, event_id,
     from autogis.core.common.qa import QACollector
     from autogis.core.common.records_csv import read_records_csv, write_records_csv
     from autogis.core.envmon.gdb_schema import AnalyticalResultRecord
-    from autogis.core.envmon.apply_screening import apply_screening_levels
+    from autogis.core.common.config import ConfigError, load_screening_levels
+    from autogis.core.envmon.apply_screening import apply_screening_levels, from_canonical
 
     results = read_records_csv(Path(results_csv), AnalyticalResultRecord)
     screening = _read_yaml(screening_path)
+    if isinstance(screening, dict) and "screening_levels" in screening:
+        try:  # the shipped/canonical file shape (#646)
+            screening = from_canonical(load_screening_levels(Path(screening_path)))
+        except ConfigError as exc:
+            raise click.ClickException(str(exc))
     qa = QACollector()
     updated = apply_screening_levels(results, screening, qa=qa)
     out = write_records_csv(updated, Path(output),

@@ -101,3 +101,19 @@ def test_apply_screening_no_match_passthrough(tmp_path):
     # screening level / unknown", so it round-trips as None -> "" (not 0, which
     # would wrongly assert "does not exceed" for an unscreened analyte).
     assert rows[0]["ExceedsScreeningLevel"] == ""
+
+
+def test_shipped_canonical_screening_file_flags_exceedance(tmp_path):
+    """#646: the shipped screening_levels.yaml matched nothing -> silent PASS."""
+    results = tmp_path / "r.csv"
+    _write_csv(results, [_result_row(num="100000")])
+    shipped = (Path(__file__).resolve().parents[1] / "autogis" / "config"
+               / "screening_levels" / "screening_levels.yaml")
+    out = tmp_path / "o.csv"
+    r = CliRunner().invoke(autogis, ["envmon", "apply-screening", "--results-csv",
+                                     str(results), "--screening", str(shipped),
+                                     "--output", str(out)])
+    assert r.exit_code == 0, r.output
+    with open(out, encoding="utf-8") as fh:
+        row = next(csv.DictReader(fh))
+    assert row["ExceedsScreeningLevel"] == "1" and row["ScreeningLevel"] in ("5", "5.0")

@@ -87,3 +87,13 @@ def test_empty_results():
     qa = QACollector()
     results = apply_screening_levels([], SCREENING, qa=qa)
     assert results == []
+
+
+def test_no_match_at_all_warns():
+    """#646: a file that matched nothing must not pass silently."""
+    qa = QACollector()
+    apply_screening_levels([_r("Toluene", 99.0)], SCREENING, qa=qa)
+    assert any(r.category == "no_screening_match" for r in qa.records)
+    qa = QACollector()
+    apply_screening_levels([_r("Benzene", 9.0), _r("Toluene", 99.0)], SCREENING, qa=qa)
+    assert not any(r.category == "no_screening_match" for r in qa.records)

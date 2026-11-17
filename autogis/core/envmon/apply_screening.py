@@ -12,6 +12,21 @@ from ..common.units import same_dimension, convert
 from ..common.qa import QACollector, SEV_INFO, SEV_WARNING
 
 
+def from_canonical(levels: dict) -> dict:
+    """Transpose canonical ``{matrix: {analyte: {value, units, source}}}``
+    (``load_screening_levels`` output) into this tool's
+    ``{analyte: {matrix: {level, unit, source}}}`` shape (#646)."""
+    out: dict = {}
+    for matrix, analytes in levels.items():
+        for analyte, e in (analytes or {}).items():
+            if analyte.startswith("_") or not isinstance(e, dict):
+                continue
+            out.setdefault(analyte, {})[matrix] = {
+                "level": e.get("value"), "unit": e.get("units", ""),
+                "source": e.get("source", "")}
+    return out
+
+
 def apply_screening_levels(
     results: List[AnalyticalResultRecord],
     screening_levels: dict,
@@ -27,7 +42,7 @@ def apply_screening_levels(
     Records with no matching screening entry are returned unchanged.
     """
     updated = []
-    changed = 0
+    changed = matched = 0
     for r in results:
         sl_entry = (screening_levels
                     .get(r.AnalyteCanonicalName, {})
@@ -35,6 +50,7 @@ def apply_screening_levels(
         if not sl_entry:
             updated.append(r)
             continue
+        matched += 1
         sl_val = sl_entry.get("level")
         sl_unit = sl_entry.get("unit", r.Units)
         sl_source = sl_entry.get("source", "")
@@ -72,6 +88,10 @@ def apply_screening_levels(
         if new_r != r:
             changed += 1
         updated.append(new_r)
+    if results and not matched:  # a wrong-shaped file matched nothing silently (#646)
+        qa.add(SEV_WARNING, "no_screening_match",
+               f"none of {len(results)} record(s) matched a screening level "
+               "(check analyte/matrix names and the file's shape)")
     qa.add(SEV_INFO, "apply_screening_complete",
            f"apply_screening_levels: {changed} record(s) updated out of {len(results)}")
     return updated
