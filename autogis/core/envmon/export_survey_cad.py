@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 from typing import Dict, List
 
+from autogis.core.common.config import yaml_load
 from autogis.core.common.landxml import CgPoint, write_cgpoints
 from autogis.core.common.qa import QACollector, SEV_INFO, SEV_WARNING
 from .import_rtk_survey import RTKPoint
@@ -64,8 +65,7 @@ def load_feature_code_map(path: Path) -> Dict[str, str]:
     An optional ``"default"`` key is used for unmapped feature codes in place
     of the built-in ``Miscellaneous`` fallback.
     """
-    import yaml
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    raw = yaml_load(Path(path).read_text(encoding="utf-8")) or {}
     return {str(k): str(v) for k, v in raw.items()}
 
 
