@@ -156,6 +156,7 @@ Each ADR follows this structure:
 | [135](0135-site-required-informational-keys-and-reporter-status.md) | Site-config required keys narrowed to consumed keys; Reporter declared future-use | Accepted | 2026-08-28 |
 | [136](0136-survey123-submission-provenance.md) | Survey123 device-to-client provenance tracer: complete snapshots, exact identities, conservative progress counts; real-device/live acceptance pending | Proposed | 2026-09-12 |
 | [137](0137-msl-hfdem-download.md) | Archive-first MSL HFDEM download with artifact provenance | Proposed | 2026-11-10 |
+| [138](0138-compliance-trend-nondetect-policy.md) | Compliance trend counts non-detects at half the RL and needs 4 points | Accepted | 2026-11-12 |
 
 ## File naming
 
