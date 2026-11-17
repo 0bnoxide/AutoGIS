@@ -142,3 +142,15 @@ def test_batch_import_workbooks_all_rows_skipped_is_not_pass(tmp_path):
     assert result.exit_code == 1, result.output
     assert "no_workbooks_imported" in result.output
     assert "Status: PASS" not in result.output
+
+
+def test_validate_db_bad_analyte_dictionary_is_clean_error(tmp_path, monkeypatch):
+    """#639: a malformed --analytes escaped validate-db as a ConfigError traceback."""
+    import autogis.adapters.cli as cli_mod
+    monkeypatch.setattr(cli_mod, "_guard", lambda name: None)
+    bad = tmp_path / "a.yaml"
+    bad.write_text("analytes: [1]\n", encoding="utf-8")
+    r = CliRunner().invoke(autogis, ["envmon", "validate-db", str(tmp_path / "x.gdb"),
+                                     "--analytes", str(bad)])
+    assert r.exit_code == 1 and "Error:" in r.output, r.output
+    assert not r.exception or isinstance(r.exception, SystemExit)
