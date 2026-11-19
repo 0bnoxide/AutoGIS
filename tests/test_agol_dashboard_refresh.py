@@ -301,6 +301,88 @@ def test_cli_unwritable_report_is_clean_error(tmp_path, monkeypatch):
     assert res.exit_code == 1 and "cannot write" in res.output, res.output
 
 
+def _no_auth(*a, **kw):
+    raise AssertionError("must fail before authenticating")
+
+
+def _refresh_cli(tmp_path, monkeypatch, report, auth=_no_auth):
+    """Run refresh-dashboard; by default auth (and so the push) blows up."""
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+
+    monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", auth)
+    mart = tmp_path / "mart"
+    mart.mkdir()
+    (mart / "Dash_SiteStatus.json").write_text("[]", encoding="utf-8")
+    lm = tmp_path / "lm.yaml"
+    lm.write_text("Dash_SiteStatus: item-1\n", encoding="utf-8")
+    return CliRunner().invoke(autogis, ["agol", "refresh-dashboard", "--mart-dir", str(mart),
+                                        "--layer-map", str(lm), "--report", str(report)])
+
+
+@pytest.mark.parametrize("make", ["dir", "under_file", "deep_under_file"])
+def test_cli_bad_report_path_fails_before_push(tmp_path, monkeypatch, make):
+    """#653 follow-up: a bad --report path is caught before auth/push, not after."""
+    blocker = tmp_path / "blocker.txt"
+    blocker.write_text("x", encoding="utf-8")
+    report = {"dir": tmp_path / "rd.md",
+              "under_file": blocker / "rd.md",
+              "deep_under_file": blocker / "a" / "b" / "rd.json"}[make]
+    if make == "dir":
+        report.mkdir()
+    res = _refresh_cli(tmp_path, monkeypatch, report)
+    assert res.exit_code == 1 and "cannot write" in res.output, res.output
+    assert not isinstance(res.exception, AssertionError)
+
+
+def test_cli_unwritable_report_dir_fails_before_push(tmp_path, monkeypatch):
+    """Permission denial is caught pre-push too (os.access mocked: CI may run as root)."""
+    import os
+    real = os.access
+    target = tmp_path / "ro"
+    target.mkdir()
+    monkeypatch.setattr(os, "access", lambda p, m, *a, **k: False
+                        if os.fspath(p) == os.fspath(target) else real(p, m, *a, **k))
+    res = _refresh_cli(tmp_path, monkeypatch, target / "rd.md")
+    assert res.exit_code == 1 and "permission denied" in res.output, res.output
+    assert not isinstance(res.exception, AssertionError)
+
+
+def test_cli_report_stat_error_fails_cleanly_before_push(tmp_path, monkeypatch):
+    """A stat error pathlib doesn't swallow (EACCES, ENAMETOOLONG) is a clean error."""
+    from pathlib import Path
+    real = Path.stat
+    report = tmp_path / "locked" / "rd.md"
+
+    def _stat(self, *a, **k):
+        if self == report:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "stat", _stat)
+    res = _refresh_cli(tmp_path, monkeypatch, report)
+    assert res.exit_code == 1 and "cannot write" in res.output, res.output
+    assert not isinstance(res.exception, (OSError, AssertionError))
+
+
+def test_cli_report_precheck_creates_nothing_and_allows_new_dirs(tmp_path, monkeypatch):
+    """A not-yet-existing nested report dir is fine (writers mkdir) and isn't pre-created."""
+    import autogis.core.agol.dashboard_refresh as dr
+
+    report = tmp_path / "out" / "nested" / "rd.md"
+    seen = {}
+
+    def _refresh(*a, **k):
+        seen["exists_at_push"] = report.parent.exists()
+        return dr.RefreshResult()
+
+    monkeypatch.setattr(dr, "refresh_dashboard_data", _refresh)
+    res = _refresh_cli(tmp_path, monkeypatch, report, auth=lambda *a, **k: object())
+    assert res.exit_code == 0, res.output
+    assert seen == {"exists_at_push": False}
+    assert report.is_file()
+
+
 @pytest.mark.parametrize("body", [b'[{"a":1}', b'\xff\xfe', b'{"a": 1}', b'[1]', b'[null]'])
 def test_cli_malformed_mart_json_is_clean_error(tmp_path, monkeypatch, body):
     """#657: a malformed Dash_*.json raised a raw JSONDecodeError."""
