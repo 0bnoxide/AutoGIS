@@ -2078,6 +2078,9 @@ def _check_report_writable(report, inputs=()):
             return
         parent = p.parent
         while not parent.exists():  # writers mkdir missing parents
+            if parent.is_symlink():
+                raise click.ClickException(
+                    f"cannot write {p}: {parent} is a dangling or looping symlink")
             parent = parent.parent
         if not parent.is_dir():
             raise click.ClickException(f"cannot write {p}: {parent} is not a directory")

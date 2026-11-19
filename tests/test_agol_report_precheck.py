@@ -61,7 +61,8 @@ CMDS = ["publish-dashboard", "update-webmap", "create-views"]
 
 
 @pytest.mark.parametrize("cmd", CMDS)
-@pytest.mark.parametrize("make", ["dir", "under_file", "dangling_link", "link_loop"])
+@pytest.mark.parametrize("make", ["dir", "under_file", "dangling_link", "link_loop",
+                                  "under_dangling_link", "under_link_loop"])
 def test_bad_report_fails_before_hosted_write(tmp_path, monkeypatch, cmd, make):
     """#661: a bad --report used to surface only after the hosted change."""
     import os
@@ -72,12 +73,13 @@ def test_bad_report_fails_before_hosted_write(tmp_path, monkeypatch, cmd, make):
     report = blocker / "rd.md" if make == "under_file" else tmp_path / "rd.md"
     if make == "dir":
         report.mkdir()
-    elif make in ("dangling_link", "link_loop"):
+    elif "link" in make:
+        link = tmp_path / "link"
         try:
-            os.symlink(tmp_path / "nope" / "x.md" if make == "dangling_link" else report,
-                       report)
+            os.symlink(tmp_path / "nope" if "dangling" in make else link, link)
         except (OSError, NotImplementedError):
             pytest.skip("symlinks not supported here")
+        report = link if make in ("dangling_link", "link_loop") else link / "sub" / "rd.md"
     res = _run(cmd, args, report)
     assert res.exit_code == 1 and "cannot write" in res.output, res.output
     assert not isinstance(res.exception, AssertionError)
