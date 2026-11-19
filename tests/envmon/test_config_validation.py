@@ -57,6 +57,7 @@ def test_validate_site_flags_missing_keys_and_todos():
 
 @pytest.mark.parametrize("suffix, contents", [
     (".yaml", 'site_id: "H281\nbad: [unclosed\n'),
+    (".yaml", "event_date: 2026-02-30"),
     (".json", '{"site_id": '),
 ])
 def test_load_config_malformed_document_raises_config_error(

@@ -10,7 +10,9 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from click.testing import CliRunner
 
+from autogis.adapters.cli import autogis
 from autogis.core.agol.promote import (
     STAGES,
     PromotionResult,
@@ -54,6 +56,19 @@ _DRIFTED_SCHEMA = {"fields": [{"name": "OtherField", "type": "esriFieldTypeInteg
                                "nullable": True, "domain": None}]}
 
 _STAGE_MAP = {"wells": {"dev": "dev-item", "qa": "qa-item", "prod": "prod-item"}}
+
+
+def test_cli_rejects_malformed_stage_map_before_connecting(tmp_path):
+    stage_map = tmp_path / "stages.yaml"
+    stage_map.write_text("wells: [\n", encoding="utf-8")
+    with patch("autogis.adapters.cli.agol_from_profile") as connect:
+        result = CliRunner().invoke(autogis, [
+            "agol", "promote", "--stage-map", str(stage_map),
+            "--layer", "wells", "--from", "dev", "--to", "qa",
+        ])
+    connect.assert_not_called()
+    assert result.exit_code == 1
+    assert f"Error: cannot read {stage_map}:" in result.output
 
 
 def _patched_fetch(schemas_by_item_id):
