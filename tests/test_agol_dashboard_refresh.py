@@ -402,3 +402,29 @@ def test_cli_malformed_mart_json_is_clean_error(tmp_path, monkeypatch, body):
                                        "--layer-map", str(lm)])
     assert res.exit_code == 1 and "Dash_X.json" in res.output, res.output
     assert not isinstance(res.exception, (ValueError, AssertionError))
+
+
+@pytest.mark.parametrize("alias", ["layer_map", "mart_file", "symlink", "hardlink"])
+def test_cli_report_aliasing_input_is_refused_before_push(tmp_path, monkeypatch, alias):
+    """#662: --report resolving to --layer-map or a mart file used to overwrite it post-push."""
+    import os
+    lm, mart_file = tmp_path / "lm.yaml", tmp_path / "mart" / "Dash_SiteStatus.json"
+    report = {"layer_map": lm, "mart_file": mart_file,
+              "symlink": tmp_path / "link.md", "hardlink": tmp_path / "hard.md"}[alias]
+    if alias in ("symlink", "hardlink"):
+        # _refresh_cli writes lm.yaml; pre-create it so the link has a target
+        lm.write_text("Dash_SiteStatus: item-1\n", encoding="utf-8")
+        try:
+            (os.symlink if alias == "symlink" else os.link)(lm, report)
+        except (OSError, NotImplementedError):
+            pytest.skip(f"{alias} not supported here")
+    res = _refresh_cli(tmp_path, monkeypatch, report)
+    assert res.exit_code == 1 and "must not overwrite an input file" in res.output, res.output
+    assert not isinstance(res.exception, AssertionError)
+    assert lm.read_text(encoding="utf-8") == "Dash_SiteStatus: item-1\n"
+
+
+def test_cli_empty_report_is_refused_before_push(tmp_path, monkeypatch):
+    """#662: --report "" used to push and then silently write no report."""
+    res = _refresh_cli(tmp_path, monkeypatch, "")
+    assert res.exit_code == 2 and "--report must not be empty" in res.output, res.output
