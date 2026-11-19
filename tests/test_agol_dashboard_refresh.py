@@ -1,6 +1,7 @@
 import ast
 import inspect
 from unittest.mock import MagicMock
+import pytest
 
 import autogis.core.agol.dashboard_refresh as dashboard_refresh
 from autogis.core.agol.dashboard_refresh import RefreshResult, refresh_dashboard_data
@@ -278,3 +279,44 @@ def test_failure_before_truncate_says_the_table_was_untouched():
     msg = " ".join(r.message for r in result.qa.records)
     assert "was not modified" in msg
     assert "EMPTY" not in msg
+
+
+def test_cli_unwritable_report_is_clean_error(tmp_path, monkeypatch):
+    """#653: an unwritable --report raised a raw IsADirectoryError after the push."""
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+    import autogis.core.agol.dashboard_refresh as dr
+
+    monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", lambda *a, **k: object())
+    monkeypatch.setattr(dr, "refresh_dashboard_data", lambda *a, **k: dr.RefreshResult())
+    mart = tmp_path / "mart"
+    mart.mkdir()
+    (mart / "Dash_SiteStatus.json").write_text("[]", encoding="utf-8")
+    lm = tmp_path / "lm.yaml"
+    lm.write_text("Dash_SiteStatus: item-1\n", encoding="utf-8")
+    rep = tmp_path / "rd.md"
+    rep.mkdir()
+    res = CliRunner().invoke(autogis, ["agol", "refresh-dashboard", "--mart-dir", str(mart),
+                                       "--layer-map", str(lm), "--report", str(rep)])
+    assert res.exit_code == 1 and "cannot write" in res.output, res.output
+
+
+@pytest.mark.parametrize("body", [b'[{"a":1}', b'\xff\xfe', b'{"a": 1}', b'[1]', b'[null]'])
+def test_cli_malformed_mart_json_is_clean_error(tmp_path, monkeypatch, body):
+    """#657: a malformed Dash_*.json raised a raw JSONDecodeError."""
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+
+    def _no_auth(*a, **kw):
+        raise AssertionError("must fail before authenticating")
+
+    monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", _no_auth)
+    mart = tmp_path / "mart"
+    mart.mkdir()
+    (mart / "Dash_X.json").write_bytes(body)
+    lm = tmp_path / "lm.yaml"
+    lm.write_text("Dash_X: item-1\n", encoding="utf-8")
+    res = CliRunner().invoke(autogis, ["agol", "refresh-dashboard", "--mart-dir", str(mart),
+                                       "--layer-map", str(lm)])
+    assert res.exit_code == 1 and "Dash_X.json" in res.output, res.output
+    assert not isinstance(res.exception, (ValueError, AssertionError))
