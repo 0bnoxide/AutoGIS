@@ -3540,9 +3540,10 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
             rows = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:  # malformed / non-UTF-8 (#657)
             raise click.ClickException(f"cannot read {p}: {exc}")
-        if not isinstance(rows, list):
+        # a non-row item would fail only after the hosted table is truncated
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
             raise click.ClickException(
-                f"{p}: expected a JSON list of rows, got {type(rows).__name__}")
+                f"{p}: expected a JSON list of row objects")
         mart_tables[p.stem] = rows
     # Fail closed before authenticating: an empty mart directory used to
     # authenticate, refresh nothing and exit 0 (issue #424).

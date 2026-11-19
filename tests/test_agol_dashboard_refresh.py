@@ -301,7 +301,7 @@ def test_cli_unwritable_report_is_clean_error(tmp_path, monkeypatch):
     assert res.exit_code == 1 and "cannot write" in res.output, res.output
 
 
-@pytest.mark.parametrize("body", [b'[{"a":1}', b'\xff\xfe', b'{"a": 1}'])
+@pytest.mark.parametrize("body", [b'[{"a":1}', b'\xff\xfe', b'{"a": 1}', b'[1]', b'[null]'])
 def test_cli_malformed_mart_json_is_clean_error(tmp_path, monkeypatch, body):
     """#657: a malformed Dash_*.json raised a raw JSONDecodeError."""
     from click.testing import CliRunner
