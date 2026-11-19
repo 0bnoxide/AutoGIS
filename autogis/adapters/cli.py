@@ -2068,6 +2068,8 @@ def _check_report_writable(report, inputs=()):
                     or (target.exists() and src.exists() and target.samefile(src))):
                 raise click.ClickException(
                     f"--report must not overwrite an input file: {src}")
+        if p.is_symlink() and not p.exists():  # writer opens the link itself
+            raise click.ClickException(f"cannot write {p}: dangling or looping symlink")
         if p.is_dir():
             raise click.ClickException(f"cannot write {p}: is a directory")
         if p.exists():

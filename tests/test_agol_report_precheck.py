@@ -61,16 +61,23 @@ CMDS = ["publish-dashboard", "update-webmap", "create-views"]
 
 
 @pytest.mark.parametrize("cmd", CMDS)
-@pytest.mark.parametrize("make", ["dir", "under_file"])
+@pytest.mark.parametrize("make", ["dir", "under_file", "dangling_link", "link_loop"])
 def test_bad_report_fails_before_hosted_write(tmp_path, monkeypatch, cmd, make):
     """#661: a bad --report used to surface only after the hosted change."""
+    import os
     monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", _no_auth)
     args, _ = _setup(tmp_path, monkeypatch, cmd)
     blocker = tmp_path / "blocker.txt"
     blocker.write_text("x", encoding="utf-8")
-    report = tmp_path / "rd.md" if make == "dir" else blocker / "rd.md"
+    report = blocker / "rd.md" if make == "under_file" else tmp_path / "rd.md"
     if make == "dir":
         report.mkdir()
+    elif make in ("dangling_link", "link_loop"):
+        try:
+            os.symlink(tmp_path / "nope" / "x.md" if make == "dangling_link" else report,
+                       report)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not supported here")
     res = _run(cmd, args, report)
     assert res.exit_code == 1 and "cannot write" in res.output, res.output
     assert not isinstance(res.exception, AssertionError)
