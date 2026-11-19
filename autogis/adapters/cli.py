@@ -2047,12 +2047,15 @@ def _render_qa(qa, report, fail_on):
                       if rec.recommended_action else ""))
     if report:
         p = Path(report)
-        if p.suffix == ".json":
-            qa.write_json_summary(p)
-        elif p.suffix == ".csv":
-            qa.write_csv(p)
-        else:
-            qa.write_markdown(p)
+        try:
+            if p.suffix == ".json":
+                qa.write_json_summary(p)
+            elif p.suffix == ".csv":
+                qa.write_csv(p)
+            else:
+                qa.write_markdown(p)
+        except OSError as exc:  # a directory, a path under a file, read-only (#651)
+            raise click.ClickException(f"cannot write {p}: {exc}")
         click.echo(f"Wrote report: {p}")
     allow_warnings = fail_on != "warning"
     status = qa.status(allow_warnings=allow_warnings, allow_errors=False)
