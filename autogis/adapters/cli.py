@@ -2052,19 +2052,22 @@ def _write_qa_report(qa, report):
 def _check_report_writable(report):
     """Fail before side effects if ``report`` can't be written; creates nothing."""
     p = Path(report)
-    if p.is_dir():
-        raise click.ClickException(f"cannot write {p}: is a directory")
-    if p.exists():
-        if not os.access(p, os.W_OK):
-            raise click.ClickException(f"cannot write {p}: permission denied")
-        return
-    parent = p.parent
-    while not parent.exists():  # writers mkdir missing parents
-        parent = parent.parent
-    if not parent.is_dir():
-        raise click.ClickException(f"cannot write {p}: {parent} is not a directory")
-    if not os.access(parent, os.W_OK | os.X_OK):
-        raise click.ClickException(f"cannot write {p}: permission denied on {parent}")
+    try:
+        if p.is_dir():
+            raise click.ClickException(f"cannot write {p}: is a directory")
+        if p.exists():
+            if not os.access(p, os.W_OK):
+                raise click.ClickException(f"cannot write {p}: permission denied")
+            return
+        parent = p.parent
+        while not parent.exists():  # writers mkdir missing parents
+            parent = parent.parent
+        if not parent.is_dir():
+            raise click.ClickException(f"cannot write {p}: {parent} is not a directory")
+        if not os.access(parent, os.W_OK | os.X_OK):
+            raise click.ClickException(f"cannot write {p}: permission denied on {parent}")
+    except (OSError, ValueError) as exc:  # stat errors pathlib doesn't swallow
+        raise click.ClickException(f"cannot write {p}: {exc}")
 
 
 def _render_qa(qa, report, fail_on):

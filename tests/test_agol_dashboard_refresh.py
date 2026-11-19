@@ -348,6 +348,23 @@ def test_cli_unwritable_report_dir_fails_before_push(tmp_path, monkeypatch):
     assert not isinstance(res.exception, AssertionError)
 
 
+def test_cli_report_stat_error_fails_cleanly_before_push(tmp_path, monkeypatch):
+    """A stat error pathlib doesn't swallow (EACCES, ENAMETOOLONG) is a clean error."""
+    from pathlib import Path
+    real = Path.stat
+    report = tmp_path / "locked" / "rd.md"
+
+    def _stat(self, *a, **k):
+        if self == report:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "stat", _stat)
+    res = _refresh_cli(tmp_path, monkeypatch, report)
+    assert res.exit_code == 1 and "cannot write" in res.output, res.output
+    assert not isinstance(res.exception, (OSError, AssertionError))
+
+
 def test_cli_report_precheck_creates_nothing_and_allows_new_dirs(tmp_path, monkeypatch):
     """A not-yet-existing nested report dir is fine (writers mkdir) and isn't pre-created."""
     import autogis.core.agol.dashboard_refresh as dr
