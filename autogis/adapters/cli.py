@@ -2049,6 +2049,24 @@ def _write_qa_report(qa, report):
     click.echo(f"Wrote report: {p}")
 
 
+def _check_report_writable(report):
+    """Fail before side effects if ``report`` can't be written; creates nothing."""
+    p = Path(report)
+    if p.is_dir():
+        raise click.ClickException(f"cannot write {p}: is a directory")
+    if p.exists():
+        if not os.access(p, os.W_OK):
+            raise click.ClickException(f"cannot write {p}: permission denied")
+        return
+    parent = p.parent
+    while not parent.exists():  # writers mkdir missing parents
+        parent = parent.parent
+    if not parent.is_dir():
+        raise click.ClickException(f"cannot write {p}: {parent} is not a directory")
+    if not os.access(parent, os.W_OK | os.X_OK):
+        raise click.ClickException(f"cannot write {p}: permission denied on {parent}")
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     ctx = click.get_current_context(silent=True)
@@ -3551,6 +3569,8 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
         raise click.ClickException(
             f"No Dash_*.json files found in --mart-dir {mart_dir}; run "
             f"`envmon build-dashboard-data-mart --export-dir {mart_dir}` first.")
+    if report:  # a bad path must not surface only after the hosted push (#653)
+        _check_report_writable(report)
 
     gis = agol_from_profile(profile)
     result = refresh_dashboard_data(gis, mart_tables, layer_map, dry_run=dry_run)
