@@ -45,6 +45,25 @@ def _unique_json_object(pairs):
 def _unique_key_loader(yaml):
     """SafeLoader that rejects duplicate mapping keys instead of keeping the last (#609)."""
     class UniqueKeyLoader(yaml.SafeLoader):
+        def scan_flow_scalar(self, style):
+            try:
+                return super().scan_flow_scalar(style)
+            except (ValueError, OverflowError) as exc:
+                # PyYAML passes numeric Unicode escapes directly to chr().
+                raise yaml.scanner.ScannerError(
+                    None, None, "invalid Unicode escape", self.get_mark()) from exc
+
+        def construct_object(self, node, deep=False):
+            try:
+                return super().construct_object(node, deep=deep)
+            except (ValueError, OverflowError, LookupError, AttributeError) as exc:
+                # PyYAML's scalar constructors can leak native conversion errors.
+                if not isinstance(node, yaml.ScalarNode):
+                    raise
+                kind = node.tag.rsplit(":", 1)[-1]
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"invalid {kind} value", node.start_mark) from exc
+
         # Check in flatten_mapping, before '<<' merges mutate the node: it also
         # visits each merge source, and a node reused via an alias is checked once.
         def flatten_mapping(self, node):

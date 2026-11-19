@@ -192,14 +192,25 @@ def test_import_edd_unwraps_shipped_yaml(tmp_path, monkeypatch):
     assert "screening_levels" not in seen["screening_levels"]
 
 
-@pytest.mark.parametrize("body", ["sites: [\n", "sites: []\nsites: []\n"])
+@pytest.mark.parametrize("body", [
+    "sites: [\n",
+    "sites: []\nsites: []\n",
+    "args: {event_date: 2026-02-30}",
+    r'sites: ["\U00110000"]',
+    "args: {approved: !!bool maybe}",
+    "args: {event_date: !!timestamp tomorrow}",
+    "args: {count: !!int ''}",
+])
 def test_direct_yaml_load_malformed_is_clean_error(tmp_path, body):
     """#635: malformed / duplicate-key YAML escaped as a raw parser traceback."""
     bad = tmp_path / "bad.yaml"
     bad.write_text(body, encoding="utf-8")
+    output = tmp_path / "queue.json"
+    output.write_bytes(b"previous queue")
     r = CliRunner().invoke(autogis, ["envmon", "generate-job-queue", "--manifest", str(bad),
-                                     "--output", str(tmp_path / "q.csv")])
-    assert r.exit_code == 1 and "cannot read" in r.output, r.output
+                                     "--output", str(output)], catch_exceptions=False)
+    assert r.exit_code == 1 and f"Error: cannot read {bad}:" in r.output, r.output
+    assert output.read_bytes() == b"previous queue"
 
 
 def test_validate_db_bad_analyte_dictionary_is_clean_error(tmp_path, monkeypatch):

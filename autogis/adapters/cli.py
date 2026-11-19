@@ -3615,8 +3615,8 @@ def promote_cmd(profile, stage_map_path, layer, from_stage, to_stage,
             "--approved-by requires --approve (both gate a qa->prod promotion; "
             "--approved-by alone is silently ignored otherwise).")
 
-    gis = agol_from_profile(profile)
     stage_map = _read_yaml(stage_map_path)
+    gis = agol_from_profile(profile)
     result = promote_layer(
         gis, layer=layer, stage_map=stage_map,
         from_stage=from_stage, to_stage=to_stage,
