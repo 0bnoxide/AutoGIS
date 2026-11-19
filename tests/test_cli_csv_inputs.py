@@ -233,3 +233,16 @@ def test_direct_yaml_load_non_mapping_is_clean_error(tmp_path, body):
     p.write_text(body, encoding="utf-8")
     r = CliRunner().invoke(autogis, ["envmon", "validate-schedule", "--schedule", str(p)])
     assert r.exit_code == 1 and "expected a YAML mapping" in r.output, r.output
+
+
+@pytest.mark.parametrize("body", [b'{"a":', b"[1]", b"\xff\xfe"])
+def test_route_survey123_json_input_is_clean_error(tmp_path, monkeypatch, body):
+    """#656: malformed / non-object / non-UTF-8 --format json input raised a raw traceback."""
+    import autogis.adapters.cli as cli_mod
+    monkeypatch.setattr(cli_mod, "_guard", lambda name: None)
+    p = tmp_path / "s.json"
+    p.write_bytes(body)
+    r = CliRunner().invoke(autogis, ["envmon", "route-survey123", str(p), "--site", "S",
+                                     "--gdb", str(tmp_path / "x.gdb"), "--format", "json"])
+    assert r.exit_code == 1 and "--input" in r.output, r.output
+    assert not r.exception or isinstance(r.exception, SystemExit)

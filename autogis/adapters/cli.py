@@ -5061,7 +5061,7 @@ def _load_json_option(path, option_name: str):
         return None
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except (ValueError, OSError) as exc:  # JSONDecodeError and UnicodeDecodeError (#656)
         raise click.ClickException(f"{option_name}: could not read/parse {path}: {exc}")
     if not isinstance(data, dict):
         raise click.ClickException(
@@ -5337,7 +5337,7 @@ def route_survey123_cmd(input_path, site_id, gdb_path, batch_id, input_format,
     gdb = Path(gdb_path)
 
     if input_format == "json":
-        payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
+        payload = _load_json_option(input_path, "--input")  # clean error, not a traceback (#656)
         wl, samp = normalize_survey123_submission(payload, site_id, bid, qa)
     else:
         try:
