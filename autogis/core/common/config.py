@@ -54,12 +54,12 @@ def _unique_key_loader(yaml):
                     None, None, "invalid Unicode escape", self.get_mark()) from exc
 
         def construct_object(self, node, deep=False):
+            if not isinstance(node, yaml.ScalarNode):
+                return super().construct_object(node, deep=deep)
             try:
                 return super().construct_object(node, deep=deep)
             except (ValueError, OverflowError, LookupError, AttributeError) as exc:
                 # PyYAML's scalar constructors can leak native conversion errors.
-                if not isinstance(node, yaml.ScalarNode):
-                    raise
                 kind = node.tag.rsplit(":", 1)[-1]
                 raise yaml.constructor.ConstructorError(
                     None, None, f"invalid {kind} value", node.start_mark) from exc

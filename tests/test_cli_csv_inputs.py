@@ -209,7 +209,8 @@ def test_direct_yaml_load_malformed_is_clean_error(tmp_path, body):
     output.write_bytes(b"previous queue")
     r = CliRunner().invoke(autogis, ["envmon", "generate-job-queue", "--manifest", str(bad),
                                      "--output", str(output)], catch_exceptions=False)
-    assert r.exit_code == 1 and f"Error: cannot read {bad}:" in r.output, r.output
+    assert r.exit_code == 1, r.output
+    assert f"Error: cannot read {bad}:" in r.output
     assert output.read_bytes() == b"previous queue"
 
 
