@@ -1,6 +1,7 @@
 import ast
 import inspect
 from unittest.mock import MagicMock
+import pytest
 
 import autogis.core.agol.dashboard_refresh as dashboard_refresh
 from autogis.core.agol.dashboard_refresh import RefreshResult, refresh_dashboard_data
@@ -298,3 +299,24 @@ def test_cli_unwritable_report_is_clean_error(tmp_path, monkeypatch):
     res = CliRunner().invoke(autogis, ["agol", "refresh-dashboard", "--mart-dir", str(mart),
                                        "--layer-map", str(lm), "--report", str(rep)])
     assert res.exit_code == 1 and "cannot write" in res.output, res.output
+
+
+@pytest.mark.parametrize("body", [b'[{"a":1}', b'\xff\xfe', b'{"a": 1}'])
+def test_cli_malformed_mart_json_is_clean_error(tmp_path, monkeypatch, body):
+    """#657: a malformed Dash_*.json raised a raw JSONDecodeError."""
+    from click.testing import CliRunner
+    from autogis.adapters.cli import autogis
+
+    def _no_auth(*a, **kw):
+        raise AssertionError("must fail before authenticating")
+
+    monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", _no_auth)
+    mart = tmp_path / "mart"
+    mart.mkdir()
+    (mart / "Dash_X.json").write_bytes(body)
+    lm = tmp_path / "lm.yaml"
+    lm.write_text("Dash_X: item-1\n", encoding="utf-8")
+    res = CliRunner().invoke(autogis, ["agol", "refresh-dashboard", "--mart-dir", str(mart),
+                                       "--layer-map", str(lm)])
+    assert res.exit_code == 1 and "Dash_X.json" in res.output, res.output
+    assert not isinstance(res.exception, (ValueError, AssertionError))

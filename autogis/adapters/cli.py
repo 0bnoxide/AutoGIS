@@ -3534,10 +3534,16 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
     from autogis.core.agol.dashboard_refresh import refresh_dashboard_data
 
     layer_map = _read_yaml(layer_map_path)
-    mart_tables = {
-        p.stem: json.loads(p.read_text(encoding="utf-8"))
-        for p in Path(mart_dir).glob("Dash_*.json")
-    }
+    mart_tables = {}
+    for p in sorted(Path(mart_dir).glob("Dash_*.json")):
+        try:
+            rows = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:  # malformed / non-UTF-8 (#657)
+            raise click.ClickException(f"cannot read {p}: {exc}")
+        if not isinstance(rows, list):
+            raise click.ClickException(
+                f"{p}: expected a JSON list of rows, got {type(rows).__name__}")
+        mart_tables[p.stem] = rows
     # Fail closed before authenticating: an empty mart directory used to
     # authenticate, refresh nothing and exit 0 (issue #424).
     if not mart_tables:
