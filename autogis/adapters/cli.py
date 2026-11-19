@@ -2034,6 +2034,21 @@ def event_status_cmd(site_id, event_id, run_history_path, registry_path,
         raise SystemExit(code)
 
 
+def _write_qa_report(qa, report):
+    """Write ``qa`` to ``report`` by suffix (.json/.csv/else markdown)."""
+    p = Path(report)
+    try:
+        if p.suffix == ".json":
+            qa.write_json_summary(p)
+        elif p.suffix == ".csv":
+            qa.write_csv(p)
+        else:
+            qa.write_markdown(p)
+    except OSError as exc:  # a directory, a path under a file, read-only (#651, #653)
+        raise click.ClickException(f"cannot write {p}: {exc}")
+    click.echo(f"Wrote report: {p}")
+
+
 def _render_qa(qa, report, fail_on):
     """Shared rendering + exit-code helper for headless QA-producing commands."""
     ctx = click.get_current_context(silent=True)
@@ -2046,17 +2061,7 @@ def _render_qa(qa, report, fail_on):
                    + (f" -> {rec.recommended_action}"
                       if rec.recommended_action else ""))
     if report:
-        p = Path(report)
-        try:
-            if p.suffix == ".json":
-                qa.write_json_summary(p)
-            elif p.suffix == ".csv":
-                qa.write_csv(p)
-            else:
-                qa.write_markdown(p)
-        except OSError as exc:  # a directory, a path under a file, read-only (#651)
-            raise click.ClickException(f"cannot write {p}: {exc}")
-        click.echo(f"Wrote report: {p}")
+        _write_qa_report(qa, report)
     allow_warnings = fail_on != "warning"
     status = qa.status(allow_warnings=allow_warnings, allow_errors=False)
     click.echo(f"Status: {status}")
@@ -3547,14 +3552,7 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
     click.echo(f"tables_refreshed={result.tables_refreshed} "
                f"rows_pushed={result.rows_pushed} failures={result.failures}")
     if report:
-        p = Path(report)
-        if p.suffix == ".json":
-            result.qa.write_json_summary(p)
-        elif p.suffix == ".csv":
-            result.qa.write_csv(p)
-        else:
-            result.qa.write_markdown(p)
-        click.echo(f"Wrote report: {p}")
+        _write_qa_report(result.qa, report)
     # Exit code is driven solely by result.failures (not a generic
     # warning-level QA threshold) -- a benign WARNING should not fail this
     # command when nothing actually failed to push.
