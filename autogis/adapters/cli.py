@@ -2049,10 +2049,27 @@ def _write_qa_report(qa, report):
     click.echo(f"Wrote report: {p}")
 
 
-def _check_report_writable(report):
-    """Fail before side effects if ``report`` can't be written; creates nothing."""
+def _check_report_writable(report, inputs=()):
+    """Fail before side effects if ``report`` can't be written; creates nothing.
+
+    Also rejects an empty ``--report`` (it used to skip the report silently)
+    and one that resolves to any of ``inputs``, which the report would
+    overwrite after the hosted change (#661, #662).
+    """
+    if report is None:
+        return
+    if not report:
+        raise click.UsageError("--report must not be empty")
     p = Path(report)
     try:
+        target = p.resolve(strict=False)
+        for src in map(Path, inputs):
+            if (str(target).casefold() == str(src.resolve(strict=False)).casefold()
+                    or (target.exists() and src.exists() and target.samefile(src))):
+                raise click.ClickException(
+                    f"--report must not overwrite an input file: {src}")
+        if p.is_symlink() and not p.exists():  # writer opens the link itself
+            raise click.ClickException(f"cannot write {p}: dangling or looping symlink")
         if p.is_dir():
             raise click.ClickException(f"cannot write {p}: is a directory")
         if p.exists():
@@ -2061,12 +2078,15 @@ def _check_report_writable(report):
             return
         parent = p.parent
         while not parent.exists():  # writers mkdir missing parents
+            if parent.is_symlink():
+                raise click.ClickException(
+                    f"cannot write {p}: {parent} is a dangling or looping symlink")
             parent = parent.parent
         if not parent.is_dir():
             raise click.ClickException(f"cannot write {p}: {parent} is not a directory")
         if not os.access(parent, os.W_OK | os.X_OK):
             raise click.ClickException(f"cannot write {p}: permission denied on {parent}")
-    except (OSError, ValueError) as exc:  # stat errors pathlib doesn't swallow
+    except (OSError, ValueError, RuntimeError) as exc:  # stat/resolve errors
         raise click.ClickException(f"cannot write {p}: {exc}")
 
 
@@ -3556,7 +3576,8 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
 
     layer_map = _read_yaml(layer_map_path)
     mart_tables = {}
-    for p in sorted(Path(mart_dir).glob("Dash_*.json")):
+    mart_files = sorted(Path(mart_dir).glob("Dash_*.json"))
+    for p in mart_files:
         try:
             rows = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:  # malformed / non-UTF-8 (#657)
@@ -3572,8 +3593,8 @@ def refresh_dashboard_cmd(profile, mart_dir, layer_map_path, dry_run, report):
         raise click.ClickException(
             f"No Dash_*.json files found in --mart-dir {mart_dir}; run "
             f"`envmon build-dashboard-data-mart --export-dir {mart_dir}` first.")
-    if report:  # a bad path must not surface only after the hosted push (#653)
-        _check_report_writable(report)
+    # a bad path must not surface only after the hosted push (#653, #662)
+    _check_report_writable(report, [layer_map_path, *mart_files])
 
     gis = agol_from_profile(profile)
     result = refresh_dashboard_data(gis, mart_tables, layer_map, dry_run=dry_run)
@@ -3604,6 +3625,7 @@ def publish_dashboard_cmd(profile, spec, dry_run, report):
     from autogis.core.agol.dashboard_publish import publish_dashboard
 
     spec_dict = _read_yaml(spec)
+    _check_report_writable(report, [spec])  # before the hosted write (#661)
     # dry_run never touches gis (see publish_dashboard), so skip session setup entirely
     gis = None if dry_run else agol_from_profile(profile)
     result = publish_dashboard(gis, spec_dict, dry_run=dry_run)
@@ -3671,6 +3693,7 @@ def update_webmap_cmd(profile, webmap_item_id, figure_spec_path, event_date, dry
     from autogis.core.agol.webmap import update_webmap_from_spec
     from autogis.core.common.config import FigureSpec
     spec = FigureSpec.load(Path(figure_spec_path))
+    _check_report_writable(report, [figure_spec_path])  # before the hosted write (#661)
     gis = agol_from_profile(profile)
     result = update_webmap_from_spec(gis, webmap_item_id=webmap_item_id,
                                      figure_spec=spec.data, event_date=event_date,
@@ -3693,6 +3716,7 @@ def create_views_cmd(profile, view_spec_path, report):
         specs = load_view_specs(data)
     except ValueError as exc:
         raise click.UsageError(str(exc))
+    _check_report_writable(report, [view_spec_path])  # before the hosted write (#661)
     gis = agol_from_profile(profile)
     combined = QACollector()
     for spec in specs:
