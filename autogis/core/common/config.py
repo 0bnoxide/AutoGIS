@@ -84,7 +84,62 @@ def _unique_key_loader(yaml):
                             "while constructing a mapping", node.start_mark,
                             f"found duplicate key {key!r}", key_node.start_mark)
                     seen.add(key)
-            super().flatten_mapping(node)
+            self._flatten_merges(node)
+
+        # PyYAML 6.0.4 changed '<<' flattening: merged pairs are de-duplicated
+        # first-wins, so a merge source that is itself merged lets its inherited
+        # value beat its own explicit key (#665). Own the semantics instead, the
+        # same on every PyYAML: explicit keys beat merged ones, an earlier merge
+        # source beats a later one, and each flattened node keeps one pair per key.
+        def _flatten_merges(self, node):
+            merge = []
+            index = 0
+            while index < len(node.value):
+                key_node, value_node = node.value[index]
+                if key_node.tag != "tag:yaml.org,2002:merge":
+                    if key_node.tag == "tag:yaml.org,2002:value":
+                        key_node.tag = "tag:yaml.org,2002:str"
+                    index += 1
+                    continue
+                del node.value[index]
+                if isinstance(value_node, yaml.MappingNode):
+                    sources = [value_node]
+                elif isinstance(value_node, yaml.SequenceNode):
+                    sources = value_node.value
+                else:
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping", node.start_mark,
+                        "expected a mapping or list of mappings for merging, "
+                        f"but found {value_node.id}", value_node.start_mark)
+                for subnode in sources:
+                    if not isinstance(subnode, yaml.MappingNode):
+                        raise yaml.constructor.ConstructorError(
+                            "while constructing a mapping", node.start_mark,
+                            "expected a mapping for merging, but found "
+                            f"{subnode.id}", subnode.start_mark)
+                    self.flatten_mapping(subnode)
+                merge.extend(pair for subnode in reversed(sources)
+                             for pair in subnode.value)
+            if not merge:
+                return
+            # Later pairs win, each key keeping its first position: what
+            # construct_mapping did with PyYAML <= 6.0.3's undeduplicated list.
+            pairs, slot = [], {}
+            for key_node, value_node in merge + node.value:
+                key = self.construct_object(key_node, deep=True)
+                try:
+                    at = slot.get(key)
+                except TypeError:  # unhashable: construct_mapping reports it
+                    at = None
+                if at is None:
+                    try:
+                        slot[key] = len(pairs)
+                    except TypeError:
+                        pass
+                    pairs.append((key_node, value_node))
+                else:
+                    pairs[at] = (pairs[at][0], value_node)
+            node.value = pairs
     return UniqueKeyLoader
 
 
