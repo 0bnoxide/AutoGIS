@@ -188,3 +188,26 @@ def test_dangling_link_not_reported_as_symlink_is_refused(tmp_path, monkeypatch,
     report = link if where == "is_report" else link / "sub" / "rd.md"
     with pytest.raises(click.ClickException, match="cannot write"):
         _check_report_writable(str(report))
+
+
+@pytest.mark.parametrize("name", ["rd?.md", "rd|x.md", "rd*.md", "rd<.md", 'rd".md',
+                                  "rd:x.md", "rd\x01.md", "bad?dir/rd.md"])
+def test_windows_invalid_name_rule(tmp_path, monkeypatch, name):
+    """The name rule itself, on any OS: on under Windows, off elsewhere
+    (? and | are legal POSIX file names)."""
+    import click
+    from autogis.adapters import cli
+    report = str(tmp_path / name)
+    monkeypatch.setattr(cli, "_IS_WINDOWS", True)
+    with pytest.raises(click.ClickException, match="not a valid Windows file name"):
+        cli._check_report_writable(report)
+    monkeypatch.setattr(cli, "_IS_WINDOWS", False)
+    cli._check_report_writable(report)
+
+
+@pytest.mark.parametrize("report", [r"C:\out\rd.md", "C:rd.md", r"\\?\C:\out\rd.md",
+                                    r"\\server\share\rd.md", r"rel\rd.md"])
+def test_windows_anchor_is_not_a_bad_name(report):
+    """The drive colon and a long-path prefix belong to the anchor, not a name."""
+    from autogis.adapters.cli import _windows_bad_name_part
+    assert _windows_bad_name_part(report) is None
