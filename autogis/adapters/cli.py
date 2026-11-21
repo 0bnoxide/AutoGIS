@@ -2049,18 +2049,38 @@ def _write_qa_report(qa, report):
     click.echo(f"Wrote report: {p}")
 
 
+_IS_WINDOWS = os.name == "nt"
+# Characters Win32 refuses in a file or directory name. ":" outside the drive
+# would name an NTFS alternate stream, not the file asked for.
+_WINDOWS_BAD_NAME_CHARS = frozenset('<>:"|?*').union(map(chr, range(32)))
+
+
+def _windows_bad_name_part(report):
+    """Return the first component of ``report`` Windows can't create, else None."""
+    from pathlib import PureWindowsPath
+    path = PureWindowsPath(report)
+    parts = path.parts[1:] if path.anchor else path.parts
+    return next((part for part in parts
+                 if not _WINDOWS_BAD_NAME_CHARS.isdisjoint(part)), None)
+
+
 def _check_report_writable(report, inputs=()):
     """Fail before side effects if ``report`` can't be written; creates nothing.
 
     Also rejects an empty ``--report`` (it used to skip the report silently)
     and one that resolves to any of ``inputs``, which the report would
-    overwrite after the hosted change (#661, #662).
+    overwrite after the hosted change (#661, #662). On Windows it also rejects
+    names Win32 can't create and broken directory junctions, which stat as
+    simply missing and so used to pass.
     """
     if report is None:
         return
     if not report:
         raise click.UsageError("--report must not be empty")
     p = Path(report)
+    if _IS_WINDOWS and (bad := _windows_bad_name_part(report)) is not None:
+        raise click.ClickException(
+            f"cannot write {p}: {bad!r} is not a valid Windows file name")
     try:
         target = p.resolve(strict=False)
         for src in map(Path, inputs):
@@ -2068,8 +2088,11 @@ def _check_report_writable(report, inputs=()):
                     or (target.exists() and src.exists() and target.samefile(src))):
                 raise click.ClickException(
                     f"--report must not overwrite an input file: {src}")
-        if p.is_symlink() and not p.exists():  # writer opens the link itself
-            raise click.ClickException(f"cannot write {p}: dangling or looping symlink")
+        # lexists, not is_symlink: a broken NTFS junction isn't a symlink to
+        # Path.is_symlink() but still blocks the write.
+        if os.path.lexists(p) and not p.exists():  # writer opens the link itself
+            raise click.ClickException(
+                f"cannot write {p}: dangling or looping symlink or junction")
         if p.is_dir():
             raise click.ClickException(f"cannot write {p}: is a directory")
         if p.exists():
@@ -2078,9 +2101,11 @@ def _check_report_writable(report, inputs=()):
             return
         parent = p.parent
         while not parent.exists():  # writers mkdir missing parents
-            if parent.is_symlink():
-                raise click.ClickException(
-                    f"cannot write {p}: {parent} is a dangling or looping symlink")
+            if os.path.lexists(parent):
+                raise click.ClickException(f"cannot write {p}: {parent} is a "
+                                           "dangling or looping symlink or junction")
+            if parent == parent.parent:  # unmapped drive or unreachable share
+                raise click.ClickException(f"cannot write {p}: {parent} does not exist")
             parent = parent.parent
         if not parent.is_dir():
             raise click.ClickException(f"cannot write {p}: {parent} is not a directory")
