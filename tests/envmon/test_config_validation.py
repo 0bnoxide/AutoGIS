@@ -437,3 +437,38 @@ def test_screening_list_scalar_entry_is_clean_error(tmp_path):
     p.write_text("screening_levels:\n  water:\n    Benzene: 5\n", encoding="utf-8")
     r = _cli("manage-screening-levels", str(p), "--list")
     assert r.exit_code == 1 and "must be a mapping" in r.output, r.output
+
+
+@pytest.mark.parametrize("text,expected", [
+    # explicit key beats every merge source, in either order
+    ("a: {<<: {x: 1}, x: 2}\n", {"a": {"x": 2}}),
+    ("a: {x: 2, <<: {x: 1}}\n", {"a": {"x": 2}}),
+    # earlier merge source beats a later one
+    ("a: {<<: [{x: 1}, {x: 2}]}\n", {"a": {"x": 1}}),
+    # a merge source that is itself merged keeps its own explicit key (#665)
+    ("s: &s {<<: {x: 1, y: 1}, x: 2}\na: {<<: *s}\nb: {<<: [*s, {y: 3, z: 3}], z: 4}\n",
+     {"s": {"x": 2, "y": 1}, "a": {"x": 2, "y": 1}, "b": {"x": 2, "y": 1, "z": 4}}),
+])
+def test_load_config_merge_semantics_independent_of_pyyaml(tmp_path, text, expected):
+    """PyYAML 6.0.4 let an inherited value beat a merge source's own key (#665)."""
+    from autogis.core.common.config import load_config
+    p = tmp_path / "m.yaml"
+    p.write_text(text, encoding="utf-8")
+    assert load_config(p) == expected
+
+
+def test_load_config_merge_keeps_first_position_order(tmp_path):
+    """Keys keep the order PyYAML <= 6.0.3 gave: merged keys first, by first appearance."""
+    from autogis.core.common.config import load_config
+    p = tmp_path / "o.yaml"
+    p.write_text("a: {<<: {b: 1, c: 1}, d: 2, b: 2}\n", encoding="utf-8")
+    assert list(load_config(p)["a"].items()) == [("b", 2), ("c", 1), ("d", 2)]
+
+
+@pytest.mark.parametrize("text", ["a: {<<: 1}\n", "a: {<<: [1]}\n"])
+def test_load_config_bad_merge_value_is_config_error(tmp_path, text):
+    from autogis.core.common.config import ConfigError, load_config
+    p = tmp_path / "bad.yaml"
+    p.write_text(text, encoding="utf-8")
+    with pytest.raises(ConfigError, match="could not be parsed"):
+        load_config(p)
