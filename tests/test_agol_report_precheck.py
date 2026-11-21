@@ -121,3 +121,70 @@ def test_no_report_unchanged(tmp_path, monkeypatch, cmd):
     args, _ = _setup(tmp_path, monkeypatch, cmd)
     res = CliRunner().invoke(autogis, ["agol", cmd, *args])
     assert res.exit_code == 0, res.output
+
+
+# --- Windows-only shapes the POSIX checks missed ---------------------------
+# A directory junction is not a symlink to Path.is_symlink(), so a broken one
+# slipped past the dangling-link guard; names with ? or | (and the rest of
+# <>:"|?*) resolve and stat as "missing" on Windows, so they passed too, and
+# the write failed only after the hosted change.
+
+def _make_broken_junction(tmp_path):
+    import os
+    import subprocess
+    target = tmp_path / "gone"
+    target.mkdir()
+    junction = tmp_path / "junction"
+    try:
+        import _winapi
+        _winapi.CreateJunction(str(target), str(junction))
+    except (ImportError, AttributeError, OSError):
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(target)],
+                       check=True, capture_output=True)
+    os.rmdir(target)
+    assert not junction.exists() and not junction.is_symlink()
+    return junction
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="NTFS junctions")
+@pytest.mark.parametrize("cmd", CMDS)
+@pytest.mark.parametrize("where", ["is_report", "is_ancestor"])
+def test_broken_junction_report_fails_before_hosted_write(tmp_path, monkeypatch, cmd, where):
+    monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", _no_auth)
+    args, _ = _setup(tmp_path, monkeypatch, cmd)
+    junction = _make_broken_junction(tmp_path)
+    report = junction if where == "is_report" else junction / "sub" / "rd.md"
+    res = _run(cmd, args, report)
+    assert res.exit_code == 1 and "cannot write" in res.output, res.output
+    assert not isinstance(res.exception, AssertionError)
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows file-name rules")
+@pytest.mark.parametrize("cmd", CMDS)
+@pytest.mark.parametrize("name", ["rd?.md", "rd|x.md", "rd*.md", "rd<.md", 'rd".md',
+                                  "rd:x.md", "bad?dir/rd.md"])
+def test_windows_invalid_name_fails_before_hosted_write(tmp_path, monkeypatch, cmd, name):
+    monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", _no_auth)
+    args, _ = _setup(tmp_path, monkeypatch, cmd)
+    res = _run(cmd, args, str(tmp_path) + "\\" + name.replace("/", "\\"))
+    assert res.exit_code == 1 and "cannot write" in res.output, res.output
+    assert not isinstance(res.exception, AssertionError)
+
+
+@pytest.mark.parametrize("where", ["is_report", "is_ancestor"])
+def test_dangling_link_not_reported_as_symlink_is_refused(tmp_path, monkeypatch, where):
+    """Junction semantics on any OS: lstat sees an entry, stat doesn't, and
+    Path.is_symlink() says False (true of a broken NTFS junction)."""
+    import os
+    import click
+    from pathlib import Path
+    from autogis.adapters.cli import _check_report_writable
+    link = tmp_path / "junction"
+    try:
+        os.symlink(tmp_path / "gone", link)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported here")
+    monkeypatch.setattr(Path, "is_symlink", lambda self: False)
+    report = link if where == "is_report" else link / "sub" / "rd.md"
+    with pytest.raises(click.ClickException, match="cannot write"):
+        _check_report_writable(str(report))
