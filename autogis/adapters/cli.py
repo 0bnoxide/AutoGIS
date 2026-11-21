@@ -2104,6 +2104,8 @@ def _check_report_writable(report, inputs=()):
             if os.path.lexists(parent):
                 raise click.ClickException(f"cannot write {p}: {parent} is a "
                                            "dangling or looping symlink or junction")
+            if parent == parent.parent:  # unmapped drive or unreachable share
+                raise click.ClickException(f"cannot write {p}: {parent} does not exist")
             parent = parent.parent
         if not parent.is_dir():
             raise click.ClickException(f"cannot write {p}: {parent} is not a directory")

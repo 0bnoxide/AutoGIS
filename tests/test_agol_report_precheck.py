@@ -211,3 +211,31 @@ def test_windows_anchor_is_not_a_bad_name(report):
     """The drive colon and a long-path prefix belong to the anchor, not a name."""
     from autogis.adapters.cli import _windows_bad_name_part
     assert _windows_bad_name_part(report) is None
+
+
+def test_missing_anchor_fails_instead_of_looping(tmp_path, monkeypatch):
+    """An unmapped drive or unreachable share: the parent walk reached an anchor
+    that doesn't exist and used to spin forever (Path('Z:/').parent is itself)."""
+    import click
+    from pathlib import Path
+    from autogis.adapters.cli import _check_report_writable
+    monkeypatch.setattr(Path, "exists", lambda self: False)
+    monkeypatch.setattr("os.path.lexists", lambda path: False)
+    with pytest.raises(click.ClickException, match="does not exist"):
+        _check_report_writable(str(tmp_path / "out" / "rd.md"))
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows drive letters")
+@pytest.mark.parametrize("cmd", CMDS)
+def test_unmapped_drive_fails_before_hosted_write(tmp_path, monkeypatch, cmd):
+    import os
+    import string
+    free = next((d for d in reversed(string.ascii_uppercase)
+                 if not os.path.exists(f"{d}:\\")), None)
+    if free is None:
+        pytest.skip("no unmapped drive letter")
+    monkeypatch.setattr("autogis.adapters.cli.agol_from_profile", _no_auth)
+    args, _ = _setup(tmp_path, monkeypatch, cmd)
+    res = _run(cmd, args, f"{free}:\\out\\rd.md")
+    assert res.exit_code == 1 and "cannot write" in res.output, res.output
+    assert not isinstance(res.exception, AssertionError)
