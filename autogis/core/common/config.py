@@ -74,6 +74,8 @@ def _unique_key_loader(yaml):
                 for key_node, _ in node.value:
                     if key_node.tag == "tag:yaml.org,2002:merge":
                         continue  # merged keys may be overridden explicitly
+                    if key_node.tag == "tag:yaml.org,2002:value":
+                        key_node.tag = "tag:yaml.org,2002:str"  # as SafeLoader does, before building (#668)
                     key = self.construct_object(key_node, deep=True)
                     try:
                         hash(key)
