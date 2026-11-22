@@ -418,6 +418,16 @@ def test_yaml_load_rejects_duplicate_keys():
             yaml_load(src)
 
 
+def test_yaml_load_accepts_value_key_like_safe_load():
+    """#668: a plain `=` key (!!value) loads as the string '=', as in SafeLoader."""
+    import yaml
+    from autogis.core.common.config import yaml_load
+    for src in ("a: {=: 1}\n", "base: &b {=: 1}\nc:\n  <<: *b\n  x: 2\n"):
+        assert yaml_load(src) == yaml.safe_load(src)
+    with pytest.raises(yaml.YAMLError, match="duplicate key"):
+        yaml_load("{=: 1, =: 2}\n")
+
+
 def test_no_direct_yaml_safe_load_outside_config():
     """#627 guard: YAML input goes through the duplicate-key-checking loader."""
     import re
