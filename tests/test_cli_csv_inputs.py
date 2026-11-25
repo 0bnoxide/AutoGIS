@@ -246,3 +246,31 @@ def test_route_survey123_json_input_is_clean_error(tmp_path, monkeypatch, body):
                                      "--gdb", str(tmp_path / "x.gdb"), "--format", "json"])
     assert r.exit_code == 1 and "--input" in r.output, r.output
     assert not r.exception or isinstance(r.exception, SystemExit)
+
+
+def test_gw_flow_wells_csv_bad_input_is_a_clean_error(tmp_path):
+    """#670: bad --wells-csv was a traceback; a nan GWE reported PASS."""
+    header = "well_id,easting,northing,gwe_ft\n"
+    ok = "W2,1,0,2\nW3,0,1,3\n"
+    cases = [(b, "cannot read") for b in _bad_inputs(tmp_path)]
+    for name, text, expected in [
+        ("wrong.csv", "a,b\n1,2\n", "line 2"),
+        ("blank.csv", header + "W1,0,0,\n" + ok, "line 2"),
+        ("text.csv", header + ok + "W1,0,0,x\n", "line 4"),
+        ("short.csv", header + ok + "W1,0,0\n", "line 4"),
+        ("nan.csv", header + "W1,0,0,nan\n" + ok, "line 2"),
+        ("inf.csv", header + "W1,inf,0,1\n" + ok, "line 2"),
+        ("id_last.csv", "easting,northing,gwe_ft,well_id\n1,2\n", "line 2"),
+        ("huge.csv", 'a\n"' + "x" * 200_000 + '"\n', "cannot read"),
+    ]:
+        bad = tmp_path / name
+        bad.write_text(text, encoding="utf-8")
+        cases.append((bad, expected))
+    for bad, expected in cases:
+        result = CliRunner().invoke(autogis, [
+            "envmon", "estimate-gw-flow-direction", "--wells-csv", str(bad),
+            "--site-id", "S", "--event-date", "2025-01-01"])
+        assert result.exit_code == 1, (bad, result.output)
+        assert result.exception is None or isinstance(result.exception,
+                                                      SystemExit), bad
+        assert expected in result.output and str(bad) in result.output

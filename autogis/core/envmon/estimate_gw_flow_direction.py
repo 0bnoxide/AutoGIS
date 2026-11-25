@@ -199,19 +199,29 @@ def parse_wells_csv(path: Path) -> List[WellWaterLevel]:
 
     Raises
     ------
-    KeyError
-        If a required column is missing.
     ValueError
-        If a numeric field cannot be parsed as float.
+        If a row lacks a required column or has a non-numeric or non-finite
+        value; the message names the file and line.
     """
     wells: List[WellWaterLevel] = []
     with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
-            wells.append(WellWaterLevel(
-                well_id=row["well_id"].strip(),
-                easting=float(row["easting"]),
-                northing=float(row["northing"]),
-                gwe_ft=float(row["gwe_ft"]),
-            ))
+            try:
+                well = WellWaterLevel(
+                    well_id=row["well_id"].strip(),
+                    easting=float(row["easting"]),
+                    northing=float(row["northing"]),
+                    gwe_ft=float(row["gwe_ft"]),
+                )
+                # float() accepts "nan"/"inf"; lstsq would turn them into a NaN PASS
+                if not all(map(math.isfinite,
+                               (well.easting, well.northing, well.gwe_ft))):
+                    raise ValueError("non-finite coordinate or gwe_ft")
+            # TypeError/AttributeError: a short row leaves the missing cells as None
+            except (KeyError, ValueError, TypeError, AttributeError) as exc:
+                raise ValueError(
+                    f"{path}: line {reader.line_num}: invalid well record ({exc})"
+                ) from exc
+            wells.append(well)
     return wells
