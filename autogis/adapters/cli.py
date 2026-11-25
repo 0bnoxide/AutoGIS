@@ -5860,7 +5860,12 @@ def estimate_gw_flow_direction_cmd(wells_csv, site_id, event_date, run_id,
         parse_wells_csv, estimate_gw_flow_direction,
     )
 
-    wells = parse_wells_csv(Path(wells_csv))
+    try:
+        wells = parse_wells_csv(Path(wells_csv))
+    except (OSError, UnicodeDecodeError, _csv.Error) as exc:  # before ValueError
+        raise click.ClickException(f"cannot read {wells_csv}: {exc}")
+    except ValueError as exc:  # message already names the file and line
+        raise click.ClickException(str(exc))
     qa = QACollector()
     result = estimate_gw_flow_direction(
         wells,
